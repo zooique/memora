@@ -1,6 +1,6 @@
 /**
  * 单元测试：垃圾回收服务（GC Service）
- * 验证「引用集合派生」的孤立 Round 清理机制（不读 Round.refCount）
+ * 验证「引用集合派生」的孤立 Round 清理机制（轮对象上不持引用计数）
  */
 import { describe, expect, it, beforeEach, vi, afterEach } from 'vitest';
 import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
@@ -15,7 +15,7 @@ describe('垃圾回收服务', () => {
   let roundStore: InMemoryRoundStore;
   let memoryStorage: InMemoryStorage;
   let gc: GCService;
-  /** 引用真源（模拟会话 roundIds）：GC 判定「孤儿」而不是看 refCount */
+  /** 引用真源（模拟会话 roundIds）：GC 判定「孤儿」而不是看轮上的计数 */
   let referencedIds: Set<string>;
 
   beforeEach(() => {

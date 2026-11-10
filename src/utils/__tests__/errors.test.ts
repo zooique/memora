@@ -1,6 +1,6 @@
 /**
  * 错误类型测试
- * 覆盖 4 大类错误工厂 + format + log
+ * 覆盖 4 大类错误工厂 + 结构化字段 + log
  * ToolErrorCode + isRetryableErrorCode + securityError + errorCode 字段测试
  */
 import { describe, it, expect } from 'vitest';
@@ -27,14 +27,13 @@ describe('MemoraError · 错误信息友好化', () => {
     expect(err.category).toBe('config');
   });
 
-  it('format 应该输出中文错误 + 建议列表', () => {
+  // 7.0.0：渲染归消费者，内核只保证字段齐全（不再提供 format()）
+  it('结构化字段完整：标题 / 原因 / 建议列表逐项可取', () => {
     const err = networkError('连接失败', 'timeout 5s', ['检查网络', '重试']);
-    const formatted = err.format();
-    expect(formatted).toContain('❌ 连接失败');
-    expect(formatted).toContain('原因：timeout 5s');
-    expect(formatted).toContain('建议：');
-    expect(formatted).toContain('检查网络');
-    expect(formatted).toContain('重试');
+    expect(err.title).toBe('连接失败');
+    expect(err.detail).toBe('timeout 5s');
+    expect(err.suggestions).toEqual(['检查网络', '重试']);
+    expect('format' in err).toBe(false);
   });
 
   it('4 大类错误应该正确分类', () => {
@@ -44,20 +43,16 @@ describe('MemoraError · 错误信息友好化', () => {
     expect(toolError('a', 'b', []).category).toBe('tool');
   });
 
-  it('format 无 detail 时应省略原因行', () => {
+  it('无 detail 时该字段为 undefined（由消费者决定省略）', () => {
     const err = toolError('路径越界', undefined, ['改用白名单路径']);
-    const formatted = err.format();
-    expect(formatted).toContain('❌ 路径越界');
-    expect(formatted).not.toContain('原因');
-    expect(formatted).toContain('建议：');
+    expect(err.detail).toBeUndefined();
+    expect(err.suggestions).toEqual(['改用白名单路径']);
   });
 
-  it('format 无 suggestions 时应省略建议行', () => {
+  it('无 suggestions 时建议列表为空数组（由消费者决定省略）', () => {
     const err = toolError('路径越界', '/etc/passwd', []);
-    const formatted = err.format();
-    expect(formatted).toContain('❌ 路径越界');
-    expect(formatted).toContain('原因：/etc/passwd');
-    expect(formatted).not.toContain('建议');
+    expect(err.detail).toBe('/etc/passwd');
+    expect(err.suggestions).toEqual([]);
   });
 
   it('错误应该保留原始 cause 用于调试', () => {
@@ -157,12 +152,11 @@ describe('securityError · 安全错误工厂', () => {
     expect(err.suggestions).toEqual(['检查路径']);
   });
 
-  it('format 应输出安全错误信息', () => {
+  it('安全错误的字段可原样交由消费者渲染', () => {
     const err = securityError('禁止访问', '命中黑名单', ['联系管理员']);
-    const formatted = err.format();
-    expect(formatted).toContain('❌ 禁止访问');
-    expect(formatted).toContain('原因：命中黑名单');
-    expect(formatted).toContain('联系管理员');
+    expect(err.title).toBe('禁止访问');
+    expect(err.detail).toBe('命中黑名单');
+    expect(err.suggestions).toEqual(['联系管理员']);
   });
 
   it('应保留 cause 用于调试', () => {

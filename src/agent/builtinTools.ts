@@ -945,7 +945,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
 ];
 
 // ─── 写盘语义派生索引（构造级单源） ──────────────────────
-// 真源 = 各定义行的 `diskWrite` 声明；以下三份全部**派生**，禁再独立枚举工具名
+// 真源 = 各定义行的 `diskWrite` 声明；派生索引一律由此推导，禁再独立枚举工具名
 // （两处手工清单必漂移 = 串行不防 / 追踪不报 / 契约钉不红的三重静默）。
 
 /** 全部内置工具定义合集（只读闸 / 写盘派生索引共用；条件工具含定义、不论 provider 是否注入） */
@@ -960,15 +960,4 @@ export const ALL_BUILTIN_TOOL_DEFS: readonly ToolDefinition[] = [
 /** 按 `args.path` 定位目标的写工具名集（派生；同路径串行闸与宿主改动追踪的判据真源） */
 export const PATH_WRITE_TOOL_NAMES: readonly string[] = ALL_BUILTIN_TOOL_DEFS.filter(
   (t) => t.diskWrite === 'path',
-).map((t) => t.name);
-
-/**
- * 目标不可静态定位的写工具名集（派生；执行 = 屏障，与一切写互斥）。
- *
- * @deprecated 6.0.0 移除——移除清单真源 = `tasks/待完成任务.md` · `DEPRECATE-1`。
- * 现行判据 = 工具定义行 `diskWrite` 声明；本表仅为内置工具契约钉与废弃期公开面承诺，
- * 宿主已零消费，请改用 `ToolDefinition.diskWrite` 自行筛选。
- */
-export const OPAQUE_WRITE_TOOL_NAMES: readonly string[] = ALL_BUILTIN_TOOL_DEFS.filter(
-  (t) => t.diskWrite === 'opaque',
 ).map((t) => t.name);

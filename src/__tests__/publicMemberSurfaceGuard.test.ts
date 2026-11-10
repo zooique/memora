@@ -949,7 +949,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'interactiveInputs',
       'pendingAsk', // E2E-ASK-LOSS-1：在途提问快照（挂起前落盘；收场转化 unanswered 并清）
       'processEvents',
-      'refCount',
       'status',
       'userMessage',
     ],
@@ -961,11 +960,9 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
   IRoundStore: {
     kind: 'interface',
     members: [
-      'decrementRef',
       'delete',
       'getById',
       'getByIds',
-      'incrementRef',
       'listAll',
       'listByStatus',
       'listInterruptedRecent',
@@ -1057,7 +1054,7 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
   },
   MemoraError: {
     kind: 'class',
-    members: ['category', 'cause', 'detail', 'errorCode', 'format', 'suggestions', 'title'],
+    members: ['category', 'cause', 'detail', 'errorCode', 'suggestions', 'title'],
   },
   ToolErrorCode: {
     kind: 'object',
@@ -1469,7 +1466,15 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    值域仍公开（CompressTarget / BackgroundTask['status']），穷尽键红闸随表迁到消费者构建。\n` +
       `    BACKGROUND_TASK_STATUS_LABELS 继续在内核内部喂回流通知——模型可见面逐字不变（不是行为变更）。\n` +
       `    真消费者 = 宿主 sessionTitle.ts / chatNoticeOps.ts / panelSnapshots.ts（同批自建穷尽表）。\n` +
-      `    代价：6.x 升级者失去三个值导出（CHANGELOG Breaking 段明示），内核内部行为零变化。`;
+      `    代价：6.x 升级者失去三个值导出（CHANGELOG Breaking 段明示），内核内部行为零变化。` +
+      `\n  ⑮ 引用计数残骸与内置渲染器退役（2026-11-10 · 7.0.0，Breaking）：\n` +
+      `    Round.refCount（必填字段）/ IRoundStore.incrementRef / IRoundStore.decrementRef /\n` +
+      `    MemoraError.format() 四项同批删除。\n` +
+      `    定性 = 纠错非删能力：前三项是「引用真源已迁到会话 roundIds」后留下的旧机制残骸——\n` +
+      `    两个方法早已是 no-op、字段冻结为存在性标记，任何读取方都得不到真实引用数；\n` +
+      `    format() 是**展示面渲染器**，按「展示面归消费者」归还所有权（宿主与 mcp 各自拼接）。\n` +
+      `    旧档相容：带 refCount 的旧 rounds/*.json 反序列化时未知键被忽略（实测，非注释推断）。\n` +
+      `    代价：7.x 升级者失去上述四个成员（CHANGELOG Breaking 段明示）。`;
     expect(
       issues,
       `\n成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,

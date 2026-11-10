@@ -15,7 +15,7 @@ import { isWithinLocalDay } from '@/utils/time.js';
  *
  * 核心实现：
  * - Map 存储（id → Round）
- * - **引用真源由会话侧注入**（`referencedIdsProvider`）——`Round.refCount` 不是真源
+ * - **引用真源由会话侧注入**（`referencedIdsProvider`）——引用状态不落在轮对象上
  * - 支持批量获取（getByIds）
  * - 支持按状态筛选（listByStatus）
  * - 支持孤立检查（listOrphaned）
@@ -27,7 +27,7 @@ export class InMemoryRoundStore implements IRoundStore {
    * 引用真源提供者（由 `InMemorySessionStore` 构造时注入）
    *
    * 内存存储本身不持有会话，只能靠会话侧给出「当前被引用的 Round ID 集合」；
-   * 未注入时 `listOrphaned` 返回空（宁可不回收，也不读过期 `refCount` 误删）。
+   * 未注入时 `listOrphaned` 返回空（宁可不回收，也不按过期计数误删）。
    */
   private referencedIdsProvider: (() => ReadonlySet<string>) | null = null;
 
@@ -93,31 +93,9 @@ export class InMemoryRoundStore implements IRoundStore {
   }
 
   /**
-   * 增加引用计数（**no-op**：引用真源 = 会话 roundIds）
-   *
-   * 保留 API 仅供公开面兼容（7.0.0 移除）；调用不产生任何状态变化。
-   *
-   * @param roundId - 需要增加引用的 Round ID
-   */
-  incrementRef(_roundId: string): void {
-    // 有意为空：分叉只复制会话 roundIds 指针，不触碰轮次数据
-  }
-
-  /**
-   * 减少引用计数（**no-op**：引用真源 = 会话 roundIds）
-   *
-   * 保留 API 仅供公开面兼容（7.0.0 移除）；调用不产生任何状态变化。
-   *
-   * @param roundId - 需要减少引用的 Round ID
-   */
-  decrementRef(_roundId: string): void {
-    // 有意为空：删除会话 / 截断先收缩 roundIds，再由会话侧现场派生死
-  }
-
-  /**
    * 删除问答闭环（物理删除，不可恢复）
    *
-   * 🔴 无 `refCount` 前置条件：调用方须先确认该轮已不在任何会话 roundIds 中。
+   * 🔴 引用真源 = 会话 roundIds：调用方须先确认该轮已不在任何会话中。
    *
    * @param roundId - 要删除的 Round ID
    * @returns 是否删除成功（不存在时返回 false）
@@ -144,7 +122,7 @@ export class InMemoryRoundStore implements IRoundStore {
    * 获取孤立的问答闭环列表
    *
    * 判据 = **不在任何会话 roundIds 中** + `createdAt` 超龄（引用集合由会话侧现场注入）。
-   * 未注入引用真源时返回空数组——宁可不回收，也不按过期 `refCount` 误删。
+   * 未注入引用真源时返回空数组——宁可不回收，也不按过期计数误删。
    *
    * @param minAgeMs - 最小存活时间（毫秒）：给「刚失去引用」的轮留后悔窗口
    * @returns 孤立 Round 数组
@@ -163,10 +141,10 @@ export class InMemoryRoundStore implements IRoundStore {
   /**
    * 列出指定日期最近未完成（pending/error）的崩溃残留轮（step 原子落盘）。
    *
-   * 崩溃发生在 appendAssistant 前时，该轮 refCount=0、未登记会话、orphan 但可能有已落盘
+   * 崩溃发生在 appendAssistant 前时，该轮未收场、未登记会话、orphan 但可能有已落盘
    * processEvents（step 检查点）。宿主重启后经此口「找到」中断轮，再调收场方法
    * （MessageHistory.appendInterrupted）**升级为正常 stop turn**（非半成品草稿）。
-   * 只读、不改写、不登记会话；升级完成（complete + refCount>0）前为打捞窗口内中间态，
+   * 只读、不改写、不登记会话；升级完成（已登记会话且收场）前为打捞窗口内中间态，
    * 超龄仍未升级的中断轮由 GC 回收（默认 24h 存活保护覆盖打捞窗口，不误回收）。
    *
    * @param date - YYYY-MM-DD **本地日期**（与会话 ID 日期同口径）：按本地日区间
@@ -187,8 +165,8 @@ export class InMemoryRoundStore implements IRoundStore {
     // ⚠️ `interrupted` **不入本打捞口**：它已是「已收场的停 turn」，不属崩溃残留。
     // 纪律：勿因「grep 到零写点」而删该字段（它是打捞条件的组成部分，非死代码）。
     //
-    // 🔴 ADR-044：判据**不再含 `refCount === 0`**（与宿主 `workspaceRoundStore` 同款改动）。
-    // 建轮即 refCount 1，沿用旧判据会让崩溃残留轮永远捞不到 ⇒ 跨重启恢复失效。
+    // 🔴 ADR-044：判据 = 「未收场」，与宿主 `workspaceRoundStore` 同款。
+    // 建轮即登记会话，若再叠加「未被引用」这一前置条件，崩溃残留轮会永远捞不到。
     const interrupted = Array.from(this.rounds.values())
       .filter((r) => r.status === 'pending' || r.status === 'error')
       .filter((r) => isWithinLocalDay(r.createdAt, date))

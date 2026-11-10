@@ -121,7 +121,7 @@ describe('SeedOrchestrator 最小 turn', () => {
 
     expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
     // 非正常收场统一收口（SSOT）：failed 与 aborted 共用 appendInterrupted。
-    // 若此处直接 `return streamResult` → 轮停在 pending + refCount=0，运行期无人收尾
+    // 若此处直接 `return streamResult` → 轮停在 pending 且无人收尾，运行期无人收尾
     // → 孤儿轮（宿主须等下次重启才由 upgradeInterruptedRounds 打捞）。
     expect(mocks.history.appendInterrupted).toHaveBeenCalledWith(
       expect.any(String),

@@ -4,12 +4,12 @@
  * 覆盖真实生产写点组合链路（不经 mock，直接使用内核实现）：
  *   MessageHistory（appendUser/appendAssistant/forkSession）
  *   + InMemorySessionStore（appendRoundId/deleteSession 现场派生引用集合）
- *   + InMemoryRoundStore（物理轮；refCount 仅作存在性标记）
+ *   + InMemoryRoundStore（物理轮；引用状态只存在于会话 roundIds）
  *   + InMemoryStorage（round-summary 记忆 + purge）
  *   + GCService（孤儿回收 + 摘要物理清理）
  *
  * 核心验证（6.0.0 批 1 口径）：
- *   - **引用真源 = 会话 roundIds**：分叉只复制指针，不改轮次文件、不改 refCount
+ *   - **引用真源 = 会话 roundIds**：分叉只复制指针，不改轮次文件
  *   - 删除源会话：共享轮存活、独占轮按派生集合判 0 回收
  *   - GC：只清「不在任何会话 roundIds 中」的轮 + 其摘要（purge）
  *   - 接受判据：10 轮（5 引用 / 5 孤儿）sweep 后引用轮全在、孤儿全收
@@ -115,13 +115,12 @@ describe('Round 引用生命周期端到端', () => {
     expect(sessionStore.referencedIds().sort()).toEqual([r1, r2, r3].sort());
 
     // 2. 从 r2 分叉：共享轮仍只有一份物理文件，引用集合多出一个会话
+    const beforeFork = [r1, r2, r3].map((id) => JSON.stringify(roundStore.getById(id)));
     const fork = history.forkSession(r2);
     const forkSessionId = `${fork.date}-${fork.newSession}`;
     expect(sessionStore.getRoundIds(forkSessionId)).toEqual([r1, r2]);
-    // refCount 冻结：分叉不改写轮次文件
-    expect(roundStore.getById(r1)!.refCount).toBe(1);
-    expect(roundStore.getById(r2)!.refCount).toBe(1);
-    expect(roundStore.getById(r3)!.refCount).toBe(1);
+    // 分叉只复制指针：轮次文件内容逐字节不变（引用状态不落在轮对象上）
+    expect([r1, r2, r3].map((id) => JSON.stringify(roundStore.getById(id)))).toEqual(beforeFork);
 
     // 3. 删除源会话：共享轮 r1/r2 仍被分叉会话引用 ⇒ 存活；独占轮 r3 无人引用 ⇒ 当场回收
     sessionStore.deleteSession(sourceSessionId);

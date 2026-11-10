@@ -70,8 +70,6 @@ describe('降级策略 · P1 消息持久化', () => {
       getByIds: vi.fn(),
       listAll: vi.fn(),
       delete: vi.fn(),
-      decrementRef: vi.fn(),
-      incrementRef: vi.fn(),
     };
     const history = new MessageHistory(failingStore, undefined, 'main', mockRoundStore);
 
@@ -91,8 +89,6 @@ describe('降级策略 · P1 消息持久化', () => {
       getByIds: vi.fn(),
       listAll: vi.fn(),
       delete: vi.fn(),
-      decrementRef: vi.fn(),
-      incrementRef: vi.fn(),
     };
     const history = new MessageHistory(failingStore, undefined, 'main', mockRoundStore);
 
@@ -108,8 +104,6 @@ describe('降级策略 · P1 消息持久化', () => {
       getByIds: vi.fn(),
       listAll: vi.fn(),
       delete: vi.fn(),
-      decrementRef: vi.fn(),
-      incrementRef: vi.fn(),
     };
     const history = new MessageHistory(failingStore, undefined, 'main', mockRoundStore);
 
@@ -162,8 +156,6 @@ describe('降级策略 · 日志格式一致性', () => {
       getByIds: vi.fn(),
       listAll: vi.fn(),
       delete: vi.fn(),
-      decrementRef: vi.fn(),
-      incrementRef: vi.fn(),
     };
     const history = new MessageHistory(failingStore, undefined, 'main', mockRoundStore);
 

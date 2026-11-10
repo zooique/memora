@@ -279,8 +279,8 @@ describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1�
   });
 
   // ─── ADR-044：存在性由「创建」决定，不由「收场」决定 ───────────────
-  // 变异锚：把 refCount 改回 0、把 appendRoundId 移回收场侧 ⇒ 本用例前三条断言红。
-  it('ADR-044 建轮即入会话：新建 pending 轮立即归属会话且 refCount 1，收场不再加计数', async () => {
+  // 变异锚：把 appendRoundId 移回收场侧 ⇒ 本用例前两条断言红。
+  it('ADR-044 建轮即入会话：新建 pending 轮立即归属会话，收场不重复登记', async () => {
     const { history, roundStore, sessionStore } = createRoundBackedHistory();
     const roundId = generateRoundId();
     await history.appendUser('输入', roundId);
@@ -289,20 +289,18 @@ describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1�
     expect(sessionStore.getRoundIds(sessionId)).toContain(roundId);
     const created = roundStore.getById(roundId);
     expect(created?.status).toBe('pending');
-    expect(created?.refCount).toBe(1);
-    // 收场只改状态：refCount 不再 +1，roundIds 不重复登记
+    // 收场只改状态：roundIds 不重复登记
     await history.appendAssistant('回答完毕', roundId);
     const settled = roundStore.getById(roundId);
     expect(settled?.status).toBe('complete');
-    expect(settled?.refCount).toBe(1);
     expect(sessionStore.getRoundIds(sessionId).filter((id) => id === roundId)).toHaveLength(1);
   });
 
-  it('旧档无归属轮（refCount 0）：收场不补登记、不回写计数（引用真源 = 会话 roundIds）', async () => {
+  it('旧档无归属轮：收场不补登记（引用真源 = 会话 roundIds）', async () => {
     const { history, roundStore, sessionStore } = createRoundBackedHistory();
     const roundId = generateRoundId();
     const ts = new Date().toISOString();
-    // 直接落一个「旧档」轮：refCount 0 且不在会话（模拟 ADR-044 之前落盘）
+    // 直接落一个「旧档」轮：不在会话（模拟 ADR-044 之前落盘）
     roundStore.save({
       id: roundId,
       userMessage: {
@@ -313,15 +311,13 @@ describe('MessageHistory · 在途提问落盘与收场转化（E2E-ASK-LOSS-1�
       } as RoundMessage,
       status: 'pending',
       createdAt: ts,
-      refCount: 0,
     });
     const sessionId = history.currentSessionName;
     expect(sessionStore.getRoundIds(sessionId)).not.toContain(roundId);
     await history.appendInterrupted(roundId);
     const settled = roundStore.getById(roundId);
     expect(settled?.status).toBe('interrupted');
-    // 不判不改不回写：旧值原样保留；也不补登记（由用户/宿主显式恢复，而非收场暗中迁移）
-    expect(settled?.refCount).toBe(0);
+    // 不补登记（由用户/宿主显式恢复，而非收场暗中迁移）
     expect(sessionStore.getRoundIds(sessionId)).not.toContain(roundId);
   });
 
@@ -698,7 +694,6 @@ describe('MessageHistory · appendInterrupted（崩溃残留轮升级为 stop tu
     expect(round.assistantMessage?.content).toBe(
       '已整理出一版草稿' + LOOP_CONSTANTS.DEFAULT_INTERRUPTED_MARK,
     );
-    expect(round.refCount).toBe(1);
     expect(sessionStore.getRoundIds(`${todayDate()}-main`)).toContain(roundId);
   });
 
@@ -725,7 +720,6 @@ describe('MessageHistory · appendInterrupted（崩溃残留轮升级为 stop tu
     const round = roundStore.getById(roundId)!;
     expect(round.status).toBe('interrupted');
     expect(round.assistantMessage).toBeUndefined(); // §一·五：无摘要也按 stop 语义收场
-    expect(round.refCount).toBe(1);
     expect(sessionStore.getRoundIds(`${todayDate()}-main`)).toContain(roundId);
     // processEvents 原样保留（宿主 step 检查点落盘数据不被升级破坏）
     expect(round.processEvents?.[0]?.type).toBe('tool_start');
@@ -755,6 +749,5 @@ describe('MessageHistory · appendInterrupted（崩溃残留轮升级为 stop tu
 
     const ids = sessionStore.getRoundIds(`${todayDate()}-main`);
     expect(ids.filter((id) => id === roundId)).toHaveLength(1); // 只登记一次
-    expect(roundStore.getById(roundId)!.refCount).toBe(1); // 冻结值为存在性标记，不随升级变化
   });
 });

@@ -12,7 +12,6 @@ import {
   ALL_BUILTIN_TOOL_DEFS,
   BUILTIN_TOOLS,
   BUILTIN_TOOL_IDEMPOTENCY,
-  OPAQUE_WRITE_TOOL_NAMES,
   PATH_WRITE_TOOL_NAMES,
   shouldSkipForIdempotency,
   WEB_SEARCH_TOOL,
@@ -681,9 +680,12 @@ describe('builtinTools · 只读闸标记（readonly）全覆盖', () => {
 describe('builtinTools · 写盘声明位（diskWrite）与派生索引', () => {
   it('声明契约钉：path 集 / opaque 集的工具名（行内声明变动必须复审本例）', () => {
     // 跨模块契约钉：串行闸与宿主改动追踪都由这两个集合派生，名单变动 = 排序语义变动。
-    // 序无关比较（派生序 = 定义排布序，不承载语义）
+    // 序无关比较（派生序 = 定义排布序，不承载语义）；opaque 集直接由定义行派生（7.0.0 起）
+    const opaqueNames = ALL_BUILTIN_TOOL_DEFS.filter((t) => t.diskWrite === 'opaque').map(
+      (t) => t.name,
+    );
     expect([...PATH_WRITE_TOOL_NAMES].sort()).toEqual(['delete_file', 'write_file']);
-    expect([...OPAQUE_WRITE_TOOL_NAMES].sort()).toEqual(
+    expect(opaqueNames.sort()).toEqual(
       // run_command 在列：任意 shell 命令可改盘任意路径，目标不可静态定位 ⇒ opaque 屏障
       ['register_work', 'run_code', 'run_command', 'run_project_script', 'run_skill_script'].sort(),
     );
@@ -698,8 +700,11 @@ describe('builtinTools · 写盘声明位（diskWrite）与派生索引', () => 
   it('派生不变量：WRITE_PATH_EXTRACTORS 键集 ≡ PATH_WRITE_TOOL_NAMES（构造级单源）', () => {
     expect(Object.keys(WRITE_PATH_EXTRACTORS).sort()).toEqual([...PATH_WRITE_TOOL_NAMES].sort());
     // opaque 工具不得进提取器表——目标不可定位，进表 = 假定位（串行键会静默失真）
-    for (const name of OPAQUE_WRITE_TOOL_NAMES) {
-      expect(WRITE_PATH_EXTRACTORS[name], `${name} 是 opaque 写，不应有路径提取器`).toBeUndefined();
+    for (const def of ALL_BUILTIN_TOOL_DEFS.filter((t) => t.diskWrite === 'opaque')) {
+      expect(
+        WRITE_PATH_EXTRACTORS[def.name],
+        `${def.name} 是 opaque 写，不应有路径提取器`,
+      ).toBeUndefined();
     }
   });
 });

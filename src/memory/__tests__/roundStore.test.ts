@@ -16,7 +16,7 @@ import { completeRoundFixture, createPendingRoundFixture } from './helpers/round
 
 describe('问答闭环存储', () => {
   let store: InMemoryRoundStore;
-  /** 引用真源（模拟会话 roundIds）：孤儿判定现场派生，不读 refCount */
+  /** 引用真源（模拟会话 roundIds）：孤儿判定现场派生 */
   let referencedIds: Set<string>;
 
   beforeEach(() => {
@@ -39,11 +39,10 @@ describe('问答闭环存储', () => {
       expect(retrieved?.id).toBe(round.id);
       expect(retrieved?.status).toBe('pending');
       expect(retrieved?.userMessage.content).toBe('你好');
-      expect(retrieved?.refCount).toBe(1);
     });
 
     it('listInterruptedRecent：列出指定日期崩溃残留轮（pending/error + 倒序）', () => {
-      // 构造崩溃残留轮（判据只看「未收场 + 本地日」，与 refCount 无关）
+      // 构造崩溃残留轮（判据只看「未收场 + 本地日」）
       const mk = (date: string, min: string, status: Round['status']): void => {
         const base = createPendingRoundFixture(`q-${min}`);
         // status 覆盖为 complete（此处仅验证过滤，不做模型完整性校验）
@@ -166,24 +165,7 @@ describe('问答闭环存储', () => {
       expect(completedList.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('引用计数 API 为 no-op（refCount 冻结为存在性标记）', () => {
-      const round = createPendingRoundFixture('测试引用');
-      store.save(round);
-
-      // 建轮固定为 1
-      const initial = store.getById(round.id);
-      expect(initial?.refCount).toBe(1);
-
-      // incrementRef / decrementRef 不再修改计数（引用真源 = 会话 roundIds）
-      store.incrementRef(round.id);
-      expect(store.getById(round.id)?.refCount).toBe(1);
-
-      store.decrementRef(round.id);
-      store.decrementRef(round.id);
-      expect(store.getById(round.id)?.refCount).toBe(1);
-    });
-
-    it('delete 不再有 refCount 护栏（引用判定由调用方/会话负责）', () => {
+    it('delete 无引用护栏（引用判定由调用方/会话负责）', () => {
       const round = createPendingRoundFixture('待删除');
       store.save(round);
 
@@ -235,11 +217,8 @@ describe('问答闭环存储', () => {
       // 获取不存在的 ID
       expect(store.getById('不存在的-id')).toBeNull();
 
-      // 增加不存在的 ID 的引用（不报错）
-      expect(() => store.incrementRef('不存在的-id')).not.toThrow();
-
-      // 减少不存在的 ID 的引用（不报错）
-      expect(() => store.decrementRef('不存在的-id')).not.toThrow();
+      // 删除不存在的 ID（不报错，返回 false）
+      expect(store.delete('不存在的-id')).toBe(false);
     });
 
     it('应该支持清空操作', () => {
@@ -416,7 +395,6 @@ describe('问答闭环存储', () => {
       expect(round.status).toBe('pending');
       expect(round.userMessage.content).toBe('测试消息');
       expect(round.userMessage.role).toBe('user');
-      expect(round.refCount).toBe(1);
       expect(round.createdAt).toBeDefined();
     });
 

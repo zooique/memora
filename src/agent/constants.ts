@@ -54,7 +54,7 @@ export const AGENT_CONSTANTS = {
 
   /**
    * 孤儿 Round 垃圾回收周期（毫秒）。
-   * 每天执行一次：清理 refCount=0 且超龄的孤立问答闭环（崩溃残留 pending / 已删会话遗留）。
+   * 每天执行一次：清理「不在任何会话 roundIds 中」且超龄的孤立问答闭环（崩溃残留 pending / 已删会话遗留）。
    */
   GC_INTERVAL_MS: 24 * 60 * 60 * 1000,
 

@@ -2,6 +2,9 @@
  * 统一错误类型——把"系统 Error + 英文 stack"包装成"分类清晰 + 中文友好 + 有下一步建议"。
  * 展示：标题（一眼看出问题）+ 详情（排查用）+ 建议（怎么修复）。
  *
+ * **渲染归属消费者**（7.0.0）：本类只承载结构化字段（title / detail / suggestions / category），
+ * 不提供 `format()`——各宿主按自己的界面语言与排版拼接文案，内核不硬编码展示标签。
+ *
  * **形态**：错误类只有 `MemoraError` 一个（承载 title/detail/suggestions/category）；
  * 分类不靠子类，靠 `category` 字段 —— 工厂函数按分类建实例：
  * `configError` / `networkError` / `llmError` / `toolError` / `securityError`，
@@ -92,20 +95,6 @@ export class MemoraError extends Error {
     this.category = opts.category;
     this.errorCode = opts.errorCode;
     this.cause = opts.cause;
-  }
-
-  /** 格式化为用户可读的展示字符串 */
-  format(): string {
-    const lines: string[] = [];
-    lines.push(`❌ ${this.title}`);
-    if (this.detail) lines.push(`   原因：${this.detail}`);
-    if (this.suggestions.length > 0) {
-      lines.push(`   建议：`);
-      for (const s of this.suggestions) {
-        lines.push(`     - ${s}`);
-      }
-    }
-    return lines.join('\n');
   }
 }
 

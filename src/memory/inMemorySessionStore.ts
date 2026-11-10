@@ -214,7 +214,7 @@ export class InMemorySessionStore implements ISessionStore {
    * 删除会话
    *
    * 引用真源 = 会话 `roundIds`：**先注销会话**，再现场派生「仍被其他会话引用的轮」，
-   * 只回收无人引用者。不再使用 `Round.refCount`（该字段非真源，冻结为存在性标记）。
+   * 只回收无人引用者（引用状态只存在于会话 roundIds，轮对象上不持有计数）。
    */
   deleteSession(sessionId: string): void {
     const roundIds = this.roundIdsMap.get(sessionId) ?? [];

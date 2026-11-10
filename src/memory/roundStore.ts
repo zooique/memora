@@ -605,19 +605,6 @@ export interface Round {
   completedAt?: string;
 
   /**
-   * 引用计数（**历史字段，非引用真源**，@deprecated）
-   *
-   * 🔴 引用真源 = 会话的 `roundIds` 列表（ISessionStore）。任何「是否还有会话引用」的判定
-   * 都必须从会话集合**现场派生**，禁止读本字段（冻结口径：6.0.0 批 1）。
-   *
-   * - **新建轮固定写 1**：它只是「该轮已创建」的标记，不再随分叉 / 删会话增减；
-   *   `incrementRef` / `decrementRef` 已降为 no-op（API 保留至 7.0.0）。
-   * - **旧档读入不判、不改、不回写**：历史值可能是 0 或任意数字，一律忽略。
-   * - 字段暂留仅为兼容旧档 schema，7.0.0 追加事件模型时移除。
-   */
-  refCount: number;
-
-  /**
    * 过程事件（每轮 UI 状态重建真相源，可选）
    *
    * 与 assistantMessage 同在闭环完成时刻定型（Write-once），存储于同一 Round 文件——
@@ -672,30 +659,10 @@ export interface IRoundStore {
   listAll(): Round[];
 
   /**
-   * 增加引用计数（**6.0.0 起为 no-op**，@deprecated）
-   *
-   * 引用真源 = 会话 `roundIds`；分叉只复制指针，不再改动任何轮次文件。
-   * 实现方**必须**不做持久化写入。API 保留至 7.0.0 以维持公开面稳定。
-   *
-   * @param roundId - 需要增加引用的 Round ID
-   */
-  incrementRef(roundId: string): void;
-
-  /**
-   * 减少引用计数（**6.0.0 起为 no-op**，@deprecated）
-   *
-   * 删除会话 / 截断时先收缩会话 `roundIds`，再由会话侧现场派生引用集合判 0。
-   * 实现方**必须**不做持久化写入。API 保留至 7.0.0。
-   *
-   * @param roundId - 需要减少引用的 Round ID
-   */
-  decrementRef(roundId: string): void;
-
-  /**
    * 删除问答闭环（物理删除，不可恢复）
    *
-   * 🔴 **不再有 `refCount` 前置条件**（该字段非引用真源）。调用方必须先确认该轮
-   * 已不在任何会话的 `roundIds` 中；本方法只负责物理层。
+   * 🔴 调用方必须先确认该轮已不在任何会话的 `roundIds` 中（引用真源 = 会话集合）；
+   * 本方法只负责物理层。
    * 宿主实现应移入 `.trash` 保留 7 天，而非直接抹除。
    *
    * @param roundId - 要删除的 Round ID
@@ -715,7 +682,7 @@ export interface IRoundStore {
    * 获取孤立的问答闭环列表
    *
    * 🔴 **判据 = 「不在任何会话的 `roundIds` 中」且 `createdAt` 超龄**；实现方必须现场派生
-   * 引用集合（宿主经 `sessionStore.referencedIds()`），**禁止读 `Round.refCount`**。
+   * 引用集合（宿主经 `sessionStore.referencedIds()`）。
    * 未接入引用真源的实现一律返回空数组——宁可不回收，也不按过期计数误删。
    *
    * 用于 GC / 启动清扫的候选枚举（只出候选，不在本方法内删除）。

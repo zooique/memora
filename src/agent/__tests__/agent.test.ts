@@ -935,18 +935,6 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
       listAll(): Round[] {
         return Array.from(rounds.values());
       },
-      incrementRef(roundId: string) {
-        const round = rounds.get(roundId);
-        if (round) {
-          rounds.set(roundId, { ...round, refCount: round.refCount + 1 });
-        }
-      },
-      decrementRef(roundId: string) {
-        const round = rounds.get(roundId);
-        if (round && round.refCount > 0) {
-          rounds.set(roundId, { ...round, refCount: round.refCount - 1 });
-        }
-      },
       delete(roundId: string): boolean {
         return rounds.delete(roundId);
       },
@@ -2349,7 +2337,7 @@ describe('Agent · chat() 中断保留文本', () => {
   it('LLM 错误（非 abort）零产出 → 轮即收场 interrupted 且可被会话加载（真机故障回归）', async () => {
     // 真机故障（互动叙事平台实测）：12 次 LLM 调用 / 26 次 read_file 后
     // 第 12 次调用被服务端 4xx 拒绝 → consumeExecutionStream 返回 failed:true。
-    // 若 act() 的 `if (streamResult.failed) return` 直接返回 → 轮停在 pending + refCount=0，
+    // 若 act() 的 `if (streamResult.failed) return` 直接返回 → 轮停在 pending 且无人收尾，
     // 运行期无人收尾 → 宿主表现为「中止后重启，这一轮没有被重新渲染」（用户实测）。
     // 契约：收口到 appendInterrupted（与用户手动中止**同一原语**）→ 运行期即落 interrupted + 登记会话。
     const roundStore = new InMemoryRoundStore();

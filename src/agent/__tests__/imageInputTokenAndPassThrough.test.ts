@@ -52,8 +52,6 @@ function makeRound(id: string, attachments?: readonly ImageRef[]): Round {
     },
     status: 'complete',
     createdAt: nowIso(),
-    // refCount=1：模拟「已被某会话登记」的在役问答闭环（0 会被 GC 判为孤儿，与本用例无关）
-    refCount: 1,
   };
 }
 

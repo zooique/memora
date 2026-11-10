@@ -311,7 +311,7 @@ export class MessageHistory {
    *
    * Round-based 路径：roundStore 注入且 roundId 存在时，创建 pending Round 并**立即**归属当前会话
    * （appendRoundId，ADR-044「建轮即入会话」）。存在性由**创建**决定、不由**收场**决定——
-   * 未收场的轮同样可见、可删、可续跑。引用真源 = 会话 `roundIds`（`refCount` 仅为存在性标记）。
+   * 未收场的轮同样可见、可删、可续跑。引用真源 = 会话 `roundIds`。
    *
    * 交互输入：opts.interactive 为真且 roundId 对应轮已存在（prepare 建 pending 或
    * 暂停已完成轮）时，不再创建/覆盖新轮——按序追加到该轮 interactiveInputs，保问答闭环不分裂。
@@ -432,9 +432,7 @@ export class MessageHistory {
           createdAt: message.timestamp,
           // 🔴 ADR-044 建轮即入会话：存在性由「创建」决定，不由「收场」决定。
           // 创建它的会话立即持有引用（写入会话 roundIds ⇒ 会话视图立即可见、可删、可续跑）。
-          // `refCount: 1` 仅为旧档 schema 的**存在性标记**（非引用真源，冻结不再变更）；
-          // 引用变化只发生在会话 roundIds 上，分叉 / 删除不再改写轮次文件。
-          refCount: 1,
+          // 引用状态只存在于会话 roundIds 上，分叉 / 删除不改写轮次文件。
         };
         this.roundStore.save(pendingRound);
         this.pendingRounds.set(roundId, pendingRound);
@@ -548,7 +546,7 @@ export class MessageHistory {
    * 追加 assistant 消息到当前会话（持久化失败不抛出）。
    *
    * Round-based 路径：完成 pending Round 时**只改状态**——归属已在建轮时登记（ADR-044），
-   * 此处不再 incrementRef / appendRoundId。旧档 `refCount` **不判、不改、不回写**。
+   * 此处不再登记、不回写任何引用状态。旧档轮上的历史引用字段**不判、不改、不回写**。
    * pending 缓存丢失（跨重启）时从 RoundStore 取回补全；Round **不存在时 fail-closed**：
    * 不造轮、不登记——没有真实 user 原文，凭空造轮等于编造用户从未发过的历史。
    *
@@ -603,8 +601,8 @@ export class MessageHistory {
       }
 
       if (completed) {
-        // 🔴 ADR-044：归属已在**建轮**时登记（appendUser），收场只改状态——不再登记、不再加计数。
-        // 旧档轮（含 refCount 为 0 的历史半截轮）**不判不改不回写**（引用真源 = 会话 roundIds）。
+        // 🔴 ADR-044：归属已在**建轮**时登记（appendUser），收场只改状态——不再登记、不加任何引用状态。
+        // 旧档轮（含历史上「未被引用」的半截轮）**不判不改不回写**（引用真源 = 会话 roundIds）。
         // 由此 `isRoundSettled` 不承担「防重复登记」职责（收场已不登记），但保留给
         // appendInterrupted 的「已收场即跳过」幂等判据——两处语义不同，勿合并。
         this.roundStore.save(completed);
@@ -726,7 +724,7 @@ export class MessageHistory {
         pendingAsk: undefined,
       };
       this.pendingRounds.delete(roundId);
-      // 🔴 ADR-044：归属已在建轮时登记，收场只改状态；旧档 refCount 不判不改不回写。
+      // 🔴 ADR-044：归属已在建轮时登记，收场只改状态；旧档引用字段不判不改不回写。
       this.roundStore.save(completed);
       const sessionId = this.currentSessionName;
       logger.info(

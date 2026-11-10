@@ -47,29 +47,26 @@ describe('ISessionStore 契约 · round-based 写入', () => {
       getById: vi.fn().mockReturnValue(null),
       getByIds: vi.fn().mockReturnValue([]),
       listAll: vi.fn().mockReturnValue([]),
-      incrementRef: vi.fn(),
-      decrementRef: vi.fn(),
       delete: vi.fn().mockReturnValue(true),
     } as unknown as IRoundStore;
     history = new MessageHistory(mockSessionStore, undefined, 'main', mockRoundStore);
   });
 
-  // ADR-044：存在性由「创建」决定，不由「收场」决定——建轮即 refCount 1 并登记会话。
-  it('appendUser 建轮即入会话：pending 轮 refCount 1 且立即登记 roundId', async () => {
+  // ADR-044：存在性由「创建」决定，不由「收场」决定——建轮即登记会话。
+  it('appendUser 建轮即入会话：pending 轮立即登记 roundId', async () => {
     await history.appendUser('测试消息', 'round-1');
 
     expect(mockRoundStore.save).toHaveBeenCalledTimes(1);
     const saved = vi.mocked(mockRoundStore.save).mock.calls[0]![0];
     expect(saved.status).toBe('pending');
-    expect(saved.refCount).toBe(1); // 创建它的会话立即引用它
     expect(mockSessionStore.appendRoundId).toHaveBeenCalledWith(
       expect.stringContaining('-main'),
       'round-1',
     );
   });
 
-  // ADR-044：收场只改状态——不加计数、不重复登记（归属已在建轮时给出）。
-  it('appendAssistant 完成 Round：只改状态，不重复登记、不加计数', async () => {
+  // ADR-044：收场只改状态——不重复登记（归属已在建轮时给出）。
+  it('appendAssistant 完成 Round：只改状态，不重复登记', async () => {
     await history.appendUser('测试消息', 'round-1');
     await history.appendAssistant('回复消息', 'round-1');
 
@@ -77,20 +74,17 @@ describe('ISessionStore 契约 · round-based 写入', () => {
     const saved = vi.mocked(mockRoundStore.save).mock.calls[1]![0];
     expect(saved.assistantMessage?.content).toBe('回复消息');
     expect(saved.status).toBe('complete');
-    expect(saved.refCount).toBe(1); // 建轮已是 1，收场不变
-    expect(mockRoundStore.incrementRef).not.toHaveBeenCalled();
     // 只有建轮那一次登记
     expect(mockSessionStore.appendRoundId).toHaveBeenCalledTimes(1);
   });
 
-  // 旧档兼容纪律：refCount 不是引用真源 ⇒ **读入不判、不改、不回写**，收场也不补登记。
-  it('appendAssistant 遇到旧档轮（refCount 0）：不判不改不回写，也不补登记', async () => {
+  // 旧档轮（建轮时未登记会话的历史数据）：收场不补登记，轮内容照常完成。
+  it('appendAssistant 遇到旧档无归属轮：收场不补登记', async () => {
     mockRoundStore.getById = vi.fn().mockReturnValue({
       id: 'round-1',
       userMessage: { id: 'm1', role: 'user', content: 'q', timestamp: 't' },
       status: 'pending',
       createdAt: 't',
-      refCount: 0,
     } as never);
     await history.appendAssistant('回复消息', 'round-1');
 
@@ -98,8 +92,6 @@ describe('ISessionStore 契约 · round-based 写入', () => {
     const saved = vi.mocked(mockRoundStore.save).mock.calls[0]![0];
     expect(saved.assistantMessage?.content).toBe('回复消息');
     expect(saved.status).toBe('complete');
-    expect(saved.refCount).toBe(0); // 不回写：字段值原样保留，不参与任何判定
-    expect(mockRoundStore.incrementRef).not.toHaveBeenCalled();
     expect(mockSessionStore.appendRoundId).not.toHaveBeenCalled(); // 收场不补登记
   });
 

@@ -29,7 +29,6 @@ export function createPendingRoundFixture(userMessage: string): Round {
     },
     status: 'pending',
     createdAt: now,
-    refCount: 1,
   };
 }
 

@@ -445,7 +445,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.internals.chatLockManager = new ChatLockManager();
 
     // 孤儿 Round 垃圾回收服务：roundStore+storage 均为构造期稳定注入（不随组件重装配变化），
-    // 每日周期清理 refCount=0 且超龄的孤立问答闭环（崩溃残留 pending / 已删会话遗留），防止存储膨胀。
+    // 每日周期清理「不在任何会话 roundIds 中」且超龄的孤立问答闭环（崩溃残留 pending / 已删会话遗留），防止存储膨胀。
     // shouldSkip：对话进行中跳过本次（minAgeMs 判龄对长任务不可靠，防进行中轮被误清）
     if (this.#config.roundStore && this.#config.storage) {
       this.internals.gcService = createDefaultGCService(

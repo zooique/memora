@@ -2,7 +2,7 @@
  * 垃圾回收服务 —— 清理孤立的问答闭环和关联摘要
  *
  * 设计理念：
- * - 候选判据 = **引用真源**（会话 `roundIds`）的 Round GC，`Round.refCount` 不参与判定
+ * - 候选判据 = **引用真源**（会话 `roundIds`）的 Round GC，轮的引用状态不落在轮对象上
  * - 只清理「不在任何会话 roundIds 中」且超龄的 Round（不分状态：pending/error 崩溃残留同样可回收）
  * - 同时清理关联的记忆摘要（round-summary）
  * - 支持定时执行和手动触发
@@ -79,7 +79,7 @@ export interface GCResult {
   orphaned: number;
   /** 成功删除的 Round 数 */
   deleted: number;
-  /** 删除失败的数量（命名历史：旧 refCount 护栏；现为存储层拒删 / IO 失败） */
+  /** 删除失败的数量（命名历史：旧引用计数护栏；现为存储层拒删 / IO 失败） */
   failedDueToRefCount: number;
   /** 清理的记忆摘要数量 */
   memoryCleaned: number;
@@ -152,7 +152,7 @@ export class GCService {
 
     try {
       // 1. 获取所有孤立的 Round
-      // 判据真源在实现方（宿主经 sessionStore.referencedIds() 现场派生），本服务不读 refCount
+      // 判据真源在实现方（宿主经 sessionStore.referencedIds() 现场派生），本服务不读轮的引用状态
       const listOrphanedFn = this.roundStore.listOrphaned;
       const orphanedRounds = listOrphanedFn
         ? listOrphanedFn.call(this.roundStore, this.config.minAgeMs)
@@ -186,7 +186,7 @@ export class GCService {
               result.memoryCleaned++;
             }
           } else {
-            // 存储层拒绝删除 / IO 失败（字段名是历史命名，不再是 refCount 护栏）
+            // 存储层拒绝删除 / IO 失败（字段名是历史命名，不再是引用计数护栏）
             result.failedDueToRefCount++;
           }
         }

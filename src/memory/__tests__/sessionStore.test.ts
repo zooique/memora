@@ -650,7 +650,7 @@ describe('内核 InMemorySessionStore（真实实现）· round-based 行为', (
 
     expect(store.getSessionMeta('2026-09-13-main')).toBeUndefined();
     expect(store.getRoundIds('2026-09-13-main')).toEqual([]);
-    // 无其他会话引用 ⇒ 轮被回收；refCount 冻结为存在性标记，不参与判定也不再递减
+    // 无其他会话引用 ⇒ 轮被回收；引用状态只存在于会话 roundIds，轮对象上不持计数
     expect(roundStore.getById(roundId)).toBeNull();
   });
 });

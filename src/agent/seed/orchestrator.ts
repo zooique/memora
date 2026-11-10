@@ -250,7 +250,7 @@ export class SeedOrchestrator {
     // 当前无产品需求。中断轮保留 processEvents 原始现场、状态诚实区分（防「假性 complete 吞现场」）。
     //
     // 无产出分支也必须走本原语收场：failed 直接 return 或 aborted 仅有产出才写史，都会在
-    // 无产出时留下 refCount=0 的 pending 孤儿轮——运行期无人收尾，只能等宿主重启由
+    // 无产出时留下未收场的 pending 孤儿轮——运行期无人收尾，只能等宿主重启由
     // chatPanel.upgradeInterruptedRounds 打捞升级（真实故障：LLM 4xx 中断的长任务轮）。
     // appendInterrupted 同时覆盖两种形态：有产出 → 写 assistantMessage + 标记；无产出 →
     // 不写 assistantMessage，仍按 stop 语义收场（该原语的存在理由即此）。
