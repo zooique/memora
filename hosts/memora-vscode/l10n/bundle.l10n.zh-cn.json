@@ -570,6 +570,8 @@
   "Overrides the same-named {0} skill (the overridden version is not shown in this list)": "覆盖同名的{0}技能（被覆盖的版本不在本列表中显示）",
   "Pin: {0}": "钉住：{0}",
   "Pinned (kept after sending)": "已钉住（发送后保留）",
+  "This session has {0} corrupted pinned item(s) (metadata was changed externally); they were skipped — pin them again to restore the list": "本会话有 {0} 条钉住条目已损坏（元数据被外部改动），已跳过；重新钉住即可恢复清单",
+  "Missing LLM configuration: add a provider in the settings panel (Model tab), or set the MEMORA_BASE_URL and MEMORA_MODEL environment variables (for example MEMORA_BASE_URL=https://api.xiaomimimo.com/v1 and MEMORA_MODEL=deepseek-chat)": "缺少 LLM 配置：请在设置面板「大模型」页中添加配置，或设置环境变量 MEMORA_BASE_URL 和 MEMORA_MODEL（如 MEMORA_BASE_URL=https://api.xiaomimimo.com/v1 且 MEMORA_MODEL=deepseek-chat）",
   "Refresh the skill list (rescan project and user skill directories)": "刷新技能列表（重扫项目与用户技能目录）",
   "Remove skill": "移除技能",
   "Remove skill: {0}": "移除技能：{0}",

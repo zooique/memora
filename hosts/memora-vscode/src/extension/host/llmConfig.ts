@@ -7,6 +7,7 @@
  *
  * 复用 memora 内核 createProviderFromConfig（内核不负责 provider 映射，宿主负责）。
  */
+import * as vscode from 'vscode';
 import { createProviderFromConfig, type ImageResolver, type LlmProvider } from '@zooique/memora';
 import type { ProviderStore } from '../providers/providerStore.js';
 
@@ -57,8 +58,9 @@ export async function createProvider(
   // baseUrl/model 缺失时抛出可读错误（引导打开配置面板）
   if (!baseUrl || !model) {
     throw new Error(
-      '缺少 LLM 配置：请在设置面板「大模型」页中添加配置，或设置环境变量 ' +
-        'MEMORA_BASE_URL 和 MEMORA_MODEL（如 MEMORA_BASE_URL=https://api.xiaomimimo.com/v1 且 MEMORA_MODEL=deepseek-chat）',
+      vscode.l10n.t(
+        'Missing LLM configuration: add a provider in the settings panel (Model tab), or set the MEMORA_BASE_URL and MEMORA_MODEL environment variables (for example MEMORA_BASE_URL=https://api.xiaomimimo.com/v1 and MEMORA_MODEL=deepseek-chat)',
+      ),
     );
   }
 

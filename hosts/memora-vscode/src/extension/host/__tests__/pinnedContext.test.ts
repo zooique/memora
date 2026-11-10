@@ -23,6 +23,11 @@ import type { SessionMeta, SessionPinnedItem } from '@zooique/memora';
 const h = vi.hoisted(() => ({ rootFsPath: '' as string }));
 
 vi.mock('vscode', () => ({
+  l10n: {
+    // 与 VS Code 同形的替身：返回键面并替换 {n}（生产文案已迁 l10n，断言按键面语义）
+    t: (message: string, ...args: (string | number)[]) =>
+      message.replace(/\{(\d+)\}/g, (_m: string, i: string) => String(args[Number(i)] ?? '')),
+  },
   workspace: {
     // 与生产同源：基准恒取 workspaceFolders[0]
     get workspaceFolders() {
@@ -187,7 +192,8 @@ describe('pushPinnedRefsTo（元数据 → 下行投影 + 落盘面形状闸）'
     });
     // 坏条目 2 条 ⇒ 一条可见提示（停留更久的 error 级）
     expect(posted[1]).toMatchObject({ type: 'notice', level: 'error' });
-    expect(String(posted[1]!.message)).toContain('2 条');
+    // 计数仍须可见（键面语义：`… has {0} corrupted pinned item(s) …`），只是语言换成键面
+    expect(String(posted[1]!.message)).toContain('2 corrupted pinned item');
   });
 
   it('无 sessionId（草稿态）⇒ 什么都不发', async () => {

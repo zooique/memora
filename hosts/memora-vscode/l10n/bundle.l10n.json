@@ -570,6 +570,8 @@
   "Overrides the same-named {0} skill (the overridden version is not shown in this list)": "",
   "Pin: {0}": "",
   "Pinned (kept after sending)": "",
+  "This session has {0} corrupted pinned item(s) (metadata was changed externally); they were skipped — pin them again to restore the list": "",
+  "Missing LLM configuration: add a provider in the settings panel (Model tab), or set the MEMORA_BASE_URL and MEMORA_MODEL environment variables (for example MEMORA_BASE_URL=https://api.xiaomimimo.com/v1 and MEMORA_MODEL=deepseek-chat)": "",
   "Refresh the skill list (rescan project and user skill directories)": "",
   "Remove skill": "",
   "Remove skill: {0}": "",

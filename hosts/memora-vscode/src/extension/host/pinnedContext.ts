@@ -220,7 +220,10 @@ export async function pushPinnedRefsTo(
     post({
       type: 'notice',
       level: 'error',
-      message: `本会话有 ${invalid} 条钉住条目已损坏（元数据被外部改动），已跳过；重新钉住即可恢复清单`,
+      message: vscode.l10n.t(
+        'This session has {0} corrupted pinned item(s) (metadata was changed externally); they were skipped — pin them again to restore the list',
+        invalid,
+      ),
     });
   }
 }

@@ -112,7 +112,8 @@ describe('宿主集成端到端测试', () => {
     });
 
     it('createProvider 缺少配置时抛出可读错误', async () => {
-      await expect(createProvider(undefined, {})).rejects.toThrow('缺少 LLM 配置');
+      // 文案已走 vscode.l10n.t：测试替身返回英文键面，断言键面前缀（判据不变，只是语言换成键面）
+      await expect(createProvider(undefined, {})).rejects.toThrow('Missing LLM configuration');
     });
   });
 
