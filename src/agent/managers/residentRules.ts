@@ -39,6 +39,16 @@ export const MAX_RESIDENT_TOTAL_CHARS = 10000;
 /** 项目规则段标题行（§4.2 定稿文案） */
 const SEGMENT_TITLE = '## 项目规则（本仓库具体约束；按清单顺序，靠前者优先）';
 
+/**
+ * Windows 盘符绝对路径形态（`C:\` / `C:/`）——补 `path.isAbsolute` 的平台缺口
+ *
+ * `path.isAbsolute` 是**平台相关**判据：POSIX 上 `C:/Windows/win.ini` 被判为相对路径，
+ * 会被当成工作区内文件名，最终 reason 退化成 `blocked-path`；而 Windows 上同一输入给出
+ * `outside-workspace`——reason 码是消费方可观测的公开字段，同一输入不得两平台两个答案。
+ * 故显式补齐盘符形态（POSIX 的 `/` 开头仍由 `isAbsolute` 覆盖），两平台判定一致。
+ */
+const WINDOWS_DRIVE_ABSOLUTE = /^[A-Za-z]:[\\/]/;
+
 /** 适用范围声明（§4.2 定稿文案；边界：不覆盖角色职责与工具边界） */
 const SEGMENT_USAGE =
   '- 适用范围：仅「具体约束」冲突；不改变角色职责与工具边界（角色是只读审查员时，本段不会让它变成改码角色）。';
@@ -158,7 +168,8 @@ export async function readResidentSource(
   source: string,
 ): Promise<ResidentSourceReadResult> {
   // ① 字符串层越界：绝对路径直接判外（resolveSafePath 虽也能挡，但先判可给出更准的文案）
-  if (isAbsolute(source)) {
+  //    判定必须**跨平台一致**：POSIX 的 path.isAbsolute 不认 Windows 盘符形态（见 WINDOWS_DRIVE_ABSOLUTE）
+  if (isAbsolute(source) || WINDOWS_DRIVE_ABSOLUTE.test(source)) {
     return {
       ok: false,
       failure: 'outside-workspace',
