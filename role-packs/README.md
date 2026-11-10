@@ -19,7 +19,7 @@
 - 新增 / 修改角色包：直接改本目录 → npm 包更新 + 宿主构建期自动同步，一处改处处生效。
 - 宿主如需 VS Code 专属角色包（非通用，需注入宿主专属工具），应明确约定归属；一旦进入共享范畴即移回本目录统一维护。
 
-## 角色包定位表（非全集，目录为准）
+## 角色包定位表（非全集，目录为准；新增包无需回填本表——本表解释设计取向，不是目录索引）
 
 | 角色包 | 说明 | 覆盖能力面 |
 |--------|------|-----------|
@@ -32,7 +32,7 @@
 
 > **本表不枚举技能**：只描述包的能力定位，不列技能名、不复述工作流程。技能清单的 SSOT 是各包 `skills/` 目录，使用时机的 SSOT 是 `persona.md` / `rules.md`——在此复述会形成第三份副本，技能增删时静默过期。引用覆盖由 `src/role-pack/__tests__/builtinPackCoverage.test.ts` 守卫。
 
-> **两包 strategy 参数差异是设计取向，不是疏漏**（勿当缺陷"对齐"）：
+> **共鸣小说家与白话方案设计师的 strategy 参数差异是设计取向，不是疏漏**（勿当缺陷"对齐"）：
 > **共鸣小说家**高温度（0.9）+ 出错降级继续（`degrade`）+ 自检领域化（`selfReview` 关闭，改由 `craft-review` 技能承担）+
 > 联网搜索中度预算（`webSearchLimit: 8`——需求层热点扫描与映射阶段都可能搜，默认 6 偏紧）——把交付质量押在七阶段流水线与领域技能库。
 > **白话方案设计师**低温度（0.4）+ 出错重试（`retry`）+ 内核终审（`selfReview` 开）+
@@ -40,4 +40,4 @@
 > 推理深度（`multiStepReasoning: auto`）与单步输出（`outputLimit: 0` 不干预）两包同为默认、听服务端——2026-09-30 已对齐（manual 原动机随 outputLimit 放开弱化），**不再是差异点**（旧版本文档曾写 manual / 大单步输出，已订正）。
 > 二者是同一哲学在两类任务上的不同落点，参数不可互抄。
 
-> 三个示例包**全面覆盖当前角色包设计**：**内容文件零声明**（persona.md / rules.md 约定名 + skills/ 目录扫描，manifest 不含任何内容路径注册）、顶层 capabilities（能力面）、strategy 策略（其中 **`act.toolReadonly` 只读维度由只读项目顾问示范**）、handoffPrompt 衔接提示词。开放键使用与消费方说明见 [role-pack-开放键指南](../docs/role-pack-开放键指南.md)；完整中立规范见 [role-pack-spec.md](../docs/architecture/role-pack-spec.md)（仓库内文档）。
+> **各示例包共同覆盖**当前角色包设计：**内容文件零声明**（persona.md / rules.md 约定名 + skills/ 目录扫描，manifest 不含任何内容路径注册）、顶层 capabilities（能力面）、strategy 策略（其中 **`act.toolReadonly` 只读维度由只读项目顾问示范**）、handoffPrompt 衔接提示词。开放键使用与消费方说明见 [role-pack-开放键指南](../docs/role-pack-开放键指南.md)；完整中立规范见 [role-pack-spec.md](../docs/architecture/role-pack-spec.md)（仓库内文档）。
