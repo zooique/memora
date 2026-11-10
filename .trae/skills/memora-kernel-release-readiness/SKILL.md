@@ -34,6 +34,13 @@ error TS2551: Property 'xxx' does not exist on type 'Foo'. Did you mean 'yyy'?
 这不是宿主代码错，是宿主在看**旧内核类型**。**别去改宿主代码迁就它**——先重建内核 dist，再跑宿主 tsc。
 （2026-09-22 实测：内核新增 `SkillManager.listAvailable()` 后宿主 tsc 报假错，重建内核 dist 即 EXIT=0。）
 
+**⚠️ 但要先确认「宿主看的那份 dist」已被刷新**：pnpm 的 `file:` 依赖是**物理副本（不是指向仓库根的软链）**，
+落在 `hosts/memora-vscode/node_modules/.pnpm/@zooique+memora@file+..+../node_modules/@zooique/memora/dist`，
+**内核 `npm run build` 不会更新它**。只重建根 dist 就去跑宿主 tsc，看到的仍是上一代 `.d.ts` ⇒ 同样报旧签名假错。
+刷新两条路：① 宿主目录 `pnpm install --offline`（重链，首选）；② 直接把根 `dist` 覆盖到该副本（确定性兜底）。
+**2026-11-10 实测**：删掉副本 `dist` 后跑 `pnpm install --offline`，副本恢复为当前代（1.9s）——即 install 足够；
+但**先重建根 dist 再 install**，顺序颠倒会把旧代重新链进来。
+
 ### 子子陷阱：内核 `AgentChunk` 联合**扩员**时，宿主的表现更隐蔽
 
 宿主按 `chunk.type === '新字面量'` 分发时，旧 dist 会让该比较**无类型重叠**：
