@@ -19,11 +19,12 @@
 - 新增 / 修改角色包：直接改本目录 → npm 包更新 + 宿主构建期自动同步，一处改处处生效。
 - 宿主如需 VS Code 专属角色包（非通用，需注入宿主专属工具），应明确约定归属；一旦进入共享范畴即移回本目录统一维护。
 
-## 角色包清单
+## 角色包定位表（非全集，目录为准）
 
 | 角色包 | 说明 | 覆盖能力面 |
 |--------|------|-----------|
 | **memora助手** | **兜底契约包**（非示例，名字由内核常量 `BUILTIN_FALLBACK_PACK` 锁定，改名须走 ADR；**宿主 UI 禁删 + 构建期 existsSync 硬校验**）：领域无关的最小兜底角色，负责通用对话与任务执行 | 领域无关最小集：无 skills / 无 capabilities（省略 = 全部暴露）/ 无 strategy（走内核默认） |
+| **只读项目顾问**（目录 `readonly-advisor`） | 示例：只读顾问型角色包——陪你阅读、检索、分析项目并给出改进建议，**不修改项目文件**（提问 / 暂停等会话状态不属项目文件，不受此限） | 真实 `persona.md` / `rules.md`（无 `skills/`）+ capabilities（web:search / web:fetch）+ strategy（**`act.toolReadonly: "readonly"`** 只读模式、低温度 0.3、askOn 含 confirm）+ handoffPrompt；**具体工具与能力面以该包 `manifest.json` 为准，此处不复述工具清单** |
 | 共鸣小说家 | 示例：方法论型角色包——三层结构小说创作（**需求层**：社会热点→痛点→精神需求缺口；**内核层**：经典人性内核，跨时代稳定；**形式层**：题材文笔是内核与读者的纽带），先需求再内核后形式，直接产出完整成稿 | 真实 skills/ 文件（**技能清单以 `skills/` 目录为唯一源、使用时机见 `persona.md` 七阶段流水线与 `rules.md`，此处不枚举**）+ capabilities（web:search 特权）+ strategy（高温度 / askOn 主动提问 / 联网搜索上限 8 次）+ handoffPrompt |
 | 白话方案设计师 | 示例：方法论型角色包——融合方案设计（单一真理源·最小单元·网络为土壤）与文档编排，先用白话把设计讲清楚，再落实为可开发的专业文档 | 真实 skills/ 文件（**技能清单以 `skills/` 目录为唯一源、使用时机见 `persona.md` / `rules.md`，此处不枚举**）+ capabilities（web:search 特权 / llm:summarize）+ strategy（白话优先 / askOn 含 confirm / 联网搜索上限 12 次）+ handoffPrompt |
 
@@ -39,4 +40,4 @@
 > 推理深度（`multiStepReasoning: auto`）与单步输出（`outputLimit: 0` 不干预）两包同为默认、听服务端——2026-09-30 已对齐（manual 原动机随 outputLimit 放开弱化），**不再是差异点**（旧版本文档曾写 manual / 大单步输出，已订正）。
 > 二者是同一哲学在两类任务上的不同落点，参数不可互抄。
 
-> 两个示例包**全面覆盖当前角色包设计**：**内容文件零声明**（persona.md / rules.md 约定名 + skills/ 目录扫描，manifest 不含任何内容路径注册）、顶层 capabilities（能力面）、strategy 策略、handoffPrompt 衔接提示词。开放键使用与消费方说明见 [role-pack-开放键指南](../docs/role-pack-开放键指南.md)；完整中立规范见 [role-pack-spec.md](../docs/architecture/role-pack-spec.md)（仓库内文档）。
+> 三个示例包**全面覆盖当前角色包设计**：**内容文件零声明**（persona.md / rules.md 约定名 + skills/ 目录扫描，manifest 不含任何内容路径注册）、顶层 capabilities（能力面）、strategy 策略（其中 **`act.toolReadonly` 只读维度由只读项目顾问示范**）、handoffPrompt 衔接提示词。开放键使用与消费方说明见 [role-pack-开放键指南](../docs/role-pack-开放键指南.md)；完整中立规范见 [role-pack-spec.md](../docs/architecture/role-pack-spec.md)（仓库内文档）。
