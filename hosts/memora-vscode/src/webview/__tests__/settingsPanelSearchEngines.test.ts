@@ -24,6 +24,11 @@ import type { CustomSearchEngineConfig } from '../../shared/protocol.js';
 
 vi.mock('vscode', () => ({
   Uri: { joinPath: () => ({ toString: () => 'mock://uri' }) },
+  // 校验文案已迁 `vscode.l10n.t`：替身返回键面并替换 {n}（断言仍按「拒」这一判据，不看语言）
+  l10n: {
+    t: (message: string, ...args: (string | number)[]) =>
+      message.replace(/\{(\d+)\}/g, (_m: string, i: string) => String(args[Number(i)] ?? '')),
+  },
   workspace: {
     workspaceFolders: [{ uri: { fsPath: '/mock/workspace' } }],
     getConfiguration: vi.fn(() => ({ get: vi.fn(() => undefined), update: vi.fn() })),
@@ -50,8 +55,8 @@ describe('validateCustomEngines — 边界口径', () => {
   });
 
   it('名称为空 / 仅空白 → 拒', () => {
-    expect(validateCustomEngines([{ ...OK, name: '' }])).toContain('引擎名称');
-    expect(validateCustomEngines([{ ...OK, name: '   ' }])).toContain('引擎名称');
+    expect(validateCustomEngines([{ ...OK, name: '' }])).toContain('engine name is required');
+    expect(validateCustomEngines([{ ...OK, name: '   ' }])).toContain('engine name is required');
   });
 
   it('URL 模板缺 {query} → 拒', () => {
@@ -62,7 +67,7 @@ describe('validateCustomEngines — 边界口径', () => {
 
   it('解析策略非预置项 → 拒（防绕过 UI 直接改 settings.json）', () => {
     expect(validateCustomEngines([{ ...OK, parseStrategy: 'evil' as never }])).toContain(
-      '解析策略',
+      'not a host preset',
     );
     // 派生契约（2026-10-14 修正）：旧断言把 HOST_PARSE_STRATEGIES 写死成字面量，
     // 加第三个策略时必红，与「由 HOST_PARSERS 键派生、零维护」的声称自相矛盾。
@@ -77,13 +82,13 @@ describe('validateCustomEngines — 边界口径', () => {
   it('清单内名称重复 → 拒', () => {
     expect(
       validateCustomEngines([OK, { ...OK, urlTemplate: 'https://other.com/?q={query}' }]),
-    ).toContain('重复');
+    ).toContain('is duplicated');
   });
 
   it('自定义名与内置引擎重名 → 拒（防静默遮蔽内置）', () => {
-    expect(validateCustomEngines([{ ...OK, name: 'bing' }])).toContain('内置引擎');
-    expect(validateCustomEngines([{ ...OK, name: 'auto' }])).toContain('内置引擎');
-    expect(validateCustomEngines([{ ...OK, name: 'duckduckgo' }])).toContain('内置引擎');
+    expect(validateCustomEngines([{ ...OK, name: 'bing' }])).toContain('built-in engine');
+    expect(validateCustomEngines([{ ...OK, name: 'auto' }])).toContain('built-in engine');
+    expect(validateCustomEngines([{ ...OK, name: 'duckduckgo' }])).toContain('built-in engine');
   });
 
   it('非 http(s) 模板 → 拒', () => {
