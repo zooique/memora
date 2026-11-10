@@ -1,4 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+
+// 文案已迁 `vscode.l10n.t`：替身返回键面并替换 {n}（断言按键面语义，判据不变）
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: (string | number)[]) =>
+      message.replace(/\{(\d+)\}/g, (_m: string, i: string) => String(args[Number(i)] ?? '')),
+  },
+}));
+
 import {
   toSearchEndpoint,
   probeSearchEngine,
@@ -54,12 +63,12 @@ describe('searchEngines.parseJsonApi — 多源字段别名宽容（2026-10-13 �
   it('非法 JSON → 抛错（非静默空数组：策略错配必须被保存门禁拦住）', () => {
     // 2026-10-14 口径修正：旧实现 JSON.parse 失败 return [] ⇒ 探针/内核把「拿 HTML 当
     // JSON 配」误判成「无命中」，错配配置反而能存进去、搜时静默无结果。
-    expect(() => toSearchEndpoint(jsonCfg()).parse('not json', 10)).toThrow(/不是合法 JSON/);
+    expect(() => toSearchEndpoint(jsonCfg()).parse('not json', 10)).toThrow(/not valid JSON/);
   });
 
   it('找不到受支持的数组键 → 抛错（点明支持的键，含嵌套结构未支持的告知）', () => {
     const raw = JSON.stringify({ web: { results: [{ title: 'a', url: 'https://a' }] } });
-    expect(() => toSearchEndpoint(jsonCfg()).parse(raw, 10)).toThrow(/未找到结果数组/);
+    expect(() => toSearchEndpoint(jsonCfg()).parse(raw, 10)).toThrow(/No result array found/);
   });
 });
 
@@ -94,7 +103,7 @@ describe('searchEngines.parseOpenSearchRss — 标签名误取修复 + CDATA/实
 
   it('无 <item>/<entry> → 抛错（拿普通 HTML 当 RSS 配 = 策略错配，不静默）', () => {
     const raw = '<html><body>no feed here</body></html>';
-    expect(() => toSearchEndpoint(rssCfg()).parse(raw, 10)).toThrow(/未找到 <item>\/<entry>/);
+    expect(() => toSearchEndpoint(rssCfg()).parse(raw, 10)).toThrow(/No <item>\/<entry> nodes/);
   });
 
   it('有 item 但缺 link/id → 空结果（确是 feed 但结构缺字段，不抛）', () => {
@@ -206,7 +215,7 @@ describe('probeSearchEngine — 保存门禁探针', () => {
     stubFetch({ ok: true, body: rss });
     const r = await probeSearchEngine(CFG);
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('请更换解析策略');
+    expect(r.error).toContain('switch the parse strategy');
     expect(r.count).toBe(0);
   });
 
@@ -243,6 +252,6 @@ describe('validateCustomEngines — 与 resolveSearchEndpoints 同源复用', ()
   };
   it('同一函数既被 UI 保存路径调用、也被 resolveSearchEndpoints 过滤调用', () => {
     expect(validateCustomEngines([OK])).toBeUndefined();
-    expect(validateCustomEngines([{ ...OK, name: '' }])).toContain('引擎名称');
+    expect(validateCustomEngines([{ ...OK, name: '' }])).toContain('engine name is required');
   });
 });

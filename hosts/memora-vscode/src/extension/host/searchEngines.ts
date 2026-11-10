@@ -10,6 +10,7 @@
  *
  * 不动内核即可落地：本功能只是把宿主设置接进内核预留的 SearchEndpoint 扩展点。
  */
+import * as vscode from 'vscode';
 import type { SearchEndpoint, SearchResult, SearchEngineName } from '@zooique/memora';
 import { buildSearchEndpoints, FetchWebSearchProvider } from '@zooique/memora';
 import type {
@@ -42,23 +43,39 @@ export const HOST_PARSE_STRATEGIES = Object.keys(HOST_PARSERS) as HostParseStrat
 export function validateCustomEngines(
   engines: readonly CustomSearchEngineConfig[] | undefined,
 ): string | undefined {
-  if (!Array.isArray(engines)) return '自定义搜索引擎清单格式无效';
+  if (!Array.isArray(engines)) return vscode.l10n.t('Invalid custom search engine list format');
   const seen = new Set<string>();
   for (const e of engines) {
     // 口径统一按 trim 后裁决：不依赖 webview 已 trim（手工改 settings.json 可直接绕过 UI）
     const name = e?.name?.trim();
-    if (!name) return '配置无效：需填写引擎名称';
+    if (!name) return vscode.l10n.t('Invalid configuration: engine name is required');
     // 自定义名不得与内置名重名：下拉选项经 Set 去重后同名只剩一项，
     // 而 resolveSearchEndpoints 先查自定义 ⇒ 会静默遮蔽内置引擎，用户无从分辨
     if ((PRESET_SEARCH_ENGINES as readonly string[]).includes(name)) {
-      return `配置无效：名称「${name}」与内置引擎重名，请更换`;
+      return vscode.l10n.t(
+        'Invalid configuration: name "{0}" conflicts with a built-in engine, please rename',
+        name,
+      );
     }
-    if (!e.urlTemplate?.includes('{query}')) return '配置无效：URL 模板需含 {query} 占位符';
+    if (!e.urlTemplate?.includes('{query}')) {
+      return vscode.l10n.t(
+        'Invalid configuration: the URL template must contain the {query} placeholder',
+      );
+    }
     if (!isAllowedUrlScheme(e.urlTemplate)) {
-      return '配置无效：URL 模板须以 http:// 或 https:// 开头';
+      return vscode.l10n.t(
+        'Invalid configuration: the URL template must start with http:// or https://',
+      );
     }
-    if (!HOST_PARSE_STRATEGIES.includes(e.parseStrategy)) return '配置无效：解析策略不是宿主预置项';
-    if (seen.has(name)) return `配置无效：名称「${name}」重复，引擎名必须唯一`;
+    if (!HOST_PARSE_STRATEGIES.includes(e.parseStrategy)) {
+      return vscode.l10n.t('Invalid configuration: the parse strategy is not a host preset');
+    }
+    if (seen.has(name)) {
+      return vscode.l10n.t(
+        'Invalid configuration: name "{0}" is duplicated; engine names must be unique',
+        name,
+      );
+    }
     seen.add(name);
   }
   return undefined;
@@ -189,7 +206,11 @@ export async function probeSearchEngine(
           engineName: cfg.name,
           ok: false,
           count: 0,
-          error: `策略「${cfg.parseStrategy}」未解析出结果，但「${alt}」可以——请更换解析策略`,
+          error: vscode.l10n.t(
+            'Strategy "{0}" parsed no results, but "{1}" did — please switch the parse strategy',
+            cfg.parseStrategy,
+            alt,
+          ),
         };
       }
     }
@@ -229,7 +250,11 @@ function decodeXmlText(s: string): string {
 function parseOpenSearchRss(raw: string, limit: number): SearchResult[] {
   const blocks = raw.match(/<(item|entry)[\s\S]*?<\/(item|entry)>/gi) ?? [];
   if (blocks.length === 0) {
-    throw new Error('响应中未找到 <item>/<entry> 节点（确认这是 RSS/Atom 源，且策略选对了吗）');
+    throw new Error(
+      vscode.l10n.t(
+        'No <item>/<entry> nodes found in the response (is this an RSS/Atom feed, and is the strategy correct?)',
+      ),
+    );
   }
   const results: SearchResult[] = [];
   for (const block of blocks) {
@@ -282,10 +307,14 @@ function parseJsonApi(raw: string, limit: number): SearchResult[] {
   try {
     data = JSON.parse(raw);
   } catch {
-    throw new Error('响应体不是合法 JSON（确认这是 JSON API，且策略选对了吗）');
+    throw new Error(
+      vscode.l10n.t(
+        'The response body is not valid JSON (is this a JSON API, and is the strategy correct?)',
+      ),
+    );
   }
   if (data === null || typeof data !== 'object' || Array.isArray(data)) {
-    throw new Error('JSON 根节点不是对象');
+    throw new Error(vscode.l10n.t('The JSON root node is not an object'));
   }
   const obj = data as Record<string, unknown>;
   let arr: unknown = undefined;
@@ -296,7 +325,12 @@ function parseJsonApi(raw: string, limit: number): SearchResult[] {
     }
   }
   if (!Array.isArray(arr)) {
-    throw new Error(`JSON 中未找到结果数组（支持的键：${JSON_ARRAY_KEYS.join(' / ')}）`);
+    throw new Error(
+      vscode.l10n.t(
+        'No result array found in the JSON (supported keys: {0})',
+        JSON_ARRAY_KEYS.join(' / '),
+      ),
+    );
   }
   return (arr as unknown[])
     .slice(0, limit)

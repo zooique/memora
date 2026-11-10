@@ -987,6 +987,14 @@ const DEFERRED_CJK_FILES = [
       '（只有测试驱动），message 从不上屏，翻它只增键面噪音而没有用户收益。',
   },
   {
+    file: 'extension/host/userAssets/projectScope.ts',
+    kind: '纯诊断',
+    reason:
+      '翻了会让「信任工作区后补注入」的收尾流水随界面语言变：这三处只经 `deps.report` 写进 ' +
+      'Output Channel（extension.ts 接的是 `memoraOutput.appendLine`），界面不弹窗，' +
+      '翻它会让排障 grep 在两种语言下对不上。',
+  },
+  {
     file: 'extension/commands/registerWork.ts',
     kind: '本地化注入面',
     reason:
