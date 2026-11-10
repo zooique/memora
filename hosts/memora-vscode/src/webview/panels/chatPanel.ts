@@ -2074,7 +2074,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 视图重解析时补推三源技能清单（与 refreshAfterAssemble 输出同构，
     // 避免 agent 已装配时 ensureAgent 提前返回导致技能下拉为空）
     this.pushSkillList();
-    // 会话级钉住回种（0.10.0）：clear_ok 已清空 composer，此处按本会话元数据回种钉住引用（失效投影 missing）
+    // 会话级钉住回种（0.9.0）：clear_ok 已清空 composer，此处按本会话元数据回种钉住引用（失效投影 missing）
     void pinned.pushPinnedRefsTo(this.sessionStore, this._currentSessionId, (m) => this.post(m));
     // 历史会话占用（轻量版）：首次启动回放即推真实占用（而非空态 0%）。
     // _agent 未装配完成时本调用静默跳过，由装配后收口点 refreshAfterAssemble 兜底再推
@@ -2498,7 +2498,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private async handleInput(
     msg: Extract<WebviewToExtensionMessage, { type: 'input' }>,
   ): Promise<void> {
-    // 会话级钉住（0.10.0）：锁/解锁/移除是动作 ⇒ 动作即落盘，必须在草稿/Agent 守卫之前受理
+    // 会话级钉住（0.9.0）：锁/解锁/移除是动作 ⇒ 动作即落盘，必须在草稿/Agent 守卫之前受理
     if (msg.kind === 'pin') {
       pinned.writePinnedItems(this.sessionStore, this._currentSessionId, msg);
       return;

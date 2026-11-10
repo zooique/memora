@@ -665,7 +665,7 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //             刻度里无档，按「不造并列值」复用邻近档，故此处是刻度复用不是新增刻度）
     //             27：COPY-2 右键菜单 .ctxmenu min-width 引 var(--dim-lg)（contextMenuStyles，
     //             原稿裸值 148px 在刻度里无档，按「不造并列值」复用邻近档）+1（2026-10-30）
-    //             DIM-28（0.10.0 会话级钉住）：.skill-chip.is-large 的 max-width 引 var(--dim-3xl)
+    //             DIM-28（0.9.0 会话级钉住）：.skill-chip.is-large 的 max-width 引 var(--dim-3xl)
     //             （钉住大技能时放宽，让「此文 N 万字，每轮都会发送」提示完整可读）+1（2026-11-08）
     'dim-': 28,
   } as const;

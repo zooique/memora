@@ -14,11 +14,11 @@
 | --- | --- | --- |
 | **项目级 · 文件来源 · 项目规则（`resident: true`）** | ✅ **做**（**本层**唯一新增） | 复用作品投影文件，跨重启、跨会话生效 |
 | 项目级 · **文本来源** | ❌ **已裁掉** | 后果见 §2.3 |
-| **会话级钉住**（临时锁 `pinned`） | ✅ **已落地**（0.10.0 宿主批，与本层解耦） | 锁即写会话元数据（`SessionMeta.pinnedItems`）、切会话 / 重开面板回种、跨重启接得上；草稿期白锁为已知限制（§1.2） |
-| **技能钉住**（`pinned`） | ✅ **已落地**（0.10.0 宿主批，与本层解耦） | 只保留「选中的是哪个技能」（单槽），**不注入技能正文**（§7-2） |
+| **会话级钉住**（临时锁 `pinned`） | ✅ **已落地**（0.9.0 宿主批，与本层解耦） | 锁即写会话元数据（`SessionMeta.pinnedItems`）、切会话 / 重开面板回种、跨重启接得上；草稿期白锁为已知限制（§1.2） |
+| **技能钉住**（`pinned`） | ✅ **已落地**（0.9.0 宿主批，与本层解耦） | 只保留「选中的是哪个技能」（单槽），**不注入技能正文**（§7-2） |
 | 项目级**共享状态**（是否随仓库走） | ❌ **已裁掉** | 前提被证伪；本稿不再涉及 |
 
-> ✅ **2026-11-08 订正**：原「会话级 · 任意来源 ❌ 已裁掉」「技能固定 ❌ 已裁掉」两行的结论**已被推翻**——会话级钉住与技能钉住作为 0.10.0 宿主批落地（跨重启接得上）。它们与本层的项目规则仍是**两套能力**：钉住只保留引用 / 技能选择（正文按需读），项目规则把正文每轮注入。视觉可分依旧成立，但**不再以「重启是否消失」为判据**（§8）。
+> ✅ **2026-11-08 订正**：原「会话级 · 任意来源 ❌ 已裁掉」「技能固定 ❌ 已裁掉」两行的结论**已被推翻**——会话级钉住与技能钉住作为 0.9.0 宿主批落地（跨重启接得上）。它们与本层的项目规则仍是**两套能力**：钉住只保留引用 / 技能选择（正文按需读），项目规则把正文每轮注入。视觉可分依旧成立，但**不再以「重启是否消失」为判据**（§8）。
 >
 > 上一轮的「另立 `.memora/resident-rules.json`」**已被推翻**：改为复用作品投影同一份文件（理由与前置闸见 §5、§11.2）。
 
@@ -51,7 +51,7 @@
 
 **写入方穷举（本稿结论）**：写盘只有一处（`workProjection.ts` 的 `registerWork` 临界区）；能到达它的只有两条路——模型工具 `register_work`、宿主右键命令 `registerWork.ts`。用户用编辑器手改 JSON 属**外部写入**，不在代码防线内，由损坏 fail-safe（`refresh` + `registerWork`）兜底。⇒ **单主人在「方法层」成立，在「实例层」不成立**（每会话一个实例）。
 
-### 1.2 会话级钉住（临时锁，0.10.0 已落地；本层不改动它）
+### 1.2 会话级钉住（临时锁，0.9.0 已落地；本层不改动它）
 
 | 环节 | 实现 | 位置 |
 | --- | --- | --- |
@@ -59,14 +59,14 @@
 | 「临时锁」= `pinned` | `pinned?: boolean` **进协议**：W→E 随 `input` 上行（`kind='pin'`），E→W 随 `addRef` 回种。旧注释「pinned 纯 UI 状态，不进协议/内核」**已作废** | `hosts/memora-vscode/src/shared/protocol.ts`、`chatView.ts` |
 | 发送后保留 | `currentRefs` 只留 `pinned` 条目——未锁的发送即清 | `hosts/memora-vscode/src/webview/scripts/chatView.ts` |
 | 切锁 / 上浮 | 🔒 按钮切 `pinned`；渲染时钉住上浮 | `hosts/memora-vscode/src/webview/scripts/chatView.ts`（chip 渲染段） |
-| 落盘面（0.10.0） | 指针写进 `SessionMeta.pinnedItems`（判别联合：file / folder 带 `path` + `range?`，skill 带 `name`）；**只存指针、不存正文** | `src/memory/sessionStore.ts`；写入 `hosts/memora-vscode/src/extension/host/pinnedContext.ts` |
-| 回种面（0.10.0） | 切会话 / 重开面板 / 重启后按元数据**单向回种** composer（`addRef` + `skills_loaded.pinnedSkillName`）；形状不对的条目跳过并给 `notice` | `pinnedContext.ts` 的 `pushPinnedRefsTo` / `seedPinnedRefs` |
+| 落盘面（0.9.0） | 指针写进 `SessionMeta.pinnedItems`（判别联合：file / folder 带 `path` + `range?`，skill 带 `name`）；**只存指针、不存正文** | `src/memory/sessionStore.ts`；写入 `hosts/memora-vscode/src/extension/host/pinnedContext.ts` |
+| 回种面（0.9.0） | 切会话 / 重开面板 / 重启后按元数据**单向回种** composer（`addRef` + `skills_loaded.pinnedSkillName`）；形状不对的条目跳过并给 `notice` | `pinnedContext.ts` 的 `pushPinnedRefsTo` / `seedPinnedRefs` |
 | 测试口径 | 现口径 = 「锁是动作、动作即落盘；切会话清空后按元数据回种」 | `chatView.test.ts`、`chatPanelInput.test.ts`、`pinnedContext.test.ts` |
 | 入信封形态 | 发送时拼 `[参考文件/目录]` 块（仅路径 + 行区间读取参数） | `hosts/memora-vscode/src/webview/helpers/docContext.ts` |
 | 宿主拼信封 | 发送时刻 `buildRefContextBlock` + `buildInjectedContextEnvelope` | `hosts/memora-vscode/src/webview/panels/chatPanel.ts` |
 | 发送前失效核实 | `collectMissingFileRefPaths` 对文件引用 stat，失效者降级为「裸指针 + 标记」 | `hosts/memora-vscode/src/extension/host/refProbe.ts` |
 
-**生命周期结论（0.10.0 落地后）**：锁是**动作**，动作发生即落盘——宿主收到 `input.kind='pin'` 直接把钉住清单写进会话元数据（`SessionMeta.pinnedItems`，只存指针），不等发送；切会话 / 重开面板 / 重启后由宿主按元数据**单向回种**（`pushPinnedRefsTo`）。**跨重启：成立。**
+**生命周期结论（0.9.0 落地后）**：锁是**动作**，动作发生即落盘——宿主收到 `input.kind='pin'` 直接把钉住清单写进会话元数据（`SessionMeta.pinnedItems`，只存指针），不等发送；切会话 / 重开面板 / 重启后由宿主按元数据**单向回种**（`pushPinnedRefsTo`）。**跨重启：成立。**
 
 ⚠️ **已知限制（草稿期）**：会话尚未建立（`_currentSessionId` 为空、无元数据载体）时 `writePinnedItems` 直接返回 ⇒ 该次加锁**不落盘**，要等首条消息把草稿 flush 成会话后由宿主补落（`chatPanel.handleInput` 的 send 分支）；「草稿期锁了、没发就关窗」**会白锁**。
 
@@ -142,7 +142,7 @@
 - **不另立清单文件**（推翻上一轮 `.memora/resident-rules.json`，见 §11.2）。
 - **不改变非 `resident` 条目的任何行为**：索引渲染对它们逐字不变。
 - **不做规则引擎**：无通配符、无 glob、无目录扫描、无条件判断、无自动发现。
-- **本项目规则层不改动会话级钉住（`pinned`）**：钉住自身的落盘 / 回种已由 0.10.0 宿主批落地（§1.2），与本层是两套能力，本层不回归、不接管。
+- **本项目规则层不改动会话级钉住（`pinned`）**：钉住自身的落盘 / 回种已由 0.9.0 宿主批落地（§1.2），与本层是两套能力，本层不回归、不接管。
 - 不做**会话级规则**（钉住跨重启保留的只是「钉住清单」本身，正文仍按需读，**不是**每轮注入的规则）、不做**文本来源规则**、不做**技能正文注入**（技能钉住只保留「选中哪个技能」）。
 - 不做**独立 Webview 清单面板**、不做**跨面板角标**；清单的常看面是**设置面板「作品和规则」选项卡**（§8.2），管理面是临时 QuickPick，反馈由命令回执与「作品和规则」页行徽标承载（§10）。
 - 不做本轮之外的一切覆盖（完整清单见 §7 设计边界）。
@@ -513,7 +513,7 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 
 | 锁 | 语义 | 生命周期 | 呈现（定稿要求） |
 | --- | --- | --- | --- |
-| **会话级钉住**（0.10.0） | 本轮之后不清，仍以**指针**进信封（正文不注入） | **跨轮保留 + 跨重启恢复清单**（`SessionMeta.pinnedItems`；草稿期白锁为已知限制） | 保持现有 🔒 形态 |
+| **会话级钉住**（0.9.0） | 本轮之后不清，仍以**指针**进信封（正文不注入） | **跨轮保留 + 跨重启恢复清单**（`SessionMeta.pinnedItems`；草稿期白锁为已知限制） | 保持现有 🔒 形态 |
 | **项目规则**（新增） | 投影条目 `resident: true`，正文进 system prompt | **跨重启、跨会话都在** | 清单（QuickPick）打 **「项目规则」标记**；「作品和规则」页行内用**勾选图标 +「项目规则」后缀**，与临时锁 🔒 视觉可分（§8.2） |
 
 **为什么必须可分（具体后果）**：两者的持久性都已成立，差别在**消费面**——钉住让「指针留在信封里（模型按需 `read_file`）」，项目规则让「正文每轮进 system prompt」。若呈现长得一样，用户会把钉住误当项目规则，以为正文已注入、模型必读；实际模型只收到了路径、可能整轮不读。这类误读**没有任何信号**（回答照常产出），代价是「以为有约束、其实没有」；反向误读（把项目规则当钉住）的代价是多付一次不必要的永久注入预算。
@@ -674,7 +674,7 @@ system message 后段：记忆设定段 → 回应骨架 → ## 可用工具（�
 
 | # | 面 | 是否带伤 | 判据 / 处置 |
 | --- | --- | --- | --- |
-| ① | 会话级钉住（`pinned`） | 判定基准已变：钉住**已扩张**（落元数据 + 回种，0.10.0 宿主批），本层不得回退它 | `chatView.test.ts` / `chatPanelInput.test.ts` / `pinnedContext.test.ts` 全绿 |
+| ① | 会话级钉住（`pinned`） | 判定基准已变：钉住**已扩张**（落元数据 + 回种，0.9.0 宿主批），本层不得回退它 | `chatView.test.ts` / `chatPanelInput.test.ts` / `pinnedContext.test.ts` 全绿 |
 | ② | 技能钉住 | 同上：技能选择随会话保留；**仍不注入正文** | `skillPickerView.test.ts` 全绿；本层不改技能消费面 |
 | ③ | 非 `resident` 投影 | **不带伤**（索引逐字不变） | `workProjection.test.ts` 全绿；旧数据无字段 ⇒ `false` |
 | ④ | `resident` 投影 | 带伤风险：并发覆盖 ⇒ 丢规则 | **前置闸 A** + 与清单声明集比对（可见的丢失，非已解决） |
