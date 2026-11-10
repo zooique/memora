@@ -103,7 +103,15 @@ export function createEmptyStateView(deps: EmptyStateViewDeps): {
 } {
   const { document, emptyState, emptyTitle, emptyHint, emptySuggestions, messages } = deps;
 
-  /** 空状态开关：消息区无 .msg 时显示空状态提示，有消息则隐藏 */
+  /**
+   * 空状态开关：消息区无 .msg 时显示空状态提示，有消息则隐藏
+   *
+   * ⚠️ **必须在写文案（updateRole / onboarding）的同一个同步任务里调用**：骨架 #emptyState
+   * 起始带 hidden 且标题/提示**无静态默认文案**（唯一真源是 updateRole），而 `.empty-state`
+   * 只有 padding 16px、无固定高度 ⇒ 若先去掉 hidden、下个任务才写文案，首帧会看到一条
+   * 32px 空白带跳一下（慢机器最明显）。同任务内两次调用之间不产生绘制，故零可见变化。
+   * 现存唯一调用点 = chatView init 末尾（update → updateRole 紧邻，中间无 await / 定时器）。
+   */
   function update(): void {
     emptyState.hidden = messages.querySelector('.msg') !== null;
   }
