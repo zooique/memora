@@ -29,10 +29,10 @@
  *      （误纳入非 src 文件）时红——非事后人工巡检。
  *
  *   ②的三处必要修正（均由变异验证实测暴露，不是预防性放宽）：
- *     - **别名解析**：内核 barrel 做别名导出时（实测 `src/index.ts:247` 唯一的
- *       `export { defaultTitle as defaultSessionTitle }`），esbuild 内联后用的是**模块内本地名**
- *       `defaultTitle`，别名只活在 barrel 边界 → 直接搜导入名会**假红**。
+ *     - **别名解析**：内核 barrel 做别名导出时（形如 `export { X as Y }`），esbuild 内联后
+ *       用的是**模块内本地名** `X`，别名只活在 barrel 边界 → 直接搜导入名会**假红**。
  *       故从 `dist/index.js` 解析 `export { A as B }` 建 B→A 映射，搜 A。
+ *       （当前 `src/index.ts` 已无别名导出，该分支保留以兜住重新引入。）
  *     - **类型导出过滤**：类型在编译期被抹除（`CodeExecutionResult` 等），不可能出现在 bundle
  *       里 → 用**运行时 `import()` 内核 barrel** 取真实导出键做白名单，而非解析 `.d.ts`。
  *     - **只查「被用到」的**：esbuild 会 tree-shake 未使用的 import，查未使用的会假红。

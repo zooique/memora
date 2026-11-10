@@ -9,8 +9,10 @@
  * `kill_command` 就能杀掉别的会话起的进程——与「仅可杀本 turn 本 agent 起的后台任务」
  * 定案（§14.1）直接冲突。故注册表挂在 Agent 实例上，按实例隔离。
  *
- * ⚠️ 公开面边界：只读投影类型（`BackgroundTask`）与状态词表（`BACKGROUND_TASK_STATUS_LABELS`）
- * 经 `src/index.ts` 导出（宿主 UI 列表出口消费）；注册表类 `BackgroundTaskRegistry`
+ * ⚠️ 公开面边界（SSOT-OWNERSHIP-1）：只读投影类型（`BackgroundTask`）经 `src/index.ts` 导出；
+ * 状态词表 `BACKGROUND_TASK_STATUS_LABELS` **不进公开面**——它仍是本模块回流通知
+ * （`formatBackgroundTaskNotice`，进模型上下文）的唯一真源、逐字不变，但**上屏文案**归消费者
+ * 自持（宿主键域取 `BackgroundTask['status']`）。注册表类 `BackgroundTaskRegistry`
  * **不导出**——进程治理留在内核，宿主只能经门面方法 `listBackgroundTasks()` /
  * `killBackgroundTask()` 操作（防跨会话 kill，§14.1 定案）。
  */
@@ -318,10 +320,11 @@ export class BackgroundTaskRegistry {
 }
 
 /**
- * 后台任务状态 → 中文标签（回流通知 / 收尾报告 / **宿主 UI** 共用一个词表）
+ * 后台任务状态 → 中文标签（回流通知 / 收尾报告专用 = **模型可见面**，逐字不得改）
  *
- * 公开导出：宿主 UI 直接消费本表渲染状态文案，**不自建第二套**（自建即双源漂移）。
- * `Record` 穷尽键 ⇒ 新增状态忘补标签 = **编译期红闸**（同 `COMPRESS_TARGET_LABELS` 定案）。
+ * 归属（SSOT-OWNERSHIP-1）：本表**不再进公开面**。模型面文案归内核（回流通知进模型上下文，
+ * 换语言 = 换行为契约），展示面文案归消费者（自建 `Record<BackgroundTask['status'], string>`）。
+ * `Record` 穷尽键 ⇒ 新增状态忘补标签 = **编译期红闸**（两侧各有一道）。
  */
 export const BACKGROUND_TASK_STATUS_LABELS: Record<BackgroundTaskStatus, string> = {
   running: '运行中',

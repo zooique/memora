@@ -986,8 +986,10 @@ interface BackgroundTask {
 
 > 注册表类 `BackgroundTaskRegistry` **不进公共导出面**（内核内部模块）：导出它会让宿主
 > 跨会话 kill，与「仅可杀本 agent 起的后台任务」定案冲突——故**只出方法、不出类**；
-> 类型 `BackgroundTask` 与状态词表 `BACKGROUND_TASK_STATUS_LABELS`（宿主 UI 渲染状态
-> 文案的唯一真源，禁自建第二套）经 `@zooique/memora` 导出。
+> 类型 `BackgroundTask` 经 `@zooique/memora` 导出（状态键域 = `BackgroundTask['status']`）。
+> **状态中文标签表由消费者自持**（`Record<BackgroundTask['status'], string>`）：内核只出类型与
+> 值域，上屏文案不归库。表 `BACKGROUND_TASK_STATUS_LABELS` 仍是内核后台回流通知（进模型上下文）
+> 的内部真源，但**不作为公开导出承诺**。
 
 ---
 

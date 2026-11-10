@@ -261,11 +261,11 @@ export const COMPRESS_TARGETS: readonly CompressTarget[] = [
 ];
 
 /**
- * target → 中文标签（宿主 notice 文案的真源，**穷举映射不做 else 兜底**）
+ * target → 中文标签（**模块内**，不进包入口）
  *
- * 穷举而非三元/else：三元在枚举增补时把新值静默落到最后一个旧标签上（说谎），
- * TS 侧因 `Record<CompressTarget, string>` 穷尽键而在增补时**编译期报错**——
- * 让「加枚举忘了改文案」变成一道红闸，而不是运行时的一句假话。
+ * 归属（SSOT-OWNERSHIP-1）：这是**展示文案**，消费者自持 `Record<CompressTarget, string>`；
+ * 内核零内部消费此表（实测），保留模块级导出只为自测断言「键集与 COMPRESS_TARGETS 双向相等」。
+ * 穷举而非三元/else：三元在枚举增补时把新值静默落到最后一个旧标签上（说谎）。
  */
 export const COMPRESS_TARGET_LABELS: Record<CompressTarget, string> = {
   earliest_round: '最早轮次摘要',

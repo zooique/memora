@@ -568,10 +568,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'TOOL_RESULT_WRAP_OVERHEAD_TOKENS',
     ],
   },
-  COMPRESS_TARGET_LABELS: {
-    kind: 'object',
-    members: ['earliest_round', 'earliest_steps', 'largest_tool_result'],
-  },
   SessionManager: {
     kind: 'class',
     members: [
@@ -1025,10 +1021,6 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
     kind: 'interface',
     members: ['command', 'result', 'startedAt', 'status', 'taskId'],
   },
-  BACKGROUND_TASK_STATUS_LABELS: {
-    kind: 'object',
-    members: ['completed', 'killed', 'running', 'timedOut'],
-  },
   ForkResult: { kind: 'interface', members: ['date', 'newSession', 'roundIds'] },
   ILogger: { kind: 'interface', members: ['debug', 'error', 'info', 'warn'] },
   logger: { kind: 'object', members: ['debug', 'error', 'info', 'warn'] },
@@ -1371,7 +1363,7 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `\nEXPECTED 符号数 = ${count}，与本用例期望不符。\n` +
         `若本次确有增删符号：先在 EXPECTED 表反映差异 + 完成 §3.2.1 定性，再同步本数字；\n` +
         `若未增删：说明改动误触了基线表，撤销。`,
-    ).toBe(81);
+    ).toBe(79);
   });
 
   it('成员面与冻结基线一致（增删即红；红须按 §3.2.1 定性后显式更新 EXPECTED）', () => {
@@ -1470,7 +1462,14 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    内核不消费。**只存指针**（path/kind/range 或技能 name），正文/缓存一律不进元数据。\n` +
       `    行为由宿主 workspaceSessionStore merge 测试（显式 undefined 不抹既有）+ chatPanel\n` +
       `    pin 落盘测试守护；变异验证（让 merge 失去 undefined 保护 / 改存正文即转红）。\n` +
-      `    代价 = 零（可选字段：缺省 = 无钉住，老会话自然降级为空，无 deprecation 需求）。`;
+      `    代价 = 零（可选字段：缺省 = 无钉住，老会话自然降级为空，无 deprecation 需求）。` +
+      `\n  ⑭ 三张展示标签表退出公开面（2026-11-10 · SSOT-OWNERSHIP-1，Breaking）：\n` +
+      `    BACKGROUND_TASK_STATUS_LABELS / COMPRESS_TARGET_LABELS / defaultSessionTitle 三值导出同批收回。\n` +
+      `    定性 = 纠错非删能力：三者都是**展示文案**，按「模型面归内核、展示面归消费者」归还所有权；\n` +
+      `    值域仍公开（CompressTarget / BackgroundTask['status']），穷尽键红闸随表迁到消费者构建。\n` +
+      `    BACKGROUND_TASK_STATUS_LABELS 继续在内核内部喂回流通知——模型可见面逐字不变（不是行为变更）。\n` +
+      `    真消费者 = 宿主 sessionTitle.ts / chatNoticeOps.ts / panelSnapshots.ts（同批自建穷尽表）。\n` +
+      `    代价：6.x 升级者失去三个值导出（CHANGELOG Breaking 段明示），内核内部行为零变化。`;
     expect(
       issues,
       `\n成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,

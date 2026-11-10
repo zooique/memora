@@ -34,10 +34,11 @@ export { estimateOccupancy } from '@/agent/budget.js';
 // ⚠️ 单段用本函数；逐段调用会放大取整误差，多段一律 estimateTokensMessages。
 export { estimateTokensMessages, estimateTokensText } from '@/agent/contextManager.js';
 export { type AgentForkResult } from '@/agent/managers/sessionManager.js';
-// 第二级压缩的中文标签（宿主 notice 文案真源）：
-// 宿主**不得**自己写 target→文案映射——三元/else 在枚举增补时会把新值静默落到旧标签上
-// （对用户说谎），而 `Record<CompressTarget, string>` 穷尽键在增补时编译期报错。
-export { COMPRESS_TARGET_LABELS, type CompressTarget } from '@/agent/loop.js';
+// 第二级压缩的目标枚举（target 值域）。
+// ⚠️ 中文标签表 `COMPRESS_TARGET_LABELS` **不进公开面**（SSOT-OWNERSHIP-1）：展示文案归消费者，
+// 内核只出枚举；消费者自建 `Record<CompressTarget, string>` —— 穷尽键仍在消费者侧编译期兜住，
+// 「加枚举忘补文案」依旧是红闸，只是红在消费者的构建里。
+export type { CompressTarget } from '@/agent/loop.js';
 export type { SessionManager } from '@/agent/managers/sessionManager.js';
 export type {
   ToolDefinition,
@@ -239,15 +240,17 @@ export { InMemorySessionViewLoader } from '@/memory/inMemorySessionViewLoader.js
 // InMemoryRoundStore 为内核内部测试实现，不挂公共面；
 // InMemorySessionStore 内存版为内核内部/测试默认，同不挂公共面（PUB-API-PRUNE-2 收面；
 // README「接口 + 内存默认实现」的架构叙述仍成立——内核内部仍备该实现）
-// 会话占位标题单一真理源，避免宿主重复实现
-export { defaultTitle as defaultSessionTitle } from '@/agent/managers/sessionNamer.js';
+// ⚠️ 会话占位标题（`新会话 HH:MM`）**不进公开面**（SSOT-OWNERSHIP-1）：这是展示文案，归消费者。
+// 内核 `defaultTitle` 保留为模块内实现（自测用），不再对外承诺格式——否则内核任何措辞改动
+// 都会变成消费者的显示变更。
 // 不中断工作模型类型（API 参考 §6.3 createCheckpoint/getCheckpoint 的返回值契约）
 export type { SessionCheckpoint } from '@/agent/types.js';
 // 后台任务只读投影（宿主 UI 列表出口：`agent.listBackgroundTasks()` / `killBackgroundTask()`
 // 的载荷类型）。只出类型不出注册表类——注册表是 Agent 实例级，出类会让宿主跨会话 kill。
 export type { BackgroundTask } from '@/agent/backgroundTasks.js';
-// 后台任务状态中文词表（宿主 UI 直接消费，禁自建第二套；Record 穷尽键 = 加状态忘补文案编译期红）
-export { BACKGROUND_TASK_STATUS_LABELS } from '@/agent/backgroundTasks.js';
+// ⚠️ 后台任务状态中文词表 **不进公开面**（SSOT-OWNERSHIP-1）：该表仍是内核后台通知（进模型上下文）
+// 的唯一真源、逐字不变；但**上屏文案**归消费者自持（键域经 `BackgroundTask['status']` 可得）。
+// 一个字符串既是模型事实又是 UI 文案时，只能有一个归属方——模型面归内核，展示面归消费者。
 // 命令派发 shell 映射（「命令实际派发到哪个 shell」的唯一真源）：宿主环境快照的 shell 字段
 // 经本函数派生（environmentProvider），禁自写平台三元副本——两侧映射漂移 = 对模型说假话
 // （模型按 A shell 语法写命令却在 B shell 下执行，每次必败）。

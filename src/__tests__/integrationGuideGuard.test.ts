@@ -89,8 +89,8 @@ function astOf(file: string): ts.SourceFile {
 
 /**
  * 导出面：公开名 → 声明位置。
- * `export { defaultTitle as defaultSessionTitle }` 取 `defaultSessionTitle`（消费者可见名）
- * 与 `defaultTitle`（源文件里的真实声明名）。
+ * `export { X as Y }` 取 `Y`（消费者可见名）与 `X`（源文件里的真实声明名）；
+ * 当前 `src/index.ts` 已无别名导出，分支保留以兜住将来重新引入。
  * `src/index.ts` 无 `export *`（本守卫立项时实测 0 处）——若将来引入，本解析会漏，故断言。
  */
 function parsePublicSurface(): Map<string, { file: string; declName: string }> {

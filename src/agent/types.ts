@@ -203,8 +203,11 @@ export type TextChunkStage = 'answer' | 'self_review';
 // ─── 宿主可覆盖的 UI 文本 ────────────────────────────────
 
 /**
- * 宿主可覆盖的 UI 消息文本。核心库内置英文默认值，宿主通过 AgentOptions.messages
- * 覆盖为任意语言（领域无关原则：核心库不耦合特定语言）。
+ * 宿主可覆盖的 UI 消息文本。**默认值不是全英文**——实测以下 5 条默认是中文：
+ * `interrupted` / `softLimitWrapup`（常量串）与 `reflectionHint` / `selfReviewPrompt` /
+ * `duplicateToolCallWarning`（返回中文的生成函数）；其余键默认英文。
+ * 宿主经 `AgentOptions.messages` 覆盖为任意语言（领域无关原则：核心库不耦合特定语言），
+ * 未覆盖的键按上述默认值逐字上屏——故默认值即契约，改它等于改消费者的屏幕。
  */
 export interface UIMessages {
   /** 对话取消提示（默认 "User cancelled the conversation"） */

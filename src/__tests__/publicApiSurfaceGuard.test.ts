@@ -77,7 +77,8 @@ function parseAst(full: string, text: string): ts.SourceFile {
 
 /**
  * 公开面：src/index.ts 全部导出符号名。
- * `export { defaultTitle as defaultSessionTitle }` 取 as 之后的公开名（消费者可见的名字）。
+ * `export { X as Y }` 取 as 之后的公开名（消费者可见的名字）；当前索引已无别名导出，
+ * 该分支保留以兜住将来重新引入（删了会让别名符号静默漏检）。
  */
 function parsePublicSurface(): Set<string> {
   const sf = parseAst(INDEX_TS, readFileSync(INDEX_TS, 'utf8'));
@@ -264,11 +265,9 @@ const PUBLIC_SURFACE_SNAPSHOT: readonly string[] = [
   'ArchiveSnapshot',
   'AuditEvent',
   'AuditListener',
-  'BACKGROUND_TASK_STATUS_LABELS',
   'BUILTIN_FALLBACK_PACK',
   'BackgroundTask',
   'BootstrapSnapshot',
-  'COMPRESS_TARGET_LABELS',
   'ChatOptions',
   'CodeExecutionOptions',
   'CodeExecutionResult',
@@ -369,7 +368,6 @@ const PUBLIC_SURFACE_SNAPSHOT: readonly string[] = [
   'buildSessionId',
   'createNodeSqliteStorage',
   'createProviderFromConfig',
-  'defaultSessionTitle',
   'describeStrategyKeys',
   'estimateOccupancy',
   'estimateTokensMessages',
