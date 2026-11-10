@@ -530,8 +530,9 @@ const WEBVIEW_PANELS = {
   //
   // B9-D-1（会话事件出口域，`chatPanel.ts` 首刀）已收口并登记：
   //   · chatNoticeOps —— 20 个会话级 / 后台事件处理器整域外置（纯「事件 → notice / 派生投影刷新」，
-  //     依赖面 = 11 个窄接口）；可见文案全走 l10n，两处**内核中文载荷**（`inputTooLarge.hint` /
-  //     `COMPRESS_TARGET_LABELS`）属内核公开面，本批只登记为债、不改；
+  //     依赖面 = 11 个窄接口）；可见文案全走 l10n，一处**内核中文载荷**（`inputTooLarge.hint`）
+  //     属已知缺口、本批只登记不改；`COMPRESS_TARGET_LABELS` 已按 SSOT-OWNERSHIP-1 收回
+  //     （内核只出 `CompressTarget` 枚举，标签由本模块自持穷尽 Record + l10n）；
   //   · chatPanel —— 只留 `_notice` 注入 + 装订表；本刀后仍有未迁移域（会话结构 / 分叉改名 /
   //     输入守卫 / 文案常量）⇒ 面板仍 pending。
   //

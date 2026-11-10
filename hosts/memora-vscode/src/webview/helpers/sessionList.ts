@@ -11,7 +11,7 @@
  *     不拆两份列表——两份真相源必然出现「两边都有 / 两边都没有」）。
  */
 import type { SessionMeta } from '@zooique/memora';
-import { sessionDisplayTitle } from '../../extension/host/sessionTitle.js';
+import { sessionDisplayTitle, type SessionTitleL10n } from '../../extension/host/sessionTitle.js';
 import type { HostSessionStore } from '../../extension/host/sessionStore.js';
 import { readSessionRolePackName } from '../../extension/host/sessionRolePack.js';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
@@ -24,11 +24,13 @@ type SessionListMessage = Extract<ExtensionToWebviewMessage, { type: 'session_li
  *
  * @param store 宿主会话存储（读会话元数据与留存区分组标签）
  * @param currentSessionId 当前显示会话（从列表中排除）
+ * @param l10n 本地化注入面（占位标题词形；SSOT-OWNERSHIP-1：归宿主，不取内核表）
  * @returns 可直接 postMessage 的 `session_list_data` 载荷
  */
 export function buildSessionListMessage(
   store: HostSessionStore,
   currentSessionId: string,
+  l10n: SessionTitleL10n,
 ): SessionListMessage {
   // 非当前会话，按更新时间降序（当前会话不进历史记录是设计收敛，不是过滤失误）
   const metas = store
@@ -37,7 +39,7 @@ export function buildSessionListMessage(
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return {
     type: 'session_list_data',
-    sessions: metas.map((meta) => toSessionSummary(store, meta)),
+    sessions: metas.map((meta) => toSessionSummary(store, meta, l10n)),
     archivedIds: store.listArchivedIds(),
   };
 }
@@ -47,15 +49,17 @@ export function buildSessionListMessage(
  *
  * @param store 宿主会话存储（角色包名经单点判据读回，不在本处另写解析）
  * @param meta 会话元数据（计数已在 `getSessionMeta` 读路径现场派生，直取即新鲜值）
+ * @param l10n 本地化注入面（占位标题词形）
  */
 function toSessionSummary(
   store: HostSessionStore,
   meta: SessionMeta,
+  l10n: SessionTitleL10n,
 ): SessionListMessage['sessions'][number] {
   return {
     sessionId: meta.sessionId,
     // 标题兜底在读点补（占位串不进 meta）：displayName/autoName 都空 = 尚未命名，显示创建时刻
-    title: sessionDisplayTitle(meta.sessionId, meta),
+    title: sessionDisplayTitle(meta.sessionId, meta, l10n),
     updatedAt: meta.updatedAt,
     messageCount: meta.messageCount,
     // FD-3-A 元数据搜索匹配域：undefined 经 postMessage JSON 序列化自然剔除

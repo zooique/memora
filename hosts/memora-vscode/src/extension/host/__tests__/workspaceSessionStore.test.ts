@@ -529,9 +529,9 @@ describe('WorkspaceSessionStore.updateSessionMeta（双层命名写点）', () =
   });
 
   it('首轮自动命名覆盖占位 displayName（解决"历史不显示名字"）', () => {
-    // round 登记后 getSessionMeta 兜底提供占位「新会话 HH:MM」
+    // round 登记后 getSessionMeta 兜底提供占位标题（词形归宿主 l10n：单测无 zh bundle ⇒ 断言英文源键）
     seedRound(store, roundStore, '2026-08-26', 'main', { content: 'x', ts: 't1' });
-    expect(getSessionDisplayName(store.getSessionMeta('2026-08-26-main'))).toMatch(/^新会话 /);
+    expect(getSessionDisplayName(store.getSessionMeta('2026-08-26-main'))).toMatch(/^New session /);
     // 首轮对话后 SessionNamer 写入真实名 → 覆盖占位
     store.updateSessionMeta('2026-08-26-main', {
       autoName: '真实标题',

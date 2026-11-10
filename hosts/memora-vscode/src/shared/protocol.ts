@@ -1912,9 +1912,9 @@ export type ExtensionToWebviewMessage =
  * 刻意**不含 `result`**：命令输出体量可至 KB~MB 级，UI 不呈现输出
  * （输出归模型消费，经 `kill_command` / 回流通道给 LLM），避免无谓搬运。
  *
- * `statusLabel` 由 **extension 侧**读内核 `BACKGROUND_TASK_STATUS_LABELS` 填充后下发——
- * 真源仍是内核那张表（宿主零自建词表），走协议只为**避免 webview 值导入内核包**
- * （webview 侧只做 type import，值导入会把内核打进 bundle）。
+ * `statusLabel` 由 **extension 侧**自持词表填充后下发（SSOT-OWNERSHIP-1：内核只出状态值域
+ * `BackgroundTask['status']`，展示文案归消费者；内核那张中文表已退出公开面）——走协议只为
+ * **避免 webview 值导入内核包**（webview 侧只做 type import，值导入会把内核打进 bundle）。
  *
  * ⚠️ **2026-10-04 自审订正（刀 3）**：初版 Pick 了 `startedAt`，但 UI 三个消费点
  * （命令原文 / 状态标签 / 终止按钮）**零消费它** ⇒ 属于「预支复杂度」的僵尸载荷字段。

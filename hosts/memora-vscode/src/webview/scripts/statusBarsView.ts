@@ -223,9 +223,9 @@ export function createStatusBarsView(deps: StatusBarsViewDeps): StatusBarsView {
   /**
    * 后台命令任务条（懒创建，与 pending-queue-bar 同范式）
    *
-   * **webview 零自维护副本**：任务列表与状态标签（`statusLabel`，extension 侧读内核
-   * `BACKGROUND_TASK_STATUS_LABELS` 填充后下发）全部来自快照，webview 只做「取数 → 渲染」。
-   * 状态文案不下发枚举再自转（那要建第二套词表 = 双源漂移）。
+   * **webview 零自维护副本**：任务列表与状态标签（`statusLabel`，extension 侧按**宿主自持
+   * 词表**填充后下发，SSOT-OWNERSHIP-1）全部来自快照，webview 只做「取数 → 渲染」。
+   * 状态文案不下发枚举再在 webview 自转（那要建第二套词表 = 双源漂移）。
    *
    * 「终止」按钮**不自己实现终止**：只 `postMessage` 回宿主（杀进程是宿主侧能力，
    * 且内核按 Agent 实例隔离——同 `confirm_all_file_changes` 的「拦截/执行只能落 host」定案）。

@@ -466,7 +466,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 杜绝双实例覆盖写 / 缓存漂移——否则 UI 重载历史读不到 Agent 刚写入的 Round）
   const roundStore = new WorkspaceRoundStore(workspacePath);
   roundStore.load();
-  const sessionStore = new WorkspaceSessionStore(workspacePath, roundStore);
+  const sessionStore = new WorkspaceSessionStore(workspacePath, roundStore, vscode.l10n);
   sessionStore.load();
   // 模块级引用交给 deactivate（停用路径释放跨进程锁的唯一入口）
   hostSessionStore = sessionStore;

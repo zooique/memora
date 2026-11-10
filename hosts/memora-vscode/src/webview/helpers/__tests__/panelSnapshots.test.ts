@@ -18,6 +18,13 @@ import { PanelSnapshots } from '../panelSnapshots.js';
 type BackgroundTasksMessage = Extract<ExtensionToWebviewMessage, { type: 'background_tasks' }>;
 
 /**
+ * 本地化注入面替身：按键直出（= 英文源文案）
+ *
+ * 本用例只验会话隔离，不验译文——状态标签词形归 `l10n/bundle.l10n.zh-cn.json`。
+ */
+const L10N = { t: (message: string) => message };
+
+/**
  * 构造只暴露 `listBackgroundTasks` 的最小 agent 替身
  *
  * @param taskIds 该实例注册表中的任务标识（两会话都从 bg-1 起号，复现真实重名场景）
@@ -55,6 +62,7 @@ describe('PanelSnapshots · 后台任务条跨会话隔离', () => {
       post: (msg) => posted.push(msg),
       isBackground: () => false,
       getSessionId: () => sessionId,
+      l10n: L10N,
     });
 
     snapshots.pushTasks('force');
@@ -85,6 +93,7 @@ describe('PanelSnapshots · 后台任务条跨会话隔离', () => {
       post: (msg) => posted.push(msg),
       isBackground: () => false,
       getSessionId: () => sessionId,
+      l10n: L10N,
     });
 
     // A 首次推送落签名

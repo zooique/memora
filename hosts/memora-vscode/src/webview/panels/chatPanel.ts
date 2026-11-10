@@ -487,6 +487,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     isBackground: () => this.isBackgroundFlow(),
     // 收起偏好 / 去重签名的会话维度键：taskId 是每实例序号（bg-1 在两个会话重复）
     getSessionId: () => this._currentSessionId,
+    // 后台任务状态标签的词形（SSOT-OWNERSHIP-1：展示文案归宿主，不再取内核表）
+    l10n: vscode.l10n,
   });
   /** 最近 webview 错误上报（复制诊断命令消费；容量/格式化归 hostDiagnostics 模块） */
   private readonly _recentHostDiags: HostDiagEntry[] = [];
@@ -1531,7 +1533,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private pushSessionList(): void {
     // 投影口径（非当前会话 / 降序 / 单数据源 + 前端过滤）见 helpers/sessionList 头注释
-    this.post(buildSessionListMessage(this.sessionStore, this._currentSessionId));
+    this.post(buildSessionListMessage(this.sessionStore, this._currentSessionId, vscode.l10n));
   }
 
   /** 历史运维动作的依赖注入（单一构建点：新增动作只在此挂依赖，不在各处散开） */
@@ -2344,6 +2346,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     return sessionDisplayTitle(
       this._currentSessionId,
       this.sessionStore.getSessionMeta(this._currentSessionId),
+      vscode.l10n,
     );
   }
 

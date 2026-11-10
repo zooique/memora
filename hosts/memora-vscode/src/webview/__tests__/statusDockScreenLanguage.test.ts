@@ -10,9 +10,9 @@
  * **覆盖边界（如实写死）**：
  *   - 本用例只喂 ASCII 数据，故它守住的是「UI 文案面」；
  *   - 真实链路上 `chatView` 传给 `showActivity` 的提示文案仍是中文（B9 迁移）；
- *   - 后台任务条的 `statusLabel` 来自内核公开词表 `BACKGROUND_TASK_STATUS_LABELS`（中文），
- *     属**内核公开面**，本批只登记不动（见台账「登记待拍」）——故该条在真实链路上仍会带中文，
- *     本用例喂 ASCII 标签只验 webview 自己的文案面。
+ *   - 后台任务条的 `statusLabel` 由 extension 侧按**宿主自持词表**填充后下发
+ *     （SSOT-OWNERSHIP-1：内核只出 `BackgroundTask['status']` 值域），故该条在真实链路上
+ *     已是本地化文案；本用例喂 ASCII 标签只验 webview 自己的文案面。
  *
  * 环境：node + 显式 JSDOM（与 MCP / 安全页用例同法）。`activityDrawerView` 用全局
  * `window.setTimeout` 挂自动撤出计时器，故建 DOM 后把 `window` 挂到 globalThis，

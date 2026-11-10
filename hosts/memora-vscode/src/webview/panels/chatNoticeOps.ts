@@ -14,13 +14,29 @@
  * 读改写 `_activeRolePack` 也走 getter / setter，不在本模块存第二份激活角色。
  *
  * 本地化：全部可见文案走 `vscode.l10n.t`，键 = 英文源文案本身（宿主机契约）。
- * ⚠️ 两处载荷仍是**内核中文散文**，属内核公开面、本批只登记不动：
- *   - `inputTooLarge.hint`（内核 `contextPreparer` 写死中文建议）；
- *   - `COMPRESS_TARGET_LABELS`（压缩目标中文标签）。
+ * ⚠️ 一处载荷仍是**内核中文散文**，属已知缺口、本批不动：
+ *   - `inputTooLarge.hint`（内核 `contextPreparer` 写死中文建议）。
+ * 压缩目标标签已由本模块自持（`COMPRESS_TARGET_LABELS` 退出内核公开面，SSOT-OWNERSHIP-1：
+ * 内核只出 `CompressTarget` 枚举，展示文案归消费者）。
  */
 import * as vscode from 'vscode';
-import { COMPRESS_TARGET_LABELS, type AgentEventMap, type CompressTarget } from '@zooique/memora';
+import type { AgentEventMap, CompressTarget } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
+
+/**
+ * 压缩目标 → 屏幕标签（宿主自持，SSOT-OWNERSHIP-1）
+ *
+ * **穷尽 `Record`** 是有意的闸：内核给 `CompressTarget` 加值而这里忘补 ⇒ 编译期红；
+ * 禁退化成三元/else——枚举增补时三元会把新值落到旧标签上，对用户说谎
+ * （2026-10-03 CTX-WIN-2 实证：earliest_steps 曾被三元显示成「最大工具结果摘要」）。
+ * 值是 thunk 而非字符串：`l10n.t` 必须在**调用时**取（顶层求值会把默认语言写死，
+ * 且 nls 守卫只认静态字面键）。
+ */
+const COMPRESS_TARGET_LABELS: Record<CompressTarget, () => string> = {
+  earliest_round: () => vscode.l10n.t('Earliest round summary'),
+  earliest_steps: () => vscode.l10n.t('Earliest executed steps summary'),
+  largest_tool_result: () => vscode.l10n.t('Largest tool result summary'),
+};
 
 /**
  * 事件出口的注入面（唯一构造点 = 面板字段初始化处）
@@ -144,10 +160,10 @@ export function createChatNoticeOps(deps: ChatNoticeOpsDeps): ChatNoticeOps {
 
     /** contextCompressed：LLM 主动压缩上下文（第二级压缩，与内核自动截断区分） */
     onContextCompressed: (info) => {
-      // target→标签引内核 COMPRESS_TARGET_LABELS（穷尽 Record），
-      // 禁在本处写三元/else——枚举增补时三元会把新值落到旧标签上，对用户说谎
+      // target→标签走本模块自持的穷尽 Record（标签归宿主，枚举归内核）；
+      // 禁写三元/else——枚举增补时三元会把新值落到旧标签上，对用户说谎
       // （2026-10-03 CTX-WIN-2 落地时实证：earliest_steps 曾被三元显示成「最大工具结果摘要」）。
-      const targetText = COMPRESS_TARGET_LABELS[info.target];
+      const targetText = COMPRESS_TARGET_LABELS[info.target]();
       deps.post({
         type: 'notice',
         level: 'info',

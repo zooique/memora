@@ -5358,7 +5358,7 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     const rows = (): HTMLElement[] =>
       [...document.querySelectorAll('.background-tasks-bar__item')] as HTMLElement[];
 
-    /** statusLabel 由宿主下发（真源 = 内核 BACKGROUND_TASK_STATUS_LABELS），webview 不自建词表 */
+    /** statusLabel 由宿主下发（词表宿主自持：SSOT-OWNERSHIP-1），webview 不自建副本 */
     function bgTask(over: Partial<BackgroundTaskView> = {}): BackgroundTaskView {
       return {
         taskId: 'bg-1',

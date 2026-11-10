@@ -13,8 +13,27 @@
  * （`bg-${seq}`），两个会话都会出现 `bg-1` ⇒ 收起偏好与去重签名都必须带会话维度，
  * 否则「A 里收起 bg-1」会连带隐藏 B 的 bg-1（无测试会红）。
  */
-import { BACKGROUND_TASK_STATUS_LABELS, estimateOccupancy, type Agent } from '@zooique/memora';
+import { estimateOccupancy, type Agent, type BackgroundTask } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
+
+/**
+ * 后台任务状态 → 屏幕标签（宿主自持，SSOT-OWNERSHIP-1）
+ *
+ * 为什么在宿主：内核只出状态值域（`BackgroundTask['status']`；`BACKGROUND_TASK_STATUS_LABELS`
+ * 已退出公开面）；内核那份仍是**回流通知进模型上下文**的真源，与本表互不影响。
+ * **穷尽 `Record`** 是有意的闸：内核给状态加值而这里忘补 ⇒ 编译期红。
+ * 值是 thunk 而非字符串：`l10n.t` 必须在**调用时**取（顶层求值会把默认语言写死，
+ * 且 nls 守卫只认静态字面键）。
+ */
+const BACKGROUND_TASK_STATUS_LABELS: Record<
+  BackgroundTask['status'],
+  (l10n: PanelSnapshotDeps['l10n']) => string
+> = {
+  running: (l10n) => l10n.t('Running in background'),
+  completed: (l10n) => l10n.t('Completed'),
+  timedOut: (l10n) => l10n.t('Timed out and terminated'),
+  killed: (l10n) => l10n.t('Terminated'),
+};
 
 /** 面板注入的能力（本域不持有面板状态，只持有本域自己的两份推送缓存） */
 export interface PanelSnapshotDeps {
@@ -31,6 +50,8 @@ export interface PanelSnapshotDeps {
    * 「A 的 bg-1」与「B 的 bg-1」。
    */
   getSessionId: () => string;
+  /** 本地化注入面（后台任务状态标签的词形；生产传 `vscode.l10n`） */
+  l10n: { t(message: string): string };
 }
 
 /** 任务看板 / 后台任务 / 上下文占用的快照投影器（生命周期 = 面板实例） */
@@ -149,9 +170,9 @@ export class PanelSnapshots {
         taskId: t.taskId,
         command: t.command,
         status: t.status,
-        // 状态文案真源 = 内核词表（宿主零自建），在此转成字面量下发——
-        // webview 只做 type import，值导入内核会把整包打进 bundle
-        statusLabel: BACKGROUND_TASK_STATUS_LABELS[t.status],
+        // 状态文案由**宿主自持**（SSOT-OWNERSHIP-1：内核只出状态值域，展示文案归消费者），
+        // 在此转成字面量下发——webview 只做 type import，值导入内核会把整包打进 bundle
+        statusLabel: BACKGROUND_TASK_STATUS_LABELS[t.status](this._deps.l10n),
       }));
     const signature = items.map((t) => `${t.taskId}:${t.status}`).join('|');
     // 会话刚切换时即使签名相同也必须推：条上的内容属于上一会话，不能拿「相同」当「没变」

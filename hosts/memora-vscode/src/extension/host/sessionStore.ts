@@ -32,7 +32,7 @@ import {
   type SessionMessage,
   type SessionMeta,
 } from '@zooique/memora';
-import { sessionDisplayTitle } from './sessionTitle.js';
+import { IDENTITY_L10N, sessionDisplayTitle, type SessionTitleL10n } from './sessionTitle.js';
 import { atomicWriteFileSync } from './atomicWriteSync.js';
 import { resolveProjectDataDir } from './projectDataDir.js';
 import { CrossProcessSessionLock } from './sessionLock.js';
@@ -59,10 +59,10 @@ const LEGACY_MIGRATED_NAME = 'sessions.json.migrated';
 const LEGACY_GLOBAL_MIGRATED_NAME = '_global.json.migrated';
 
 /**
- * 截断结果（truncateFrom 返回值）：ok = 锚点命中并完成截断；
- * removedIds = 被物理删除（引用归零的孤儿）的 Round 列表，供调用方联动软删其记忆摘要（⑥）；
- * removedUserText = 截断起点 Round 的 user 原文（regenerate 重新生成重发用——真源 = 随轮
- * 落盘的 store，webview 的 DOM dataset 只是投影不作为重发文本；删除场景忽略此字段）
+ * 截断结果（truncateFrom 返回值）：ok = 锚点命中并完成截断；removedIds = 被物理删除（引用归零的孤儿）
+ * 的 Round 列表，供调用方联动软删其记忆摘要（⑥）；removedUserText = 截断起点 Round 的 user 原文
+ * （regenerate 重新生成重发用——真源 = 随轮落盘的 store，webview 的 DOM dataset 只是投影不作为重发
+ * 文本；删除场景忽略此字段）
  */
 export interface RoundTruncateResult {
   ok: boolean;
@@ -71,7 +71,7 @@ export interface RoundTruncateResult {
 }
 
 /**
- * 工作区会话存储
+ * 工作区会话存储（落盘目录 = 入参工作区下的 `.memora`）
  */
 export class WorkspaceSessionStore implements ISessionStore {
   /** 会话标题元数据：sessionId → SessionMeta */
@@ -144,11 +144,12 @@ export class WorkspaceSessionStore implements ISessionStore {
    */
   private lastActiveSessionId = '';
 
-  /**
-   * @param workspacePath 工作区路径（落盘目录 `.memora`）
-   * @param roundStore 问答闭环存储；缺省时在同工作区新建文件级 WorkspaceRoundStore 并 load()
-   */
-  constructor(workspacePath: string, roundStore?: IRoundStore) {
+  /** roundStore 缺省 ⇒ 新建 WorkspaceRoundStore 并 load()；l10n = 占位标题本地化面（生产必传 `vscode.l10n`，缺省仅供单测） */
+  constructor(
+    workspacePath: string,
+    roundStore?: IRoundStore,
+    private readonly l10n: SessionTitleL10n = IDENTITY_L10N,
+  ) {
     // 落盘目录经单点推导（唯一计算点 = projectDataDir.ts，禁就地拼字面量）
     const dataDir = resolveProjectDataDir(workspacePath);
     this.sessionLock = new CrossProcessSessionLock(dataDir);
@@ -186,8 +187,7 @@ export class WorkspaceSessionStore implements ISessionStore {
   /**
    * 从磁盘加载会话（目录不存在则空）
    *
-   * 顺序固定：先补摊旧单文件 → 再摊旧全局态 → 最后扫会话文件。
-   * 两步迁移都必须先于扫描：扫描只认 `sessions/*.json`，旧数据不摊进来就永远看不见。
+   * 顺序固定：先补摊旧单文件 → 再摊旧全局态 → 最后扫会话文件（扫描只认 `sessions/*.json`，旧数据不摊进来就永远看不见）
    */
   load(): void {
     this.metas.clear();
@@ -681,7 +681,7 @@ export class WorkspaceSessionStore implements ISessionStore {
       // 计数读值现场派生（O(1)），与占位路径同口径；标题兜底也在**读点**补（占位串不写回）
       return {
         ...meta,
-        displayName: sessionDisplayTitle(sessionId, meta),
+        displayName: sessionDisplayTitle(sessionId, meta, this.l10n),
         messageCount: this.deriveMessageCount(sessionId),
       };
     }
@@ -690,7 +690,7 @@ export class WorkspaceSessionStore implements ISessionStore {
     if (roundIds && roundIds.length > 0) {
       return {
         sessionId,
-        displayName: sessionDisplayTitle(sessionId, undefined), // 占位=创建时刻（读侧兜底，不写回 meta）
+        displayName: sessionDisplayTitle(sessionId, undefined, this.l10n), // 占位=创建时刻（读侧兜底，不写回 meta）
         // updatedAt **不得取 now()**（占位 meta 每次查询重生成 ⇒ 该会话恒排「最近活跃」第一，启动时
         // 抢走最近写入位）；取会话 id 前缀日期（buildSessionId 契约编码的真实数据）当日零点 = 具体时刻未知。
         updatedAt: `${sessionId.slice(0, 10)}T00:00:00.000Z`,

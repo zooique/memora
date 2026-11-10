@@ -742,7 +742,7 @@ describe('草稿态 · 「＋」不再立刻落空会话（首次发送才建会
     expect(store.getSessionMeta(newId)).toBeUndefined();
     // 标题不再是草稿态（改名笔恢复可用）
     expect(lastTitle(posted).draft).toBeUndefined();
-    expect(lastTitle(posted).title).toMatch(/^新会话 \d{2}:\d{2}$/);
+    expect(lastTitle(posted).title).toMatch(/^New session \d{2}:\d{2}$/);
   });
 
   /**
