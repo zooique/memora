@@ -88,8 +88,10 @@ export function createPickerView(deps: PickerViewDeps): PickerView {
       span.className = 'dd-trigger-name';
       span.textContent = label;
       trigger.appendChild(span);
-      // 触发器可访问性：为读屏提供名称（aria-haspopup 已在组件 HTML 中声明）
-      trigger.setAttribute('aria-label', opts.ariaLabel + '：' + label);
+      // 触发器可访问性：为读屏提供名称（aria-haspopup 已在组件 HTML 中声明）。
+      // 分隔符用 ASCII 冒号而非全角「：」——它只是读屏停顿符，不构成文案；写全角等于把
+      // 中文标点硬编码进源码（判据⑰ 计红），而为一个标点新增 l10n 键是第二套真源。
+      trigger.setAttribute('aria-label', opts.ariaLabel + ': ' + label);
     }
   }
 

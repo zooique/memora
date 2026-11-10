@@ -24,12 +24,6 @@ export const ROLE_PACK_TEAMS_KEY = 'memora.rolePackTeams';
  *  写文件一律直接落盘（前后台一致），宿主不再读/写该键；旧用户 globalState 里的残留值无消费面。 */
 export const CONFIRM_SCRIPTS_KEY = 'memora.confirmScripts';
 
-/** 插话已生效但本轮历史未写入的提示（INTERJECT-PERSIST-1）
- *  🔴 文案**不得**写成「请重发」：插话已在 loop 队列生效（step 边界必注入），
- *  重发会让同一条被注入两次（双执行）。此处只如实告知「历史里没有它」。 */
-export const INTERJECT_UNSAVED_NOTICE =
-  'Memora：这条补充已生效（本轮会看到），但未能写入历史——本轮记录已不存在，回看历史时不会出现它。无需重发。';
-
 /** 回收站保留期（天）：`memora.cleanupMemories` 命令与设置面板「清理过期」共用的单一真理源，
  *  改保留期只改此处。内核不持定时器，保留期策略归宿主，
  *  且只在用户显式触发清理时生效（无自动清理）。 */

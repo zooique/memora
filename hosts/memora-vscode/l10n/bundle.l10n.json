@@ -1365,5 +1365,6 @@
   "Polish": "",
   "Image input is disabled for the current model — click to enable it in settings": "",
   "Add image": "",
-  "Manage role packs": ""
+  "Manage role packs": "",
+  "Memora: this addition took effect (you will see it this round), but it could not be written to history — this round record no longer exists, so it will not appear when reviewing history. No need to resend.": ""
 }

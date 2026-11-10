@@ -679,6 +679,9 @@ const WEBVIEW_PANELS = {
       'webview/helpers/userBubble.ts',
       'webview/helpers/roundNav.ts',
       'webview/components/dropdown.ts',
+      // 下拉渲染域（B11 第三刀）：唯一 CJK 是 aria-label 里的全角冒号分隔符，改 ASCII 冒号
+      // 归零——分隔符不是文案，不为一个标点新增 l10n 键（第二套真源）。
+      'webview/scripts/pickerView.ts',
       // chat 面板 HTML 骨架（B11 第一步收口）：可见文案（title / aria-label / placeholder /
       // 按钮文本 / 下拉触发器名）全部改走 `vscode.l10n.t`；空状态「标题 + 提示」两处**删默认值**
       // 而非翻译——运行期由 emptyStateView.updateRole 同步填充，留默认值等于第二套语言真源。

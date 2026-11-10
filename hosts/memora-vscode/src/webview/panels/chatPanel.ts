@@ -116,8 +116,8 @@ import {
   type PendingLiveRound,
 } from '../../shared/turnProjection.js';
 import { dedupeRefs } from '../../shared/refKey.js'; // 引用去重判据单点（与 webview 的 addRefs 共用，勿各自实现）
-// 插话受理三态的可见文案（INPUT-LIMIT-1 / INTERJECT-PERSIST-1）：文案单点，勿在面板内嵌字面量
-import { INTERJECT_UNSAVED_NOTICE } from '../../shared/constants.js';
+// 插话受理三态的可见文案（INPUT-LIMIT-1 / INTERJECT-PERSIST-1）统一由 windowNotices 提供，
+// 面板内不嵌字面量：那里是窗口提示的单一真源（常量形态会在模块求值时定稿语言，故用函数）。
 
 // 会话标题读侧兜底（列表 / 面板标题条 / 占位 meta 三处同一口径）
 import { sessionDisplayTitle } from '../../extension/host/sessionTitle.js';
@@ -143,7 +143,11 @@ import { deriveCapabilityState } from '../helpers/capabilityState.js';
 // 输入区徽章的域级短标签（标签投影与三态判定分离，见 capabilityLabels 头注释）
 import { capabilityDomainLabel } from '../helpers/capabilityLabels.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
-import { limitNotice, flowError } from '../../extension/host/windowNotices.js';
+import {
+  limitNotice,
+  flowError,
+  interjectUnsavedNotice,
+} from '../../extension/host/windowNotices.js';
 import {
   readSessionRolePackName,
   sessionRolePackFallbackNotice,
@@ -2670,7 +2674,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       if (outcome === 'rejected-limit')
         return void vscode.window.showWarningMessage(limitNotice(INTERJECT_LIMIT));
       if (outcome === 'queued-unpersisted')
-        this.post({ type: 'error', message: INTERJECT_UNSAVED_NOTICE, category: 'unknown' });
+        this.post({ type: 'error', message: interjectUnsavedNotice(), category: 'unknown' });
       // 上屏时机 = 消费时刻（吸收时上屏）：排队中 ≠ 已说出，入队成功**不再**即时 post type:'user'
       // （退役设计：变异加回 `this.post({type:'user',…})` 即 chatPanelInterject「入队不 post」红）。
       // 排队期唯一呈现 = 待发送区；内核消费落盘后队列快照减少 → webview diff 上屏「你补充」行。

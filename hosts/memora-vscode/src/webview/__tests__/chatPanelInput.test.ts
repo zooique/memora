@@ -518,10 +518,12 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     await h.cast.handleInput({ kind: 'send', text: '补充要求' });
 
     // ① 可见提示（复用流内 error 消息协议，零新增通道）
+    // 文案真源已迁至 windowNotices.interjectUnsavedNotice（`vscode.l10n.t`，测试替身返回英文键），
+    // 故断言键面语义而非中文：必须明说「已生效」且「无需重发」——后者是防双执行的文案判据。
     const errorMsg = h.posted.find((m) => (m as { type?: string }).type === 'error') as
       { message?: string } | undefined;
-    expect(errorMsg?.message).toContain('已生效');
-    expect(errorMsg?.message).toContain('无需重发');
+    expect(errorMsg?.message).toContain('took effect');
+    expect(errorMsg?.message).toContain('No need to resend');
     // ② 不双执行：不发起新 chat、不重复入队
     expect(interject).toHaveBeenCalledTimes(1);
     expect(chat).not.toHaveBeenCalled();

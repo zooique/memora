@@ -26,6 +26,23 @@ export function limitNotice(limit: number): string {
 }
 
 /**
+ * 插话已生效但本轮历史未写入的提示（INTERJECT-PERSIST-1）
+ *
+ * 🔴 文案**不得**写成「请重发」：插话已在 loop 队列生效（step 边界必注入），
+ * 重发会让同一条被注入两次（双执行）。此处只如实告知「历史里没有它」。
+ *
+ * 形态 = 函数而非常量：常量会在模块求值时就定稿语言，早于 `vscode.l10n` 就绪；
+ * 且它原在 `shared/constants.ts`，那里被 webview 侧共用、不能引 `vscode`。
+ *
+ * @returns 已本地化的提示
+ */
+export function interjectUnsavedNotice(): string {
+  return vscode.l10n.t(
+    'Memora: this addition took effect (you will see it this round), but it could not be written to history — this round record no longer exists, so it will not appear when reviewing history. No need to resend.',
+  );
+}
+
+/**
  * 流内错误 category → 窗口提示文案（宿主实时路）。
  *
  * 与 `shared/errorText.ts`（webview 重放路，中文映射）同 category 联合、同回退语义：
