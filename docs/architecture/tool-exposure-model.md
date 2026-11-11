@@ -60,13 +60,21 @@ LLM 现写、无轨迹的任意代码 → 特权（角色启动 + 需宿主注�
 - `src/role-pack/capabilityMap.ts`：裁剪不再控制可见性的能力键（file:read/write/list、memory:recall、project:search、**task:plan**），收敛为特权能力映射（web:search / web:fetch / code:execute）。
 - `src/agent/types.ts` / `agent.ts`：白名单语义微调（null=全部；[]=仅常驻；非空=常驻+名单内特权），现有 `setToolWhitelist` 通道与 onToolsChanged 刷新链路不变。
 
-## 五、验证方式
+## 五、deny 轴（v1 新增第三道闸，2026-11-11）
+
+前两档解决「给不给」，deny 解决「已经可见也必须拿掉」。完整形态与工具清单只写在 [loop-design.md](./loop-design.md) §5.3，本节只记三条边界，不复制正文：
+
+1. **顺序**：deny 必须排在 `isToolExposed` 第一行，且在 `customTools.has(name)` 之前；否则 MCP / 自定义工具先命中恒暴露，绕过 deny。
+2. **两道不同保证**：deny 管「看不见」（从模型可见面移除），`toolReadonly` 管「跑不动」（执行时拒绝）。只做后者会留下工具可见、模型反复尝试的白烧 step。
+3. **只能加减法**：角色的 `capabilities` 只能加特权、不能减常驻，所以「把某个已经可见的工具拿掉」只能靠 deny，白名单做不到。
+
+## 六、验证方式
 
 1. 定向测试：声明任意 capabilities 时 `DEFAULT_EXPOSED_TOOLS` 的常驻工具仍暴露；未声明时特权工具不暴露；声明 code:execute 后 run_code 出现；
 2. 回归：技能工具豁免（脚本草稿第五节点 3/4）与本模型的常驻集不冲突；run_code 仍受能力+宿主注入双重门槛；
 3. 全量测试 + tsc + eslint + commitlint 全绿后可评估从 docs 固化。
 
-## 六、已弃用选项
+## 七、已弃用选项
 
 | 方案 | 弃用理由 |
 | --- | --- |
