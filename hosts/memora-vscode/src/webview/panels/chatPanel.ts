@@ -2074,6 +2074,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.postCapabilityBadge();
     // 视图重解析时补推三源技能清单（与 refreshAfterAssemble 输出同构，
     // 避免 agent 已装配时 ensureAgent 提前返回导致技能下拉为空）
+    // 顺序约束：必须晚于上面的 clear_ok —— webview 收到 clear_ok 会清空技能 chip，
+    // 本推送里的 pinnedSkillName 才是回种帧；颠倒即静默丢钉住技能
+    // （守卫用例见 `__tests__/chatPanelHistory.test.ts`「切会话回种：clear_ok 先于…」）。
     this.pushSkillList();
     // 会话级钉住回种（0.9.0）：clear_ok 已清空 composer，此处按本会话元数据回种钉住引用（失效投影 missing）
     void pinned.pushPinnedRefsTo(this.sessionStore, this._currentSessionId, (m) => this.post(m));

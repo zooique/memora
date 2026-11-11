@@ -2416,6 +2416,38 @@ describe('技能启停：重推清单入口（SKILL-S3b）', () => {
     expect(ofType(posted, 'skills_loaded')).toHaveLength(0);
   });
 
+  // 切会话技能槽复位链的顺序守卫（HOST-0.10.0-DEBT-1 ②）：
+  // webview 收到 clear_ok 会清空技能 chip（chatView.ts `skillPickerView.clear()`），
+  // 回种靠随后的 skills_loaded.pinnedSkillName —— 两者顺序颠倒即静默丢钉住技能。
+  // 本用例对拍**到达顺序**：删掉或前移 replaySession 里的 pushSkillList 即转红。
+  it('切会话回种：clear_ok 先于 skills_loaded(pinnedSkillName) 到达', () => {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setRoundStore(roundStore);
+    seedSession(store, roundStore, '2026-08-15-s1', [{ role: 'user', content: '问题A', ts: 't1' }]);
+    // 会话元数据预置钉住技能（真源在元数据，不在 composer）
+    store.updateSessionMeta('2026-08-15-s1', {
+      pinnedItems: [{ kind: 'skill', name: '启用技能' }],
+    });
+    provider.setSkillDirs('/mock/conf', '/mock/user');
+    provider.setAgent(mutableSkillStub({ disabled: [] }));
+    // 会话 id 在 setAgent 之后设置：装配期那次 skills_loaded 不带钉住名，
+    // 本次断言只认 replaySession 的回种帧（避免把装配期的空推送误当回种）。
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+
+    (provider as unknown as { replaySession(): void }).replaySession();
+
+    // 逐条扫描取**最后一次**清空与**最后一次**带钉住名的回种（重放可能含装配期推送）
+    let idxClear = -1;
+    let idxReseed = -1;
+    posted.forEach((m, i) => {
+      const msg = m as { type?: string; pinnedSkillName?: string };
+      if (msg.type === 'clear_ok') idxClear = i;
+      if (msg.type === 'skills_loaded' && msg.pinnedSkillName === '启用技能') idxReseed = i;
+    });
+    expect(idxClear).toBeGreaterThanOrEqual(0);
+    expect(idxReseed).toBeGreaterThan(idxClear);
+  });
+
   it('面板未打开（_view 为空）：静默不抛', () => {
     const { provider, posted } = setup();
     provider.setSkillDirs('/mock/conf', '/mock/user');
