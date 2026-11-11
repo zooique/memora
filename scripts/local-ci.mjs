@@ -58,7 +58,12 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TOKEN_ENV, acquire as acquireGateLock, describeHolder } from './lib/gateLock.mjs';
+import {
+  TOKEN_ENV,
+  acquire as acquireGateLock,
+  describeHolder,
+  probe as probeGateLock,
+} from './lib/gateLock.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -84,7 +89,9 @@ const LOG_DIR = join(ROOT, '.workbuddy', 'tmp');
 // 门禁互斥锁：实现与判据的**唯一真源**在 `scripts/lib/gateLock.mjs`——与 `npm test` 包装
 // （`scripts/test-run.mjs`）共用**同一锁文件、同一判据**，不新增第二把锁。
 // 判活 = pid 存活 且 心跳新鲜（持有者 30s 刷一次，超 90s 判死）；崩溃残留 / pid 复用均可接管。
-// 本文件只负责两件事：① 取锁（并发即拒绝 exit 2）；② 把令牌注入**所有**子步骤（见 runStep）。
+// **锁的作用域 = 本次要跑的步骤里含全量测试步骤**（2026-11-11 订正，见 main 的取锁决策）：
+// full 档含 `kernel:test` / `kernel:coverage` / `host:test` ⇒ 取锁；fast 档全是静态步骤 ⇒
+// 不取锁（否则另一份全量在跑时，pre-commit 会一条判据都没跑就被 exit 2 拒掉 —— 2026-11-11 实锤）。
 // 覆盖面如实声明：只保证同仓同机互斥，不宣称跨 clone / 跨机器。
 let gateToken = '';
 
@@ -107,7 +114,11 @@ const STEP_TIMEOUT_MS = 15 * 60 * 1000; // 单步 15 分钟上限，防挂死
  * `lint-staged` 只扫 **staged** 文件，未 stage 的越限文件提交时完全不被看见（行数闸实锤：
  * 提交时绿、推送时才被 full 档拦下 =「提交时以为干净」）。实测两侧 lint 合计 ≈17s，
  * fast 档总耗时约 50s，仍在「默认路径便宜」预算内 ⇒ 宁可提交时多 17s，不要推送时才发现。
- * @type {{id:string,name:string,cmd:string,cwd:string,required:boolean,presets:string[],optionalFlag?:string,env?:Record<string,string>}[]}
+ * @type {{id:string,name:string,cmd:string,cwd:string,required:boolean,presets:string[],optionalFlag?:string,env?:Record<string,string>,holdsTestLock?:boolean}[]}
+ *
+ * `holdsTestLock`（2026-11-11 增）：本步会执行**全量测试套件** ⇒ 本次门禁必须取测试互斥锁。
+ * 判据只看「这一步是否真的拉起全量」，不看档名——`selectSteps()` 之后用
+ * `steps.some(s => s.holdsTestLock)` 决定取不取锁（见 main）。漏标 = 全量在无锁状态下跑（正是锁要治的病）。
  */
 const ALL_STEPS = [
   // 工具链前置（ENV-PNPM-1）：`host:sync` 的 `pnpm` 解析哪个版本，取决于**宿主 cwd** 的
@@ -182,6 +193,8 @@ const ALL_STEPS = [
     cwd: ROOT,
     required: true,
     presets: ['full'],
+    // 全量测试套件 ⇒ 本次门禁必须取锁（锁的作用域判据，见 ALL_STEPS 的 @type 说明）
+    holdsTestLock: true,
   },
   {
     id: 'kernel:coverage',
@@ -194,6 +207,8 @@ const ALL_STEPS = [
     // 覆盖率跑前会 clean，本环境的 safe-delete guard 会把它拦成崩溃（前提=有残留）；
     // 置空 NODE_OPTIONS 可绕过（实测可行）。
     env: { NODE_OPTIONS: '' },
+    // 内部就是再跑一遍全量（`vitest run --coverage`）⇒ 同样必须持锁
+    holdsTestLock: true,
   },
   // 内核生产构建 —— **先清 dist 再 build**。`build:clean` 与 npm `prepack` 共用同一脚本定义（单一真源）：
   // 裸 `tsc` 不删旧产物 ⇒ src 已删模块的编译产物残留（DIST-ORPHAN-1 实测：dist 122 vs src 非测试 115，
@@ -264,6 +279,8 @@ const ALL_STEPS = [
     cwd: HOST,
     required: true,
     presets: ['full'],
+    // 全量测试套件 ⇒ 本次门禁必须取锁
+    holdsTestLock: true,
   },
   // 宿主构建：产出用户实际运行的单文件 bundle（内联内核 dist）。缺此步则「门禁绿 + bundle 陈旧」可并存。
   {
@@ -652,19 +669,38 @@ function formatReceipt(receipt) {
 }
 
 async function main() {
-  // 门禁互斥：与其他门禁、以及手动全量测试（`npm test`）共用同一把锁（真源 gateLock.mjs）
-  const lock = acquireGateLock({ kind: 'gate' });
-  if (!lock.ok) {
-    console.error(
-      `\n[local-ci] ❌ 另一份门禁或全量测试正在运行（${describeHolder(lock.holder)}），已拒绝并发执行——` +
-        '并发会对撞 CPU / spawn 资源，测试成片假失败（2026-10-03 实锤）。' +
-        '\n[local-ci] 等待其结束或手动杀进程后重试。',
-    );
-    process.exit(2);
-  }
-  gateToken = lock.token;
+  // 取锁决策必须**先算步骤、再决定取不取锁**（2026-11-11 订正）：
+  //   锁只保护「全量测试并发跑」⇒ 只有本次步骤里真的含全量测试才取锁。
+  //   旧实现无条件取锁，于是 pre-commit（fast 档）在另一份 `npm test` 跑着时
+  //   一条判据都没跑就被 exit 2 拒掉（2026-11-11 实锤：pid 26528 已跑 327s，gate-fast 退出码 1）。
+  //   单锁不拆（两个互斥源 = 没有互斥）、不排队（full 实测 671.9s，排队会变成隐性长延时）。
   const preset = argOf('preset') ?? 'full';
   const steps = selectSteps();
+  const needsTestLock = steps.some((s) => s.holdsTestLock === true);
+  if (needsTestLock) {
+    // 与其他门禁、以及手动全量测试（`npm test`）共用同一把锁（真源 gateLock.mjs）
+    const lock = acquireGateLock({ kind: 'gate' });
+    if (!lock.ok) {
+      console.error(
+        `\n[local-ci] ❌ 另一份门禁或全量测试正在运行（${describeHolder(lock.holder)}），已拒绝并发执行——` +
+          '并发会对撞 CPU / spawn 资源，测试成片假失败（2026-10-03 实锤）。' +
+          '\n[local-ci] 等待其结束或手动杀进程后重试。',
+      );
+      process.exit(2);
+    }
+    gateToken = lock.token;
+  } else {
+    // 快档不取锁：全是静态步骤（tsc / lint / 秒级守卫），不跑全量、不写共享产物
+    // （lint 无 `--cache`、tsc 均 `--noEmit` 且 tsconfig 无 incremental ⇒ 无共享产物可踩）。
+    // 有活锁时只告警一行——把「另一份全量正在跑」说清楚，不让它变成本次门禁的拒绝理由。
+    const state = probeGateLock();
+    if (state.alive) {
+      console.warn(
+        `\n[local-ci] ⚠️ 另一份全量正在跑（${describeHolder(state.holder)}）——preset=${preset} 不含全量测试步骤，` +
+          '本次不取锁、不排队（锁只保护全量测试并发；静态步骤不写共享产物）。',
+      );
+    }
+  }
   const receipt = buildReceipt(preset, steps.length);
   mkdirSync(LOG_DIR, { recursive: true });
   console.log(
