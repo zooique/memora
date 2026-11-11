@@ -187,10 +187,12 @@
 - 子 loop 用独立的 `ToolExecutor`，不复用父实例——父的 whitelist 是可变状态，共用会让子派发反过来改父的工具面。
 - **子执行器不注册宿主 `customTools`**（`createSubagentToolExecutor` 全新实例，`SubagentRuntimeParams` 根本不携带注册表）：MCP / 自定义写工具在结构上进不来，不靠 deny 名单逐个点名（点名必然漏，加不完）。`isToolExposed` 第一行的 deny 顺序保护仍保留作为兜底（`toolExecutor.test.ts` 有变异钉），但不再是这条保证的依赖。
 
-**已知限制（v1 不解决，别写成已解决）**
+**技能面（v1 定案：只留全局技能）**
 
-- `buildSystemPrompt(name)`（`rolePackManager.ts:1038-1077`）会把队员包的内嵌技能清单写进 prompt；但 `read_skill` 的解析闭包不带 `packName`，会按 `packName ?? roundAssemblyRole ?? activePackName` 解析（`src/role-pack/rolePackManager.ts:609`）。子会话里若读同名技能，可能读成父当前角色包的同名技能。
-- v1 的处理：**不注入角色包内嵌技能，只留全局技能**。落地方式 = `buildSystemPrompt(name, { includeSkills: false, suppressFollowupAsk: true })`——抑制点在装配入口（新增可选入参），`read_skill` 的解析链一行未改；子执行器的 `readSkill` / `readResource` / `listResources` / `listSkills` 全部只走全局 `skillManager`。**未解决**：若子会话点名读的角色包与父当前包同名技能，`read_skill` 仍可能解析到父包那份（解析链没改，只是不再往 prompt 里塞名单）。
+- 子会话 prompt 不注入角色包内嵌技能清单：`buildSystemPrompt(name, { includeSkills: false, suppressFollowupAsk: true })`。
+- 子执行器（`createSubagentToolExecutor`）的 `readSkill` / `readResource` / `listResources` / `listSkills` 四个回调**全部绕开 `rolePackManager`**，只走全局 `skillManager`。因此同名技能只会读到全局那份，结构上不存在「读成父当前角色包同名技能」的路径（`subagent.test.ts` 用同名冲突样本断言，并钉住 `readSkillContent` 零调用）。
+- 代价（如实登记）：子会话以 `rolePack` 派发时，该包自身的内嵌技能在读面上同样不可见——与 prompt 不注入一致，不存在「prompt 里有、读不到」的错位。
+- 父会话不受影响：父的 `readSkill` 仍是「激活角色包 → 全局池」两级解析（`assembler.ts` 的装配点）；`rolePackManager.readSkillContent` 的 `packName ?? roundAssemblyRole ?? activePackName` 解析只在父侧生效。
 
 **v1 明确不含**：不落 Round、不进列表、不做会话派发、不继承父角色包（`capabilities` 默认空，只能由队长显式点名只读档 `web:search` / `web:fetch`；`code:execute` 拒绝）、不做异步 / 事件回流 / 进度查询、递归 >1、结果摘要器、第二套 loop。
 

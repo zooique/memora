@@ -32,18 +32,46 @@ import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { ToolOutcome } from '@/agent/managers/toolCallHelpers.js';
 
+/**
+ * 全局技能正文表：子会话只应看到「全局」这一层。
+ *
+ * `shared` 是**同名冲突**样本：父当前角色包里也有同名技能（见 createRolePackManagerStub），
+ * 子会话读到的必须是本表这份，否则即「读错包」回归。
+ */
+const GLOBAL_SKILL_BODIES: Readonly<Record<string, string>> = {
+  'global-one': 'GLOBAL-BODY',
+  shared: 'GLOBAL-SHARED',
+};
+
 /** 全局技能桩：子会话只应看到「全局」这一层 */
 const skillManagerStub = {
-  get: (name: string) => (name === 'global-one' ? { content: 'GLOBAL-BODY' } : undefined),
+  get: (name: string) => {
+    const body = GLOBAL_SKILL_BODIES[name];
+    return body === undefined ? undefined : { content: body };
+  },
   readResource: async () => null,
   listResources: () => [],
   listAvailable: () => [],
   buildSkillList: () => '【全局技能清单】',
 } as unknown as SkillManager;
 
-/** 角色包桩：记录 buildSystemPrompt 收到的装配开关（断言子装配确实跳过内嵌技能/提问规则） */
-function createRolePackManagerStub(known: string[] = ['reviewer']) {
+/**
+ * 角色包桩
+ *
+ * 记录 buildSystemPrompt 收到的装配开关（断言子装配确实跳过内嵌技能/提问规则）；
+ * 同时暴露 readSkillContent 的调用记录——子会话的 read_skill 必须**绕开**这条解析链，
+ * 一旦有人把子执行器接回角色包解析，skillCalls 里就会出现名字。
+ *
+ * @param known 已知角色包名（listMeta 用）
+ * @param skillContents 角色包内嵌技能正文（模拟「父当前包与全局池同名」冲突）
+ */
+function createRolePackManagerStub(
+  known: string[] = ['reviewer'],
+  skillContents: Readonly<Record<string, string>> = {},
+) {
   const calls: Array<{ name?: string; options?: unknown }> = [];
+  /** readSkillContent 被调用的技能名（子会话路径应为空） */
+  const skillCalls: string[] = [];
   const manager = {
     listMeta: () => known.map((name) => ({ name })),
     get: () => null,
@@ -51,8 +79,12 @@ function createRolePackManagerStub(known: string[] = ['reviewer']) {
       calls.push({ name, options });
       return 'PERSONA-BASE';
     },
+    readSkillContent: async (name: string) => {
+      skillCalls.push(name);
+      return skillContents[name] ?? null;
+    },
   } as unknown as RolePackManager;
-  return { manager, calls };
+  return { manager, calls, skillCalls };
 }
 
 /** 最小 LLM Provider：按给定行为产出/抛错 */
@@ -173,13 +205,22 @@ describe('子会话工具暴露面', () => {
     );
   });
 
-  it('read_skill 只解析全局技能（角色包内嵌技能不可见）', async () => {
-    await withRuntimeParams(async (params) => {
-      const exec = createSubagentToolExecutor(params, { task: '调查' });
-      expect(await exec.readSkill!('global-one')).toBe('GLOBAL-BODY');
-      // 角色包内嵌技能（非全局）→ null，而不是走角色包解析链
-      expect(await exec.readSkill!('pack-embedded')).toBeNull();
-    });
+  it('read_skill 只解析全局技能（父包同名技能不参与解析）', async () => {
+    // 父当前角色包里也有 shared：若子执行器被接回 rolePackManager，读到的会是 PARENT-PACK-BODY
+    const stub = createRolePackManagerStub(['reviewer'], { shared: 'PARENT-PACK-BODY' });
+    await withRuntimeParams(
+      async (params) => {
+        const exec = createSubagentToolExecutor(params, { task: '调查', rolePack: 'reviewer' });
+        expect(await exec.readSkill!('global-one')).toBe('GLOBAL-BODY');
+        // 同名冲突：必须读全局那份，而不是父当前包那份
+        expect(await exec.readSkill!('shared')).toBe('GLOBAL-SHARED');
+        // 角色包内嵌技能（非全局）→ null，而不是走角色包解析链
+        expect(await exec.readSkill!('pack-embedded')).toBeNull();
+        // 更强的事实：子会话整条读链一次都没碰过 rolePackManager
+        expect(stub.skillCalls).toHaveLength(0);
+      },
+      { rolePackManager: stub.manager },
+    );
   });
 });
 
