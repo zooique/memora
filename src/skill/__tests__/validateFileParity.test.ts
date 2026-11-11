@@ -9,7 +9,10 @@
  * 两份实现天然会漂移（内核不能反向依赖宿主 `_lib`，脚本也无法在无内核环境里 import 内核包），
  * 且漂移没有任何既有测试会红。本测试即该漂移的守门：
  * 1. **夹具唯一来源** = `__tests__/fixtures/skill-validation-parity.json`。同一批文件落盘到临时
- *    workspace 后，内核 `validateFile` 与 `verify-skill.mjs --json --skip-scripts` 各跑一遍。
+ *    workspace 后，内核 `validateFile` 与 `verify-skill.mjs` 的 `verifySkill()` 各跑一遍。
+ *    脚本走**进程内 import**（不再 spawn 子进程）：6 个夹具 × 一次 node 冷启动会撞 vitest 默认
+ *    10s 的 hookTimeout（台账 `TEST-TIMEOUT-FAKERED-1`）；CLI 面仍由宿主侧
+ *    `skillCreatorVerify.test.ts` spawn 守护。
  * 2. 断言两侧判定（ok）与**共享判据的错误集合**一致；任何一侧单独改判据 → 本测试转红。
  * 3. 两侧允许的差异必须登记在夹具的 `allowedDifferences`（含理由），测试断言「不一致的用例
  *    恰好等于白名单」，既防漏登记，也防白名单悄悄过期（差异消失同样转红，逼人删白名单）。
@@ -23,10 +26,9 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SkillManager } from '@/skill/skillManager.js';
 import type { SkillValidation } from '@/skill/types.js';
 
@@ -56,10 +58,21 @@ interface ParityFixture {
   allowedDifferences: AllowedDifference[];
 }
 
-/** `verify-skill.mjs --json` 的 stdout 结构 */
+/** `verify-skill.mjs --json` 的 stdout 结构（进程内报告压平后与之同形） */
 interface ScriptReport {
   ok: boolean;
   items: Array<{ level: string; check: string; message: string }>;
+}
+
+/** 宿主预检脚本导出的模块面（只声明本测试消费的部分） */
+interface VerifySkillModule {
+  verifySkill: (options: {
+    skillFile: string;
+    workspace?: string;
+    userSkillsDir?: string;
+    visibleNames?: string[];
+    skipScripts?: boolean;
+  }) => { ok: () => boolean; items: ScriptReport['items'] };
 }
 
 /** 单个用例在两侧的实际判定结果 */
@@ -143,31 +156,38 @@ function materializeCase(workspace: string, fixtureCase: ParityCase): string {
 }
 
 /**
- * 调起生成期预检脚本并解析 JSON 报告。
- * 注意：退出码 1 是「判红」的正常结果，判定只认 stdout 的 `ok` 字段。
+ * 进程内加载宿主预检脚本模块（模块级缓存：整份测试只解析一次）
+ *
+ * 为什么不 spawn：`beforeAll` 要跑 6 个夹具，每次 spawn 都是一次 node 冷启动，
+ * 累加会撞 vitest 默认 10s 的 hookTimeout（台账 `TEST-TIMEOUT-FAKERED-1`）。
+ * `@vite-ignore` 让 Vite 不尝试打包这个绝对文件路径，交给 Node 原生 ESM 加载。
+ *
+ * @returns 预检脚本模块（提供 `verifySkill`）
+ */
+function loadVerifySkillModule(): Promise<VerifySkillModule> {
+  return import(
+    /* @vite-ignore */ pathToFileURL(VERIFY_SKILL_SCRIPT).href
+  ) as Promise<VerifySkillModule>;
+}
+
+/**
+ * 在进程内跑一遍生成期预检，并把报告压平为与 CLI `--json` 输出同形的结构。
+ *
+ * `emitReport(report, { json: true })` 打印的就是 `{ ok: report.ok(), items: report.items }`，
+ * 故压平后下方断言与「解析 stdout JSON」时期逐字等价，判定内容一字未改。
+ *
+ * @param verifySkill 预检脚本导出的校验函数
  * @param skillFile 被测技能文件绝对路径
  * @param workspace 临时 workspace 根（脚本用它做落点与重名基线）
  * @returns 脚本报告
  */
-function runVerifySkill(skillFile: string, workspace: string): ScriptReport {
-  const result = spawnSync(
-    process.execPath,
-    [VERIFY_SKILL_SCRIPT, skillFile, '--workspace', workspace, '--json', '--skip-scripts'],
-    // 清空冒烟开关：该开关会让脚本早退（只打印一句话），JSON 将无法解析
-    { encoding: 'utf8', env: { ...process.env, MEMORA_VERIFY_SMOKE: '' } },
-  );
-  if (result.error) throw new Error(`无法执行 verify-skill.mjs：${result.error.message}`);
-  const stdout = (result.stdout ?? '').trim();
-  if (!stdout) {
-    throw new Error(
-      `verify-skill.mjs 无 stdout（退出码 ${result.status}）：${(result.stderr ?? '').trim()}`,
-    );
-  }
-  try {
-    return JSON.parse(stdout) as ScriptReport;
-  } catch {
-    throw new Error(`verify-skill.mjs 输出不是 JSON：${stdout.slice(0, 300)}`);
-  }
+function runVerifySkill(
+  verifySkill: VerifySkillModule['verifySkill'],
+  skillFile: string,
+  workspace: string,
+): ScriptReport {
+  const report = verifySkill({ skillFile, workspace, visibleNames: [], skipScripts: true });
+  return { ok: report.ok(), items: report.items };
 }
 
 describe('技能校验双份一致性：内核 validateFile ↔ verify-skill 预检镜像', () => {
@@ -178,14 +198,19 @@ describe('技能校验双份一致性：内核 validateFile ↔ verify-skill 预
   let results: CaseResult[] = [];
 
   beforeAll(async () => {
-    // 脚本缺席时不建 workspace、不 spawn：所有依赖它的用例已注册为 skip（原因见模块头）
+    // 脚本缺席时不建 workspace、不加载模块：所有依赖它的用例已注册为 skip（原因见模块头）
     if (!HOST_VERIFY_SCRIPT_AVAILABLE) return;
+    const { verifySkill } = await loadVerifySkillModule();
     workspace = join(tmpdir(), `memora-skill-parity-${Date.now()}`);
     results = [];
     for (const fixtureCase of fixture.cases) {
       const skillFile = materializeCase(workspace, fixtureCase);
       const kernel = await new SkillManager().validateFile(skillFile);
-      results.push({ fixtureCase, kernel, script: runVerifySkill(skillFile, workspace) });
+      results.push({
+        fixtureCase,
+        kernel,
+        script: runVerifySkill(verifySkill, skillFile, workspace),
+      });
     }
   });
 
