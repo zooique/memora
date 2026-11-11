@@ -608,21 +608,80 @@ function selectSteps() {
   return steps;
 }
 
-/** 从命令输出里抓关键统计，便于控制台一眼看数 */
+/**
+ * 从命令输出里抓关键统计，便于控制台一眼看数
+ *
+ * 口径（2026-11-12 收据口径修正，**只改显示，不改判定**）：
+ *   旧实现是「全文正则取**第一个**匹配」，`skipped` 因此长期抓到 vitest 的**逐文件行**
+ *   （`✓ … (102 tests | 2 skipped)` / `↓ … (3 tests | 3 skipped)`）而不是汇总行，
+ *   收据里写出的 skip 数是假数字（实测真值内核 5 / 宿主 4，旧显示 2 / 1）。
+ *   现改为**只认行锚定的汇总行**：
+ *     - `Test Files  128 passed | 1 skipped (129)`
+ *     - `Tests  3342 passed | 5 skipped (3347)`
+ *   逐文件行不以 `Tests` / `Test Files` 标签开头，天然被排除；同一汇总行内的
+ *   `passed | failed | skipped | todo` 分段逐段累加；一步内若出现多个汇总块
+ *   （同一命令里多次调用 vitest），则跨块累加——不取「第一个」，也不取「最后一个」。
+ *   识别不到汇总行时返回空串（宁可不显示，也不猜一个数字）。
+ *
+ * 文件数口径：`Test Files` 汇总行括号内的**总数**（含被整文件跳过的文件）——
+ * 旧实现报的是 `N passed`，有文件被跳过时会少报（实测 129 个文件只显示 128）。
+ *
+ * 返回值仅用于控制台摘要行与失败步骤尾部输出，**不参与**任何步骤判定、阈值与退出码。
+ *
+ * @param {string} text 单步合并后的 stdout + stderr
+ * @returns {string} 供摘要行使用的短统计串（无识别结果时为空串）
+ */
 function extractStats(text) {
+  // ANSI 转义兜底剥离：门禁已强制 NO_COLOR，但「任意一段输出」都要能被解析
+  const plain = text.replace(/\u001b\[[0-9;]*m/g, '');
+  const lines = plain.split(/\r?\n/);
+  // vitest 汇总行：行首缩进 + 类别标签 + 至少两个空格（右侧对齐）+ 状态段 + 括号内总数
+  const SUMMARY_LINE = /^\s*(Test Files|Tests)\s{2,}(.*?)\(\s*(\d+)\s*\)\s*$/;
+  // 汇总行内的单个计数段，如 `3342 passed` / `5 skipped`
+  const COUNT_TOKEN = /(\d+)\s+(passed|failed|skipped|todo)\b/g;
+
+  /** 新建一个空计数桶（blocks = 命中的汇总块数，0 表示没有可用的汇总行） */
+  const bucket = () => ({ passed: 0, failed: 0, skipped: 0, todo: 0, total: 0, blocks: 0 });
+  const files = bucket(); // `Test Files` 汇总：文件维度
+  const tests = bucket(); // `Tests` 汇总：用例维度
+
+  for (const line of lines) {
+    const head = SUMMARY_LINE.exec(line);
+    if (!head) continue;
+    const target = head[1] === 'Tests' ? tests : files;
+    let tokens = 0; // 本行解析出的计数段个数；一个都没有就不是真汇总行
+    for (const token of head[2].matchAll(COUNT_TOKEN)) {
+      target[token[2]] += Number(token[1]);
+      tokens += 1;
+    }
+    if (tokens === 0) continue;
+    target.total += Number(head[3]);
+    target.blocks += 1;
+  }
+
   const out = [];
-  const tests = text.match(/Tests\s+(\d+)\s+passed/);
-  if (tests) out.push(`${tests[1]} passed`);
-  const files = text.match(/Test Files\s+(\d+)\s+passed/);
-  if (files) out.push(`${files[1]} 文件`);
-  const skipped = text.match(/(\d+)\s+skipped/);
-  if (skipped) out.push(`${skipped[1]} skipped`);
-  const failed = text.match(/(\d+)\s+failed/);
-  if (failed) out.push(`❌ ${failed[1]} failed`);
-  const problems = text.match(/✖\s+(\d+)\s+problems?/);
-  if (problems) out.push(`eslint ${problems[1]} problems`);
-  const warn = text.match(/(\d+)\s+warnings?/);
-  if (warn && !problems) out.push(`eslint ${warn[1]} warnings`);
+  if (tests.blocks > 0) out.push(`${tests.passed} passed`);
+  if (files.blocks > 0) out.push(`${files.total} 文件`);
+  if (tests.skipped > 0) out.push(`${tests.skipped} skipped`);
+  if (tests.failed > 0) out.push(`❌ ${tests.failed} failed`);
+
+  // eslint 汇总行：`✖ 3 problems (3 errors, 0 warnings)`；多个 lint 调用则累加。
+  // 旧实现用全文首个 `(\d+)\s+warnings?`，任何一步输出里出现「N warnings」都会被误标成
+  // eslint 结果，故改为只从 problems 汇总行里取 warnings。
+  let problems = 0;
+  let warnings = 0;
+  for (const line of lines) {
+    const hit =
+      /^\s*✖\s*(\d+)\s+problems?\b(?:.*?\(\s*(\d+)\s+errors?,\s*(\d+)\s+warnings?\s*\))?/.exec(
+        line,
+      );
+    if (!hit) continue;
+    problems += Number(hit[1]);
+    warnings += Number(hit[3] ?? 0);
+  }
+  if (problems > 0) out.push(`eslint ${problems} problems`);
+  else if (warnings > 0) out.push(`eslint ${warnings} warnings`);
+
   return out.join(' · ');
 }
 
@@ -718,37 +777,91 @@ function gitOut(args) {
   }
 }
 
+/** 只读 git 取值，**不裁剪首尾空白** —— porcelain 首列是状态字符，行首那个空格有意义 */
+function gitOutRaw(args) {
+  try {
+    const res = spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' });
+    return res.status === 0 ? String(res.stdout) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 收据里最多列出的脏文件数；超出只写「等 N 个」，避免收据被几十行路径淹没 */
+const RECEIPT_DIRTY_LIMIT = 8;
+
+/**
+ * 读工作区脏清单（`git status --porcelain`）
+ *
+ * 为什么要路径而不只是计数：`dirty=2` 只能证明「有脏文件」，读者无法判断
+ * 被验证的内容是不是 HEAD —— 一份「某提交 + 两个没人知道是什么的改动」的收据
+ * 看上去和「在某提交上验过」一模一样。列出路径才能让收据自证。
+ *
+ * `-c core.quotepath=false` 只为让中文路径按原样输出（只读开关，不改任何 git 配置）。
+ *
+ * @returns {string[]|null} 脏文件路径（null = 取不到，收据降级为 unknown）
+ */
+function readDirtyEntries() {
+  const raw = gitOutRaw(['-c', 'core.quotepath=false', 'status', '--porcelain']);
+  if (raw === null) return null;
+  return raw
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .map((line) => {
+      // porcelain v1：前两列是暂存区/工作区状态码 + 一个空格，之后是路径
+      let path = line.slice(3);
+      // 重命名/复制形态 `R  old -> new`：被验证的是新路径
+      const arrow = path.indexOf(' -> ');
+      if (arrow >= 0) path = path.slice(arrow + 4);
+      return path;
+    });
+}
+
+/**
+ * 把脏清单压成一行收据文本
+ * @param {string[]|null} paths readDirtyEntries() 的返回
+ * @returns {string} `clean` / `unknown` / `N 项未提交：a, b, c`
+ */
+function formatDirty(paths) {
+  if (paths === null) return 'unknown';
+  if (paths.length === 0) return 'clean';
+  const shown = paths.slice(0, RECEIPT_DIRTY_LIMIT).join(', ');
+  const rest = paths.length - RECEIPT_DIRTY_LIMIT;
+  return `${paths.length} 项未提交：${shown}${rest > 0 ? ` 等 ${rest} 个` : ''}`;
+}
+
 /**
  * 收据（receipt）—— 把「全绿」从口头自证变成一份**可外部比对的留痕**。
  * 本地钩子物理上不可强制（LEFTHOOK=0 / --no-verify / 删钩子），故不承诺强制，
  * 只保证：**绕过一次即无收据** —— 缺口可观测，发布前清单一行比对即可发现。
- * `dirty` 必须在场：脏树上的全绿证明力弱，不写下来就会被当成 HEAD 的全绿。
+ * `dirty` 必须在场且带路径：脏树上的全绿证明力弱，不写清楚脏了什么就会被当成 HEAD 的全绿。
+ *
+ * 验证面（2026-11-12 订正）：每一步都是在 cwd 下跑 `npm run ...`，读的是**工作区文件**，
+ * 因此 `tree=` 只是 HEAD 的标识，**不**代表被验证的内容；`dirty` 才是两者的差集。
  */
 function buildReceipt(preset, stepCount) {
-  const porcelain = gitOut(['status', '--porcelain']);
-  const dirtyCount =
-    porcelain === null
-      ? null
-      : porcelain === ''
-        ? 0
-        : porcelain.split('\n').filter((l) => l.trim() !== '').length;
   return {
     when: new Date().toISOString(),
     preset,
     head: gitOut(['rev-parse', '--short=12', 'HEAD']) ?? 'unknown',
     tree: gitOut(['rev-parse', '--short=12', 'HEAD^{tree}']) ?? 'unknown',
-    dirty: dirtyCount === null ? 'unknown' : dirtyCount === 0 ? 'clean' : `${dirtyCount} 项未提交`,
+    dirty: formatDirty(readDirtyEntries()),
     steps: stepCount,
   };
 }
 
+/**
+ * 渲染收据。`验证面` 一行是刻意加的：读者最容易把 `tree=` 当成被验证的树，
+ * 而实际执行面是工作区（HEAD + 未提交改动）。
+ */
 function formatReceipt(receipt) {
   return [
     '══════ local-ci 收据（receipt）══════',
     `when   = ${receipt.when}`,
     `preset = ${receipt.preset}`,
     `head   = ${receipt.head}`,
-    `tree   = ${receipt.tree}`,
+    `tree   = ${receipt.tree}（HEAD 的树，仅标识）`,
+    '验证面  = 工作区文件（head + 未提交改动；不是 tree= 那棵树）',
     `dirty  = ${receipt.dirty}`,
     `steps  = ${receipt.steps}`,
     '═════════════════════════════════════',
