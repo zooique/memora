@@ -12,9 +12,7 @@ import type {
   ActiveFileProjection,
   ChatRef,
   ExtensionToWebviewMessage,
-  InjectionSegment,
   InjectionSource,
-  InjectionSummary,
   PendingQuestionDto,
   RoundView,
   WebviewToExtensionMessage,
@@ -24,13 +22,6 @@ import type {
 import { dedupeRefs, normalizeRefRange, refKeyOf } from '../../shared/refKey.js';
 // 中断轮复制源 = 过程叙述按序拼接：单点在 shared（宿主崩溃打捞派生消费同一份，禁各写一遍）
 import { deriveNarrateText } from '../../shared/narrateText.js';
-// 注入源命名 / 信封标记单一真源（HOST-CTX-4 第 1 笔 SSOT 化）：chip 可见名、回执分项名、
-// @ 下拉 label、信封块头同读一处——曾四处并列写字面量，「短名双写」已付过一次代价。
-import {
-  INJECTION_SEGMENT_LABELS,
-  MOUNTABLE_INJECTION_META,
-  type MountableInjectionSource,
-} from '../../shared/injectionSourceMeta.js';
 // ProcessEvent 纯类型导入（ProcessThinkingPhase 随 phaseLabel 迁 helpers/processEventText）：仅编译期用，esbuild 剥离，不引入运行时依赖
 import type { ProcessEvent } from '@zooique/memora';
 // 错误文案映射单一真理源（与 Node 侧 chatPanel 实时提示条共用，防文案双源漂移）
@@ -41,16 +32,15 @@ import {
   MAX_PENDING_INTERJECTIONS,
 } from '../../shared/constants.js';
 import { bindSingleTrackRow, syncRowEdges } from '../helpers/chipRow.js';
-// 引用 chip 渲染外置（chatView 行数贴死 eslint 上限的纪律性抽取）：本文件只接线，
-// `currentRefs` 仍是唯一真源，交互经回调回流（见 refChips.ts 模块头）
-import { appendRefChips, refDisplayName } from '../helpers/refChips.js';
 import { createQuoteDraft } from '../helpers/quoteDraft.js';
+// 附件行（活动文件 chip / 注入 chip / 引用回复胶囊 + 引用 chip 编排 + 注入回执）渲染域外置：
+// 本文件只传状态快照与回流回调，附件状态真源仍在本闭包（边界见 attachmentRowView.ts 模块头）
+import { createAttachmentRowView, type RefChip } from './attachmentRowView.js';
 import { createClampUserBubble } from '../helpers/userBubble.js';
 import { createImageCapture } from '../helpers/imageCapture.js';
 import { renderAttachmentStrip, type UserAttachmentView } from '../helpers/attachmentStrip.js';
 import { fmtMonthDay, fmtTime } from '../helpers/fmtTime.js';
 import { copyText, installSelectionCopyGuard } from '../helpers/selectionClipboard.js';
-import { fmtTokens } from '../helpers/fmtTokens.js';
 import {
   forceScrollToBottom,
   followIfPinned,
@@ -236,8 +226,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 两类 chip 共用同一 pinned 语义，不另建钉住集数组（SSOT：钉住集与上下文集同源）。
   // missing = 宿主下发的失效投影（文件已删）：灰显「已失效」，不静默丢弃。
   const refChipRow = document.getElementById('refChips') as HTMLElement | null;
-  /** 引用 chip 状态：协议 ChatRef + webview 持有的锁 / 失效投影 */
-  type RefChip = ChatRef & { pinned: boolean; missing?: boolean };
   // 引用回复快照草稿（COPY-2 形态优化）：文本快照 ≠ 文件指针，消费链独立（发送时展开引用块），
   // 状态单点在工厂；chip 渲染编排归 renderAttachmentRow（refChipRow 全清重绘单点）
   const quoteDraft = createQuoteDraft({ document, onRemove: () => renderAttachmentRow() });
@@ -2731,7 +2719,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     currentInjections = [];
     activeFileTokens = undefined;
     pendingActiveFileTokens = undefined;
-    hideInjectionReceipt();
+    attachmentRowView.hideInjectionReceipt();
     renderAttachmentRow();
     // 丢弃缓冲同步清空：跨会话残留会让新会话首帧消费条目被误吞（不上屏 = 内容蒸发）
     // 丢弃缓冲随 statusBars.reset() 一并清空（见上行；原 _pendingDiscardedBuffer = []）
@@ -3332,7 +3320,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       pendingActiveFileTokens = msg.summary.segments.find(
         (s) => s.source === 'active-file' && s.injected,
       )?.tokens;
-      renderInjectionReceipt(msg.summary);
+      attachmentRowView.renderInjectionReceipt(msg.summary);
     } else if (msg.type === 'plan_update') {
       // H4 任务驱动多步闭环：LLM 更新任务表 → 刷新任务看板（容器内自建/更新）
       planBar.renderBoard(msg.items);
@@ -3677,7 +3665,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 注入 chip 发送后无条件清（HOST-CTX-4 ③）：瞬态数据无「钉住」语义，留着等于每轮悄悄塞一份
     currentInjections = [];
     activeFileTokens = pendingActiveFileTokens = undefined;
-    hideInjectionReceipt();
+    attachmentRowView.hideInjectionReceipt();
     // 引用发送后处置（判据 = chip 的 pinned）：未钉住的即消费清除；钉住的常驻，下一轮仍随消息发出
     currentRefs = currentRefs.filter((r) => r.pinned);
     renderAttachmentRow();
@@ -3945,250 +3933,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     });
   }
 
-  /**
-   * 注入原因 → 展示短语（唯一产地：chip 徽记与 title 共用，别在调用点各写一套）
-   *
-   * 值 = **英文源键**（l10n 键面）：本模块在 `initWebviewL10n` 之前即被 import，
-   * 表内不可预解析成译文（早于 config 的 t() 只会拿到键）——解析放在调用点，
-   * 见 `activeFileReasonLabel`。
-   */
-  // @nls-keys
-  const ACTIVE_FILE_REASON_LABELS: Record<'dirty' | 'untitled' | 'outside', string> = {
-    dirty: 'Unsaved',
-    untitled: 'Untitled',
-    outside: 'Outside workspace',
-  };
-
-  /** 取注入原因的本地化短语（表内存英文源键，此处统一过 l10n.t） */
-  function activeFileReasonLabel(reason?: 'dirty' | 'untitled' | 'outside'): string {
-    return l10n.t(ACTIVE_FILE_REASON_LABELS[reason ?? 'dirty']);
-  }
-
-  /** token 数的短显（3258 → ≈3.3k；842 → 842）：chip 徽记空间窄，长数字难扫读 */
-  function formatTokensShort(n: number): string {
-    return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-  }
-
-  /**
-   * 活动文件 chip（**第三种 chip**，与 skill / ref 同构）
-   *
-   * 把「当前打开文件会不会进本轮上下文」摊在输入框上方——此前它完全隐形，用户既看不到
-   * 也没法关。两形态：
-   *   - attached：`📄 白话设计文档.md · 未保存（全文已附）` + ✕（本会话不再附加）
-   *   - suppressed：虚线胶囊「当前文件未附加 · 点击启用」（整枚可点回开，不留死路）
-   *
-   * 为什么要标「全文已附」：干净文件只给指针（不占预算），脏/未命名/工作区外才注入正文
-   * （3~4k token）。不标，用户永远看不懂「这条消息为什么突然贵了、模型为什么看到了我
-   * 没保存的东西」。**文案与 HOST-CTX-6 预算可视化共用这一句**，不拆两处。
-   * CTX-6② 归因：发送后的本轮回推（`injection_summary` 的 active-file 分项）给出 token 数，
-   * 徽记短显 `≈3.3k`、title 给全数——让「这轮贵在哪」有归因入口（圆环只示总量，这里示出处）。
-   * ⚠️ 数字不再长在投影字段上（HOST-CTX-4 ②：三个源各挂一个字段 = 并列腐化），统一由
-   * 汇总投影按源分项下发，见 `activeFileTokens` 变量的预备/认领契约。
-   *
-   * 视觉上复用 `.skill-chip` 基类（不造新范式）；suppressed 复用 `.is-disabled`
-   * （虚线 + 次要色，语义正是「挂着但不会生效」）。
-   */
-  function buildActiveFileChip(p: ActiveFileProjection): HTMLElement | null {
-    if (p.kind === 'none') return null;
-    const icon = (): HTMLElement => {
-      const el = document.createElement('span');
-      el.className = 'skill-chip__icon';
-      el.innerHTML = getIconSvg('file', 11, 11);
-      el.setAttribute('aria-hidden', 'true');
-      return el;
-    };
-    if (p.kind === 'suppressed') {
-      // 整枚是按钮：关闭态若只显示不给回开入口，就成了用户抱怨过的「关不掉」的反面
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'skill-chip active-file-chip is-disabled';
-      chip.dataset.activeFile = 'suppressed';
-      chip.title = l10n.t(
-        'Current file is not attached as context (this session) — click to re-enable',
-      );
-      chip.setAttribute('aria-label', l10n.t('Re-enable current file context'));
-      const name = document.createElement('span');
-      name.className = 'skill-chip__name';
-      name.textContent = l10n.t('Current file not attached');
-      const note = document.createElement('span');
-      note.className = 'skill-chip__note';
-      note.textContent = l10n.t('Click to enable');
-      chip.append(icon(), name, note);
-      chip.addEventListener('click', () => {
-        vscode.postMessage({ type: 'set_active_file_attach', enabled: true });
-      });
-      return chip;
-    }
-    const chip = document.createElement('span');
-    chip.className = 'skill-chip active-file-chip';
-    chip.dataset.activeFile = 'attached';
-    chip.appendChild(icon());
-    const name = document.createElement('span');
-    name.className = 'skill-chip__name';
-    // HOST-CTX-18 降噪（对齐 CTX-17 引用气泡）：可见文本只留文件名，完整相对路径降级到
-    // title 末尾括号（hover 可辨）——投影 label 仍是全路径（aria-label 与去重判据都用它）。
-    // 活动文件永远只有一个，不存在引用气泡那种同名撞车，纯文件名无歧义代价。
-    name.textContent = refDisplayName(p.label);
-    // title 承载「本轮以什么方式附加」——不能只靠徽记（窄面板下徽记可能被省略号吃掉）。
-    // 注入量归因（CTX-6②）：数字只在「发送后本轮回推」里出现（非常驻值，下一次不带汇总
-    // 的投影推送即抹掉），挂在「全文已附」同一句上——CTX-3/CTX-6 文案不拆两处。
-    // CTX-18：完整路径附在末尾括号——可见文本降噪后，目录位置靠 hover 这一眼。
-    name.title = p.injected
-      ? l10n.t(
-          'Full text attached this turn ({0}){1} ({2})',
-          activeFileReasonLabel(p.reason),
-          activeFileTokens !== undefined
-            ? l10n.t('· ~{0} tokens (estimated)', String(activeFileTokens))
-            : '',
-          p.label,
-        )
-      : l10n.t(
-          'Path pointer only this turn; model reads content on demand (no budget cost) ({0})',
-          p.label,
-        );
-    chip.appendChild(name);
-    if (p.injected) {
-      const note = document.createElement('span');
-      note.className = 'skill-chip__note';
-      // 徽记带短显估算（≈3.3k）：全数字（3258）在窄 chip 里挤且难扫读；无值时不显示
-      // （常态附加 chip = 判据已知、本轮规模未知，不造假数）
-      note.textContent =
-        l10n.t('{0} · full text attached', activeFileReasonLabel(p.reason)) +
-        (activeFileTokens !== undefined ? ` ≈${formatTokensShort(activeFileTokens)}` : '');
-      chip.appendChild(note);
-    }
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.className = 'skill-chip__remove';
-    remove.innerHTML = getIconSvg('close', 11, 11);
-    remove.setAttribute('title', l10n.t('Stop attaching current file this session'));
-    remove.setAttribute('aria-label', l10n.t('Close current file context: {0}', p.label));
-    remove.addEventListener('click', () => {
-      vscode.postMessage({ type: 'set_active_file_attach', enabled: false });
-    });
-    chip.appendChild(remove);
-    return chip;
-  }
-
-  /** 回执归零（新一轮发送 / 清空会话 / 本轮无注入）：不做「本轮注入 0」这种无信息显示 */
-  function hideInjectionReceipt(): void {
-    if (!injectionReceipt) return;
-    injectionReceipt.hidden = true;
-    injectionReceipt.textContent = '';
-  }
-
-  /**
-   * 注入型上下文 chip（**第四种 chip**，HOST-CTX-4）
-   *
-   * 与引用 chip 的根本差别：引用只挂指针（模型按需读），注入 chip **当轮就把内容塞进信封**
-   * ——因为诊断 / git 变更 / 终端输出这类瞬态数据在内核工具箱里**没有对应读取工具**，
-   * 「提示模型去看」此路不通（见 HOST-CTX-0 例外的理由）。
-   *
-   * 可辨性（硬约束③「明示」）：与引用 chip 并排在同一行，故**形状 + 颜色双通道**区分——
-   * 圆角矩形（非胶囊）+ warn 色实线边框 + ⚠ 图标 + 「内容已注入」短标。
-   * ⚠️ 不用半透明 / 低对比度表达：真机证过半透明 chip 看着像未渲染（CTX-17 同款教训）。
-   *
-   * 无 🔒（硬约束④「不泛化」）：常驻 = 每轮都悄悄塞一份进信封，用户会失去预算控制；
-   * 要再用就重新挂一次。✕ 即移除（从 currentInjections 过滤，单一真理源）。
-   */
-  function buildInjectionChip(source: MountableInjectionSource): HTMLElement {
-    const meta = MOUNTABLE_INJECTION_META[source];
-    const sourceName = l10n.t(INJECTION_SEGMENT_LABELS[source]);
-    const chip = document.createElement('span');
-    // .skill-chip 基类 + .injection-chip 差异化（形状 / 颜色）；data-injection 是测试锚点
-    chip.className = 'skill-chip injection-chip';
-    chip.dataset.injection = source;
-    const icon = document.createElement('span');
-    icon.className = 'skill-chip__icon';
-    icon.innerHTML = getIconSvg('warning', 11, 11);
-    icon.setAttribute('aria-hidden', 'true');
-    const name = document.createElement('span');
-    name.className = 'skill-chip__name';
-    name.textContent = sourceName;
-    // 可见文本只有四个字，全部说明进 title（hover 第一问就是「这挂的是啥、占不占」）
-    name.title = l10n.t(meta.chip.title);
-    const note = document.createElement('span');
-    note.className = 'skill-chip__note';
-    note.textContent = l10n.t(meta.chip.note);
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.className = 'skill-chip__remove';
-    remove.innerHTML = getIconSvg('close', 11, 11);
-    remove.setAttribute('title', l10n.t('Remove: {0}', sourceName));
-    remove.setAttribute('aria-label', l10n.t('Remove {0} injection', sourceName));
-    remove.addEventListener('click', () => {
+  // 附件行（活动文件 / 注入 / 引用回复胶囊 + 引用 chip 编排 + 注入回执）渲染域外置
+  // `attachmentRowView`：状态真源全在本闭包，每次重绘只传一份快照，交互经回调回流改真源。
+  const attachmentRowView = createAttachmentRowView({
+    document,
+    row: refChipRow,
+    receipt: injectionReceipt,
+    post: (m) => vscode.postMessage(m),
+    onRemoveInjection: (source) => {
       currentInjections = currentInjections.filter((s) => s !== source);
       renderAttachmentRow();
-    });
-    chip.append(icon, name, note, remove);
-    return chip;
-  }
-
-  /**
-   * 圆环 hover 卡片底部「本轮注入」回执行（HOST-CTX-4 ② 的呈现落点）
-   *
-   * 一次性回执：只在**发送后**由 `injection_summary` 驱动，下一轮发送 / 清空会话时清。
-   * 显示判据 = 至少一个分项真的注入了内容且合计 > 0——「本轮注入 0」是纯噪音，
-   * 且会让人误以为「挂了但没生效」。
-   * 分项明细**同屏可见**（徽记时代只能进 title）：hover 卡片本就是「精确」层，
-   * 明细没有理由再藏一层；数字口径与卡片其余行统一走 `fmtTokens`（精确式）。
-   */
-  function renderInjectionReceipt(summary: InjectionSummary): void {
-    if (!injectionReceipt) return;
-    // 类型谓词收窄（不是「过滤后再取」）：分项名后跟的必须是 number，若过滤条件改松，
-    // `${s.tokens}` 会静默印出 `undefined`——收窄后 tsc 直接拦住。
-    const injected = summary.segments.filter(
-      (s): s is InjectionSegment & { tokens: number } => s.injected && typeof s.tokens === 'number',
-    );
-    if (summary.total <= 0 || injected.length === 0) {
-      hideInjectionReceipt();
-      return;
-    }
-    const detail = injected
-      .map((s) => `${l10n.t(INJECTION_SEGMENT_LABELS[s.source])} ${fmtTokens(s.tokens)}`)
-      .join(' · ');
-    injectionReceipt.textContent = l10n.t(
-      'Injected this turn {0} ({1}) · estimated at send time, overwritten next turn',
-      fmtTokens(summary.total),
-      detail,
-    );
-    injectionReceipt.hidden = false;
-  }
-
-  /** 构建/清空附件行：**活动文件 chip + 注入 chip + 引用 chip** 共用一个容器（`#refChips`）。
-   *
-   * 引用 chip 形态：`文件名(+行号) + 🔒 + ×`（HOST-CTX-17 降噪：可见文本只留文件名，
-   * 完整相对路径降级到 title / aria-label——hover 与屏幕阅读器仍拿得到，见 refDisplayName），
-   * 与技能 chip 同构复用 `.skill-chip*` 样式；
-   * 🔒 切 pinned（发送后是否保留），× 移除 = 从 currentRefs 过滤并刷新（单一真理源），
-   * 文件名/行号 span 点击 = 上报 open_ref 跳编辑器定位；注入 chip（第四类，⚠ 图标 +
-   * 圆角矩形 + warn 色）在活动文件之后、引用之前——它带内容，故与注入方（活动文件）同侧，
-   * 与纯指针的引用分开。
-   * 显隐判据只写一次（`hasAttachment`）：三类 chip 任一存在即显示——分成多处各判一次，
-   * 必然出现「refs 清空后活动文件 chip 被连坐隐藏」这类漂移。 */
-  function renderAttachmentRow(): void {
-    if (!refChipRow) return;
-    refChipRow.textContent = '';
-    const quoteChip = quoteDraft.chip();
-    if (
-      activeFile.kind === 'none' &&
-      currentRefs.length === 0 &&
-      currentInjections.length === 0 &&
-      !quoteChip
-    ) {
-      refChipRow.hidden = true;
-      return;
-    }
-    refChipRow.hidden = false;
-    // 活动文件在前（常态背景上下文），引用在后（本轮临时挂载）
-    const activeChip = buildActiveFileChip(activeFile);
-    if (activeChip) refChipRow.appendChild(activeChip);
-    for (const source of currentInjections) refChipRow.appendChild(buildInjectionChip(source));
-    // 引用回复快照胶囊（COPY-2 形态优化）：快照语义 ≠ 文件指针，但同属「本轮挂载的引用」混排
-    if (quoteChip) refChipRow.appendChild(quoteChip);
-    // 引用 chip 渲染外置 helpers/refChips.ts（只产 DOM、不持状态）：排序（钉住置顶）、
-    // 失效灰显、🔒/✕/清空的语义全在该单点；本处只把「状态改动」与「即时落盘」接起来。
-    appendRefChips(refChipRow, currentRefs, {
+    },
+    refHandlers: {
       // 载荷只带协议字段（钉住态不随 open_ref 上行）
       onOpen: (ref) => vscode.postMessage({ type: 'open_ref', ref }),
       onTogglePin: (ref) => {
@@ -4213,9 +3969,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         persistPins();
         renderAttachmentRow();
       },
+    },
+  });
+
+  /** 附件行重绘：从本闭包取状态快照交给渲染域（引用回复草稿的胶囊同批取） */
+  function renderAttachmentRow(): void {
+    attachmentRowView.render({
+      activeFile,
+      activeFileTokens,
+      injections: currentInjections,
+      refs: currentRefs,
+      quoteChip: quoteDraft.chip(),
     });
-    // 同一行里既有活动文件 chip 又有引用：重建后必须按新宽度重算渐隐（见 syncRowEdges）
-    syncRowEdges(refChipRow);
   }
 
   // 行元素在脚本加载时已存在；窗口尺寸变化只影响是否溢出，

@@ -50,7 +50,7 @@ export default [
   // - 重算指引：瘦身提交后按上法刷新该条 max 调低；**禁止只更新数字不改行数**（无判据作用的
   //   描述性行数已从注释清除，此处仅留闸门阈值）。
   {
-    files: ['src/webview/scripts/chatView.ts'], // TARGET（单闭包；计划栏域、历史菜单域、占用域、活动抽屉域、状态条域、过程流单元格域、下拉选择器域、问答回顾行域、工具行动作面域、角色徽章行域、轮级动作底栏域、重放时间线域、技能选择器域已外置）
+    files: ['src/webview/scripts/chatView.ts'], // TARGET（单闭包；计划栏域、历史菜单域、占用域、活动抽屉域、状态条域、过程流单元格域、下拉选择器域、问答回顾行域、工具行动作面域、角色徽章行域、轮级动作底栏域、重放时间线域、技能选择器域、附件行渲染域已外置）
     // REPLAY-EMPTY-INTERRUPT-1（2026-11-01）：空过程事件中断轮渲染（判据/复位/时间兜底/问答行
     // 归位）+ 同轮外置重放时间线交织到 helpers/replayTimeline.ts ⇒ 净减 4（4960→4956）。
     // 基线按闸门自报下调，不留虚空余量。
@@ -59,7 +59,11 @@ export default [
     // HOST-I18N-2 C-3（2026-11-09）：提问卡 / 写确认卡两域整体外置为
     // scripts/askInlineView.ts + scripts/writeConfirmCardView.ts（净减 384），
     // 剩余 CJK 文案全量走 l10n.t；基线按闸门自报（max 临时置 1 读数）同步下调。
-    rules: { 'max-lines': ['error', { max: 4353 }] },
+    // CHATPANEL-MARGIN-1 第一刀（2026-11-11）：附件行渲染域（活动文件 chip / 注入 chip /
+    // 引用回复胶囊 + 引用 chip 编排 + 注入回执）整体外置为 scripts/attachmentRowView.ts，
+    // 闸门自报 4353 → 4118（净减 235）。本条按要求**留出可用余量**（后续 UI 项不再一写就红）：
+    // 基线 = 4118 + 82，仍低于原 4353（只降不升未破）。
+    rules: { 'max-lines': ['error', { max: 4200 }] },
   },
   {
     // FORMAT-1 清零（2026-10-29）：prettier --write 还原折行欠账，物理行 4515→4529（+14 全为

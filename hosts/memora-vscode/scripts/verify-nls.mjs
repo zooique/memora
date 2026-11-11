@@ -656,6 +656,10 @@ const WEBVIEW_PANELS = {
       'webview/helpers/fmtTime.ts',
       'webview/scripts/askInlineView.ts',
       'webview/scripts/writeConfirmCardView.ts',
+      // CHATPANEL-MARGIN-1 第一刀（2026-11-11）：附件行渲染域整体外置（活动文件 chip /
+      // 注入 chip / 引用回复胶囊 + 引用 chip 编排 / 注入回执），文案全走 l10n.t；
+      // 动态键源 `ACTIVE_FILE_REASON_LABELS` 的 `@nls-keys` 标记随域迁入。
+      'webview/scripts/attachmentRowView.ts',
       'webview/scripts/chatView.ts',
       'webview/panels/chatNoticeOps.ts',
       'webview/panels/chatRefOps.ts',
