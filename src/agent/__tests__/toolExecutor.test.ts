@@ -332,8 +332,9 @@ describe('工具执行器（6 个工具）', () => {
   // ─── deny 轴（工具面第二根轴 · 减法；子 agent v1 第一刀）──────────────
   describe('deny 轴（denyTools：唯一减法，必须压过自定义工具恒暴露）', () => {
     afterEach(() => {
-      // 复位 deny 集，避免用例间污染（默认空集 = 父会话行为）
+      // 复位 deny 集与白名单，避免用例间污染（默认 = 空 deny + null 白名单 = 父会话行为）
       executor.setDenyTools([]);
+      executor.setToolWhitelist(null);
     });
 
     it('deny 内置常驻写工具：list 不含 + 执行闸拒绝（与只读闸是两道不同保证）', async () => {
@@ -401,7 +402,7 @@ describe('工具执行器（6 个工具）', () => {
       expect(text).toContain('# Test Project');
     });
 
-    it('SUBAGENT_DENIED_TOOLS 常量清单按副作用覆盖：写盘 / 执行 / 交互 / 父状态', () => {
+    it('SUBAGENT_DENIED_TOOLS 常量清单按副作用覆盖：写盘 / 执行 / 交互 / 父状态 + 职责例外', () => {
       // 清单是子会话唯一减法真源：写/执行面、loop 层交互（ask_user）、
       // 以及有副作用但不写盘的常驻工具（改父会话 / 项目状态）都必须在内。
       expect(SUBAGENT_DENIED_TOOLS).toEqual(
@@ -422,12 +423,29 @@ describe('工具执行器（6 个工具）', () => {
           'task_table_write',
           'task_table_update',
           'register_work',
+          // 职责例外：队长对外的评审端口，唯一不按副作用禁的一项
+          'run_team_meeting',
         ]),
       );
       // 清单内不得混入纯读工具（防止有人凭工具名直觉扩大 deny 误伤子会话）
       for (const readOnlyName of ['read_file', 'list_dir', 'search_memories', 'search_project']) {
         expect(SUBAGENT_DENIED_TOOLS).not.toContain(readOnlyName);
       }
+    });
+
+    it('run_team_meeting 属职责例外：deny 生效后从可见面移除（不是靠白名单顺带隐藏）', () => {
+      // 对照组：父会话默认（whitelist=null）可见 —— 证明它走的是特权工具分支，
+      // 不依赖常驻豁免，也不会被空白名单「顺手」隐藏。
+      expect(executor.list.map((t) => t.name)).toContain('run_team_meeting');
+
+      // 只加 deny（不改白名单）：若常量里删掉这一行，本断言会转红
+      executor.setDenyTools(['run_team_meeting']);
+      expect(executor.list.map((t) => t.name)).not.toContain('run_team_meeting');
+
+      // 子会话完整配置（deny 常量 + toolWhitelist=[]）下同样不可见
+      executor.setToolWhitelist([]);
+      executor.setDenyTools(SUBAGENT_DENIED_TOOLS);
+      expect(executor.list.map((t) => t.name)).not.toContain('run_team_meeting');
     });
   });
 

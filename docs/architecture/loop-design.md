@@ -164,7 +164,7 @@
 **deny 轴（工具面第二根轴）**
 
 - 判据必须放在 `isToolExposed` 第一行、**在 `customTools.has(name)` 之前**（`src/agent/toolExecutor.ts:988-997`，`customTools` 分支在 `:990`），否则 MCP / 自定义工具会先命中「恒暴露」而绕过 deny。
-- 按「副作用」枚举，不按工具名直觉：写盘 / 删文件 / 跑命令 / 杀命令 / 跑项目脚本 / 跑技能脚本 / `ask_user`，再加 `remember_intel` / `task_table_write` / `task_table_update` / `register_work`。工具名真源 = `DEFAULT_EXPOSED_TOOLS`（`src/agent/toolExecutor.ts:503-537`）。**代价**：子会话不能贡献情报和任务项，由队长汇总——有意选择，不是遗漏。
+- 按「副作用」枚举，不按工具名直觉：写盘 / 删文件 / 跑命令 / 杀命令 / 跑项目脚本 / 跑技能脚本 / `run_code` / `ask_user`，再加 `remember_intel` / `task_table_write` / `task_table_update` / `register_work`。`run_code` 不是与白名单重复的冗余：`code:execute` 属特权，空白名单只是「今天看不见」而非「结构上看不见」，它是第六条夹紧规则在工具层的兜底。**唯一按职责而非按副作用禁的例外是 `run_team_meeting`**（队长对外的评审端口，子会话单角色调用等于花一个 step 买一次无意义的多人自评，且成本不受每步 2 个信号量约束）——新增工具时按副作用核一遍会漏掉它，必须单独按职责再核一遍。工具名真源 = `DEFAULT_EXPOSED_TOOLS`（`src/agent/toolExecutor.ts:503-537`）。**代价**：子会话不能贡献情报和任务项，由队长汇总——有意选择，不是遗漏。
 - deny **不能替代** `toolReadonly` 的理由只有三条（详见评估 §7.4 依据一的重写）：从模型可见面隐藏、`ask_user` 在 loop 层挂起、有副作用但不写盘的常驻工具。
 
 **状态回传（不建假 Round）**

@@ -546,12 +546,19 @@ export const DEFAULT_EXPOSED_TOOLS: ReadonlySet<string> = new Set([
  * **按副作用枚举，不按工具名直觉**：
  * - 写盘：`write_file` / `delete_file`（项目文件可被改坏，子会话只读）；
  * - 执行：`run_command` / `kill_command`（任意 shell 与后台进程）/ `run_project_script` /
- *   `run_skill_script`（仓库与技能脚本同样是任意执行面）/ `run_code`（LLM 现写代码，
- *   当前子会话 `toolWhitelist=[]` 下本就不可见，此处兜底防将来白名单扩容时漏掉）；
+ *   `run_skill_script`（仓库与技能脚本同样是任意执行面）/ `run_code`（LLM 现写代码）。
+ *   `run_code` 是**第六条夹紧规则**（`code:execute` 属特权能力）的工具层兜底：白名单为空只是
+ *   「今天看不见」，不是「结构上看不见」；只把这条规则活在 `delegate_task` 的参数校验里，
+ *   将来有人绕过参数直接构造子 loop 就漏了。禁止读成「与白名单重复、可删」；
  * - 交互：`ask_user`（`readonly: true`，只读闸管不到；它会在 loop 层挂起父会话，
  *   子会话没有用户应答通道，放行等于把父 turn 挂死）；
  * - 有副作用但不写盘：`remember_intel`（写父会话的私有情报区）/ `task_table_write` /
  *   `task_table_update`（改父会话任务表）/ `register_work`（改项目级作品索引）。
+ *
+ * **唯一按职责而非按副作用禁的例外：`run_team_meeting`**。它无外部写副作用，但它是
+ * **队长对外的评审端口**（一次 `provider.chat()` 拉 N 个 persona）：子会话只有一个角色，
+ * 调它等于花一个完整 step 买一次无意义的多人自评，且这条成本路径不受「每步最多 2 个」
+ * 信号量约束。注意：新增工具时按副作用核一遍会漏掉这条，必须单独按「职责」再核一遍。
  *
  * **代价（有意选择）**：子会话不能贡献情报与任务项，由队长汇总后写入；不是遗漏。
  */
@@ -564,6 +571,7 @@ export const SUBAGENT_DENIED_TOOLS: readonly string[] = [
   'kill_command',
   'run_project_script',
   'run_skill_script',
+  // 第六条夹紧规则的工具层兜底（不是与白名单重复，禁止删除）
   'run_code',
   // ── 交互（loop 层拦截，只读闸挡不住）──
   'ask_user',
@@ -572,6 +580,8 @@ export const SUBAGENT_DENIED_TOOLS: readonly string[] = [
   'task_table_write',
   'task_table_update',
   'register_work',
+  // ── 职责例外（全表唯一不按副作用禁的一项，见上方说明）──
+  'run_team_meeting',
 ];
 
 /**
