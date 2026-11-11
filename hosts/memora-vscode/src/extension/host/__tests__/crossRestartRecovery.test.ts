@@ -78,6 +78,27 @@ interface CrashOutcome {
   signal: string | null;
   stdout: string;
   stderr: string;
+  /** spawn 层失败原因（如 EAGAIN / ENOBUFS）；子进程正常起来时为 null */
+  error: string | null;
+}
+
+/**
+ * 把子进程结局压成一行诊断，作为断言消息
+ *
+ * 为什么必须带上：本文件的首个断言只查 stdout 标记，子进程的 `CHILD_ERROR`（stderr）
+ * 与 spawn 层错误（`res.error`）此前**被整体丢弃** ⇒ 一旦它在进入崩溃窗口前退出，
+ * 失败现场只剩「空 stdout」，真因（初始化哪个环节抛了什么）永久不可查。
+ */
+function describeCrash(crash: CrashOutcome): string {
+  // 只取 stderr 末尾 5 行：fixture 的 CHILD_ERROR 是最后一行，前面是初始化日志
+  const stderrTail = crash.stderr.trim().split('\n').slice(-5).join(' | ');
+  return [
+    `status=${String(crash.status)}`,
+    `signal=${String(crash.signal)}`,
+    `error=${crash.error ?? '-'}`,
+    `stdout=${JSON.stringify(crash.stdout.slice(0, 80))}`,
+    `stderr(尾5行)=${stderrTail || '-'}`,
+  ].join(' · ');
 }
 
 function seedConfig(configDir: string): void {
@@ -112,6 +133,8 @@ function runCrashingChild(
     signal: res.signal,
     stdout: res.stdout ?? '',
     stderr: res.stderr ?? '',
+    // spawnSync 未能拉起进程时 error 非空（stdout/stderr 均为空），与「子进程自报错误」是两类
+    error: res.error ? `${res.error.name}/${res.error.message}` : null,
   };
 }
 
@@ -136,7 +159,7 @@ describe('跨重启恢复：真杀进程 → 重启打捞 → 升级为正常 st
 
   it('子进程真的跑到了崩溃窗口才死（前置事实，防环境问题被误读成行为缺陷）', () => {
     // 子进程打印 TEXT_CHUNK 才自杀；没这行说明它压根没进 LLM 阶段，后续断言全部无意义
-    expect(crash.stdout).toContain('TEXT_CHUNK');
+    expect(crash.stdout, describeCrash(crash)).toContain('TEXT_CHUNK');
     // 非优雅退出：不能是 0（正常退出），且不能是 3（fixture 自报错误）或 4（没拿到正文）
     expect(crash.status).not.toBe(0);
     expect(crash.status).not.toBe(3);
@@ -145,7 +168,8 @@ describe('跨重启恢复：真杀进程 → 重启打捞 → 升级为正常 st
 
   it('崩溃瞬间的磁盘形态：轮文件在（pending、无引用计数）且会话已认它（ADR-044）', () => {
     const indexPath = join(dataDir, 'rounds', 'index.json');
-    expect(existsSync(indexPath)).toBe(true);
+    // 索引缺失 = 子进程没建过轮（它死在 appendUser 之前），不是「索引被清理」
+    expect(existsSync(indexPath), describeCrash(crash)).toBe(true);
     const index = JSON.parse(readFileSync(indexPath, 'utf8')) as {
       id: string;
       status: string;
@@ -182,7 +206,13 @@ describe('跨重启恢复：真杀进程 → 重启打捞 → 升级为正常 st
     roundStore.load();
     // 喂轮自己 createdAt 的**本地日期**（formatDateKey）——与生产宿主传的 sessionDate
     //（会话 ID 本地日期前缀）同口径（E2E-TZ-SALVAGE-1 修复后两侧同判据，不再绕缺口）。
-    const date = formatDateKey(new Date(roundStore.getById(crashedRoundId)!.createdAt));
+    // 前置轮读不到时用子进程结局报错，而不是让 `null.createdAt` 把真因藏成 TypeError
+    const crashed = roundStore.getById(crashedRoundId);
+    expect(
+      crashed,
+      `前置轮 ${String(crashedRoundId)} 读不到 · ${describeCrash(crash)}`,
+    ).not.toBeNull();
+    const date = formatDateKey(new Date(crashed!.createdAt));
     const interrupted = roundStore.listInterruptedRecent?.(date) ?? [];
     expect(interrupted.map((r) => r.id)).toContain(crashedRoundId);
 
@@ -214,7 +244,13 @@ describe('跨重启恢复：真杀进程 → 重启打捞 → 升级为正常 st
     });
     await agent.init();
 
-    const date = formatDateKey(new Date(roundStore.getById(crashedRoundId)!.createdAt));
+    // 同上：前置轮读不到时报子进程结局，不让 null.createdAt 冒充缺陷
+    const crashed = roundStore.getById(crashedRoundId);
+    expect(
+      crashed,
+      `前置轮 ${String(crashedRoundId)} 读不到 · ${describeCrash(crash)}`,
+    ).not.toBeNull();
+    const date = formatDateKey(new Date(crashed!.createdAt));
     // 走**生产同一份实现**（chatPanel 也调它），不是测试里另写一遍
     const history = agent.agentHistory;
     expect(history).not.toBeNull();
@@ -283,13 +319,16 @@ describe('提问窗口崩溃 ⇒ 问题文本可恢复（E2E-ASK-LOSS-1）', () 
   });
 
   it('子进程确实在 paused（AI 已提问、等回答）之后才被杀', () => {
-    expect(crash.stdout).toContain('ASK_PENDING');
+    expect(crash.stdout, describeCrash(crash)).toContain('ASK_PENDING');
     expect(crash.status).not.toBe(0);
     expect(crash.status).not.toBe(4);
   });
 
   it('挂起前提问已落盘：盘面 pendingAsk 含 question 与 options（修复前这里搜不到任何提问内容）', () => {
-    const index = JSON.parse(readFileSync(join(dataDir, 'rounds', 'index.json'), 'utf8')) as {
+    // 索引缺失 = 子进程没进问答窗口（不是清理时序问题），带上子进程结局才能查真因
+    const indexPath = join(dataDir, 'rounds', 'index.json');
+    expect(existsSync(indexPath), describeCrash(crash)).toBe(true);
+    const index = JSON.parse(readFileSync(indexPath, 'utf8')) as {
       id: string;
       status: string;
     }[];
@@ -353,7 +392,10 @@ describe('提问窗口崩溃 ⇒ 问题文本可恢复（E2E-ASK-LOSS-1）', () 
     });
     await agent.init();
 
-    const date = formatDateKey(new Date(roundStore.getById(roundId)!.createdAt));
+    // 同上：前置轮读不到时报子进程结局，不让 null.createdAt 冒充缺陷
+    const pr = roundStore.getById(roundId);
+    expect(pr, `前置轮 ${String(roundId)} 读不到 · ${describeCrash(crash)}`).not.toBeNull();
+    const date = formatDateKey(new Date(pr!.createdAt));
     const upgraded = await salvageInterruptedRounds({
       store: roundStore,
       history: agent.agentHistory!,
