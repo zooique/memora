@@ -364,7 +364,8 @@ describe('GuardRail 判定复现现有护栏（S1 shadow 契约）', () => {
     for (let i = 0; i < 3; i++) {
       feed(g, 'write_file', '{"path":"a.md"}', 'failed');
     }
-    // 自定义读工具（MCP 命名形态）成功读到同一路径；diskWrite 缺省 = 不改盘
+    // 自定义读工具（MCP 命名形态）成功读到同一路径；未声明 diskWrite ⇒ fail-closed 归 'opaque'
+    //（非 'path'，不进失败计数；也不清零）
     // 判据边界：只有内置 read_file 兑现「真实文件状态已确认」，自定义读工具无该契约保证
     g.notifyExec({
       toolName: 'mcp__fs__read_file',

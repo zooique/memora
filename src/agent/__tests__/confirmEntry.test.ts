@@ -22,7 +22,7 @@ import {
   requireConfirmEntry,
   requireConfirmingEntry,
 } from '@/security/confirmEntries.js';
-import { ALL_BUILTIN_TOOL_DEFS } from '@/agent/builtinTools.js';
+import { ALL_BUILTIN_TOOL_DEFS, resolveWriteCapability } from '@/agent/builtinTools.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 
 describe('执行面确认入口登记表（CMD-1-BYPASS · 守卫）', () => {
@@ -60,8 +60,9 @@ describe('执行面确认入口登记表（CMD-1-BYPASS · 守卫）', () => {
 
   it('登记表键集必须与 opaque 派生集双向相等（新增执行面漏登记即红）', () => {
     const declared = Object.keys(CONFIRM_ENTRY_BY_TOOL).sort();
-    // 判据真源 = 工具定义行的 `diskWrite` 声明（7.0.0 起不再有 OPAQUE_WRITE_TOOL_NAMES 派生表）
-    const derived = ALL_BUILTIN_TOOL_DEFS.filter((t) => t.diskWrite === 'opaque')
+    // 判据真源 = 唯一派生点 `resolveWriteCapability`（fail-closed：漏声明也按 'opaque' 计入）；
+    // 若这里改回直接读 `t.diskWrite === 'opaque'`，漏声明的执行面会同时躲过确认入口与断言。
+    const derived = ALL_BUILTIN_TOOL_DEFS.filter((t) => resolveWriteCapability(t.name) === 'opaque')
       .map((t) => t.name)
       .sort();
     expect(declared).toEqual(derived);

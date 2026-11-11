@@ -18,7 +18,8 @@
  *
  * 补充导出 `WRITE_PATH_EXTRACTORS`（非防重）：写工具**不防重**，但同一 step 内打在同一路径上的
  * 两次写**必须串行**（并行会因读旧快照而互相覆盖）。二者是同一批「副作用型工具」的两面。
- * ⚠️ 本表 = 内置契约钉 + 宿主派生面；loop 的**写序判据**已改读工具定义行 `diskWrite` 声明
+ * ⚠️ 本表 = 内置契约钉 + 宿主派生面；loop 的**写序判据**已改读唯一派生点
+ * `resolveWriteCapability`（读定义行 `diskWrite` 声明，缺省 fail-closed），本表不再承担判据。
  * （路径提取语义仍复用本模块的 `extractArgsPathTarget`，判据不再按工具名查表）。
  */
 import path from 'node:path';

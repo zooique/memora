@@ -259,14 +259,14 @@ describe('改盘写声明（diskWrite · DISKWRITE-CUSTOM-1 源头接线）', ()
     expect(result.definition.diskWrite).toBe('opaque');
   });
 
-  it('readOnlyHint:true → 不声明（只读工具不参与写排序，读类调用保持全并发）', () => {
+  it("readOnlyHint:true → 显式 'none'（只读工具不参与写排序；缺省会被内核 fail-closed 当 'opaque'）", () => {
     const result = toToolDefinition(
       'srv',
       makeTool('t', undefined, { readOnlyHint: true }),
       NO_ALLOWLIST,
     );
     if ('skipped' in result) throw new Error('不应被剔除');
-    expect(result.definition).not.toHaveProperty('diskWrite');
+    expect(result.definition.diskWrite).toBe('none');
   });
 
   it("readOnlyHint:true 与 destructiveHint:true 自相矛盾 → 按 'opaque'（不替 server 圆谎）", () => {
@@ -285,7 +285,7 @@ describe('改盘写声明（diskWrite · DISKWRITE-CUSTOM-1 源头接线）', ()
     expect(bindings.map((b) => b.definition.readonly)).toEqual([false, false]);
   });
 
-  it('readonly 与 diskWrite 同源成对：readOnlyHint:true 且非 destructive → readonly:true 且无 diskWrite；其余显式 false', () => {
+  it("readonly 与 diskWrite 同源成对：readOnlyHint:true 且非 destructive → readonly:true 且 diskWrite:'none'；其余显式 'opaque'", () => {
     // 成对断言：两个字段都从同一份 readOnlyDeclaration 派生，单测不一漏一
     const cases: Array<{ annotations?: McpTool['annotations']; label: string }> = [
       { label: '未声明', annotations: undefined },
@@ -302,7 +302,7 @@ describe('改盘写声明（diskWrite · DISKWRITE-CUSTOM-1 源头接线）', ()
       const expectReadonly = label === 'readOnlyHint:true';
       expect(result.definition.readonly, `${label} 的 readonly 判据`).toBe(expectReadonly);
       if (expectReadonly) {
-        expect(result.definition).not.toHaveProperty('diskWrite');
+        expect(result.definition.diskWrite).toBe('none');
       } else {
         expect(result.definition.diskWrite).toBe('opaque');
       }

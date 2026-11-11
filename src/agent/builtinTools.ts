@@ -8,6 +8,15 @@
  */
 
 /**
+ * 改盘写能力（`diskWrite` 的唯一值域）
+ *
+ * - `'none'`  ：明确不改**项目磁盘**（读工具 / 内核数据工具）——可全并发，宿主不必采写前快照；
+ * - `'path'`  ：按 `args.path` 定位目标的落盘写 → 同目标写串行；
+ * - `'opaque'`：会改盘但目标不可静态定位（脚本 / 命令 / 内部索引落盘）→ 与一切写互斥（屏障）。
+ */
+export type WriteCapability = 'none' | 'path' | 'opaque';
+
+/**
  * 工具定义接口
  *
  * 描述一个工具的名称、用途和参数 schema，
@@ -42,17 +51,21 @@ export interface ToolDefinition {
    */
   readonly?: boolean;
   /**
-   * 改盘写声明（写串行闸 / 宿主改动追踪的判据真源）：
+   * 改盘写声明（「这个工具算不算写盘工具」的唯一判据真源）：
+   * - `'none'`：明确不改项目磁盘（读工具、内核数据工具如 task_table_*）→ 可全并发；
    * - `'path'`：按 `args.path` 定位目标的落盘写（write_file / delete_file，以及自定义工具）→ 同目标写串行；
-   * - `'opaque'`：会改盘但目标不可静态定位（脚本执行类、内部索引落盘类）→ 与一切写互斥（屏障）；
-   * - 缺省：不改盘（读工具、内核数据工具如 task_table_*）。
+   * - `'opaque'`：会改盘但目标不可静态定位（脚本执行类、内部索引落盘类）→ 与一切写互斥（屏障）。
+   *
+   * **缺省 = fail-closed 按 `'opaque'` 处理**（见 `resolveWriteCapability`）：漏声明的工具不得再被
+   * 静默当成「不改盘」放行（那会同时绕过写串行闸、写后缓存失效与宿主改盘追踪）。要只读语义必须
+   * **显式**写 `'none'`——「作者声明只读」与「作者忘了声明」由此拆成两个事实。
    *
    * 与 `readonly` 正交：`readonly` 管「只读模式放不放行」，本声明管「写与写怎么排序」。
-   * 覆盖边界：**所有工具生效（内置 + 宿主 `registerTool` 注册的自定义工具）**——loop 运行时按本声明
-   * 判定，声明同时随 `tool_start` 事件上报给宿主改动追踪。派生索引（本文件尾）仅为内置工具契约钉
-   * 与公共导出面，不再是唯一判据来源。
+   * 覆盖边界：**所有工具生效（内置 + 宿主 `registerTool` 注册的自定义工具）**；loop 运行时经唯一
+   * 派生点判定，声明同时随 `tool_start` 事件上报给宿主改动追踪。派生索引（本文件尾）仅为内置工具
+   * 契约钉与公共导出面，不再是唯一判据来源。
    */
-  diskWrite?: 'path' | 'opaque';
+  diskWrite?: WriteCapability;
   /**
    * 自定义工具审批策略（仅 ToolExecutor custom 分支消费，内置工具不设置）：
    * - `'always'`：每次调用过 SecurityGuard 确认闸（requestToolCallConfirmation），用户确认才执行；
@@ -197,6 +210,7 @@ export function shouldSkipForIdempotency(
  */
 export const WEB_SEARCH_TOOL: ToolDefinition = {
   name: 'web_search',
+  diskWrite: 'none',
   description: '搜索互联网获取实时信息。当需要最新数据、新闻、文档或无法从记忆中找到答案时使用。',
   // 读操作：readonly 模式下保留（对齐 web_fetch / search_memories）
   readonly: true,
@@ -218,6 +232,7 @@ export const WEB_SEARCH_TOOL: ToolDefinition = {
  */
 export const TRACE_SUMMARY_TOOL: ToolDefinition = {
   name: 'trace_summary',
+  diskWrite: 'none',
   description: '追溯轮次摘要的原始对话内容。当需要查看某条摘要对应的完整对话时使用。',
   readonly: true,
   parameters: {
@@ -248,6 +263,7 @@ export const TRACE_SUMMARY_TOOL: ToolDefinition = {
  */
 export const COMPRESS_CONTEXT_TOOL: ToolDefinition = {
   name: 'compress_context',
+  diskWrite: 'none',
   description:
     '当上下文接近容量上限或空间紧张时主动压缩空间（第二级压缩，LLM 触发兜底）：把最早的 turn' +
     '或超大工具结果现场压成临时摘要替换，loop 收尾即弃。当替换无法释放空间（无已存摘要）时、或存在' +
@@ -285,6 +301,7 @@ export const COMPRESS_CONTEXT_TOOL: ToolDefinition = {
  */
 export const ASK_USER_TOOL: ToolDefinition = {
   name: 'ask_user',
+  diskWrite: 'none',
   description:
     '向用户提问（结构化）——当需要用户做决策、补充关键信息、或确认时使用：系统会暂停当前执行，' +
     '在 step 边界向用户展示提问，用户答案会作为本工具的结果返回给你，你据此继续。' +
@@ -325,6 +342,7 @@ export const ASK_USER_TOOL: ToolDefinition = {
  */
 export const REMEMBER_INTEL_TOOL: ToolDefinition = {
   name: 'remember_intel',
+  diskWrite: 'none',
   description:
     '把一条关键信息写入你的私有情报区（工作笔记）。当你从大文本或工具结果中得到需要长期记住的要点时使用；' +
     '信息对你私有、不会展示给用户、不会写入项目文件。可多次调用，写成精炼要点而非原文。',
@@ -351,6 +369,7 @@ export const WEB_FETCH_CONTENT_DEFAULT_LEN = 8_000;
  */
 export const WEB_FETCH_TOOL: ToolDefinition = {
   name: 'web_fetch',
+  diskWrite: 'none',
   description:
     '抓取指定网页的正文内容（搜索→抓取闭环的第二段）。当 web_search 找到候选链接、需要读取正文全文时使用。返回清洗后的纯文本。',
   readonly: true,
@@ -441,6 +460,7 @@ export const RUN_CODE_TOOL: ToolDefinition = buildRunCodeTool();
  */
 export const SEARCH_PROJECT_TOOL: ToolDefinition = {
   name: 'search_project',
+  diskWrite: 'none',
   description:
     '在当前项目（当前工作区文件夹）中搜索文件。mode="name" 按文件名 glob（如 "**/*.ts"），' +
     // name 裸词语义：无通配符时自动按名称子串/分词放宽，避免"精确路径匹配"假阴性
@@ -496,6 +516,7 @@ export const SEARCH_PROJECT_TOOL: ToolDefinition = {
  */
 export const RUN_TEAM_MEETING_TOOL: ToolDefinition = {
   name: 'run_team_meeting',
+  diskWrite: 'none',
   description:
     '召开评估/评审型小组会议：一次调用注入组内各角色（组长+组员，队长 1 + 组员 ≤ 4）的完整设定，' +
     '以各角色视角独立评估同一议题（每视角一段），最后以组长视角汇总。适用于「直接产出多角度评审意见」，' +
@@ -559,6 +580,7 @@ const WRITE_FILE_MODES_BRIEF = WRITE_FILE_MODES.map((m) => `${m.name}（${m.summ
 export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'read_file',
+    diskWrite: 'none',
     description:
       '读取项目内文件内容（按行分段返回）。路径必须相对项目根目录。' +
       '若不确定目标文件是否存在或路径是否正确，先用 search_project 搜索文件名定位，或 list_dir 查看目录结构，' +
@@ -630,6 +652,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'list_dir',
+    diskWrite: 'none',
     description:
       '列出目录内容。默认相对项目根目录。读取路径受白名单限制。递归深度 ≤ 3，自动忽略 .git / node_modules / .memora / dist / coverage / .next。',
     readonly: true,
@@ -645,6 +668,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'search_memories',
+    diskWrite: 'none',
     description:
       '关键词检索记忆库（纯关键词通道，无语义向量通道）。涉及过往决定、历史事实、' +
       '用户偏好、项目背景，或回答不确定时，优先调用本工具按需召回（理解意图 → 搜记忆，结构性前置）。' +
@@ -669,6 +693,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   TRACE_SUMMARY_TOOL,
   {
     name: 'list_sessions',
+    diskWrite: 'none',
     description:
       '列出历史会话的路标（每个会话的主题与摘要），用于定位"之前聊过某件事"具体在哪个会话。' +
       '先用它找到目标 sessionId，再用 trace_summary 深入查看该会话的问答摘要。' +
@@ -691,6 +716,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   // ── 任务表管理工具 ──────────────────────────────
   {
     name: 'task_table_write',
+    diskWrite: 'none',
     description:
       '写入或更新任务表（命令式：多步任务必须先用本工具把任务拆解为子任务项写入任务表，随后按任务表逐步执行，禁止跳过拆解一次性盲目执行）。' +
       'overwrite 清空现有任务表后写入新任务项（重写/重开计划）；' +
@@ -731,6 +757,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'task_table_update',
+    diskWrite: 'none',
     description:
       '更新任务表中指定任务项的状态（命令式：一次只更新一个任务项）。将 plan_item_id 对应的任务项标记为 done（已完成）或 blocked（已阻塞）。' +
       '每完成一个任务项调用一次本工具标记，只有最后一个任务项完成后才宣告任务完成，禁止一次性批量标记所有任务项。' +
@@ -753,6 +780,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   // ── 渐进披露：角色包内嵌技能按需装载 ──────────────
   {
     name: 'read_skill',
+    diskWrite: 'none',
     description:
       '读取技能完整正文（渐进披露 L2，按需装载）：先查激活角色包内嵌技能，再查全局通用技能池。当需要执行某项技能时，先读取其正文获取详细步骤。技能名来自技能清单（角色包声明或全局通用技能）。',
     // 只读闸标记：读技能正文不改变任何项目状态，readonly 模式下必须保留
@@ -768,6 +796,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   // ── 渐进披露 L3：资源/脚本分离 ──────────────────
   {
     name: 'read_resource',
+    diskWrite: 'none',
     description:
       '读取技能的参考资源文件（渐进披露 L3，按需调用）。技能含 resources/ 或 references/ 目录时，可通过此工具读取参考资料。资源路径相对技能的 resources/ 或 references/ 目录。',
     // 只读闸标记：读资源文件不改变任何项目状态，readonly 模式下必须保留
@@ -880,6 +909,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'kill_command',
+    diskWrite: 'none',
     description:
       '终止由 run_command（background=true）启动的后台命令，返回截至终止时已捕获的输出。' +
       '只能按 taskId 终止本会话起的后台任务（不是任意系统进程）。' +
@@ -894,6 +924,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'list_resources',
+    diskWrite: 'none',
     description:
       '列出技能的 L3 资源清单（渐进披露 L3）。返回 resources/ 与 references/ 目录下所有资源文件列表。',
     // 只读闸标记：仅列举资源清单，readonly 模式下必须保留
@@ -908,6 +939,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'list_skills',
+    diskWrite: 'none',
     description:
       '列出当前可用的所有技能清单（渐进披露 L1 补充）。当技能数量较多（>50）时使用此工具查询。',
     // 只读闸标记：仅列举技能清单，readonly 模式下必须保留
@@ -957,7 +989,27 @@ export const ALL_BUILTIN_TOOL_DEFS: readonly ToolDefinition[] = [
   SEARCH_PROJECT_TOOL,
 ];
 
-/** 按 `args.path` 定位目标的写工具名集（派生；同路径串行闸与宿主改动追踪的判据真源） */
+/**
+ * 「这个工具算不算写盘工具、以什么方式写盘」的**唯一派生点**
+ *
+ * 所有消费面（写串行闸 / 写后缓存失效 / 护栏 write_loop / 宿主事件投影 / 确认入口派生）
+ * 都只能经本函数拿结论，禁止再按工具名手写判断。
+ *
+ * 查找顺序：调用方传入的运行时定义快照（含宿主 `registerTool` 注册的自定义工具）→ 内置全量定义。
+ * **fail-closed**：未声明 / 未知工具 ⇒ `'opaque'`（按会改盘处理），不再把「缺省」解释成只读；
+ * 要只读语义必须显式声明 `'none'`。
+ */
+export function resolveWriteCapability(
+  name: string,
+  definitions?: readonly ToolDefinition[],
+): WriteCapability {
+  const declared =
+    definitions?.find((t) => t.name === name)?.diskWrite ??
+    ALL_BUILTIN_TOOL_DEFS.find((t) => t.name === name)?.diskWrite;
+  return declared ?? 'opaque';
+}
+
+/** 按 `args.path` 定位目标的写工具名集（派生契约钉；判据真源 = `resolveWriteCapability`，不得反向当判据） */
 export const PATH_WRITE_TOOL_NAMES: readonly string[] = ALL_BUILTIN_TOOL_DEFS.filter(
   (t) => t.diskWrite === 'path',
 ).map((t) => t.name);

@@ -308,17 +308,20 @@ export function toToolDefinition(
 
   const toolDesc = typeof tool.description === 'string' ? tool.description : '';
 
-  // 改盘写声明（写串行闸 + 宿主改动追踪的判据真源，见内核 `ToolDefinition.diskWrite`）：
+  // 改盘写能力（写串行闸 + 宿主改动追踪的判据真源，见内核 `ToolDefinition.diskWrite`）：
   // MCP 工具的目标路径**无法静态定位**（参数形态由 server 自定义，内核不解析）⇒ 一律声明 'opaque'，
   // 按「屏障」语义与一切写互斥（宁可串行慢一点，不可同 step 并发写同一文件静默丢内容）。
-  // 唯一豁免 = server 自报 `readOnlyHint === true`（只读工具不参与写排序，读类调用保持全并发）。
+  // 唯一豁免 = server 自报 `readOnlyHint === true`（只读工具不参与写排序，读类调用保持全并发）——
+  // 必须**显式**声明 `'none'`：内核契约已 fail-closed，缺省会被按 'opaque' 处理。
   // 保守极性：缺省 / false / 与其他 hint 矛盾 ⇒ 一律按「会写盘」处理（fail-closed）。
   // ⚠ 残余风险如实登记：`readOnlyHint` 是 **server 自报**，MCP SDK 明写「不可据 ToolAnnotations
   // 做工具使用决策」——谎报只读的 server 仍可绕过写串行闸。豁免换来的是 search / fetch / read
   // 这类占多数的读工具不因屏障而串行退化；两害相权取此，不在宿主重建第二份写工具名集。
   const readOnlyDeclaration =
     tool.annotations?.readOnlyHint === true && tool.annotations.destructiveHint !== true;
-  const diskWrite: ToolDefinition['diskWrite'] = readOnlyDeclaration ? undefined : 'opaque';
+  const diskWrite: NonNullable<ToolDefinition['diskWrite']> = readOnlyDeclaration
+    ? 'none'
+    : 'opaque';
 
   return {
     definition: {
@@ -328,7 +331,7 @@ export function toToolDefinition(
       // 审批意图显式声明（切片 2 三档）：命中 allowlist = 'audit' 免弹窗仍落审计，
       // 未命中 = 'always' 逐次确认。MCP 工具来源不可信，故无缺省路径（风险 2）。
       confirmPolicy: resolveConfirmPolicy(serverName, tool.name, allowlist),
-      ...(diskWrite ? { diskWrite } : {}),
+      diskWrite,
       // 只读闸声明（readonly 模式放行判据）：与 diskWrite 用同一份 `readOnlyDeclaration`——
       // 两个字段互为镜像而非各自判一次，避免「写序说只读、只读闸说会写」的双头语义。
       // 显式写 false 而不靠缺省：缺省语义在公开契约里是「写操作」，但显式声明让谎报边界可审计。

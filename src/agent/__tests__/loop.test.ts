@@ -1321,6 +1321,21 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
       ]),
       bootstrapMemories: [],
       toolExecutor,
+      // 「独立」= 显式声明不改盘：缺省极性已 fail-closed，漏声明会被当写盘（屏障）串行
+      toolDefinitions: [
+        {
+          name: 'tool_a',
+          diskWrite: 'none',
+          description: '',
+          parameters: { type: 'object', properties: {}, required: [] },
+        },
+        {
+          name: 'tool_b',
+          diskWrite: 'none',
+          description: '',
+          parameters: { type: 'object', properties: {}, required: [] },
+        },
+      ],
     });
 
     for await (const chunk of loop.processUserInput('并发')) {
@@ -7769,7 +7784,81 @@ describe('AgentLoop · 自定义工具写盘声明（DISKWRITE-CUSTOM-1）', () 
     expect(events).toEqual(['slow:start', 'slow:end', 'fast:start(serial)']);
   });
 
-  it('tool_start 事件上报 diskWrite 声明（宿主改动追踪同源消费）；未声明的工具不带该字段', async () => {
+  it('未声明 diskWrite 的自定义工具按 fail-closed 当写处理：同 step 两调用串行（不再全并发）', async () => {
+    /** 执行时序（若按旧极性当只读，两个调用会同时起跑） */
+    const events: string[] = [];
+    /** 第一个调用是否已完成（屏障串行则第二个开始时恒为 true） */
+    let slowDone = false;
+    const toolExecutor = vi.fn(async (name: string) => {
+      if (name === 'custom_undeclared_slow') {
+        events.push('slow:start');
+        await new Promise((r) => setTimeout(r, 50));
+        slowDone = true;
+        events.push('slow:end');
+        return 'slow ok';
+      }
+      events.push(slowDone ? 'fast:start(serial)' : 'fast:start(parallel)');
+      return 'fast ok';
+    });
+    const provider = mockMultiTurnProvider([
+      [
+        {
+          content: '',
+          toolCalls: [
+            {
+              id: 'c1',
+              type: 'function',
+              function: { name: 'custom_undeclared_slow', arguments: '{}' },
+            },
+            {
+              id: 'c2',
+              type: 'function',
+              function: { name: 'custom_undeclared_fast', arguments: '{}' },
+            },
+          ],
+        },
+      ],
+      [{ content: '完成' }],
+    ]);
+    // 两个工具都只在调用时出现、定义里没登记 diskWrite ⇒ 应被唯一派生点按 'opaque'（屏障）处理
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
+
+    await drainTurn(loop, '两个未声明工具并发');
+    expect(events).toEqual(['slow:start', 'slow:end', 'fast:start(serial)']);
+  });
+
+  it("显式声明 'opaque' 的自定义工具仍可执行并上报 opaque（回归：反转缺省极性不放宽显式写）", async () => {
+    const toolExecutor = vi.fn(async () => 'opaque ok');
+    const provider = mockMultiTurnProvider([
+      [
+        {
+          content: '',
+          toolCalls: [
+            {
+              id: 'c1',
+              type: 'function',
+              function: { name: 'custom_opaque_write', arguments: '{"path":"a.md"}' },
+            },
+          ],
+        },
+      ],
+      [{ content: '完成' }],
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor,
+      toolDefinitions: [makeCustomWriteTool('custom_opaque_write', 'opaque')],
+    });
+
+    const chunks = await drainTurn(loop, '显式不透明写一次');
+    expect(toolExecutor).toHaveBeenCalledTimes(1);
+    expect(chunks.filter((c) => c.type === 'tool_result' && c.blocked)).toHaveLength(0);
+    const start = chunks.find((c) => c.type === 'tool_start' && c.name === 'custom_opaque_write');
+    expect(start).toMatchObject({ type: 'tool_start', diskWrite: 'opaque' });
+  });
+
+  it('tool_start 事件上报解析后的写盘能力；显式 none 不带字段，未声明按 fail-closed 上报 opaque', async () => {
     const toolExecutor = vi.fn(async () => 'ok');
     const provider = mockMultiTurnProvider([
       [
@@ -7785,6 +7874,11 @@ describe('AgentLoop · 自定义工具写盘声明（DISKWRITE-CUSTOM-1）', () 
               id: 'c2',
               type: 'function',
               function: { name: 'read_file', arguments: '{"path":"a.md"}' },
+            },
+            {
+              id: 'c3',
+              type: 'function',
+              function: { name: 'custom_undeclared', arguments: '{}' },
             },
           ],
         },
@@ -7803,9 +7897,14 @@ describe('AgentLoop · 自定义工具写盘声明（DISKWRITE-CUSTOM-1）', () 
       (c) => c.type === 'tool_start' && c.name === 'custom_write_path',
     );
     const readStart = chunks.find((c) => c.type === 'tool_start' && c.name === 'read_file');
+    const undeclaredStart = chunks.find(
+      (c) => c.type === 'tool_start' && c.name === 'custom_undeclared',
+    );
     expect(writeStart).toMatchObject({ type: 'tool_start', diskWrite: 'path' });
-    // 读工具无声明 ⇒ 字段缺省（宿主据此判定“不改盘”，不靠名字猜）
+    // 显式 'none' ⇒ 字段缺省（宿主据此判定“不改盘”，不靠名字猜）
     expect(readStart && 'diskWrite' in readStart).toBe(false);
+    // 漏声明 ⇒ fail-closed 归 'opaque'，必须上报，宿主才会采写前快照
+    expect(undeclaredStart).toMatchObject({ type: 'tool_start', diskWrite: 'opaque' });
   });
 
   it("声明 'path' 的自定义写工具连续失败达阈值 → 第 4 次被 write_loop 拦（连线：diskWrite 进护栏上下文）", async () => {

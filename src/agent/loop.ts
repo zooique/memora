@@ -18,7 +18,8 @@ import {
   ASK_USER_TOOL,
   COMPRESS_CONTEXT_TOOL,
   REMEMBER_INTEL_TOOL,
-  ALL_BUILTIN_TOOL_DEFS,
+  resolveWriteCapability,
+  type WriteCapability,
 } from '@/agent/builtinTools.js';
 import type {
   AgentChunk,
@@ -2080,25 +2081,23 @@ export class AgentLoop {
   }
 
   /**
-   * 解析工具的写盘声明（写序判定的唯一判据）
+   * 解析工具的写盘能力（写序判定的唯一入口）
    *
-   * 真源 = 工具定义行的 `diskWrite` 字段。查找顺序：当前工具定义快照（`opts.toolDefinitions`，
-   * **含宿主 `registerTool` 注册的自定义工具**）→ 内置全量定义兜底（被白名单收窄的内置工具
-   * 模型调不到，兜底只为不改变既有行为，仍读同一份声明真源而非第二判据）。
+   * 真源 = `resolveWriteCapability`（`builtinTools` 的唯一派生点）：当前工具定义快照
+   * （`opts.toolDefinitions`，**含宿主 `registerTool` 注册的自定义工具**）→ 内置全量定义兜底；
+   * **未声明 / 未知工具由派生点按 fail-closed 回 `'opaque'`**——漏声明不得再静默当成「不改盘」。
    */
-  private resolveDiskWrite(name: string): 'path' | 'opaque' | undefined {
-    const declared = this.opts.toolDefinitions?.find((t) => t.name === name)?.diskWrite;
-    if (declared) return declared;
-    return ALL_BUILTIN_TOOL_DEFS.find((t) => t.name === name)?.diskWrite;
+  private resolveDiskWrite(name: string): WriteCapability {
+    return resolveWriteCapability(name, this.opts.toolDefinitions);
   }
 
   /**
    * 解析一次工具调用的写序意图（串行闸与「写后缓存失效」**共用同一判据**）
    *
-   * - `none`：不改盘 → 完全并发
+   * - `none`：显式声明不改盘 → 完全并发
    * - `path`：按 `args.path` 定位 → 同目标串行
-   * - `barrier`：`opaque` 声明，或声明 `path` 但目标提取失败（参数缺 path）→「不确定即保守」
-   *   与一切写互斥（不静默跳过）
+   * - `barrier`：`opaque`（含**未声明**的 fail-closed 结论），或声明 `path` 但目标提取失败
+   *   （参数缺 path）→「不确定即保守」与一切写互斥（不静默跳过）
    */
   private resolveWriteIntent(
     name: string,
@@ -2190,8 +2189,9 @@ export class AgentLoop {
       if (tc.function.name === 'task_table_write') this.metrics.planTaskTableWriteCount++;
       const isSearch = tc.function.name === 'web_search';
       if (isSearch) this.searchCallCount++;
-      // 写盘声明随事件上报：宿主文件改动追踪据此判定（与内核写序闸同一判据，
-      // 宿主不再维护「哪些工具会落盘」的静态名集副本——自定义工具声明由此自动流入追踪）
+      // 写盘能力随事件上报：宿主文件改动追踪据此判定（与内核写序闸同一派生点，
+      // 宿主不再维护「哪些工具会落盘」的静态名集副本——自定义工具漏声明由内核 fail-closed 兜住）。
+      // `'none'` 不占事件字段：字段缺省 ⇔ 明确不改盘，与旧事件语义兼容。
       const diskWrite = this.resolveDiskWrite(tc.function.name);
       yield {
         type: 'tool_start',
@@ -2199,7 +2199,7 @@ export class AgentLoop {
         name: tc.function.name,
         args: tc.function.arguments,
         stepIndex, // 所属 step 归属（单点打标，与 thought 同构）
-        ...(diskWrite ? { diskWrite } : {}),
+        ...(diskWrite === 'none' ? {} : { diskWrite }),
       };
 
       // ===== 统一护栏判定（GuardRail SSOT）=====
@@ -2220,9 +2220,9 @@ export class AgentLoop {
           searchCallCount: this.searchCallCount,
           askCountThisTurn: this.askCountThisTurn,
         },
-        // 写盘声明随判定上下文下发（与 tool_start 上报、写串行闸同一判据）：
+        // 写盘能力随判定上下文下发（与 tool_start 上报、写串行闸同一派生点）：
         // write_loop 的「同路径连续失败写」据此覆盖声明 diskWrite:'path' 的自定义写工具
-        ...(diskWrite ? { diskWrite } : {}),
+        diskWrite,
       };
       const guardHit = this.guardier.evaluateBlocked(guardCtx);
       // search_limit 命中（双闸第二闸）：命中即停搜——置 searchDisabled，下一轮 LLM 调用的工具集剔除 web_search
@@ -2396,7 +2396,7 @@ export class AgentLoop {
       // metrics 失败数不把拦截算作失败（B4 口径：执行层闸门也归 blocked，见方案 §六决策二）
       const blocked = outcome.status === 'blocked';
       const ok = outcome.status === 'ok';
-      // 写盘声明（与判定阶段同一查找函数，不另存快照）：供护栏的写侧喂数区分「路径型写工具」
+      // 写盘能力（与判定阶段同一派生点，不另存快照）：供护栏的写侧喂数区分「路径型写工具」
       const execDiskWrite = this.resolveDiskWrite(tc.function.name);
       // 搜索收敛护栏：累计本闭环成功 web_search 次数（LLM 反复搜索不收敛时据此注入收敛提示）
       if (tc.function.name === 'web_search' && ok) {
@@ -2488,7 +2488,7 @@ export class AgentLoop {
         argsJson: tc.function.arguments,
         toolCallId: tc.id,
         // 与判定阶段同一份写盘声明（同一 resolveDiskWrite，不另存快照）
-        ...(execDiskWrite ? { diskWrite: execDiskWrite } : {}),
+        diskWrite: execDiskWrite,
         // B4 判据切换：执行层拒绝（宿主审批）从 'failed' 变 'blocked'——write_loop
         // 自持状态因此不再把「用户拒绝」当失败升级文案，语义对齐「主动挡下」
         outcome: outcome.status,

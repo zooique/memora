@@ -47,8 +47,10 @@ export type {
   WriteExtensions,
 } from '@/agent/toolExecutor.js';
 // WRITE_PATH_EXTRACTORS：「按 args.path 改盘的内置工具」清单（契约钉 + 宿主派生面）。
-// loop 的写序判据已改读**工具定义行 `diskWrite` 声明**（含自定义工具），本表不再是串行闸判据；
-// 宿主改动追踪（fileChangeTracker）仍据其 keys 派生**旧事件兜底**集合（现行事件已带 diskWrite 声明）。
+// 「什么算写盘工具」的唯一判据 = `builtinTools.resolveWriteCapability`（读定义行 `diskWrite` 声明，
+// 缺省 fail-closed 归 'opaque'）；loop 写序闸 / 写后缓存失效 / 护栏 / 确认入口派生全部经它。
+// 本表不再是串行闸判据；宿主改动追踪（fileChangeTracker）仍据其 keys 派生**旧事件兜底**集合
+//（现行事件已按该派生点上报 diskWrite）。
 export { WRITE_PATH_EXTRACTORS } from '@/agent/toolResultCache.js';
 // 角色包（Role Pack）：文件夹形态（manifest.json 核心控制 + 独立内容文件）。
 // 只挂宿主/文档消费的装配元类型；装配结果/策略/团队/能力等子类型随签名推断可用，为内部实现

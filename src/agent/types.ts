@@ -41,10 +41,11 @@ export type AgentChunk = (
       args?: string;
       stepIndex?: number;
       /**
-       * 该工具的改盘写声明（内核 `ToolDefinition.diskWrite` 原样上报，与写序闸同一判据）
+       * 该工具的改盘写能力（内核唯一派生点 `resolveWriteCapability` 解析后上报，与写序闸同一判据）
        *
        * 宿主消费（文件改动追踪据此决定是否采写前快照 / 是否走脚本类快照 diff），
-       * 同时供「批次语义」之外的观测面判读。缺省 = 该工具不改盘（读工具 / 内核数据工具）。
+       * 同时供「批次语义」之外的观测面判读。缺省 = 该工具**显式声明**不改盘（读工具 / 内核数据工具）；
+       * 未声明的工具由内核 fail-closed 归 `'opaque'` 后照常上报，不会以缺省形态出现。
        * 自定义工具（宿主 `registerTool` 注册）的声明同样上报——宿主不再维护静态名集副本。
        */
       diskWrite?: 'path' | 'opaque';

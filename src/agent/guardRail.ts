@@ -39,7 +39,11 @@ import {
 import type { BlockedReason } from '@/agent/managers/toolCallHelpers.js';
 // write_file 缺省模式的唯一真源（写工具侧定义；本模块只读不复制——两处各写 'overwrite'
 // 字面量会让 handler 默认值改动后本判据静默漂移，且没有任何测试会红）
-import { DEFAULT_WRITE_FILE_MODE } from '@/agent/builtinTools.js';
+import {
+  DEFAULT_WRITE_FILE_MODE,
+  resolveWriteCapability,
+  type WriteCapability,
+} from '@/agent/builtinTools.js';
 
 /** 护栏类型 id（收敛集合，新增护栏在此扩联合） */
 export type GuardRailId =
@@ -76,10 +80,11 @@ export interface GuardExecContext {
   toolCallId: string;
   /** 本次执行结果：ok=真实成功 / failed=执行失败 / blocked=被护栏或台账拦截（未真正执行） */
   outcome: 'ok' | 'failed' | 'blocked';
-  /** 工具定义行的改盘写声明（与写串行闸同一判据，loop 上报）；缺省 = 不改盘。
+  /** 工具定义行的改盘写能力（与写串行闸同一派生点，loop 注入）。
+   *  缺省 ⇒ 由 `resolveWriteCapability` 按 fail-closed 补齐（未声明 = `'opaque'`），**不再等于「不改盘」**。
    *  write_loop 的「同路径连续失败写」据此扩到声明 `diskWrite:'path'` 的自定义写工具
    *（失败连击只依赖 目标路径 + 执行失败，与写入模式无关）。 */
-  diskWrite?: 'path' | 'opaque';
+  diskWrite?: WriteCapability;
 }
 
 /** 护栏阈值（运行时由调用方注入 GuardContext；真源分配见下） */
@@ -126,10 +131,21 @@ export interface GuardContext {
   thresholds: GuardThresholds;
   /** 运行态计数（loop 注入，供 search_limit/ask_limit 用；write_loop/read_failed 的计数已在 guard 闭包内） */
   counters: GuardCounters;
-  /** 工具定义行的改盘写声明（与写串行闸同一判据，loop 注入）；缺省 = 不改盘。
+  /** 工具定义行的改盘写能力（与写串行闸同一派生点，loop 注入）。
+   *  缺省 ⇒ 由 `resolveWriteCapability` 按 fail-closed 补齐（未声明 = `'opaque'`），**不再等于「不改盘」**。
    *  write_loop 的失败连击据此覆盖**声明 `diskWrite:'path'` 的自定义写工具**（整文件覆盖连写仍只认内置
    *  write_file——自定义工具没有 `mode` 约定，缺省不得当成 overwrite，否则会冤拦正常增量写）。 */
-  diskWrite?: 'path' | 'opaque';
+  diskWrite?: WriteCapability;
+}
+
+/**
+ * 判定「本次调用是否为 `path` 型写工具」
+ *
+ * 优先读 loop 注入的已解析能力；上下文没带时回落到同一声明真源（`resolveWriteCapability`，
+ * fail-closed）——**禁止再按工具名手写清单**（`toolName === 'write_file'` 曾在此处形成第二套判据）。
+ */
+function isPathWrite(c: { toolName: string; diskWrite?: WriteCapability }): boolean {
+  return (c.diskWrite ?? resolveWriteCapability(c.toolName)) === 'path';
 }
 
 /** 护栏定义（注册一条，主循环零改动） */
@@ -454,15 +470,19 @@ export function createDefaultGuards(): GuardRail {
     })
     .register({
       id: 'write_loop',
-      // 覆盖两类写工具（判据真源 = 工具定义行 `diskWrite` 声明，与写串行闸同一份）：
-      // 内置 `write_file`，以及**声明 `diskWrite:'path'` 的自定义写工具**。声明为 'opaque' 的不接入——
-      // 目标不可静态定位，连失败计数都没有键（不硬猜）。
-      matches: (c) => c.toolName === 'write_file' || c.diskWrite === 'path',
+      // 覆盖两类写工具（判据真源 = 唯一派生点 `resolveWriteCapability`，与写串行闸同一份）：
+      // 内置 `write_file`（定义行声明 'path'），以及**声明 `diskWrite:'path'` 的自定义写工具**。
+      // 声明为 'opaque' 的不接入——目标不可静态定位，连失败计数都没有键（不硬猜）。
+      // 不再内联 `toolName === 'write_file'`：内置工具由定义声明进入本闸，自定义工具漏声明由
+      // fail-closed 归 'opaque'（不进本闸），两类工具同一判据出口。
+      matches: (c) => isPathWrite(c),
       // 判据 = **无进展**，不是「写了几次」，且两条判据的覆盖面**不同宽**（勿折叠成一句）：
       // ① 同路径连续失败写达阈值 → 拦。只依赖「目标路径 + 执行失败」，与写入模式无关
       //    ⇒ **内置与自定义 'path' 写工具共用**（原样重试不会成功）；
       // ② 整文件覆盖连写达阈值 → 拦。**只认内置 `write_file`**：自定义工具没有 `mode` 约定，
       //    把「无 mode」当 overwrite 会冤拦正常的增量写（宁可少拦，不可错拦）。
+      //    本条内其余 `write_file` 字面量属于 ② 的**参数契约判据**（谁有 `mode` 参数），
+      //    不是「谁是写盘工具」的判据——后者已全部收敛到 `isPathWrite`。
       // 计数读闭包、只读推断期望值；状态迁移交给 onExec。
       shouldBlock: (c) => {
         const path = parsePathArg(c.argsJson);
@@ -498,6 +518,7 @@ export function createDefaultGuards(): GuardRail {
       },
       onAllow: (c) => {
         // 只预登记**整文件覆盖**：增量写不参与连写链，且批量逐处修订正是要放行的形态
+        // （`write_file` 字面量 = `mode` 参数契约判据，非写盘工具判据；见 shouldBlock 注释）
         if (c.toolName !== 'write_file') return;
         const w = parseWrite(c.argsJson);
         if (!w || !isWholeFileWrite(w.mode)) return;
@@ -516,9 +537,10 @@ export function createDefaultGuards(): GuardRail {
           }
           return;
         }
+        // 「是不是路径型写工具」只认唯一派生点（含 fail-closed 兜底），不再并写工具名字面量
+        if (!isPathWrite(c)) return;
+        // ② 的整文件覆盖连写链只认内置 `write_file`（参数契约判据，非写盘工具判据）
         const isBuiltinWrite = c.toolName === 'write_file';
-        // 非写工具（既不是内置写、也没声明 diskWrite:'path'）不参与计数
-        if (!isBuiltinWrite && c.diskWrite !== 'path') return;
         // blocked = 未真正执行：撤销放行时的预登记（不撤销会冤杀后续正常写），且不累计失败
         if (c.outcome === 'blocked') {
           if (reservedWrites.delete(c.toolCallId)) revertReserved();

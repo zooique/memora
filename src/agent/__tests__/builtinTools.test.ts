@@ -13,6 +13,7 @@ import {
   BUILTIN_TOOLS,
   BUILTIN_TOOL_IDEMPOTENCY,
   PATH_WRITE_TOOL_NAMES,
+  resolveWriteCapability,
   shouldSkipForIdempotency,
   WEB_SEARCH_TOOL,
   WEB_FETCH_TOOL,
@@ -678,6 +679,42 @@ describe('builtinTools · 只读闸标记（readonly）全覆盖', () => {
 });
 
 describe('builtinTools · 写盘声明位（diskWrite）与派生索引', () => {
+  it('显式声明契约钉：每个内置工具都必须写 diskWrite，不得靠缺省', () => {
+    // 内核默认极性已 fail-closed（缺省 = 'opaque'）；漏声明不会报错，只会静默退化成屏障 +
+    // 触发宿主全量快照 ⇒ 必须由本断言把「漏声明」变红，而不是靠人记得。
+    const undeclared = ALL_BUILTIN_TOOL_DEFS.filter((t) => t.diskWrite === undefined).map(
+      (t) => t.name,
+    );
+    expect(undeclared).toEqual([]);
+  });
+
+  it("唯一派生点：未声明 / 未知工具按 fail-closed 归 'opaque'，显式声明原样返回", () => {
+    // 未声明（自定义工具漏写）⇒ 'opaque'，不得再被当成「不改盘」放行
+    expect(resolveWriteCapability('custom_unregistered')).toBe('opaque');
+    expect(
+      resolveWriteCapability('custom_undeclared', [
+        {
+          name: 'custom_undeclared',
+          description: '',
+          parameters: { type: 'object', properties: {}, required: [] },
+        },
+      ]),
+    ).toBe('opaque');
+    // 显式只读 / 显式路径写 / 显式不透明写：原样返回，不被默认值覆盖
+    expect(
+      resolveWriteCapability('custom_readonly', [
+        {
+          name: 'custom_readonly',
+          diskWrite: 'none',
+          description: '',
+          parameters: { type: 'object', properties: {}, required: [] },
+        },
+      ]),
+    ).toBe('none');
+    expect(resolveWriteCapability('write_file')).toBe('path');
+    expect(resolveWriteCapability('run_command')).toBe('opaque');
+  });
+
   it('声明契约钉：path 集 / opaque 集的工具名（行内声明变动必须复审本例）', () => {
     // 跨模块契约钉：串行闸与宿主改动追踪都由这两个集合派生，名单变动 = 排序语义变动。
     // 序无关比较（派生序 = 定义排布序，不承载语义）；opaque 集直接由定义行派生（7.0.0 起）

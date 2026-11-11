@@ -21,8 +21,9 @@
  * 登记表 = 把「每个执行面走哪个确认入口」从「散在四个 case 分支里的隐式默认值」变成**显式单一真源**：
  * 新增执行面时**必须**在此登记，否则守卫测试（confirmEntry.test.ts 的穷举性断言）即红。
  *
- * 真源关系（禁再独立枚举工具名）：「哪些工具是执行面」由 `builtinTools` 的
- * `ToolDefinition.diskWrite === 'opaque'` 声明派生 ⇒ 本表**只登记入口**，不复制第二份工具清单。
+ * 真源关系（禁再独立枚举工具名）：「哪些工具是执行面」由 `builtinTools` 的唯一派生点
+ * `resolveWriteCapability(name) === 'opaque'` 判定（读定义行 `diskWrite` 声明，漏声明 fail-closed
+ * 同样归 'opaque'）⇒ 本表**只登记入口**，不复制第二份工具清单。
  *
  * - `command`：走 `confirmCommandRun`（内容裁决 DENY/always-ask + 确认档位；target = 命令原文）
  * - `script` ：走 `confirmScriptRun`（确认档位 + **可选内容裁决**：传入正文时按

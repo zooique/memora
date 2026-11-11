@@ -295,7 +295,7 @@ export type ProcessEvent =
         name: string;
         args?: string;
         stepIndex?: number;
-        /** 改盘写声明（内核 `ToolDefinition.diskWrite` 原样上报，宿主改动追踪据此判定）；缺省 = 不改盘 */
+        /** 改盘写能力（内核 `tool_start` 上报值原样落盘，宿主改动追踪据此判定）；缺省 = 显式声明不改盘 */
         diskWrite?: 'path' | 'opaque';
       };
     }
