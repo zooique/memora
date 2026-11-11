@@ -106,7 +106,7 @@ description: 托管执行纪律（把任务派给子会话 / 后台命令、多�
 
 每条带**射程**，防走形：
 
-1. 删任何文档前必须先 `grep` 清算全库引用，**删与补引用不得分开做**。依据 = [tasks/archive/README.md:9](../../../tasks/archive/README.md) 纪律 3 末条，原文「从主台账**删 / 折任一顶层条目**前，先 `grep -rn '<ID>' .` 清算 docs / ADR / 源码注释里的引用，再跑 `npm run ledger:fold`」——该条管**台账条目**，文档删除是**同型类推（推断，非原文口径）**；注释侧的过程稿指针清算 → [comment-doc-citation-rules.md](./comment-doc-citation-rules.md) §3「清算义务」。
+1. **删任何文档或台账条目前，先 `grep -rn '<目标>' .` 清算 docs / ADR / 源码注释里的引用；删与补引用不得分开做。**（本规则的明文要求，不因出处的覆盖范围而放宽。）出处分两句：台账条目 = [tasks/archive/README.md:9](../../../tasks/archive/README.md) 纪律 3 末条原文「从主台账**删 / 折任一顶层条目**前，先 `grep -rn '<ID>' .` 清算 docs / ADR / 源码注释里的引用，再跑 `npm run ledger:fold`」；**文档删除 = 本条自立的明文要求**，不冒充该 README 的覆盖范围。注释侧的过程稿指针清算 → [comment-doc-citation-rules.md](./comment-doc-citation-rules.md) §3「清算义务」。
 2. **只删两类注释**：与实现相反的、纯复述代码的。「为什么这么做」的历史决策注释一律保留——那是资产，不是噪音（其余分拣 → 三分法 §2）。
 3. 只看**最近 10 笔提交**，只找「带伤」与「拼凑」；默认产出结论，要改代码走 H 节的四出口（H1 依据 → H2 自然生长 → H3 独立排雷 → H4 才写盘），不许顺手重构。
 
