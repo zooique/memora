@@ -27,11 +27,17 @@ export interface ExecutionStreamState {
   aborted: boolean;
   /** 是否已在 step 边界挂起（软暂停） */
   paused: boolean;
+  /**
+   * 是否撞了最大迭代 / 步数预算（读 text chunk 的 `limitReached` 标志，**不匹配文案**）。
+   * 撞顶在 loop 里是正常收尾（不抛错、aborted 仍为 false），故必须单列标志，
+   * 否则子会话会把「半截回答」报成 completed。
+   */
+  limitReached: boolean;
 }
 
 /** 创建一份空的累积态 */
 export function createExecutionStreamState(): ExecutionStreamState {
-  return { content: '', aborted: false, paused: false };
+  return { content: '', aborted: false, paused: false, limitReached: false };
 }
 
 /**
@@ -39,6 +45,7 @@ export function createExecutionStreamState(): ExecutionStreamState {
  *
  * 正文规则与父会话持久化口径一致：
  *   - `text` 且 stage≠self_review → 追加（自审查是内部思考，不进正文）；
+ *     其中带 `limitReached` 标志的那段同时置撞顶标志（判据读标志，不匹配文案）；
  *   - `narrate.withdrawn` → 从正文尾部扣除该段（契约不符则忽略，宁可多留叙述也不误删答案）；
  *   - `aborted` / `paused` → 置对应标志。
  *
@@ -47,6 +54,7 @@ export function createExecutionStreamState(): ExecutionStreamState {
  */
 export function observeExecutionChunk(state: ExecutionStreamState, chunk: AgentChunk): void {
   if (chunk.type === 'text' && chunk.stage !== 'self_review') {
+    if (chunk.limitReached) state.limitReached = true;
     state.content += chunk.content;
   } else if (chunk.type === 'narrate' && chunk.withdrawn) {
     // 回抽契约：withdrawn 是最近追加正文的后缀；不符时只忽略（删错真实答案比多留一段叙述更糟）

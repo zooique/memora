@@ -263,8 +263,9 @@ const TOOL_RESULT_TAGS: Readonly<Record<string, string>> = {
   后台命令运行中: '后台任务运行中通知（系统事件来源标记，非失败；穷尽表防御键，通知仅在终态发出）',
 
   // ── 子会话终态族（SUBAGENT-DELEGATE-1）：首标签由**内核按流标志**生成，不是子模型自述 ──
-  // 拼接位 `[SUBAGENT:${status}]` 的成员由 `SubagentTerminalStatus` 真源展开，此处只为三态定性。
+  // 拼接位 `[SUBAGENT:${status}]` 的成员由 `DelegateTaskStatus` 真源展开，此处只为四态定性。
   SUBAGENT_completed: '子会话正常完成（非失败；正文 = 子会话最终回答原文，可当完整产出）',
+  SUBAGENT_incomplete: '子会话撞步数上限收尾（**非失败**；内容可用但不完整，父可拆小任务重派）',
   SUBAGENT_interrupted: '子会话被中断（父 turn 中止传导；正文可能不完整，不可当完整产出）',
   SUBAGENT_failed: '子会话执行失败（异常 / 预期不可达的 paused 收口；正文仅为已累积片段）',
 };
@@ -308,16 +309,15 @@ function deriveToolErrorCodes(): readonly string[] {
 }
 
 /**
- * 从真源读取子会话终态联合类型成员（`assembler.ts` 的 `SubagentTerminalStatus` 声明）
+ * 从真源读取子会话终态联合类型成员（`toolExecutor.ts` 的 `DelegateTaskStatus` 声明）
  *
  * 锚定**具名类型**而非 `formatSubagentResult(status: …)` 的函数签名：
  * 签名换行 / 拆参都会让差异匹配失配，具名类型是稳定入口（提取失败即 throw，响亮红）。
  */
 function deriveSubagentStatusUnion(): readonly string[] {
-  const src = readFileSync(join(SRC_ROOT, 'agent/assembler.ts'), 'utf8');
-  const decl = /export type SubagentTerminalStatus = ((?:'[^']+'\s*\|\s*)*'[^']+');/.exec(src);
-  if (!decl)
-    throw new Error('deriveSubagentStatusUnion 提取失败：找不到 SubagentTerminalStatus 声明');
+  const src = readFileSync(join(SRC_ROOT, 'agent/toolExecutor.ts'), 'utf8');
+  const decl = /export type DelegateTaskStatus = ((?:'[^']+'\s*\|\s*)*'[^']+');/.exec(src);
+  if (!decl) throw new Error('deriveSubagentStatusUnion 提取失败：找不到 DelegateTaskStatus 声明');
   return [...decl[1]!.matchAll(/'([^']+)'/g)].map((m) => m[1]!);
 }
 
@@ -605,7 +605,7 @@ describe('工具结果首标签 · 反向对账守卫（SCRIPT-2 B5-e 补丁）'
     // 子会话终态：三态是契约（头部只能来自流标志），缺一即真源变形
     const statuses = deriveSubagentStatusUnion();
     expect(statuses.length, '子会话终态联合类型提取为空——判据输入失配，必须红').toBeGreaterThan(0);
-    expect([...statuses].sort()).toEqual(['completed', 'failed', 'interrupted']);
+    expect([...statuses].sort()).toEqual(['completed', 'failed', 'incomplete', 'interrupted']);
   });
 
   it('扫描面非空（扫描器没坏，否则反向对账恒真通过 = 假绿）', () => {
@@ -878,7 +878,10 @@ describe('failedOutcome 调用点台账对账（裸失败构造点登记）', ()
    * 存量点均为既定形态。新增调用点未登记即红；有码失败一律走 `failedOutcomeWithCode`。
    */
   const FAILED_OUTCOME_LEDGER: Readonly<Record<string, number>> = {
-    'agent/toolExecutor.ts': 16,
+    // +1（SUBAGENT-DELEGATE-1）：delegate_task 终态映射——incomplete / interrupted / failed
+    // 三种非 completed 终态统一记 failed（无 errorCode：不是模型可自纠的参数错误，
+    // 重试由父模型按首行标签自行决定）
+    'agent/toolExecutor.ts': 17,
     'agent/toolRunner.ts': 2,
     'agent/loop.ts': 2,
   };

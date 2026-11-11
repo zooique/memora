@@ -29,6 +29,14 @@ export type AgentChunk = (
        * 仅标识不改变内容语义，历史落库仍按整轮拼接。
        */
       stage?: TextChunkStage;
+      /**
+       * 撞「最大迭代 / 步数预算」收尾标记（唯一产出点 = loop.emitMaxIterationsReached）。
+       *
+       * 为什么挂在 text 上而不是新开 chunk 类型：语义就是「这段文本是撞线收尾文案」，
+       * 消费面（子会话终态判定）只需一个布尔标志，不需要宿主新增分支去处理未知 chunk。
+       * 判据**必须**读本标志，不许匹配文案——文案可被宿主 `messages.maxIterationsReached` 覆盖。
+       */
+      limitReached?: boolean;
     }
   /**
    * 工具调用开始（Runtime 确定执行、参数已完成）。stepIndex = 所属 step 的轮内序号（与 thought

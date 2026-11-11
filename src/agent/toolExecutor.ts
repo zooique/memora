@@ -130,6 +130,29 @@ export interface DelegateTaskRequest {
   capabilities?: readonly string[];
 }
 
+/**
+ * 子会话终态（派发端口 → 执行器的结构化结果，**唯一真源**）
+ *
+ * 工具结果首标签 `[SUBAGENT:<status>]` 由本联合类型派生，四态语义写死：
+ *   - `completed`  ：子会话自己收场，且**没撞**步数上限；
+ *   - `incomplete` ：撞最大迭代 / 步数预算收尾——内容可用但不完整。**不是失败**，
+ *                    父可据此决定是否拆小任务重派；
+ *   - `interrupted`：父 / 用户中止（含端口在 abort 时立即返回的终态）；
+ *   - `failed`     ：异常、子递归里不应出现的 `paused`、以及其它未归类失败。
+ *
+ * 为什么要结构化而不是只回字符串：执行器要把终态映射成 `ToolOutcome.status`——
+ * 只有 `completed` 记 ok，否则检查点 / metrics / 宿主「失败」展示会把半截回答记成成功。
+ */
+export type DelegateTaskStatus = 'completed' | 'incomplete' | 'interrupted' | 'failed';
+
+/** delegate_task 端口返回结果：渲染面（text，首行 `[SUBAGENT:<status>]`）+ 判据面（status） */
+export interface DelegateTaskResult {
+  /** 终态（决定 outcome.status；非 completed 一律不记 ok） */
+  readonly status: DelegateTaskStatus;
+  /** 完整工具结果文本（首行由内核按终态生成，正文已截断） */
+  readonly text: string;
+}
+
 // ─── web_fetch / run_code 注入防御常量 ─────────────────
 
 /** web_fetch 的 url 最大长度（防超长/恶意 URL 滥用） */
@@ -825,11 +848,14 @@ export class ToolExecutor {
    * 结构性深度 1：子会话的 ToolExecutor 从不设置本端口 ⇒ `delegate_task` 不进
    * `assembledTools` ⇒ 子会话既看不见也调不动，不靠运行时计数判深度。
    *
-   * 端口返回的字符串即工具结果（含内核生成的 `[SUBAGENT:*]` 首行与已截断正文）。
+   * 端口返回**结构化结果**（终态 + 文本），执行器据终态定 outcome：只有 `completed` 记 ok。
    * 未注入时 delegate_task 不暴露（父会话默认注入，单测/极简装配可不注入）。
    * 私有：唯一的写入入口是 `setDelegateTask`（装配注入后不再变更，收窄可达成员面）。
    */
-  private delegateTask?: (request: DelegateTaskRequest, signal?: AbortSignal) => Promise<string>;
+  private delegateTask?: (
+    request: DelegateTaskRequest,
+    signal?: AbortSignal,
+  ) => Promise<DelegateTaskResult>;
 
   constructor(
     projectPath: string,
@@ -1050,10 +1076,10 @@ export class ToolExecutor {
    * 注入即暴露：`assembledTools` 按端口存在性决定是否加入 `DELEGATE_TASK_TOOL`，
    * 因此**不注入 = 结构上不可见**（子会话装配刻意不调用本方法，深度 1 不靠计数）。
    *
-   * @param port 派发实现（请求 + 父 turn 中止信号 → 已格式化的工具结果文本）
+   * @param port 派发实现（请求 + 父 turn 中止信号 → 结构化终态与结果文本）
    */
   setDelegateTask(
-    port: (request: DelegateTaskRequest, signal?: AbortSignal) => Promise<string>,
+    port: (request: DelegateTaskRequest, signal?: AbortSignal) => Promise<DelegateTaskResult>,
   ): void {
     this.delegateTask = port;
     // 暴露面变化 ⇒ 通知 loop 刷新 toolDefinitions 快照与 system prompt
@@ -2289,8 +2315,15 @@ export class ToolExecutor {
         const capabilities = Array.isArray(capabilitiesRaw)
           ? (capabilitiesRaw as string[])
           : undefined;
-        // 结果文本（含 [SUBAGENT:*] 首行）由装配层端口按子会话终态生成，本层不判完成度
-        return await this.delegateTask({ task, rolePack, capabilities }, signal);
+        // 终态由装配层端口按子会话执行流给出，本层只做「终态 → outcome」映射：
+        // 只有 completed 记 ok；incomplete/interrupted/failed 都是非成功（否则检查点、
+        // metrics、宿主「失败」展示会把半截/中断/失败的派发记成成功）。
+        // 不配错误码：这不是模型可自纠的参数错误，重试由父模型按首行标签自行决定。
+        const result = await this.delegateTask({ task, rolePack, capabilities }, signal);
+        emitOutcome?.(
+          result.status === 'completed' ? okOutcome(result.text) : failedOutcome(result.text),
+        );
+        return result.text;
       }
       default: {
         // 自定义工具 fallback：查找 customTools Map

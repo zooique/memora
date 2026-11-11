@@ -1140,7 +1140,9 @@ export class AgentLoop {
     if (consumed > 0) {
       logger.debug({ consumed }, '步数触顶收尾前消费排队插话');
     }
-    yield { type: 'text', content: this.ui.maxIterationsReached };
+    // limitReached：撞顶收尾的**结构化标志**，供子会话终态判据使用
+    // （读标志而非匹配文案：文案可被宿主 messages.maxIterationsReached 覆盖）
+    yield { type: 'text', content: this.ui.maxIterationsReached, limitReached: true };
     yield { type: 'done' };
   }
 
@@ -1304,7 +1306,7 @@ export class AgentLoop {
     logger.debug({ iteration, messageCount: this.messages.length }, 'Agent Loop 迭代');
 
     // 中断检查：软暂停（边界挂起可续跑）/ 硬中止（不可续跑）；
-    // 返回合并后的 effectiveSignal（AbortSignal）表示继续执行
+    // 返回 AbortSignal 表示继续执行（**原样透传**，本处不做合并）
     const gate = yield* this._handleInterrupt(signal);
     if (gate === 'paused' || gate === 'aborted') return gate;
 
@@ -1381,7 +1383,8 @@ export class AgentLoop {
    *  顺序：先消费注入型 → 再检查挂起型 → 最后硬中止。注入型优先是为了让补充输入在 pause 生效前
    *  就入史——如果用户同时发了 interject + pause，补充输入应该被看到，而不是被 pause 吞掉。
    *
-   *  返回 'paused' | 'aborted' 表示本迭代终止；返回合并后的 AbortSignal 表示继续。 */
+   *  返回 'paused' | 'aborted' 表示本迭代终止；返回 AbortSignal 表示继续——该值就是入参
+   *  `signal` **原样透传**（本方法只做气口消费与中止判定，不合并、不新建信号）。 */
   private async *_handleInterrupt(
     signal: AbortSignal | undefined,
   ): AsyncGenerator<AgentChunk, 'paused' | 'aborted' | AbortSignal | undefined, unknown> {
@@ -1432,7 +1435,7 @@ export class AgentLoop {
   }
 
   /** LLM 调用 + 结果路由：上下文准备 → 调 LLM → 按 abort/工具/纯文本 分支路由。
-   *  effectiveSignal 已由 _handleInterrupt 合并好，此处直接使用。 */
+   *  effectiveSignal 是 `_handleInterrupt` **原样透传**的父 signal（不是合并产物），此处直接使用。 */
   private async *_callAndRoute(
     iteration: number,
     effectiveSignal: AbortSignal | undefined,

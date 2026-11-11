@@ -15,13 +15,19 @@
 import { join } from 'node:path';
 import { AgentLoop } from '@/agent/loop.js';
 import { ToolExecutor } from '@/agent/toolExecutor.js';
-// 子会话减法真源（deny 轴）与派发请求类型
-import { SUBAGENT_DENIED_TOOLS, type DelegateTaskRequest } from '@/agent/toolExecutor.js';
+// 子会话减法真源（deny 轴）、派发请求类型与结构化结果类型
+import {
+  SUBAGENT_DENIED_TOOLS,
+  type DelegateTaskRequest,
+  type DelegateTaskResult,
+  type DelegateTaskStatus,
+} from '@/agent/toolExecutor.js';
 // 执行流消费纯逻辑（子会话与父会话同一份正文累积/终态分类）
 import {
   classifyExecutionStreamError,
   createExecutionStreamState,
   observeExecutionChunk,
+  type ExecutionStreamState,
 } from '@/agent/executionStream.js';
 import type { SecurityGuard } from '@/security/pathGuard.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
@@ -262,6 +268,8 @@ export interface SubagentRuntimeParams {
   maxContextTokens?: number;
   /** 输出预算（继承父配置口径） */
   maxTokens?: number;
+  /** 步数预算（可选：父可收紧子会话步数；缺省走 loop 默认值） */
+  maxIterations?: number;
   /** 角色包管理器（子会话按 rolePack 取 persona 与规则） */
   rolePackManager: RolePackManager;
   /** 全局技能管理器（子会话唯一可见的技能来源） */
@@ -368,41 +376,56 @@ export function createSubagentToolExecutor(
   return exec;
 }
 
-/**
- * 子会话终态（**唯一真源**：工具结果首标签 `[SUBAGENT:<status>]` 的成员即此联合类型）
- *
- * 单独具名而非内联在参数上：`toolFailurePrefixGuard` 需要从真源展开这个拼接模板，
- * 锚定具名类型比正则匹配函数签名稳（签名换行 / 拆参都不会让提取失配）。
- */
-export type SubagentTerminalStatus = 'completed' | 'interrupted' | 'failed';
+/** 无正文时按终态给一行说明（避免父模型把空正文误读成「完成但无内容」） */
+const SUBAGENT_EMPTY_BODY_NOTE: Record<DelegateTaskStatus, string> = {
+  completed: '（子会话未返回正文）',
+  incomplete: '（子会话撞步数上限，未产出正文）',
+  interrupted: '（子会话被中止，未产出正文）',
+  failed: '（子会话执行失败，未产出正文）',
+};
+
+/** 正文行首伪标签被降级时追加的说明行（只在真的降级过时出现） */
+const SUBAGENT_TAG_DOWNGRADE_NOTICE =
+  '（说明：正文中行首的 [SUBAGENT:…] 已降级为 [subagent:…]，不代表终态）';
 
 /**
  * 按子会话执行流的终态生成工具结果文本
  *
- * **第一行必须是内核生成的 `[SUBAGENT:*]` 标识**——它来自流标志（completed/interrupted/failed），
- * 绝不允许子模型自己在正文里写（否则模型可以自封完成骗过队长）。
+ * **第一行必须是内核生成的 `[SUBAGENT:*]` 标识**——它来自流终态标志，绝不允许子模型自己写
+ * （否则模型可以自封「完成」骗过队长）。四态见 `DelegateTaskStatus`。
+ *
+ * 正文里**行首**出现的同名标签会降级成小写 `[subagent:`：否则父 LLM / 人扫标签会看到
+ * 「第二个终态」。只处理行首，不做全局转义（正文里的普通代码内容不动）。
  *
  * @param status 终态
  * @param content 子会话累积正文
  */
-export function formatSubagentResult(status: SubagentTerminalStatus, content: string): string {
+export function formatSubagentResult(status: DelegateTaskStatus, content: string): string {
+  // 首行标签的模板**必须**写成 `[SUBAGENT:${status}]` 的字面形态：
+  // `toolFailurePrefixGuard` 靠它把四态展开并做双向对账（用常量拼接会让扫描器失明 ⇒ 假绿）
   const header = `[SUBAGENT:${status}]`;
+  // 前缀从 header 派生（不另写一份 `[SUBAGENT:` 字面量：孤立前缀会被首标签守卫记成盲区标记）
+  const tagPrefix = header.slice(0, header.indexOf(':') + 1);
   const body = content.trim();
-  if (!body) {
-    const note =
-      status === 'completed'
-        ? '（子会话未返回正文）'
-        : status === 'interrupted'
-          ? '（子会话被中止，未产出正文）'
-          : '（子会话执行失败，未产出正文）';
-    return `${header}\n${note}`;
-  }
-  // 截断在头部之后做：头部永远完整，正文按字符上限截断并显式标注
+  if (!body) return `${header}\n${SUBAGENT_EMPTY_BODY_NOTE[status]}`;
+
+  // 行首伪标签降级：逐行判断，只改行首（正文中间的提及、代码块内容一律不动）
+  const downgraded = body
+    .split('\n')
+    .map((line) =>
+      line.startsWith(tagPrefix)
+        ? `${tagPrefix.toLowerCase()}${line.slice(tagPrefix.length)}`
+        : line,
+    )
+    .join('\n');
+  const notice = downgraded === body ? '' : `${SUBAGENT_TAG_DOWNGRADE_NOTICE}\n`;
+
+  // 截断在头部之后做：头部与说明行永远完整，正文按字符上限截断并显式标注
   const truncated =
-    body.length > SUBAGENT_RESULT_MAX_CHARS
-      ? `${body.slice(0, SUBAGENT_RESULT_MAX_CHARS)}\n…（结果超过 ${SUBAGENT_RESULT_MAX_CHARS} 字符，已截断）`
-      : body;
-  return `${header}\n${truncated}`;
+    downgraded.length > SUBAGENT_RESULT_MAX_CHARS
+      ? `${downgraded.slice(0, SUBAGENT_RESULT_MAX_CHARS)}\n…（结果超过 ${SUBAGENT_RESULT_MAX_CHARS} 字符，已截断）`
+      : downgraded;
+  return `${header}\n${notice}${truncated}`;
 }
 
 /**
@@ -476,6 +499,8 @@ export function createSubagentLoop(
     allTools: () => toolExec.allToolDefinitions,
     maxContextTokens: params.maxContextTokens,
     defaultMaxTokens: params.maxTokens,
+    // 未给定时传 undefined ⇒ loop 用 DEFAULT_MAX_ITERATIONS（与父会话同口径）
+    maxIterations: params.maxIterations,
     imageReadPort: params.imageReadPort,
   });
 
@@ -485,51 +510,162 @@ export function createSubagentLoop(
   return { loop, toolExec, systemPromptPrefix };
 }
 
+/** 子会话一次派发的运行句柄 */
+export interface SubagentRun {
+  /** 流累积态（`content` 实时更新：abort 时端口据它带回「不完整但可用」的正文） */
+  readonly state: ExecutionStreamState;
+  /** 终态结果（内部吞掉异常，**永不 reject**；端口提前返回后仍继续跑到收场） */
+  readonly finished: Promise<DelegateTaskResult>;
+}
+
 /**
- * 跑一次子会话并返回**已格式化**的工具结果文本
+ * 启动子会话，返回实时累积态与终态 Promise（**不等待收场**）
  *
- * 终态判据全部来自子会话执行流标志：
- *   - 正常收尾 → completed；
- *   - aborted / 父 signal 中止 → interrupted；
- *   - 抛错、或出现 `paused`（子递归里应不可达）→ failed。
+ * 为什么不在这里直接 await：父 turn abort 后，父侧 `raceToolWithSignal` 只给 1.8s 宽限、
+ * 先到先赢。若端口一直等子会话自己的工具收场，父会先拿到 `[ERR:TOOL:ABORTED]`，
+ * 子会话的真终态 `[SUBAGENT:interrupted]` 被 `Promise.race` 丢弃；且并发名额要等子 loop
+ * 真 settle 才释放，工具永不返回时该 Agent 会永久判「并发超限」。
+ * 故拆成「启动 + 收场」两段：端口在 abort 一到就用当前正文立即返回，后台 loop 继续收同一
+ * signal 自己收场（异常在 `finished` 内部吞掉，不会变成 unhandled rejection）。
+ *
+ * 终态判据全部来自子会话执行流标志（读标志，不匹配文案）：
+ *   - 撞步数上限 → `incomplete`（正常收尾，内容可用但不完整）；
+ *   - aborted / 父 signal 中止 → `interrupted`；
+ *   - 抛错、或出现 `paused`（子递归里应不可达）→ `failed`；
+ *   - 其余 → `completed`。
  *
  * @param params 子会话装配参数
  * @param request 本次派发请求
- * @param signal 父 turn 中止信号（直接透传：父被中止 → 子同步中止）
+ * @param signal 父 turn 中止信号（**直接透传**：父被中止 → 子同步中止）
+ * @throws createSubagentLoop 的参数校验错误（rolePack 不存在 / toolMode=block / 非法 capabilities）
+ */
+export function startSubagent(
+  params: SubagentRuntimeParams,
+  request: DelegateTaskRequest,
+  signal?: AbortSignal,
+): SubagentRun {
+  // 参数错误在启动前同步抛出：子会话根本没起来，不存在终态（由工具层按标准工具错误回喂）
+  const { loop } = createSubagentLoop(params, request);
+  const state = createExecutionStreamState();
+
+  const finished: Promise<DelegateTaskResult> = (async (): Promise<DelegateTaskResult> => {
+    try {
+      // 父 abort 直接透传同一个 signal（processUserInput 会一路传到 provider 与工具执行）
+      for await (const chunk of loop.processUserInput(request.task, signal)) {
+        observeExecutionChunk(state, chunk);
+      }
+    } catch (err) {
+      // 与父会话同一分类真源：用户取消 → interrupted；内部中断 / 异常 → failed
+      const classified = classifyExecutionStreamError(err, signal);
+      if (classified.kind === 'internal-abort') {
+        logger.warn({ err }, '子会话 LLM 请求非用户取消原因中断，判为连接中断');
+      }
+      const status: DelegateTaskStatus = classified.aborted ? 'interrupted' : 'failed';
+      return { status, text: formatSubagentResult(status, state.content) };
+    }
+
+    // paused 在子递归里应不可达（子会话禁用了 ask_user，也没有父的暂停入口）：
+    // 真出现按 failed 收口并留日志，不静默当成完成
+    if (state.paused) {
+      logger.warn({ task: request.task }, '子会话出现 paused（预期不可达），按 failed 收口');
+      return { status: 'failed', text: formatSubagentResult('failed', state.content) };
+    }
+    if (state.aborted) {
+      return { status: 'interrupted', text: formatSubagentResult('interrupted', state.content) };
+    }
+    // 撞步数上限是 loop 的正常收尾（不抛错、aborted 仍 false）⇒ 必须报 incomplete，
+    // 否则父拿到 completed + 半截回答，会把没做完的活当成交付
+    const status: DelegateTaskStatus = state.limitReached ? 'incomplete' : 'completed';
+    return { status, text: formatSubagentResult(status, state.content) };
+  })();
+
+  return { state, finished };
+}
+
+/**
+ * 跑完一次子会话，返回已格式化的工具结果文本（`startSubagent` 的「等收场」形态）
+ *
+ * @param params 子会话装配参数
+ * @param request 本次派发请求
+ * @param signal 父 turn 中止信号（直接透传）
  */
 export async function runSubagent(
   params: SubagentRuntimeParams,
   request: DelegateTaskRequest,
   signal?: AbortSignal,
 ): Promise<string> {
-  const { loop } = createSubagentLoop(params, request);
-  const state = createExecutionStreamState();
-  let failed = false;
+  const { finished } = startSubagent(params, request, signal);
+  return (await finished).text;
+}
 
-  try {
-    // 父 abort 直接透传（processUserInput 的 signal 参数会一路传到 provider 与工具执行）
-    for await (const chunk of loop.processUserInput(request.task, signal)) {
-      observeExecutionChunk(state, chunk);
-    }
-  } catch (err) {
-    // 与父会话同一分类真源：用户取消 → interrupted；内部中断 / 异常 → failed
-    const classified = classifyExecutionStreamError(err, signal);
-    if (classified.kind === 'internal-abort') {
-      logger.warn({ err }, '子会话 LLM 请求非用户取消原因中断，判为连接中断');
-    }
-    return formatSubagentResult(classified.aborted ? 'interrupted' : 'failed', state.content);
-  }
+/**
+ * 创建 delegate_task 派发端口（并发闸 + abort 立即收口）
+ *
+ * 两条硬约束都在这里，不散落到装配回调里：
+ *   - **并发硬限**：同一步最多 `SUBAGENT_MAX_CONCURRENT` 个。判据在端口入口**同步**执行
+ *     （计数自增发生在第一个 await 之前），故同一批并发的第三个调用必然看到满额后报错；
+ *     超出直接报错不排队——排队会把父 step 拖成长尾。
+ *   - **abort 立即返回真终态**：父 turn 中止时立刻用已累积正文返回 `interrupted`，
+ *     后台子 loop 继续收同一 signal 自己收场；名额在端口 promise 返回时释放，不等子 loop settle。
+ *
+ * @param params 子会话装配参数
+ * @returns 端口实现 + 在途计数读取器（诊断/测试用；**不参与深度判定**）
+ */
+export function createDelegateTaskPort(params: SubagentRuntimeParams): {
+  port: (request: DelegateTaskRequest, signal?: AbortSignal) => Promise<DelegateTaskResult>;
+  /** 当前在途子会话数（并发闸内部状态） */
+  inFlight: () => number;
+} {
+  /** 在途子会话数：只管并发，不管深度（深度由「子装配不注入端口」结构性保证） */
+  let inFlight = 0;
 
-  // paused 在子递归里应不可达（子会话禁用了 ask_user，也没有父的暂停入口）：
-  // 真出现按 failed 收口并留日志，不静默当成完成
-  if (state.paused) {
-    logger.warn({ task: request.task }, '子会话出现 paused（预期不可达），按 failed 收口');
-    failed = true;
-  }
-  if (state.aborted) {
-    return formatSubagentResult('interrupted', state.content);
-  }
-  return formatSubagentResult(failed ? 'failed' : 'completed', state.content);
+  const port = async (
+    request: DelegateTaskRequest,
+    signal?: AbortSignal,
+  ): Promise<DelegateTaskResult> => {
+    if (inFlight >= SUBAGENT_MAX_CONCURRENT) {
+      throw toolError(
+        'delegate_task 并发超限',
+        `同一步最多 ${SUBAGENT_MAX_CONCURRENT} 个子会话同时执行`,
+        ['等已派发的子会话返回后再派发新的任务'],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
+    }
+    inFlight++;
+    try {
+      const run = startSubagent(params, request, signal);
+      // 无外部 signal：正常等子会话收场
+      if (!signal) return await run.finished;
+
+      // abort 时的「立即终态」：正文取**当前**累积内容（不完整但可用）
+      const interruptedResult = (): DelegateTaskResult => ({
+        status: 'interrupted',
+        text: formatSubagentResult('interrupted', run.state.content),
+      });
+      if (signal.aborted) return interruptedResult();
+
+      /** 解除 abort 监听（race 结束后必须执行，否则父 signal 上的监听会累积） */
+      let removeAbortListener = (): void => {};
+      try {
+        return await Promise.race([
+          run.finished,
+          new Promise<DelegateTaskResult>((resolve) => {
+            const onAbort = (): void => resolve(interruptedResult());
+            signal.addEventListener('abort', onAbort, { once: true });
+            removeAbortListener = () => signal.removeEventListener('abort', onAbort);
+          }),
+        ]);
+      } finally {
+        removeAbortListener();
+      }
+    } finally {
+      // 名额在端口 promise 返回时释放（不等子 loop settle）
+      inFlight--;
+    }
+  };
+
+  return { port, inFlight: () => inFlight };
 }
 
 /**
@@ -1468,24 +1604,7 @@ export async function assembleComponents(
     locale,
   };
   // 在途子会话计数：只用于并发闸，不参与深度判定（深度由「子装配不注入端口」结构性保证）
-  let inFlightSubagents = 0;
-  toolExec.setDelegateTask(async (request, signal) => {
-    if (inFlightSubagents >= SUBAGENT_MAX_CONCURRENT) {
-      throw toolError(
-        'delegate_task 并发超限',
-        `同一步最多 ${SUBAGENT_MAX_CONCURRENT} 个子会话同时执行`,
-        ['等已派发的子会话返回后再派发新的任务'],
-        undefined,
-        ToolErrorCode.ARGUMENT_ERROR,
-      );
-    }
-    inFlightSubagents++;
-    try {
-      return await runSubagent(subagentParams, request, signal);
-    } finally {
-      inFlightSubagents--;
-    }
-  });
+  toolExec.setDelegateTask(createDelegateTaskPort(subagentParams).port);
 
   // 装配 loop 运行时回调 + 任务表管理（onPendingQuestion/onPlanItemBoundary/getTaskTable/planManager）
   wireRuntimeCallbacks(loop, toolExec, sessionManager, hooks, history);

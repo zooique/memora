@@ -509,8 +509,10 @@ export const SEARCH_PROJECT_TOOL: ToolDefinition = {
  * 形态：子会话是**父 turn 内的同步递归**，不落 Round、不进会话列表；深度固定 1（子会话装配时
  * 根本不注入本工具端口，见 `ToolExecutor.setDelegateTask`）。
  *
- * 结果契约：工具结果第一行由**内核按子会话执行流的终态标志**生成
- * `[SUBAGENT:completed]` / `[SUBAGENT:interrupted]` / `[SUBAGENT:failed]`，正文随后。
+ * 结果契约：**一旦开始执行**，工具结果第一行由**内核按子会话执行流的终态标志**生成
+ * `[SUBAGENT:completed]` / `[SUBAGENT:incomplete]` / `[SUBAGENT:interrupted]` /
+ * `[SUBAGENT:failed]`，正文随后。参数校验失败（rolePack 不存在 / capabilities 非法等）
+ * 返回标准工具错误 `[ERR:TOOL:ARGUMENT_ERROR]`——子会话根本没起来，不存在终态。
  * 头部绝不由子模型写——否则模型可以自封「完成」骗过队长。
  *
  * 条件工具：只有装配层注入端口时才进 `assembledTools`（父会话默认注入；子会话不注入 ⇒ 结构性不可见）。
@@ -528,7 +530,9 @@ export const DELEGATE_TASK_TOOL: ToolDefinition = {
     '可选 rolePack 指定子会话采用的角色包（只取 persona 与规则，不继承父角色包）；' +
     '可选 capabilities 授予联网能力（只接受 web:search / web:fetch）。' +
     '子会话只读：不能写盘、执行命令、登记情报/任务，也不能向你提问。' +
-    '工具结果第一行是内核生成的 [SUBAGENT:completed|interrupted|failed] 终态标识，正文是子会话的最终回答。',
+    '工具结果第一行是内核生成的 [SUBAGENT:completed|incomplete|interrupted|failed] 终态标识，正文是子会话的最终回答；' +
+    'incomplete 表示它撞了步数上限、内容可用但不完整，可据此决定是否拆小任务重派；' +
+    '参数校验失败时返回标准工具错误（不存在终态标识）。',
   // 只读闸：子会话自身只读；父会话在 readonly 模式下仍可派活（不改变项目磁盘）
   readonly: true,
   parameters: {
