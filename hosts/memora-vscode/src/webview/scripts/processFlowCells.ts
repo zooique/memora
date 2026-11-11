@@ -263,10 +263,10 @@ function buildDelegateDispatch(doc: Document, argsRaw: string | undefined): HTML
 }
 
 /**
- * 「回执」段：结论摘录全文 + 尾部元信息（排队 · 执行）+ 截断标注。
+ * 「回执」段：结论摘录全文 + 尾部元信息（执行耗时）+ 截断标注。
  *
  * 摘录为空（interrupted 常如此）时**不渲染空标题/空占位**，只留一行状态说明；
- * 元信息两段耗时直接来自内核回执，不再相加。
+ * 元信息只有执行一段（端口不排队，内核不产出排队耗时）。
  */
 function buildDelegateReceipt(
   doc: Document,
@@ -289,11 +289,7 @@ function buildDelegateReceipt(
   body.textContent = delegate.excerpt;
   const meta = doc.createElement('div');
   meta.className = 'round-block__delegate-meta';
-  meta.textContent = l10n.t(
-    'Queued {0} · Executed {1}',
-    fmtDuration(delegate.queuedMs),
-    fmtDuration(delegate.durationMs),
-  );
+  meta.textContent = l10n.t('Executed {0}', fmtDuration(delegate.durationMs));
   if (delegate.excerpt.length >= DELEGATE_EXCERPT_MAX_CHARS) {
     const truncated = doc.createElement('span');
     truncated.className = 'round-block__delegate-truncated';

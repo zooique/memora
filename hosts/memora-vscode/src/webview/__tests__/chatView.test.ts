@@ -12172,7 +12172,6 @@ describe('块类型标与折叠箭头（批次三）', () => {
           terminal: 'interrupted',
           excerpt: '',
           durationMs: 47_000,
-          queuedMs: 12_000,
         },
       },
     });

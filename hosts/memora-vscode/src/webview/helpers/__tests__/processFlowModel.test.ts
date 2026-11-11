@@ -83,7 +83,7 @@ describe('toolRowStatus（工具行状态四档）', () => {
 });
 
 describe('delegate_task 四态映射与失败口径', () => {
-  /** 构造一条带内核回执的 delegate tool_result（excerpt/两段耗时是内核给的既定数据） */
+  /** 构造一条带内核回执的 delegate tool_result（excerpt / 执行耗时是内核给的既定数据） */
   const delegateResult = (
     terminal: DelegateTerminal,
   ): Extract<ProcessEvent, { type: 'tool_result' }> =>
@@ -92,7 +92,7 @@ describe('delegate_task 四态映射与失败口径', () => {
       name: 'delegate_task',
       ok: terminal === 'completed',
       summary: 'r',
-      delegate: { terminal, excerpt: '结论', durationMs: 47_000, queuedMs: 12_000 },
+      delegate: { terminal, excerpt: '结论', durationMs: 47_000 },
     });
 
   it('四态文案、视觉档位与默认展开穷尽映射', () => {
@@ -166,7 +166,7 @@ describe('delegate_task 文案键完整性（l10n 成对）', () => {
       'Receipt',
       'Capabilities: {0}',
       'none',
-      'Queued {0} · Executed {1}',
+      'Executed {0}',
       'Truncated',
       '[{0}]',
     ];

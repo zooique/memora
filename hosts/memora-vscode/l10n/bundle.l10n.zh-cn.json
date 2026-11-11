@@ -964,7 +964,7 @@
   "Receipt": "回执",
   "Capabilities: {0}": "能力：{0}",
   "none": "无",
-  "Queued {0} · Executed {1}": "排队 {0} · 执行 {1}",
+  "Executed {0}": "执行 {0}",
   "Truncated": "已截断",
   "[{0}]": "〔{0}〕",
   "User stopped the conversation": "用户停止了对话",

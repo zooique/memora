@@ -3250,7 +3250,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             ok: chunk.ok,
             summary: chunk.summary,
             ...(chunk.blocked ? { blocked: true } : {}),
-            // delegate_task 回执原样透传（四态/摘录/两段耗时）；其它工具无此字段
+            // delegate_task 回执原样透传（四态/摘录/执行耗时）；其它工具无此字段
             ...(chunk.delegate ? { delegate: chunk.delegate } : {}),
           });
           // 文件改动追踪：写后合并（按文件路径；blocked/失败自动丢弃）

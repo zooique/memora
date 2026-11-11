@@ -155,8 +155,11 @@ const TOOL_ACTION_LABELS: Record<string, ToolActionFn> = {
   },
   compress_context: () => l10n.t('Compact context'),
   // delegate_task（条件工具）：唯一可叙述面 = 子任务描述（task）。
-  // 与 run_command 不同，这里**要截断**：task 常是整段 prompt，不截断会把主行撑满。
-  // 只取首行前 60 字做「这次派了什么」的提示；全文仍在展开体「派发」段（args.task 原文）。
+  // **主行文案的唯一产地就是这里**：实时增量（updateToolRowState）与重放/收场（renderToolRow）
+  // 都经 toolActionLabel 取本函数结果，不存在第二处拼接点，因此截断也只会发生在这同一处。
+  // 与 run_command「全表统一不截断」不同，这里**要截断**：task 常是整段 prompt，
+  // 不截断会把主行撑满。只取首行前 60 字做「这次派了什么」的提示；
+  // 全文仍在展开体「派发」段的 args.task 原文（那是原文数据，不是第二条文案产地）。
   delegate_task: (a) => {
     const task = argStr(a, 'task');
     if (!task) return undefined;
