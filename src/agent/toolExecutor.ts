@@ -40,7 +40,7 @@ import {
   type ToolOutcome,
 } from '@/agent/managers/toolCallHelpers.js';
 import { BuiltinToolHandlers, SCRIPT_READ_MAX_LEN } from '@/agent/builtinToolHandlers.js';
-import type { ImageReadPort } from '@/agent/types.js';
+import type { DelegateTaskReceipt, ImageReadPort } from '@/agent/types.js';
 import type { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
 import type { BackgroundTaskScheduler } from '@/utils/backgroundTask.js';
 import type { AgentEventMap } from '@/utils/eventEmitter.js';
@@ -151,6 +151,42 @@ export interface DelegateTaskResult {
   readonly status: DelegateTaskStatus;
   /** 完整工具结果文本（首行由内核按终态生成，正文已截断） */
   readonly text: string;
+}
+
+/**
+ * 派发端口返回结果：收场结果 + 两段耗时（delegate 回执的计时**唯一产地**）
+ *
+ * 两段故意分开：`queuedMs` = 等并发名额的时间，`durationMs` = 子会话真正执行的耗时。
+ * 合并成一个数会让「排队慢」与「执行慢」无法区分（用户看到的元信息 `排队 · 执行` 需要两者）。
+ */
+export interface DelegateTaskPortResult extends DelegateTaskResult {
+  /** 子会话执行耗时（毫秒，**不含排队**） */
+  readonly durationMs: number;
+  /** 等待并发名额耗时（毫秒） */
+  readonly queuedMs: number;
+}
+
+/** delegate_task 结论摘录硬上限（字符）：超限定长截断，**不补省略号**（截断标注由宿主做） */
+export const DELEGATE_EXCERPT_MAX_CHARS = 800;
+
+/**
+ * 从子会话结果文本提取「给用户看的结论摘录」（`delegate.excerpt` 的唯一产地）。
+ *
+ * 与 loop 通用 `summary`（100 字）**同源不同粒度**：同一份 `DelegateTaskResult.text`，
+ * 只是截断长度与剥离规则不同。二者不得当成两份可各自维护的真相。
+ *
+ * 剥离规则：
+ *   - 首行 `[SUBAGENT:<status>]` 是内核写给模型读的终态标志，不进用户面；
+ *   - 紧随其后的中文括号说明（「未返回正文」/「标签已降级」等）也只给模型读，一并去掉；
+ *   - 余下正文去空白后定长截断（800 字），不追加省略号。
+ */
+export function extractDelegateExcerpt(text: string): string {
+  const lines = text.split('\n');
+  // 首行标记：形如 `[SUBAGENT:completed]`（独占一行才剥；正文里提及不动）
+  let start = /^\[SUBAGENT:[a-z]+\]\s*$/.test(lines[0] ?? '') ? 1 : 0;
+  // 紧随标记的中文括号说明行：整行被全角括号包住才剥（避免误伤正文）
+  while (start < lines.length && /^\s*（.*）\s*$/.test(lines[start] ?? '')) start += 1;
+  return lines.slice(start).join('\n').trim().slice(0, DELEGATE_EXCERPT_MAX_CHARS);
 }
 
 // ─── web_fetch / run_code 注入防御常量 ─────────────────
@@ -883,7 +919,7 @@ export class ToolExecutor {
   private delegateTask?: (
     request: DelegateTaskRequest,
     signal?: AbortSignal,
-  ) => Promise<DelegateTaskResult>;
+  ) => Promise<DelegateTaskPortResult>;
 
   constructor(
     projectPath: string,
@@ -1098,7 +1134,7 @@ export class ToolExecutor {
    * @param port 派发实现（请求 + 父 turn 中止信号 → 结构化终态与结果文本）
    */
   setDelegateTask(
-    port: (request: DelegateTaskRequest, signal?: AbortSignal) => Promise<DelegateTaskResult>,
+    port: (request: DelegateTaskRequest, signal?: AbortSignal) => Promise<DelegateTaskPortResult>,
   ): void {
     this.delegateTask = port;
     // 暴露面变化 ⇒ 通知 loop 刷新 toolDefinitions 快照与 system prompt
@@ -2339,9 +2375,18 @@ export class ToolExecutor {
         // metrics、宿主「失败」展示会把半截/中断/失败的派发记成成功）。
         // 不配错误码：这不是模型可自纠的参数错误，重试由父模型按首行标签自行决定。
         const result = await this.delegateTask({ task, rolePack, capabilities }, signal);
-        emitOutcome?.(
-          result.status === 'completed' ? okOutcome(result.text) : failedOutcome(result.text),
-        );
+        // 回执组装点（唯一产地）：excerpt 从 result.text 取（剥首行标志后定长截断），
+        // 与 loop 通用 summary 同源不同粒度——两者都来自同一份 result.text，不得各自维护。
+        const delegate: DelegateTaskReceipt = {
+          terminal: result.status,
+          excerpt: extractDelegateExcerpt(result.text),
+          durationMs: result.durationMs,
+          queuedMs: result.queuedMs,
+        };
+        emitOutcome?.({
+          ...(result.status === 'completed' ? okOutcome(result.text) : failedOutcome(result.text)),
+          delegate,
+        });
         return result.text;
       }
       default: {

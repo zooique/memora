@@ -7,6 +7,7 @@
 
 /** 工具调用元素契约（OpenAI 协议结构）——单一真源，供 ChatMessage.toolCalls 引用 */
 import type { ToolCall } from '@/llm/types.js';
+import type { DelegateTaskStatus } from '@/agent/toolExecutor.js';
 
 /** thinking 事件的阶段标识 */
 export type ThinkingPhase = 'assembling' | 'processing' | 'archiving' | 'llm_calling';
@@ -14,6 +15,30 @@ export type ThinkingPhase = 'assembling' | 'processing' | 'archiving' | 'llm_cal
 /** turn 归属标记：chunk 携带所在 turn roundId（SSOT：过程事件归属由内核唯一提供，
  *  宿主据此把 ProcessEvent 落盘到正确的 Round，不再依赖「roundIds 末尾」推断当前轮） */
 export type RoundTagged = { roundId?: string };
+
+/**
+ * delegate_task 派发回执（AgentChunk / ProcessEvent 的可选数据面）
+ *
+ * 存在的理由：`tool_result` 在 chunk 边界原本只剩 `{ok, summary, blocked}`——四态终态被压成
+ * 布尔、结论被截到 100 字、执行与排队两段耗时都没留下，宿主只能显示 `Succeeded / Failed`。
+ *
+ * `summary` 与 `excerpt` **同源不同粒度**：两者都取自子会话结果文本（首行 `[SUBAGENT:*]`
+ * 之后的正文），`summary` 仍是 loop 通用路径的 100 字截断（牵动全部工具，不改），
+ * `excerpt` 是 delegate 专用的 800 字结论摘录。**不得当成两份可各自维护的真相**。
+ */
+export interface DelegateTaskReceipt {
+  /** 子会话终态（复用已有 DelegateTaskStatus 枚举；宿主按它渲染四态徽标） */
+  terminal: DelegateTaskStatus;
+  /**
+   * 结论摘录（已去掉首行 `[SUBAGENT:*]` 与紧随其后的中文括号说明；硬上限 800 字）。
+   * 截断处**不补省略号**——「已截断」标注由宿主按长度是否达到上限决定。
+   */
+  excerpt: string;
+  /** 子会话执行耗时（毫秒，**不含排队**） */
+  durationMs: number;
+  /** 等待并发名额耗时（毫秒；与执行耗时是两段，不合并成一个数） */
+  queuedMs: number;
+}
 
 export type AgentChunk = (
   | {
@@ -71,6 +96,11 @@ export type AgentChunk = (
        * LLM 收到的是拒绝文案而非真实结果。
        */
       blocked?: boolean;
+      /**
+       * delegate_task 专用派发回执（其它工具不产；历史轮无此字段 = 宿主诚实降级为两态展示）。
+       * `ok` 语义不变（非 completed 一律不记 ok），四态只走本字段。
+       */
+      delegate?: DelegateTaskReceipt;
     }
   /**
    * 模型思考内容流：LLM 的 reasoning_content 增量片段。

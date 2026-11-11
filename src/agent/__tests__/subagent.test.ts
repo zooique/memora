@@ -15,7 +15,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
-import { ToolExecutor } from '@/agent/toolExecutor.js';
+import {
+  DELEGATE_EXCERPT_MAX_CHARS,
+  ToolExecutor,
+  extractDelegateExcerpt,
+} from '@/agent/toolExecutor.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import {
@@ -531,13 +535,36 @@ describe('上下文压缩事实说明行（不判态）', () => {
   });
 });
 
+describe('delegate 回执：结论摘录（excerpt）产地规则', () => {
+  it('剥掉首行 [SUBAGENT:*] 标志与紧随其后的中文括号说明', () => {
+    expect(extractDelegateExcerpt('[SUBAGENT:completed]\n结论正文')).toBe('结论正文');
+    expect(
+      extractDelegateExcerpt('[SUBAGENT:failed]\n（说明：本轮正文中的同名标签已降级）\n真实结论'),
+    ).toBe('真实结论');
+    // interrupted 常无正文：只剩给模型读的说明行 ⇒ 摘录为空（宿主据此不留空段）
+    expect(extractDelegateExcerpt('[SUBAGENT:interrupted]\n（子会话未返回正文）')).toBe('');
+  });
+
+  it('超过 800 字定长截断，且不自补省略号（截断标注由宿主做）', () => {
+    const excerpt = extractDelegateExcerpt(`[SUBAGENT:completed]\n${'字'.repeat(900)}`);
+    expect(excerpt).toHaveLength(DELEGATE_EXCERPT_MAX_CHARS);
+    expect(excerpt.endsWith('…')).toBe(false);
+  });
+});
+
 describe('派发端口：终态映射与 abort 立即收口（P0-2 / P0-3）', () => {
   it('执行器按终态记 outcome：只有 completed 记 ok（其余三态一律非 ok）', async () => {
     await withRuntimeParams(async (params) => {
       const observed: Array<{ status: string; ok: boolean }> = [];
       for (const status of ['completed', 'incomplete', 'interrupted', 'failed'] as const) {
         const exec = new ToolExecutor(params.projectPath, params.security, params.memoryIndex);
-        exec.setDelegateTask(async () => ({ status, text: formatSubagentResult(status, '正文') }));
+        // 两段耗时故意取不同值：验证回执**原样分开携带**，没有相加成一个数
+        exec.setDelegateTask(async () => ({
+          status,
+          text: formatSubagentResult(status, '正文'),
+          durationMs: 47_000,
+          queuedMs: 12_000,
+        }));
         const outcomes: ToolOutcome[] = [];
         const text = await exec.execute(
           'delegate_task',
@@ -549,10 +576,29 @@ describe('派发端口：终态映射与 abort 立即收口（P0-2 / P0-3）', (
         expect(text.split('\n')[0]).toBe(`[SUBAGENT:${status}]`);
         expect(outcomes).toHaveLength(1);
         expect(outcomes[0]!.status).toBe(status === 'completed' ? 'ok' : 'failed');
+        // 四态只走 delegate 字段：terminal 原样映射，ok 语义一个字都没动
+        expect(outcomes[0]!.delegate).toEqual({
+          terminal: status,
+          excerpt: '正文',
+          durationMs: 47_000,
+          queuedMs: 12_000,
+        });
         observed.push({ status, ok: outcomes[0]!.status === 'ok' });
       }
       // 只有 completed 是 ok —— 半截 / 中断 / 失败都不能记成功
       expect(observed.filter((o) => o.ok).map((o) => o.status)).toEqual(['completed']);
+    });
+  });
+
+  it('端口产出两段耗时：排队与执行分开携带（不合并成一个数）', async () => {
+    await withRuntimeParams(async (params) => {
+      const { port } = createDelegateTaskPort(params);
+      const result = await port({ task: '普通任务' });
+      // 字段集合即契约：只有 durationMs / queuedMs 两段，没有 totalMs 之类的合并数
+      expect(Object.keys(result).sort()).toEqual(['durationMs', 'queuedMs', 'status', 'text']);
+      // 端口超限直接报错、不排队 ⇒ 排队耗时恒为 0；执行耗时独立测量
+      expect(result.queuedMs).toBe(0);
+      expect(result.durationMs).toBeGreaterThanOrEqual(0);
     });
   });
 

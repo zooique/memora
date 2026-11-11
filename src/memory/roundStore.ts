@@ -8,7 +8,7 @@
 
 import type { MessageRole } from '@/memory/types.js';
 import type { ImageRef } from '@/llm/provider.js';
-import type { AbortStopReason, LlmErrorCategory } from '@/agent/types.js';
+import type { AbortStopReason, DelegateTaskReceipt, LlmErrorCategory } from '@/agent/types.js';
 
 // ─── 问答闭环消息 ───────────────────────────────────────
 
@@ -310,6 +310,11 @@ export type ProcessEvent =
         summary?: string;
         /** 主动挡下（B4 口径）：ok=false + blocked=true = 被我们拦下未执行（护栏/执行层闸门/旁路拒绝） */
         blocked?: boolean;
+        /**
+         * delegate_task 派发回执（可选；历史 Round 没有该字段）。
+         * 落盘后重放才能看到四态 / 结论摘录 / 两段耗时，而不是只剩 ok + 100 字摘要。
+         */
+        delegate?: DelegateTaskReceipt;
       };
     }
   /**

@@ -18,6 +18,7 @@ import { ToolExecutor } from '@/agent/toolExecutor.js';
 // 子会话减法真源（deny 轴）、派发请求类型与结构化结果类型
 import {
   SUBAGENT_DENIED_TOOLS,
+  type DelegateTaskPortResult,
   type DelegateTaskRequest,
   type DelegateTaskResult,
   type DelegateTaskStatus,
@@ -656,7 +657,7 @@ export async function runSubagent(
  * @returns 端口实现 + 在途计数读取器（诊断/测试用；**不参与深度判定**）
  */
 export function createDelegateTaskPort(params: SubagentRuntimeParams): {
-  port: (request: DelegateTaskRequest, signal?: AbortSignal) => Promise<DelegateTaskResult>;
+  port: (request: DelegateTaskRequest, signal?: AbortSignal) => Promise<DelegateTaskPortResult>;
   /** 当前在途子会话数（并发闸内部状态） */
   inFlight: () => number;
 } {
@@ -666,7 +667,9 @@ export function createDelegateTaskPort(params: SubagentRuntimeParams): {
   const port = async (
     request: DelegateTaskRequest,
     signal?: AbortSignal,
-  ): Promise<DelegateTaskResult> => {
+  ): Promise<DelegateTaskPortResult> => {
+    /** 排队计时起点：进入端口、尚未拿到并发名额 */
+    const queueStart = Date.now();
     if (inFlight >= SUBAGENT_MAX_CONCURRENT) {
       throw toolError(
         'delegate_task 并发超限',
@@ -677,29 +680,45 @@ export function createDelegateTaskPort(params: SubagentRuntimeParams): {
       );
     }
     inFlight++;
+    /**
+     * 排队耗时 = 拿并发名额前后的时间差。
+     * 注意：本端口超限**直接报错、不排队**，所以这个值实际恒为 0——字段保留是为了
+     * 将来若引入真排队，回执无需改契约即可带上等待时间。
+     */
+    const queuedMs = Date.now() - queueStart;
+    /** 执行计时起点：拿到名额之后，**不含排队** */
+    const execStart = Date.now();
+    /** 把两段耗时叠加到收场结果：执行耗时在此收口，绝不与排队相加成一个数 */
+    const withTiming = (result: DelegateTaskResult): DelegateTaskPortResult => ({
+      ...result,
+      durationMs: Date.now() - execStart,
+      queuedMs,
+    });
     try {
       const run = startSubagent(params, request, signal);
       // 无外部 signal：正常等子会话收场
-      if (!signal) return await run.finished;
+      if (!signal) return withTiming(await run.finished);
 
       // abort 时的「立即终态」：正文取**当前**累积内容（不完整但可用）
       const interruptedResult = (): DelegateTaskResult => ({
         status: 'interrupted',
         text: formatSubagentResult('interrupted', run.state.content, run.hasContextCompaction()),
       });
-      if (signal.aborted) return interruptedResult();
+      if (signal.aborted) return withTiming(interruptedResult());
 
       /** 解除 abort 监听（race 结束后必须执行，否则父 signal 上的监听会累积） */
       let removeAbortListener = (): void => {};
       try {
-        return await Promise.race([
-          run.finished,
-          new Promise<DelegateTaskResult>((resolve) => {
-            const onAbort = (): void => resolve(interruptedResult());
-            signal.addEventListener('abort', onAbort, { once: true });
-            removeAbortListener = () => signal.removeEventListener('abort', onAbort);
-          }),
-        ]);
+        return withTiming(
+          await Promise.race([
+            run.finished,
+            new Promise<DelegateTaskResult>((resolve) => {
+              const onAbort = (): void => resolve(interruptedResult());
+              signal.addEventListener('abort', onAbort, { once: true });
+              removeAbortListener = () => signal.removeEventListener('abort', onAbort);
+            }),
+          ]),
+        );
       } finally {
         removeAbortListener();
       }

@@ -2662,8 +2662,13 @@ export class AgentLoop {
         toolCallId: tc.id,
         name: tc.function.name,
         ok,
+        // 通用 100 字摘要：所有工具共用，**不因 delegate 而改**。
+        // delegate 的四态/800 字结论/两段耗时走下面的可选回执字段（同源不同粒度）。
         summary: result.slice(0, 100),
         ...(blocked ? { blocked: true } : {}),
+        // 仅 delegate_task 产出（执行器组装）；其它工具无此字段。
+        // 老 Round 没有它 ⇒ 宿主回退两态展示（诚实降级，不补假徽标）。
+        ...(outcome.delegate ? { delegate: outcome.delegate } : {}),
       };
     }
 
