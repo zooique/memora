@@ -1230,6 +1230,7 @@ interface ToolOutcome {
   readonly hasRealFailure?: boolean;        // 仅 blocked：背后是否藏真失败
   readonly errorCode?: ToolErrorCodeValue;  // 仅 failed：失败原因分类（见 §14.1）
   readonly attachments?: readonly ImageRef[]; // 仅 ok：读图产出的图片引用（只挂出站视图，绝不进 tool 消息）
+  readonly delegate?: DelegateTaskReceipt;  // 仅 delegate_task：四态终态 + 结论摘录 + 两段耗时（不参与成败判定）
 }
 ```
 
