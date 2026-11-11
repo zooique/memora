@@ -366,6 +366,81 @@ function createClaimingProvider(): LlmProvider {
   } as unknown as LlmProvider;
 }
 
+/**
+ * 正文写了一半就撞输出预算的 provider：`finish_reason='length'` 是结构化标志，
+ * 不是靠正文长度猜（第五刀第 1 条）。
+ */
+function createLengthTruncatedProvider(): LlmProvider {
+  return {
+    name: 'length-truncated',
+    async *chat() {
+      yield { content: '尚未写完的结论' };
+      yield { finishReason: 'length' as const };
+    },
+  } as unknown as LlmProvider;
+}
+
+/** 只写了工具意图骨架、没有原生 toolCalls：剔除骨架后正文为空（第五刀第 2 条） */
+function createSkeletonOnlyProvider(): LlmProvider {
+  return {
+    name: 'skeleton-only',
+    async *chat() {
+      yield { content: '<tool_call></tool_call>' };
+    },
+  } as unknown as LlmProvider;
+}
+
+/** 只发一个 usage 收尾 chunk、不产出任何正文 / 工具调用：模拟空响应（第五刀第 3 条） */
+function createEmptyResponseProvider(): LlmProvider {
+  return {
+    name: 'empty-response',
+    async *chat() {
+      yield { usage: { inputTokens: 1, outputTokens: 0 } };
+    },
+  } as unknown as LlmProvider;
+}
+
+/**
+ * 有正文、但 provider 上报半截 tool_calls 被丢弃（`droppedToolCalls`）：
+ * 对应 `finish_reason='length'` 参数累积期截断 / 无完成标志的 EOF（第五刀第 4 条）。
+ */
+function createDroppedToolCallProvider(): LlmProvider {
+  return {
+    name: 'dropped-tool-call',
+    async *chat() {
+      yield { content: '准备执行工具' };
+      yield { droppedToolCalls: 1 };
+    },
+  } as unknown as LlmProvider;
+}
+
+/**
+ * 先执行一次工具调用把消息撑到 >3 条，再给最终正文：
+ * 配合极小的 maxContextTokens 触发 ContextManager 历史截断（第五刀第 5 条）。
+ */
+function createToolThenTextProvider(): LlmProvider {
+  let callCount = 0; // 调用序号：第 1 次发工具调用，其余给正文（摘要请求也落到正文分支）
+  return {
+    name: 'tool-then-text',
+    async *chat() {
+      callCount++;
+      if (callCount === 1) {
+        yield {
+          toolCalls: [
+            {
+              id: 'c1',
+              type: 'function' as const,
+              function: { name: 'list_skills', arguments: '{}' },
+            },
+          ],
+        };
+        return;
+      }
+      yield { content: '子会话的最终回答' };
+    },
+  } as unknown as LlmProvider;
+}
+
 describe('子会话四态终态（P0-1）', () => {
   it('撞步数上限 → [SUBAGENT:incomplete]，绝不报 completed', async () => {
     await withRuntimeParams(
@@ -382,6 +457,77 @@ describe('子会话四态终态（P0-1）', () => {
       },
       { provider: createToolLoopProvider(), maxIterations: 3 },
     );
+  });
+
+  it('输出预算截断（finish_reason=length）且有正文 → [SUBAGENT:incomplete]', async () => {
+    await withRuntimeParams(
+      async (params) => {
+        const result = await runSubagent(params, { task: '长回答' });
+        // 判据来自 provider 的结构化 finishReason，content 只是被带回的可用信息
+        expect(result.split('\n')[0]).toBe('[SUBAGENT:incomplete]');
+        expect(result).toContain('尚未写完的结论');
+      },
+      { provider: createLengthTruncatedProvider() },
+    );
+  });
+
+  it('正文工具意图骨架剔除后为空 → [SUBAGENT:incomplete]（空正文不是结论）', async () => {
+    await withRuntimeParams(
+      async (params) => {
+        const result = await runSubagent(params, { task: '调用工具' });
+        expect(result.split('\n')[0]).toBe('[SUBAGENT:incomplete]');
+        expect(result).not.toContain('[SUBAGENT:completed]');
+      },
+      { provider: createSkeletonOnlyProvider() },
+    );
+  });
+
+  it('空响应重试耗尽的内核兜底文案 → [SUBAGENT:failed]', async () => {
+    await withRuntimeParams(
+      async (params) => {
+        const result = await runSubagent(params, { task: '空响应' });
+        // 兜底文案不是子模型结论：不许冒充 completed 交付
+        expect(result.split('\n')[0]).toBe('[SUBAGENT:failed]');
+        expect(result).not.toContain('[SUBAGENT:completed]');
+      },
+      { provider: createEmptyResponseProvider() },
+    );
+  });
+
+  it('半截 tool_calls 被丢弃（droppedToolCalls）→ [SUBAGENT:failed]', async () => {
+    await withRuntimeParams(
+      async (params) => {
+        const result = await runSubagent(params, { task: '调用工具' });
+        // 有正文也要失败：模型想调用的动作没交付，不能读成「话说了一半」
+        expect(result.split('\n')[0]).toBe('[SUBAGENT:failed]');
+        expect(result).toContain('准备执行工具');
+      },
+      { provider: createDroppedToolCallProvider() },
+    );
+  });
+});
+
+describe('上下文压缩事实说明行（不判态）', () => {
+  it('真发生历史截断：正文末尾追加事实说明行，终态仍按原语义判定', async () => {
+    await withRuntimeParams(
+      async (params) => {
+        // 超大任务正文 + 有限窗口：第一次工具调用的第二轮准备上下文时必然触发历史截断
+        // （不能把窗口设成 1——system prompt 自身超窗时 truncateMessages 明确不截断）
+        const result = await runSubagent(params, { task: 'x'.repeat(400_000) });
+        expect(result.split('\n')[0]).toBe('[SUBAGENT:completed]');
+        expect(result).toContain('本次子会话中途经历过上下文压缩/截断');
+      },
+      // 先走一次工具调用把消息撑到 >3 条，再触发截断
+      { provider: createToolThenTextProvider(), maxContextTokens: 50_000 },
+    );
+  });
+
+  it('没发生压缩 / 截断：说明行一次都不出现', async () => {
+    await withRuntimeParams(async (params) => {
+      const result = await runSubagent(params, { task: '普通任务' });
+      expect(result.split('\n')[0]).toBe('[SUBAGENT:completed]');
+      expect(result).not.toContain('上下文压缩/截断');
+    });
   });
 });
 

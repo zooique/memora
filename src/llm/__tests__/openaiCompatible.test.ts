@@ -1060,3 +1060,109 @@ describe('OpenAICompatibleProvider · usage token 统计', () => {
     }
   });
 });
+
+// ─── 半截 tool_calls 的结构化事实（子会话终态判据，第五刀）──
+
+/** 构造原始 SSE 事件序列：可刻意省略 [DONE] / finish_reason，模拟网关提前断流 */
+function createRawSseResponse(events: string[]): HttpResponse<ReadableStream> {
+  const stream = new ReadableStream({
+    start(controller) {
+      const encoder = new TextEncoder();
+      for (const event of events) controller.enqueue(encoder.encode(`data: ${event}\n\n`));
+      controller.close();
+    },
+  });
+  return new HttpResponse(stream, { headers: { 'Content-Type': 'text/event-stream' } });
+}
+
+/** 只带 tool_calls 首片（名字成形、参数是半截 JSON）的 delta 事件 */
+function partialToolCallEvent(): string {
+  return JSON.stringify({
+    id: 'mock-1',
+    object: 'chat.completion.chunk',
+    created: Date.now(),
+    model: 'mock-model',
+    choices: [
+      {
+        index: 0,
+        delta: {
+          tool_calls: [
+            {
+              index: 0,
+              id: 'call_x',
+              type: 'function',
+              function: { name: 'read_file', arguments: '{"path":' },
+            },
+          ],
+        },
+        finish_reason: null,
+      },
+    ],
+  });
+}
+
+describe('OpenAICompatibleProvider · 半截 tool_calls 的结构化事实', () => {
+  it("finish_reason='length' 且累积器非空：上报 droppedToolCalls，且不输出半截 toolCalls", async () => {
+    server.use(
+      http.post('*/chat/completions', () =>
+        createRawSseResponse([
+          partialToolCallEvent(),
+          JSON.stringify({
+            id: 'mock-1',
+            object: 'chat.completion.chunk',
+            created: Date.now(),
+            model: 'mock-model',
+            choices: [{ index: 0, delta: {}, finish_reason: 'length' }],
+          }),
+          '[DONE]',
+        ]),
+      ),
+    );
+
+    const chunks = await collectChunks(makeProvider());
+    const lengthChunk = chunks.find((c) => c.finishReason === 'length');
+    // 结构化事实：输出预算在参数累积期被打断，丢弃了 1 个调用
+    expect(lengthChunk?.droppedToolCalls).toBe(1);
+    // 半截调用不得被当成完整调用交付
+    expect(chunks.some((c) => c.toolCalls)).toBe(false);
+  });
+
+  it('无 [DONE] 且无 finish_reason 的 EOF：累积器非空 ⇒ 上报 droppedToolCalls', async () => {
+    server.use(
+      http.post('*/chat/completions', () =>
+        // 只有首片、没有 [DONE]、没有 finish_reason：明确的「半截调用被丢弃」
+        createRawSseResponse([partialToolCallEvent()]),
+      ),
+    );
+
+    const chunks = await collectChunks(makeProvider());
+    const dropped = chunks.reduce((sum, c) => sum + (c.droppedToolCalls ?? 0), 0);
+    expect(dropped).toBe(1);
+  });
+
+  it('无 [DONE] 且无 finish_reason 的 EOF：无半截调用 ⇒ 不产生失败事实（已知风险不判失败）', async () => {
+    server.use(
+      http.post('*/chat/completions', () =>
+        createRawSseResponse([
+          JSON.stringify({
+            id: 'mock-1',
+            object: 'chat.completion.chunk',
+            created: Date.now(),
+            model: 'mock-model',
+            choices: [{ index: 0, delta: { content: '正常回答' }, finish_reason: null }],
+          }),
+        ]),
+      ),
+    );
+
+    const chunks = await collectChunks(makeProvider());
+    // 部分兼容网关本就不发 [DONE]：静默 EOF 不能一刀切判失败
+    expect(
+      chunks
+        .filter((c) => c.content)
+        .map((c) => c.content)
+        .join(''),
+    ).toBe('正常回答');
+    expect(chunks.reduce((sum, c) => sum + (c.droppedToolCalls ?? 0), 0)).toBe(0);
+  });
+});

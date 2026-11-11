@@ -37,6 +37,15 @@ export interface LlmChunk {
     /** 总 token 数（total_tokens） */
     totalTokens?: number;
   };
+  /**
+   * 被丢弃的半截 tool_calls 数量（结构性失败事实，供子会话终态判据使用）。
+   *
+   * 两个产生点，都不许靠正文推测：
+   *   - `finish_reason='length'` 时累积器里还有未完成的调用（输出预算截断）；
+   *   - 流在没有 `[DONE]` / `finish_reason` 的情况下结束（网关提前断流）。
+   * 有值即表示模型原本要调用工具但调用没能交付 ⇒ 消费侧不得当成正常结束。
+   */
+  droppedToolCalls?: number;
 }
 
 // ─── Provider 配置类型（来自 config/loader.ts，归入 LLM 领域） ───

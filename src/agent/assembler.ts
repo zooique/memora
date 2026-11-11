@@ -379,7 +379,7 @@ export function createSubagentToolExecutor(
 /** 无正文时按终态给一行说明（避免父模型把空正文误读成「完成但无内容」） */
 const SUBAGENT_EMPTY_BODY_NOTE: Record<DelegateTaskStatus, string> = {
   completed: '（子会话未返回正文）',
-  incomplete: '（子会话撞步数上限，未产出正文）',
+  incomplete: '（子会话未完成，未产出正文）',
   interrupted: '（子会话被中止，未产出正文）',
   failed: '（子会话执行失败，未产出正文）',
 };
@@ -387,6 +387,15 @@ const SUBAGENT_EMPTY_BODY_NOTE: Record<DelegateTaskStatus, string> = {
 /** 正文行首伪标签被降级时追加的说明行（只在真的降级过时出现） */
 const SUBAGENT_TAG_DOWNGRADE_NOTICE =
   '（说明：正文中行首的 [SUBAGENT:…] 已降级为 [subagent:…]，不代表终态）';
+
+/**
+ * 上下文压缩 / 历史截断的事实说明行（**只在真发生过时**追加）。
+ *
+ * 不是状态位、不参与四态判定——只是如实告诉父模型「这份结论基于摘要，细节可能缺失」。
+ * 触发条件由子 loop 的粘性事实位 `hasContextCompaction()` 决定；没发生的会话一个字都不加。
+ */
+const SUBAGENT_CONTEXT_COMPACTED_NOTE =
+  '（说明：本次子会话中途经历过上下文压缩/截断，结论基于摘要，细节可能缺失）';
 
 /**
  * 按子会话执行流的终态生成工具结果文本
@@ -399,15 +408,22 @@ const SUBAGENT_TAG_DOWNGRADE_NOTICE =
  *
  * @param status 终态
  * @param content 子会话累积正文
+ * @param contextCompacted 子会话是否真发生过上下文压缩/截断（默认 false ⇒ 不出现事实说明行）
  */
-export function formatSubagentResult(status: DelegateTaskStatus, content: string): string {
+export function formatSubagentResult(
+  status: DelegateTaskStatus,
+  content: string,
+  contextCompacted = false,
+): string {
   // 首行标签的模板**必须**写成 `[SUBAGENT:${status}]` 的字面形态：
   // `toolFailurePrefixGuard` 靠它把四态展开并做双向对账（用常量拼接会让扫描器失明 ⇒ 假绿）
   const header = `[SUBAGENT:${status}]`;
   // 前缀从 header 派生（不另写一份 `[SUBAGENT:` 字面量：孤立前缀会被首标签守卫记成盲区标记）
   const tagPrefix = header.slice(0, header.indexOf(':') + 1);
+  // 事实说明行追加在**正文末尾**（截断之后），保证它不会被字符上限切掉；未发生则空串
+  const compactionNote = contextCompacted ? `\n${SUBAGENT_CONTEXT_COMPACTED_NOTE}` : '';
   const body = content.trim();
-  if (!body) return `${header}\n${SUBAGENT_EMPTY_BODY_NOTE[status]}`;
+  if (!body) return `${header}\n${SUBAGENT_EMPTY_BODY_NOTE[status]}${compactionNote}`;
 
   // 行首伪标签降级：逐行判断，只改行首（正文中间的提及、代码块内容一律不动）
   const downgraded = body
@@ -425,7 +441,7 @@ export function formatSubagentResult(status: DelegateTaskStatus, content: string
     downgraded.length > SUBAGENT_RESULT_MAX_CHARS
       ? `${downgraded.slice(0, SUBAGENT_RESULT_MAX_CHARS)}\n…（结果超过 ${SUBAGENT_RESULT_MAX_CHARS} 字符，已截断）`
       : downgraded;
-  return `${header}\n${notice}${truncated}`;
+  return `${header}\n${notice}${truncated}${compactionNote}`;
 }
 
 /**
@@ -514,6 +530,11 @@ export function createSubagentLoop(
 export interface SubagentRun {
   /** 流累积态（`content` 实时更新：abort 时端口据它带回「不完整但可用」的正文） */
   readonly state: ExecutionStreamState;
+  /**
+   * 子会话是否**真发生过**上下文压缩/历史截断（事实位，粘性）。
+   * 端口在 abort 立即收口时也用它决定要不要追加事实说明行——与终态判定无关。
+   */
+  readonly hasContextCompaction: () => boolean;
   /** 终态结果（内部吞掉异常，**永不 reject**；端口提前返回后仍继续跑到收场） */
   readonly finished: Promise<DelegateTaskResult>;
 }
@@ -529,10 +550,12 @@ export interface SubagentRun {
  * signal 自己收场（异常在 `finished` 内部吞掉，不会变成 unhandled rejection）。
  *
  * 终态判据全部来自子会话执行流标志（读标志，不匹配文案）：
- *   - 撞步数上限 → `incomplete`（正常收尾，内容可用但不完整）；
+ *   - paused / 抛错 → `failed`（子递归里 paused 应不可达，真出现按失败收口）；
  *   - aborted / 父 signal 中止 → `interrupted`；
- *   - 抛错、或出现 `paused`（子递归里应不可达）→ `failed`；
+ *   - 流终态 `failed`（内核兜底文案 / 流提前 EOF 丢弃半截 tool_calls）→ `failed`；
+ *   - 撞步数上限 / `done.incomplete`（输出预算截断、正文工具意图剔除后为空）→ `incomplete`；
  *   - 其余 → `completed`。
+ * 上下文压缩/截断**不改终态**，只可能在正文末尾追加一行事实说明。
  *
  * @param params 子会话装配参数
  * @param request 本次派发请求
@@ -561,25 +584,46 @@ export function startSubagent(
         logger.warn({ err }, '子会话 LLM 请求非用户取消原因中断，判为连接中断');
       }
       const status: DelegateTaskStatus = classified.aborted ? 'interrupted' : 'failed';
-      return { status, text: formatSubagentResult(status, state.content) };
+      return {
+        status,
+        text: formatSubagentResult(status, state.content, loop.hasContextCompaction()),
+      };
     }
 
     // paused 在子递归里应不可达（子会话禁用了 ask_user，也没有父的暂停入口）：
     // 真出现按 failed 收口并留日志，不静默当成完成
     if (state.paused) {
       logger.warn({ task: request.task }, '子会话出现 paused（预期不可达），按 failed 收口');
-      return { status: 'failed', text: formatSubagentResult('failed', state.content) };
+      return {
+        status: 'failed',
+        text: formatSubagentResult('failed', state.content, loop.hasContextCompaction()),
+      };
     }
     if (state.aborted) {
-      return { status: 'interrupted', text: formatSubagentResult('interrupted', state.content) };
+      return {
+        status: 'interrupted',
+        text: formatSubagentResult('interrupted', state.content, loop.hasContextCompaction()),
+      };
     }
-    // 撞步数上限是 loop 的正常收尾（不抛错、aborted 仍 false）⇒ 必须报 incomplete，
+    // 不可交付优先：内核兜底文案（空响应重试耗尽）/ 流提前 EOF 丢弃半截 tool_calls
+    // 都不是子模型结论 ⇒ failed，不许以 completed 交付
+    if (state.failed) {
+      return {
+        status: 'failed',
+        text: formatSubagentResult('failed', state.content, loop.hasContextCompaction()),
+      };
+    }
+    // 撞步数上限 / 输出预算截断 / 正文工具意图剔除后为空 ⇒ 内容可用但不完整，
     // 否则父拿到 completed + 半截回答，会把没做完的活当成交付
-    const status: DelegateTaskStatus = state.limitReached ? 'incomplete' : 'completed';
-    return { status, text: formatSubagentResult(status, state.content) };
+    const status: DelegateTaskStatus =
+      state.limitReached || state.incomplete ? 'incomplete' : 'completed';
+    return {
+      status,
+      text: formatSubagentResult(status, state.content, loop.hasContextCompaction()),
+    };
   })();
 
-  return { state, finished };
+  return { state, hasContextCompaction: () => loop.hasContextCompaction(), finished };
 }
 
 /**
@@ -641,7 +685,7 @@ export function createDelegateTaskPort(params: SubagentRuntimeParams): {
       // abort 时的「立即终态」：正文取**当前**累积内容（不完整但可用）
       const interruptedResult = (): DelegateTaskResult => ({
         status: 'interrupted',
-        text: formatSubagentResult('interrupted', run.state.content),
+        text: formatSubagentResult('interrupted', run.state.content, run.hasContextCompaction()),
       });
       if (signal.aborted) return interruptedResult();
 

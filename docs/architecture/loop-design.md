@@ -170,11 +170,14 @@
 **状态回传（不建假 Round）**
 
 - 结果从递归返回值取，不构造 `RoundStatus`（子递归里不存在轮次状态）。
-- 子工具结果首行由内核按**流终态标志**生成确定性头部，**四态**：`[SUBAGENT:completed]` / `[SUBAGENT:incomplete]` / `[SUBAGENT:interrupted]` / `[SUBAGENT:failed]`——不是子模型自己写的，父据此判收口。
-  - `completed`：子会话自己收场，且**没撞**步数上限；
-  - `incomplete`：撞最大迭代 / 步数预算收尾（判据是 `text` chunk 的 `limitReached` 标志，**不匹配文案**）。内容可用但不完整。**它不是失败**——父可据此决定是否拆小任务重派；
+- 子工具结果首行由内核按**流终态标志**生成确定性头部，**四态**：`[SUBAGENT:completed]` / `[SUBAGENT:incomplete]` / `[SUBAGENT:interrupted]` / `[SUBAGENT:failed]`——不是子模型自己写的，父据此判收口。判据全部来自**结构化标志**（provider 的 `finish_reason` / 丢弃计数、loop 的 `limitReached` 与 `done.incomplete|failed`），**不匹配正文文案、不靠正文长度猜**。
+  - `completed`：子会话自己收场，且没撞步数上限、没输出截断、没被兜底；
+  - `incomplete`：内容可用但不完整。三个来源：① 撞最大迭代 / 步数预算（`text` chunk 的 `limitReached` 标志）；② 输出预算截断（provider `finish_reason='length'`，经 `done.incomplete` 搬运）；③ 正文工具意图骨架被剔除后为空（模型写了骨架却没走原生协议——空正文不是结论，是没干成）。**它不是失败**——父可据此决定是否拆小任务重派；
   - `interrupted`：父 / 用户中止；
-  - `failed`：异常、子递归里不应出现的 `paused`、以及其它未归类失败。
+  - `failed`：① 异常、子递归里不应出现的 `paused`，以及其它未归类失败；② 内核自己写的兜底文案（空响应重试耗尽——「AI 服务暂时不可用 / 请调大输出上限」不是子模型的结论）；③ 流提前结束时丢弃了半截 `tool_calls`（provider 在 `finish_reason='length'` 或 EOF 时清空累积器并上报 `droppedToolCalls`——模型本想调用的动作没有交付）。
+  - `failed` **优先于** `incomplete`：同一收尾同时具备两个事实时按「不可交付」收口（半截调用被丢弃比「话说了一半」更重）。
+  - **EOF 证据与窄修边界**：适配层只在 `[DONE]` 或 `finish_reason='tool_calls'` 时 flush 累积器，`if (done) break` 之后无任何完成性校验；现有测试只覆盖带 `[DONE]` 的流 ⇒ **证明不了**「正常完成必带完成标志」（部分兼容网关本就不发 `[DONE]`）。故只修窄的一种：EOF 时累积器非空 ⇒ `failed`；**静默 EOF 且无半截调用登记为已知风险，不判失败**（一刀切会把正常回答打成失败，比漏判更糟）。
+- **上下文压缩 / 截断不判态，只加一行事实说明**：子 loop 真发生过 ContextManager 截断 / 压缩链实际改动 / `compress_context` 成功替换时（粘性事实位 `AgentLoop.hasContextCompaction()`），结果正文末尾追加「（说明：本次子会话中途经历过上下文压缩/截断，结论基于摘要，细节可能缺失）」；**没发生的会话不出现这一行**。不新增状态位，四态语义不变。
 - 参数校验失败（角色包不存在 / `toolMode='block'` / 非法 `capabilities`）返回**标准工具错误** `[ERR:TOOL:ARGUMENT_ERROR]`，不存在终态——子会话根本没起来；「首行恒为 `[SUBAGENT:…]`」的契约只覆盖「已经开始执行」之后。
 - 派发端口返回**结构化结果**（`{ status, text }`），执行器据此定 `ToolOutcome`：**只有 `completed` 记 ok**，其余三态一律非 ok（否则检查点 / metrics / 宿主「失败」展示会把半截回答记成成功）。
 - 正文里**行首**出现的同名标签降级为小写 `[subagent:` 并追加一行说明（只处理行首，不做全局转义，正文里的普通代码内容不动），防父 LLM 与人扫到「第二个终态」。

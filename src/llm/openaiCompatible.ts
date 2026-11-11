@@ -504,7 +504,10 @@ export class OpenAICompatibleProvider extends LlmProvider {
               chunk.toolCalls = this.buildToolCallsFromAccumulators(toolCallAccumulators);
               toolCallAccumulators.clear();
             } else if (choice.finish_reason && toolCallAccumulators.size > 0) {
-              // 非 tool_calls 的 finish_reason（stop/length 等）时清空累积器，防残留碎片污染下一次调用
+              // 非 tool_calls 的 finish_reason（stop/length 等）时清空累积器，防残留碎片污染下一次调用。
+              // 清空即「模型本想调用工具、调用却没交付」：把数量作为**结构化事实**上报
+              // （典型 = length 截断发生在参数累积期），消费侧不得把这种收尾当成正常结束。
+              chunk.droppedToolCalls = toolCallAccumulators.size;
               toolCallAccumulators.clear();
             }
 
@@ -516,6 +519,17 @@ export class OpenAICompatibleProvider extends LlmProvider {
             logger.debug({ line: line.slice(0, 80), err: toError(err).message }, 'SSE 行解析失败');
           }
         }
+      }
+
+      // 走到这里 = 流在**没有 [DONE]、也没有 finish_reason** 的情况下 EOF（迭代循环正常退出）。
+      // 窄修边界（证据不足时不做一刀切）：兼容网关本就不发 [DONE] 是已知生态，静默 EOF 不判失败；
+      // 但累积器非空 = 模型原本要调用工具、半截调用被丢弃 ⇒ 必须以结构化事实 yield 出去，
+      // 消费侧（子会话终态）据此报 failed，不许读成正常收尾。无累积器的静默 EOF 登记为已知风险。
+      if (toolCallAccumulators.size > 0) {
+        const dropped = toolCallAccumulators.size;
+        toolCallAccumulators.clear();
+        logger.warn({ dropped }, 'LLM 流提前结束（无 [DONE]/finish_reason），丢弃半截 tool_calls');
+        yield { droppedToolCalls: dropped };
       }
     } finally {
       // 清理事件停滞监视（流已结束，不再需要 stall 兜底）

@@ -564,6 +564,15 @@ export class AgentLoop {
   private rolePackBaseTokens: number | undefined;
   /** 最近一次 _prepareContext 是否发生截断重排（替换层据此跳过——截断提取 key messages 重插中间，roundId 尾部对齐失效） */
   private isLastContextTruncated = false;
+  /**
+   * 本会话是否**真发生过**上下文压缩 / 历史截断（粘性，只置位不复位）。
+   *
+   * 唯一用途：子会话收尾时由 assembler 格式化层在正文末尾追加一行事实说明，
+   * **不参与终态判定、不新增状态位、不改四态语义**。
+   * 置位点（都是「真改了上下文」的结构化证据）：ContextManager 截断回调 / 压缩链实际改动 /
+   * compress_context 成功替换。
+   */
+  private contextCompacted = false;
   /** 两级空间管理压缩链（第一级替换 → 第二级 tool_result 占位）。超大结果卸载已在入口关处理，不在链上 */
   private readonly compactionStrategies: ICompactionStrategy[];
   /** 入口关落盘目录（装配注入；未注入则入口关不生效）。消费点：appendToolMessage */
@@ -698,7 +707,12 @@ export class AgentLoop {
       providerRouter: opts.providerRouter,
       contextTruncatedFn: this.ui.contextTruncated,
       tracer: this.tracer,
-      onContextTruncated: opts.onContextTruncated,
+      // 包一层记事实（子会话收尾要追加「经历过压缩」的说明行），宿主回调原样转发——
+      // 宿主签名的返回值/时序不变，只是多了一个内核侧只读事实位
+      onContextTruncated: (skippedCount, keptCount) => {
+        this.contextCompacted = true;
+        opts.onContextTruncated?.(skippedCount, keptCount);
+      },
       roundSummaryLoader: opts.roundSummaryLoader,
       minRecentRounds: opts.minRecentRounds,
     });
@@ -1128,6 +1142,16 @@ export class AgentLoop {
     return this.interruptQueue
       .filter((r): r is Extract<InterruptRequest, { kind: 'interject' }> => r.kind === 'interject')
       .map((r) => r.content);
+  }
+
+  /**
+   * 本会话是否**真发生过**上下文压缩 / 历史截断（粘性只读事实）。
+   *
+   * 消费方 = 子会话收尾：真发生时在正文末尾追加一行事实说明，否则**一个字都不加**。
+   * 不参与终态判定，不新增状态位，四态语义不变。
+   */
+  hasContextCompaction(): boolean {
+    return this.contextCompacted;
   }
 
   /** 输出"达到最大迭代/步数预算"提示并结束（turn act 收尾兜底，多入口共享） */
@@ -1621,6 +1645,8 @@ export class AgentLoop {
     const safeMessages = this.contextManager.truncateMessages(this.messages, contextSummary);
     // 记录本次是否截断重排（替换层据此跳过——截断提取 key messages 重插中间，作用于裁剪视图风险较高）
     this.isLastContextTruncated = safeMessages !== this.messages;
+    // 真发生了历史截断（返回了新数组）⇒ 记粘性事实（与 ContextManager 截断回调同源，双保险）
+    if (this.isLastContextTruncated) this.contextCompacted = true;
     // 截断后同步替换工作记忆，防 messages 无限增长（持久化由 MessageHistory 负责）
     if (this.isLastContextTruncated) {
       this.replaceContext([...safeMessages]);
@@ -1636,7 +1662,16 @@ export class AgentLoop {
     // 原地改对象 content（引用共享 → 对发送视图同样生效）。
     for (const strategy of this.compactionStrategies) {
       if (strategy.shouldCompact(this.messages)) {
+        // 策略可能 no-op（无已存摘要 / 目标不存在）⇒ 用「消息数或任一 content 字符串变了」
+        // 判定**真的**动过上下文，只有真动过才记事实（说明行不许出现在未压缩的会话里）
+        const before = this.messages.map((m) => m.content);
         await strategy.compact(this.messages);
+        if (
+          before.length !== this.messages.length ||
+          this.messages.some((m, i) => m.content !== before[i])
+        ) {
+          this.contextCompacted = true;
+        }
       }
     }
     // ─── 压缩链结束 ─────────────────────────────────────────────
@@ -2094,6 +2129,11 @@ export class AgentLoop {
     const nonSkeletonText = llmResult.fullContent
       ? this.stripToolIntentSkeleton(llmResult.fullContent)
       : null;
+    // 终态判据全部来自**结构化标志**（provider 层事实），不匹配文案、不靠正文长度猜：
+    //   - truncatedByLength：finish_reason='length'（输出预算截断）
+    //   - droppedToolCalls：provider 丢弃的半截 tool_calls（length 截断 / 无完成标志的 EOF）
+    const truncatedByLength = llmResult.finishReason === 'length';
+    const droppedToolCalls = llmResult.droppedToolCalls ?? 0;
     if (nonSkeletonText !== null) {
       logger.warn(
         `检测到未解析的文本工具意图（无原生 toolCalls），已从正文剔除并计数。原正文：${llmResult.fullContent}`,
@@ -2102,7 +2142,14 @@ export class AgentLoop {
       if (nonSkeletonText) {
         this.appendAssistantText(nonSkeletonText);
       }
-      yield { type: 'done' };
+      yield {
+        type: 'done',
+        // 剔除骨架后正文为空 = 没干成（模型写了工具意图却没走原生协议），不是「查完了、没发现」；
+        // 输出预算截断同样不完整。两者都判 incomplete。
+        incomplete: nonSkeletonText === '' || truncatedByLength,
+        // 半截 tool_calls 被丢弃 = 想调用的动作没交付，比「话说了一半」更重 ⇒ failed（消费侧优先于 incomplete）
+        failed: droppedToolCalls > 0,
+      };
       return 'done';
     }
     if (llmResult.fullContent) {
@@ -2135,9 +2182,19 @@ export class AgentLoop {
           : this.ui.emptyResponseFallback;
       this.appendAssistantText(fallbackText);
       yield { type: 'text', content: fallbackText };
+      // 兜底文案是**内核自己写的**，不是子模型的结论 ⇒ 一律 failed（即使 finish_reason='length'，
+      // 「请调大输出上限」也不是交付内容）。不许把这段冒充 completed 交给父会话。
+      yield { type: 'done', failed: true };
+      return 'done';
     }
 
-    yield { type: 'done' };
+    yield {
+      type: 'done',
+      // 有正文但被输出预算截断 → 内容可用但不完整
+      incomplete: truncatedByLength,
+      // 有正文却丢了半截 tool_calls → 想调用的动作没交付，failed（消费侧优先于 incomplete）
+      failed: droppedToolCalls > 0,
+    };
     return 'done';
   }
 
@@ -2677,6 +2734,8 @@ export class AgentLoop {
       }
       this.messages.splice(startIdx, endIdx - startIdx + 1, tempSummaryMsg);
       this.executionTempSystem.add(tempSummaryMsg);
+      // 真替换了历史 ⇒ 记粘性事实（子会话收尾据此追加事实说明行）
+      this.contextCompacted = true;
 
       logger.info(
         { target, replacedCount: targetMsgs.length },

@@ -118,6 +118,13 @@ export interface LlmCallResult {
    * 中转不回传则 undefined = 按「瞬态型」降级（降级不劣化，维持现状文案）。
    */
   finishReason?: LlmChunk['finishReason'];
+  /**
+   * 本轮被丢弃的半截 tool_calls 总数（provider 上报的**结构化失败事实**，不靠正文推测）。
+   * 两个来源：`finish_reason='length'` 时参数累积器里还有未完成的调用；流无 `[DONE]` /
+   * `finish_reason` 直接 EOF 且累积器非空。有值即「模型本想调用工具但调用丢了」，
+   * 子会话据此报 failed，不得当成正常收尾。
+   */
+  droppedToolCalls?: number;
   /** 末次 chat 尝试的 thinking 字符数（reasoning_content 增量累计；无思考模型恒 0。重试重置，取末次口径） */
   thinkingChars: number;
   /** 收场前的 chat 尝试总数（1 = 首试即收场；空响应重试累加。重试属同一步内的多次尝试，非多个 step） */
@@ -209,6 +216,8 @@ export class LlmCaller {
     let streamedText = '';
     /** 末次 chat 尝试的 finish_reason（诊断分型证据：'length' = 输出预算截断） */
     let finishReason: LlmChunk['finishReason'] = undefined;
+    /** 本闭环被丢弃的半截 tool_calls 总数（结构化事实；随重试重置，取末次尝试口径） */
+    let droppedToolCalls = 0;
     /** 末次 chat 尝试的 thinking 字符数（诊断证据：截断型常伴随思考吃满输出预算） */
     let thinkingChars = 0;
     /** 实际进行过的 chat 尝试计数（attempt 为 for 作用域变量、出循环不可见；此计数器全程可读） */
@@ -312,6 +321,7 @@ export class LlmCaller {
         // 诊断证据同口径重置：finishReason/thinkingChars 取末次尝试值（与结果路由读到的收场同源）
         finishReason = undefined;
         thinkingChars = 0;
+        droppedToolCalls = 0;
         if (signal?.aborted) {
           aborted = true;
           break;
@@ -368,6 +378,8 @@ export class LlmCaller {
           // 诊断证据采集（末次口径）：finish_reason 随尾 chunk 回传（末条覆盖为准），
           // thinking 字符数按增量累计——空响应分型（截断/瞬态）的裁决依据
           if (chunk.finishReason) finishReason = chunk.finishReason;
+          // 结构化失败事实透传：provider 丢弃了半截 tool_calls（length 截断 / EOF 断流）
+          if (chunk.droppedToolCalls) droppedToolCalls += chunk.droppedToolCalls;
           if (chunk.thought) thinkingChars += chunk.thought.length;
           if (chunk.content) {
             fullContent += chunk.content;
@@ -491,6 +503,7 @@ export class LlmCaller {
               aborted: false,
               textStreamed,
               finishReason,
+              droppedToolCalls,
               thinkingChars,
               attempts: attemptsMade,
             };
@@ -513,6 +526,7 @@ export class LlmCaller {
               aborted: false,
               textStreamed,
               finishReason,
+              droppedToolCalls,
               thinkingChars,
               attempts: attemptsMade,
             };
@@ -535,6 +549,7 @@ export class LlmCaller {
         aborted: true,
         textStreamed,
         finishReason,
+        droppedToolCalls,
         thinkingChars,
         attempts: attemptsMade,
       };
@@ -549,6 +564,7 @@ export class LlmCaller {
       aborted: false,
       textStreamed,
       finishReason,
+      droppedToolCalls,
       thinkingChars,
       attempts: attemptsMade,
     };

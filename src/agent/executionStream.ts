@@ -33,11 +33,28 @@ export interface ExecutionStreamState {
    * 否则子会话会把「半截回答」报成 completed。
    */
   limitReached: boolean;
+  /**
+   * 收尾但不完整（读 `done` chunk 的 `incomplete` 标志：输出预算截断 / 正文工具意图
+   * 剔除后为空）。判据来自 provider 的 `finish_reason` 等结构化事实，不猜正文。
+   */
+  incomplete: boolean;
+  /**
+   * 收尾但不可交付（读 `done` chunk 的 `failed` 标志：空响应兜底文案 /
+   * 流提前结束时丢弃了半截 tool_calls）。与 `aborted` 互斥，优先于 `incomplete`。
+   */
+  failed: boolean;
 }
 
 /** 创建一份空的累积态 */
 export function createExecutionStreamState(): ExecutionStreamState {
-  return { content: '', aborted: false, paused: false, limitReached: false };
+  return {
+    content: '',
+    aborted: false,
+    paused: false,
+    limitReached: false,
+    incomplete: false,
+    failed: false,
+  };
 }
 
 /**
@@ -71,6 +88,10 @@ export function observeExecutionChunk(state: ExecutionStreamState, chunk: AgentC
     state.aborted = true;
   } else if (chunk.type === 'paused') {
     state.paused = true;
+  } else if (chunk.type === 'done') {
+    // 终态事实由 loop 在收尾处按结构化判据打标（截断 / 兜底 / 半截调用），此处只搬运标志
+    if (chunk.incomplete) state.incomplete = true;
+    if (chunk.failed) state.failed = true;
   }
 }
 

@@ -182,7 +182,19 @@ export type AgentChunk = (
    * 的 system 消息已由内核写入（脱管报告双通道：chunk 上屏 + system 消息进史，不双写渲染）。
    */
   | { type: 'background_report'; content: string }
-  | { type: 'done' }
+  | {
+      type: 'done';
+      /**
+       * 收尾但**不完整**（输出预算截断 / 正文工具意图剔除后为空）。
+       * 供子会话终态判据使用：读结构化标志，不许匹配正文文案或猜正文长度。
+       */
+      incomplete?: boolean;
+      /**
+       * 收尾但**不可当成交付**：内核兜底文案（空响应重试耗尽）/ 流提前结束时丢弃了半截
+       * tool_calls。子会话据此报 failed，不许把内核兜底文案当子模型结论。
+       */
+      failed?: boolean;
+    }
 ) &
   RoundTagged;
 
