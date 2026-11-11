@@ -179,7 +179,7 @@
   - **EOF 证据与窄修边界**：适配层只在 `[DONE]` 或 `finish_reason='tool_calls'` 时 flush 累积器，`if (done) break` 之后无任何完成性校验；现有测试只覆盖带 `[DONE]` 的流 ⇒ **证明不了**「正常完成必带完成标志」（部分兼容网关本就不发 `[DONE]`）。故只修窄的一种：EOF 时累积器非空 ⇒ `failed`；**静默 EOF 且无半截调用登记为已知风险，不判失败**（一刀切会把正常回答打成失败，比漏判更糟）。
 - **上下文压缩 / 截断不判态，只加一行事实说明**：子 loop 真发生过 ContextManager 截断 / 压缩链实际改动 / `compress_context` 成功替换时（粘性事实位 `AgentLoop.hasContextCompaction()`），结果正文末尾追加「（说明：本次子会话中途经历过上下文压缩/截断，结论基于摘要，细节可能缺失）」；**没发生的会话不出现这一行**。不新增状态位，四态语义不变。
 - 参数校验失败（角色包不存在 / `toolMode='block'` / 非法 `capabilities`）返回**标准工具错误** `[ERR:TOOL:ARGUMENT_ERROR]`，不存在终态——子会话根本没起来；「首行恒为 `[SUBAGENT:…]`」的契约只覆盖「已经开始执行」之后。
-- 派发端口返回**结构化结果**（`{ status, text }`），执行器据此定 `ToolOutcome`：**只有 `completed` 记 ok**，其余三态一律非 ok（否则检查点 / metrics / 宿主「失败」展示会把半截回答记成成功）。
+- 派发端口返回**结构化结果**（`{ status, text, durationMs }`），执行器据此定 `ToolOutcome`：**只有 `completed` 记 ok**，其余三态一律非 ok（否则检查点 / metrics / 宿主「失败」展示会把半截回答记成成功）。
 - 正文里**行首**出现的同名标签降级为小写 `[subagent:` 并追加一行说明（只处理行首，不做全局转义，正文里的普通代码内容不动），防父 LLM 与人扫到「第二个终态」。
 - `paused` 在子递归里应不可达（无用户应答、无父确认队列）；真出现按 `failed` 收口并记日志，不伪装成完成。
 - 父 abort **直接透传同一个 signal**（`loop.processUserInput(task, signal)`，`src/agent/assembler.ts` 的 `startSubagent`），保证父收场后子递归不再继续执行。父侧 `raceToolWithSignal` 只给 1.8s 宽限、先到先赢，所以派发端口在 abort 一到就**立即**用已累积正文返回 `interrupted`，后台子 loop 继续收同一 signal 自己收场（异常在内部吞掉，不会成为 unhandled rejection）；并发名额在端口 promise 返回时释放，不等子 loop settle。**不用 `mergeAbortSignals`**：它的签名强制带超时（`(optsSignal, timeoutMs, name)`），而子会话没有也不该有独立超时策略——硬套等于凭空发明一个 deadline。
