@@ -312,7 +312,7 @@ export type ProcessEvent =
         blocked?: boolean;
         /**
          * delegate_task 派发回执（可选；历史 Round 没有该字段）。
-         * 落盘后重放才能看到四态 / 结论摘录 / 两段耗时，而不是只剩 ok + 100 字摘要。
+         * 落盘后重放才能看到四态 / 结论摘录 / 执行耗时，而不是只剩 ok + 100 字摘要。
          */
         delegate?: DelegateTaskReceipt;
       };

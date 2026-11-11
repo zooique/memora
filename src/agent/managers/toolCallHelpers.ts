@@ -221,7 +221,7 @@ export interface ToolOutcome {
    */
   readonly attachments?: readonly ImageRef[];
   /**
-   * delegate_task 派发回执（**仅该工具产出**）：四态终态 + 结论摘录 + 两段耗时。
+   * delegate_task 派发回执（**仅该工具产出**）：四态终态 + 结论摘录 + 执行耗时。
    *
    * 与 `status` 的分工：`status` 仍是二值判据（只有 completed 记 ok，契约不动），
    * 本字段只补「四态与回执内容」的展示面数据，不参与成败判定。
