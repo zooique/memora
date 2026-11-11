@@ -53,7 +53,8 @@ export default [
     files: ['src/webview/scripts/chatView.ts'], // TARGET（单闭包；计划栏域、历史菜单域、占用域、活动抽屉域、状态条域、过程流单元格域、下拉选择器域、问答回顾行域、工具行动作面域、角色徽章行域、轮级动作底栏域、重放时间线域、技能选择器域、附件行渲染域已外置）
     // REPLAY-EMPTY-INTERRUPT-1（2026-11-01）：空过程事件中断轮渲染（判据/复位/时间兜底/问答行
     // 归位）+ 同轮外置重放时间线交织到 helpers/replayTimeline.ts ⇒ 净减 4（4960→4956）。
-    // 基线按闸门自报下调，不留虚空余量。
+    // **当时的动作**：基线按闸门自报下调（不留虚空余量）；**现状**：此后外置使文件变小，
+    // 余量已接受，见下方 CHATPANEL-MARGIN-1 说明。
     // SKILL-PICKER-SPLIT-1（2026-11-01）：技能选择器域（选中态 / 菜单渲染 / 搜索 / chip 构建）
     // 整体外置到 scripts/skillPickerView.ts（净减 215），基线按闸门自报同步下调。
     // HOST-I18N-2 C-3（2026-11-09）：提问卡 / 写确认卡两域整体外置为
@@ -61,8 +62,10 @@ export default [
     // 剩余 CJK 文案全量走 l10n.t；基线按闸门自报（max 临时置 1 读数）同步下调。
     // CHATPANEL-MARGIN-1 第一刀（2026-11-11）：附件行渲染域（活动文件 chip / 注入 chip /
     // 引用回复胶囊 + 引用 chip 编排 + 注入回执）整体外置为 scripts/attachmentRowView.ts，
-    // 闸门自报 4353 → 4118（净减 235）。本条按要求**留出可用余量**（后续 UI 项不再一写就红）：
-    // 基线 = 4118 + 82，仍低于原 4353（只降不升未破）。
+    // 闸门自报 4353 → 4118（净减 235）。**当时的动作**：按要求留出 82 行可用余量
+    // （后续 UI 项不再一写就红），基线 = 4118 + 82，仍低于原 4353（只降不升未破）。
+    // **现状**：此后外置使文件变小、基线按闸门自报下调后余量仍留着 —— 该余量已接受
+    // （不是待清的虚空余量），见 `tasks/待完成任务.md` 的 CHATPANEL-MARGIN-1 条目。
     rules: { 'max-lines': ['error', { max: 4200 }] },
   },
   {
@@ -77,7 +80,8 @@ export default [
     // 兜底注释），基线再按闸门自报刷新为 4453——相对原 4529 仍净减 76 行。
     // E4 批 4 会话活跃度（+64）撞顶格 ⇒ 顺带外置纯静态 HTML 骨架到 `panels/chatPanelHtml.ts`
     // （零 this / 零运行时状态，与 settingsPanelHtml 同型），净减 210；
-    // 基线按闸门自报下调为 4243，不留虚空余量。
+    // 基线按闸门自报下调为 4243（**当时的动作**：不留虚空余量）；**现状**：此后外置使文件变小，
+    // 余量已接受，见 `tasks/待完成任务.md` 的 CHATPANEL-MARGIN-1 条目。
     // BGTASK-SWITCH-REPUSH-1 撞顶格 ⇒ 历史会话列表投影外置 `helpers/sessionList.ts`
     // （store → DTO 纯映射），基线按闸门自报再降为 4242（只降不升）。
     files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法；诊断聚合 + thought 折叠域 + 过程事件合并域 + HTML 骨架 + 会话列表投影已外置）
@@ -86,7 +90,9 @@ export default [
   {
     // WORK-PROJECTION-MOVE-1（2026-11-09）：接入第 7 页前先外置三条「读配置 → 推消息」与
     // 自定义引擎清单读写到 helpers/settingsStatusPush.ts（先腾行、后加功能，未抬阈值）；
-    // 落完新页接线后闸门自报 2032 ⇒ 基线同步下调，不留虚空余量（只降不升）。
+    // 落完新页接线后闸门自报 2032 ⇒ 基线同步下调（**当时的动作**：不留虚空余量，只降不升）。
+    // **现状**：此后外置使文件变小、基线未跟降，余量已接受，见 `tasks/待完成任务.md` 的
+    // B10-E-组3 记录（`settingsPanel.ts` 余量不外置的裁决）与 HOST-S15 条目（最新行数）。
     files: ['src/webview/panels/settingsPanel.ts'], // TARGET（七页合一；安全页骨架 / 状态推送已外置）
     rules: { 'max-lines': ['error', { max: 2032 }] },
   },
