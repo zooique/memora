@@ -892,6 +892,7 @@
   "Ask user": "询问用户",
   "Compress context": "压缩上下文",
   "Delete file": "删除文件",
+  "Delegate task": "派发子任务",
   "Stop background command": "终止后台命令",
   "List directory": "列出目录",
   "List resources": "列出资源",

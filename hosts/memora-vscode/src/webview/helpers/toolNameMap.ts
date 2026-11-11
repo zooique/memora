@@ -34,6 +34,7 @@ const TOOL_LABELS: Record<string, string> = {
   ask_user: 'Ask user',
   compress_context: 'Compress context',
   delete_file: 'Delete file',
+  delegate_task: 'Delegate task',
   kill_command: 'Stop background command',
   list_dir: 'List directory',
   list_resources: 'List resources',
