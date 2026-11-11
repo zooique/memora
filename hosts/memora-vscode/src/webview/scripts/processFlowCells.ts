@@ -478,12 +478,6 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
   }
 
   /**
-   * 任务项内过程行按 seq 顺序插入 details 顶层（narrate 与 tool 共用，扁平化平铺）。
-   * 进行中增量调用（每次事件到达），避免整体重排导致闪烁/展开态丢失；finalize 全量重建亦
-   * 走此通道保持同一排序逻辑。相位行固定在最前，其余按 seq 升序。
-   */
-
-  /**
    * 定位条目应插入的任务项容器（ts 为该条目的时间键；processEvents 行与 interactiveInputs
    * 条目共用，形态甲统一时间序）。无边界回退 details（整轮一组）。
    *

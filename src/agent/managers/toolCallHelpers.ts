@@ -99,7 +99,7 @@ export function unwrapToolResultBody(wrapped: string): string | undefined {
  *
  * **定义期判据 ≠ 服务端判据**：定义期规则（`toolExecutor` 的 `^[a-zA-Z_][a-zA-Z0-9_]*$`）
  * **不容连字符**——拿它当判据会把服务端**接受**的 `read-file` 误判非法（血的教训，勿收严至此）。
- * 本判据 = 服务端判据的完整面（字符集 + 长度上界 64）。内置工具名最长 16 字符，全部满足；
+ * 本判据 = 服务端判据的完整面（字符集 + 长度上界 64）。内置工具名最长的也远小于该上界，全部满足；
  * 无守卫锁死该事实——未来新增超长名应在此回归。
  */
 const TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;

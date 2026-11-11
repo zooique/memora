@@ -418,11 +418,11 @@ export interface SessionCheckpoint {
   /** 执行计划任务项列表 */
   plan: PlanItem[];
   /**
-   * 工具执行日志（outbox 模式）：FIFO，超上限时优先丢弃「幂等或已补偿」的最早记录，
-   * 非幂等未补偿记录永不丢弃。
+   * 工具执行日志（outbox 模式）：超上限时丢弃第一条「非 non-idempotent」记录；
+   * non-idempotent 记录不参与丢弃（无补偿管线，见 sessionManager 删后注记）。
    */
   completedToolCalls?: ToolExecutionRecord[];
-  /** step 推进日志（LLM 迭代级时间轴，FIFO cap 10-12 条；任务项状态见 plan） */
+  /** step 推进日志（LLM 迭代级时间轴；按 planItemId 分组截断，每组上限见 sessionManager.appendPlanItemLog 的 PLAN_ITEM_LOG_PER_ITEM_LIMIT；任务项状态见 plan） */
   planItemLog?: PlanItemOutcome[];
   /** 暂停元数据 */
   pauseMeta?: PauseMeta;

@@ -8174,8 +8174,8 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
 
   it('工具展示名接入（2026-09-19，B9-A 起为英文源键）：无参数可叙述的未收录工具与参数缺失场景均显展示名，不裸露协议名', () => {
     // 背景：toolActionLabel 兜底若为 `?? name`（协议英文原名）——两类场景在 UI 裸露工具协议名：
-    // ①未收录工具（ask_user / remember_intel / run_project_script / run_team_meeting，均无可叙述
-    //   参数，故不入 TOOL_ACTION_LABELS）；②已收录但本次 args 缺参（如 read_file 无 path）。
+    // ①未收录工具（ask_user / remember_intel / run_project_script / kill_command / run_team_meeting，
+    //   均未建 TOOL_ACTION_LABELS 叙述器）；②已收录但本次 args 缺参（如 read_file 无 path）。
     // toolNameMap.getToolDisplayName 统一回退展示名（英文源键，消费侧过 l10n），本条锁死该回退契约。
     mountChatView();
     beginRound();
@@ -11622,7 +11622,7 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
 // 任务项完成态（plan_snapshot 快照 → 状态图标，UI-BLOCK-ICON 批次一）
 // ═══════════════════════════════════════════════════════════
 // 数据真源 = 内核 plan_snapshot（turn 收尾清空 plan 前产出，方案-过程块视觉辨识-20261001.md §四）。
-// 写入点单一 = applyPlanItemStates；消费点恰两个（plan_update 实时 / renderRoundBlock 重放）。
+// 写入点单一 = applyPlanItemStates；消费点恰三个（plan_update 实时 / renderProcessFlow 实时投影 / renderRoundBlock 重放）。
 // 存量历史轮无快照 = 组无状态图标（诚实降级，不伪造绿勾）。变异锁：删 chatPanel
 // plan_snapshot 桥接 / 删 renderRoundBlock 快照消费 → 重放用例转红。
 describe('任务项完成态（plan_snapshot 快照 → 状态图标）', () => {
