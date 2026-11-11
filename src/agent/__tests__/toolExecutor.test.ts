@@ -12,7 +12,12 @@ import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach, vi } 
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ToolExecutor, sanitizeExternalText, BUILTIN_TOOLS } from '@/agent/toolExecutor.js';
+import {
+  ToolExecutor,
+  sanitizeExternalText,
+  BUILTIN_TOOLS,
+  SUBAGENT_DENIED_TOOLS,
+} from '@/agent/toolExecutor.js';
 import type { WebSearchExecInfo } from '@/agent/toolExecutor.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { estimateTokensText } from '@/agent/contextManager.js';
@@ -321,6 +326,108 @@ describe('工具执行器（6 个工具）', () => {
       // （resolveActiveTools），但不回写 executor.list ⇒ 执行闸只认能力面，不认逐轮屏蔽。
       // 同批内的限额拦截仍由 search_limit 护栏负责，避免把「限额」误报成「未暴露」。
       expect(exec.list.map((t) => t.name)).toContain('web_search');
+    });
+  });
+
+  // ─── deny 轴（工具面第二根轴 · 减法；子 agent v1 第一刀）──────────────
+  describe('deny 轴（denyTools：唯一减法，必须压过自定义工具恒暴露）', () => {
+    afterEach(() => {
+      // 复位 deny 集，避免用例间污染（默认空集 = 父会话行为）
+      executor.setDenyTools([]);
+    });
+
+    it('deny 内置常驻写工具：list 不含 + 执行闸拒绝（与只读闸是两道不同保证）', async () => {
+      executor.setDenyTools(['write_file', 'delete_file']);
+      const names = executor.list.map((t) => t.name);
+      // deny 的保证是「看不见」：从模型可见面移除（只读闸管的是「跑不动」，见 toolRunner 用例）
+      expect(names).not.toContain('write_file');
+      expect(names).not.toContain('delete_file');
+      // 同族只读工具不受牵连
+      expect(names).toContain('read_file');
+
+      // 执行闸复用同一判定：模型硬点名也被拒（防止「看不见但能跑」的假安全）
+      const outcomes: ToolOutcome[] = [];
+      const text = await executor.execute(
+        'write_file',
+        JSON.stringify({ path: 'denied.txt', content: 'x' }),
+        undefined,
+        (o) => outcomes.push(o),
+      );
+      expect(text).toContain('[ERR:TOOL:NOT_EXPOSED]');
+      expect(outcomes[0]).toMatchObject({ status: 'blocked', blockedReason: 'not_exposed' });
+    });
+
+    it('变异钉：deny 必须早于 customTools.has(name)，否则自定义写工具绕过 deny', async () => {
+      // 变异方向：把 deny 判断挪到 `customTools.has(name)` 之后 ⇒ 本用例必红。
+      // 自定义 / MCP 工具是「注入即恒暴露」分支，只测内置工具覆盖不到这条缝。
+      const def = {
+        name: 'deny_custom_write_probe',
+        description: '宿主注册的写工具探针',
+        parameters: {
+          type: 'object' as const,
+          properties: { path: { type: 'string', description: '目标路径' } },
+          required: ['path'],
+        },
+      };
+      try {
+        executor.registerTool(def as never, async () => 'custom-write-ok');
+        // 对照组：未 deny 时确实走「自定义工具恒暴露」分支（证明探针命中的是那条缝）
+        expect(executor.list.map((t) => t.name)).toContain('deny_custom_write_probe');
+
+        executor.setDenyTools(['deny_custom_write_probe']);
+        expect(executor.list.map((t) => t.name)).not.toContain('deny_custom_write_probe');
+
+        const outcomes: ToolOutcome[] = [];
+        const text = await executor.execute(
+          'deny_custom_write_probe',
+          JSON.stringify({ path: 'x.txt' }),
+          undefined,
+          (o) => outcomes.push(o),
+        );
+        expect(text).toContain('[ERR:TOOL:NOT_EXPOSED]');
+        expect(outcomes[0]).toMatchObject({ status: 'blocked', blockedReason: 'not_exposed' });
+      } finally {
+        executor.removeTool('deny_custom_write_probe');
+      }
+    });
+
+    it('父会话零变化：deny 默认空集时常驻工具照常可见、可执行', async () => {
+      // 未调用 setDenyTools（默认空集）⇒ 行为与改动前完全一致
+      const names = executor.list.map((t) => t.name);
+      expect(names).toContain('write_file');
+      expect(names).toContain('run_command');
+      expect(names).toContain('ask_user');
+      const text = await executor.execute('read_file', JSON.stringify({ path: 'README.md' }));
+      expect(text).toContain('# Test Project');
+    });
+
+    it('SUBAGENT_DENIED_TOOLS 常量清单按副作用覆盖：写盘 / 执行 / 交互 / 父状态', () => {
+      // 清单是子会话唯一减法真源：写/执行面、loop 层交互（ask_user）、
+      // 以及有副作用但不写盘的常驻工具（改父会话 / 项目状态）都必须在内。
+      expect(SUBAGENT_DENIED_TOOLS).toEqual(
+        expect.arrayContaining([
+          // 写盘
+          'write_file',
+          'delete_file',
+          // 执行
+          'run_command',
+          'kill_command',
+          'run_project_script',
+          'run_skill_script',
+          'run_code',
+          // 交互（readonly: true，只读闸管不到，靠 deny 从可见面移除）
+          'ask_user',
+          // 有副作用但不写盘
+          'remember_intel',
+          'task_table_write',
+          'task_table_update',
+          'register_work',
+        ]),
+      );
+      // 清单内不得混入纯读工具（防止有人凭工具名直觉扩大 deny 误伤子会话）
+      for (const readOnlyName of ['read_file', 'list_dir', 'search_memories', 'search_project']) {
+        expect(SUBAGENT_DENIED_TOOLS).not.toContain(readOnlyName);
+      }
     });
   });
 

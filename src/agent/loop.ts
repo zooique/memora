@@ -3200,16 +3200,24 @@ export class AgentLoop {
   /** 重建 messages[0] 的 system prompt */
   private rebuildSystemMessage(): void {
     const sysMsg = this.messages[0];
-    if (sysMsg && sysMsg.role === 'system') {
-      const prefix = this.opts.systemPromptPrefix ?? '';
-      const affect = this.opts.affectPrefix ? `\n${this.opts.affectPrefix}\n` : '';
-      this.messages[0] = {
-        role: 'system',
-        content: prefix + affect + this.buildSystemPrompt(this.opts.bootstrapMemories),
-      };
-      // 重建完成后同步签名：此后 syncToolListInSystemPrompt 只在暴露面**再次变化**时重建
-      this.activeToolsKey = this.activeToolsKeyOf();
+    // 构造期不变量（硬约束）：messages[0] 恒为 system。构造函数首条消息即
+    // appendSystemMessage(prefix + buildSystemPrompt(...))，此后所有 system 注入都 push 到尾部，
+    // 没有任何路径往头部插入消息。
+    // 断言而不是静默跳过：旧实现「守卫为假就不重建」，一旦将来有人往头部插一条非 system 消息，
+    // system prompt（含工具清单）会悄悄停止同步且全程无报错——这里必须立刻抛出来。
+    if (sysMsg?.role !== 'system') {
+      throw new Error(
+        'AgentLoop 不变量被破坏：messages[0] 必须是 system 消息（rebuildSystemMessage 无法重建提示词）',
+      );
     }
+    const prefix = this.opts.systemPromptPrefix ?? '';
+    const affect = this.opts.affectPrefix ? `\n${this.opts.affectPrefix}\n` : '';
+    this.messages[0] = {
+      role: 'system',
+      content: prefix + affect + this.buildSystemPrompt(this.opts.bootstrapMemories),
+    };
+    // 重建完成后同步签名：此后 syncToolListInSystemPrompt 只在暴露面**再次变化**时重建
+    this.activeToolsKey = this.activeToolsKeyOf();
   }
 
   /** 获取消息历史（用于持久化） */

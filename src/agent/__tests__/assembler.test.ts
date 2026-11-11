@@ -630,6 +630,23 @@ describe('assembleComponents', () => {
       );
       expect(output.loop).toBeDefined();
     });
+
+    it('denyTools 透传到执行器：toolExec.list 与 system prompt 两侧都不含 deny 项', async () => {
+      // 装配链路：AgentOptions.denyTools → assembleComponents → toolExec.setDenyTools
+      // → loop 的 toolDefinitions 快照（toolExec.list）→ 提示词工具清单。
+      const output = await assembleComponents(
+        createPctx(),
+        createInput({ denyTools: ['write_file', 'ask_user'] }),
+      );
+      const names = output.toolExec.list.map((t) => t.name);
+      expect(names).not.toContain('write_file');
+      expect(names).not.toContain('ask_user');
+      expect(names).toContain('read_file');
+      const prompt = output.loop.getMessages()[0]!.content;
+      expect(prompt).not.toContain('write_file');
+      expect(prompt).not.toContain('ask_user');
+      expect(prompt).toContain('read_file');
+    });
   });
 
   // ─── bootstrapMemories 透传 ────────────────────────────

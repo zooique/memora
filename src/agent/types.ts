@@ -677,6 +677,17 @@ export interface AgentOptions {
    */
   imageReadPort?: ImageReadPort;
   /**
+   * 工具 deny 集（工具面第二根轴 · 减法，默认 `[]` ⇒ 父会话行为零变化）。
+   *
+   * 白名单（`toolWhitelist`）只能加不能减，要把「已经可见」的工具拿掉只能靠 deny：
+   * 命中的工具既不出现在提示词工具清单 / `chatOpts.tools`，执行闸也会拒绝硬点名调用。
+   * 判定唯一落点 = `ToolExecutor.isToolExposed` 第一行（必须早于自定义工具恒暴露分支）。
+   *
+   * 子会话 v1 只允许传 `SUBAGENT_DENIED_TOOLS` 常量清单（`toolExecutor.ts`），
+   * 禁止调用方随手拼字符串数组——新增工具时那张表才会被看见并被追问。
+   */
+  denyTools?: readonly string[];
+  /**
    * 宿主环境提供者（可选，不配则 system prompt 不注入环境段）：宿主上报运行环境事实
    * （OS / shell / 可用运行时），内核经 buildEnvironmentContextBlock 注入 system prompt。
    * 命令执行能力方案 §10.4-②：探测环境 → 把事实告诉模型 → 由模型自己决定（对齐 Cline System

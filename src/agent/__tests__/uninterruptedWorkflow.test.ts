@@ -902,6 +902,30 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
   });
 
   /**
+   * 场景 0：AgentOptions.denyTools 装配透传（子 agent v1 第一刀）
+   *
+   * 钉住 Agent → assembleComponents → toolExec 的转发链：漏传时该字段会被静默忽略，
+   * 子会话的减法面就成了一张废纸。默认 undefined 的零变化由既有用例覆盖。
+   */
+  it('AgentOptions.denyTools 透传到 toolExec（list 移除 deny 项，保留只读工具）', async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      denyTools: ['write_file', 'ask_user'],
+    });
+    await agent.init();
+
+    const names = agent.tools!.list.map((t) => t.name);
+    expect(names).not.toContain('write_file');
+    expect(names).not.toContain('ask_user');
+    expect(names).toContain('read_file');
+  });
+
+  /**
    * 场景 A：暂停 → 恢复 → 继续对话
    *
    * 验证完整闭环：

@@ -17,6 +17,9 @@ import * as hashModule from '@/utils/hash.js';
 import { WEB_SEARCH_TOOL } from '@/agent/builtinTools.js';
 import type { ToolDefinition } from '@/agent/builtinTools.js';
 import { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
+import { ToolExecutor } from '@/agent/toolExecutor.js';
+import { SecurityGuard } from '@/security/pathGuard.js';
+import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { logger } from '@/logging/logger.js';
 // B5-e 契约同构 mock 用：失败文本必须伴随显式 emit failedOutcome（runOne 兜底=ok，不 emit 即被吞）
 import { failedOutcome, type ToolOutcome } from '@/agent/managers/toolCallHelpers.js';
@@ -351,6 +354,59 @@ describe('AgentLoop · refreshToolDefinitions', () => {
     const prompt = loop.getMessages()[0]!.content;
     expect(prompt).toContain('工具选择规则');
     expect(prompt).toContain('create_rule');
+  });
+});
+
+describe('AgentLoop · deny 轴两侧同源（子 agent v1 第一刀）', () => {
+  it('deny 的工具既不在提示词工具清单，也不在 chatOpts.tools（唯一真源 = ToolExecutor.list）', async () => {
+    const projectPath = await mkdtemp(join(tmpdir(), 'memora-loop-deny-'));
+    const dataDir = await mkdtemp(join(tmpdir(), 'memora-loop-deny-data-'));
+    try {
+      // 真实执行器：deny 生效后 list 即「模型可见面」唯一真源
+      const executor = new ToolExecutor(
+        projectPath,
+        new SecurityGuard(projectPath, dataDir, [], false, 'owner'),
+        new InMemoryStorage(),
+      );
+      executor.setDenyTools(['write_file', 'run_command', 'ask_user', 'remember_intel']);
+
+      const captured: Array<ChatOptions | undefined> = [];
+      let called = 0;
+      const provider = {
+        name: 'deny-mock',
+        supportsToolCalling: true,
+        // 单轮直接作答（不需要真实工具循环），只为捕获本次下发的 tools
+        async *chat(_messages: Message[], opts?: ChatOptions) {
+          captured.push(opts);
+          if (called++ === 0) yield { content: '完成' };
+        },
+      } as unknown as LlmProvider;
+
+      const loop = new AgentLoop({
+        provider,
+        bootstrapMemories: [],
+        toolExecutor: vi.fn(),
+        // 装配链路同样以 toolExec.list 为快照（assembler 的同一表达式），此处直接复用
+        toolDefinitions: executor.list,
+      });
+
+      // ① 提示词侧：工具清单里没有 deny 项，正常只读工具仍在
+      const systemPrompt = loop.getMessages()[0]!.content;
+      expect(systemPrompt).not.toContain('write_file');
+      expect(systemPrompt).not.toContain('ask_user');
+      expect(systemPrompt).toContain('read_file');
+
+      for await (const _chunk of loop.processUserInput('检查提示词与下发清单')) void 0;
+
+      // ② 下发侧：chatOpts.tools 与提示词同源，同样不含 deny 项
+      const names = (captured[0]?.tools ?? []).map((t) => t.function.name);
+      expect(names).not.toContain('write_file');
+      expect(names).not.toContain('run_command');
+      expect(names).toContain('read_file');
+    } finally {
+      await rm(projectPath, { recursive: true, force: true });
+      await rm(dataDir, { recursive: true, force: true });
+    }
   });
 });
 

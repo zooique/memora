@@ -485,6 +485,11 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'confirmScripts',
       'confirmWrites',
       'dataDir',
+      // 2026-11-11 新增（子 agent v1 第一刀 · deny 轴，非 Breaking）：
+      // 定性 = 真能力（非 no-op 谎报）：工具面第二根轴（减法）的装配入参，唯一消费点
+      // ToolExecutor.isToolExposed 第一行；默认 undefined/[] ⇒ 父会话行为零变化。
+      // 子会话只允许传 SUBAGENT_DENIED_TOOLS 常量清单（禁止调用方随手拼）。
+      'denyTools',
       'disabledSkills',
       'enableContextSummary',
       'environmentProvider',
@@ -1263,6 +1268,10 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
       'setBackgroundTaskScheduler',
       'setBackgroundTasks',
       'setBudgetProvider',
+      // 2026-11-11 新增（子 agent v1 第一刀 · deny 轴）：装配期注入工具 deny 集，
+      // 与 setToolWhitelist / setImageReadPort 同形态（装配注入后不再变更）。
+      // 真消费者 = assembler.assembleComponents（AgentOptions.denyTools 透传）。
+      'setDenyTools',
       'setExclusionRoundIdsProvider',
       // 2026-11-11 新增（模型按路径读图 · IMAGE-TOOL-MESSAGE-1）：装配期把
       // AgentOptions.imageReadPort 转交 builtinToolHandlers，与 setBackgroundTaskScheduler

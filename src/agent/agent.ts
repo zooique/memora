@@ -239,6 +239,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       fetchProvider: opts.fetchProvider,
       codeExecutionProvider: opts.codeExecutionProvider,
       projectSearchProvider: opts.projectSearchProvider,
+      // 工具 deny 集（工具面第二根轴 · 减法）：透传装配 → toolExec.setDenyTools。
+      // 默认 undefined ⇒ 装配期不调用，父会话行为零变化；子会话 v1 只传 SUBAGENT_DENIED_TOOLS。
+      denyTools: opts.denyTools,
       // 宿主环境提供者（可选）：system prompt 注入运行环境事实段（命令执行能力方案 §10.4-②）
       environmentProvider: opts.environmentProvider,
       // 脚本执行 node 路径（可选）：宿主注入真实 node 路径，避免无独立 node 时 ENOENT
@@ -1375,6 +1378,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       fetchProvider: this.#config.fetchProvider,
       codeExecutionProvider: this.#config.codeExecutionProvider,
       projectSearchProvider: this.#config.projectSearchProvider,
+      // 工具 deny 集（工具面第二根轴 · 减法）：透传装配 → toolExec.setDenyTools。
+      // 默认 undefined ⇒ 不注入，父会话行为零变化；子会话 v1 只传 SUBAGENT_DENIED_TOOLS。
+      denyTools: this.#config.denyTools,
       // 脚本执行 node 路径（可选）：透传装配 → toolExecutor/assembler 脚本执行回调
       scriptNodePath: this.#config.scriptNodePath,
       // 禁用技能清单：透传装配 → SkillManager.setDisabledSkills

@@ -537,6 +537,44 @@ export const DEFAULT_EXPOSED_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * 子会话（子 agent v1）的 deny 集 —— 工具面第二根轴（减法），唯一口径见
+ * [docs/architecture/loop-design.md §5.3]（判定必须排在 `customTools.has(name)` 之前）。
+ *
+ * **为什么是常量清单而不是调用方拼数组**：白名单只能加不能减，deny 是唯一的减法通道；
+ * 把它写成一张有人维护、有人看得见的表，新增工具时才会被追问「子会话该不该有它」。
+ *
+ * **按副作用枚举，不按工具名直觉**：
+ * - 写盘：`write_file` / `delete_file`（项目文件可被改坏，子会话只读）；
+ * - 执行：`run_command` / `kill_command`（任意 shell 与后台进程）/ `run_project_script` /
+ *   `run_skill_script`（仓库与技能脚本同样是任意执行面）/ `run_code`（LLM 现写代码，
+ *   当前子会话 `toolWhitelist=[]` 下本就不可见，此处兜底防将来白名单扩容时漏掉）；
+ * - 交互：`ask_user`（`readonly: true`，只读闸管不到；它会在 loop 层挂起父会话，
+ *   子会话没有用户应答通道，放行等于把父 turn 挂死）；
+ * - 有副作用但不写盘：`remember_intel`（写父会话的私有情报区）/ `task_table_write` /
+ *   `task_table_update`（改父会话任务表）/ `register_work`（改项目级作品索引）。
+ *
+ * **代价（有意选择）**：子会话不能贡献情报与任务项，由队长汇总后写入；不是遗漏。
+ */
+export const SUBAGENT_DENIED_TOOLS: readonly string[] = [
+  // ── 写盘 ──
+  'write_file',
+  'delete_file',
+  // ── 执行 ──
+  'run_command',
+  'kill_command',
+  'run_project_script',
+  'run_skill_script',
+  'run_code',
+  // ── 交互（loop 层拦截，只读闸挡不住）──
+  'ask_user',
+  // ── 有副作用但不写盘（改父会话 / 项目状态）──
+  'remember_intel',
+  'task_table_write',
+  'task_table_update',
+  'register_work',
+];
+
+/**
  * 工具执行器
  *
  * 职责：工具注册 + 分发 + 参数校验。
@@ -571,6 +609,15 @@ export class ToolExecutor {
    * 白名单只控制**暴露面**（LLM 可见/可调），不改变 execute 路由。
    */
   private toolWhitelist: string[] | null = null;
+
+  /**
+   * 工具 deny 集（工具面第二根轴 · 减法，默认空 ⇒ 父会话行为零变化）
+   *
+   * 白名单只能加不能减，deny 是唯一能把「已经可见」的工具拿掉的通道。
+   * 判定位置见 `isToolExposed` 第一行（必须早于 `customTools.has(name)`）。
+   * 子会话 v1 经 `AgentOptions.denyTools` 注入 `SUBAGENT_DENIED_TOOLS`。
+   */
+  private denyTools: ReadonlySet<string> = new Set();
 
   /** 安全守卫（构造参数转存，run_code/run_project_script 执行前确认用） */
   private readonly security: SecurityGuard;
@@ -928,6 +975,21 @@ export class ToolExecutor {
   }
 
   /**
+   * 设置工具 deny 集（工具面第二根轴 · 减法）
+   *
+   * 白名单只能加不能减，要把「已经可见」的工具拿掉只能靠 deny。装配期一次性注入
+   * （与 `setImageReadPort` 同形态）；空数组是默认态，父会话行为零变化。
+   * 子会话 v1 传 `SUBAGENT_DENIED_TOOLS`（常量清单，禁止调用方随手拼）。
+   *
+   * @param tools 禁止暴露和执行的工具名（不存在的名字无副作用）
+   */
+  setDenyTools(tools: readonly string[]): void {
+    this.denyTools = new Set(tools);
+    // 暴露面变化 ⇒ 通知 loop 刷新 toolDefinitions 快照与 system prompt（同 setToolWhitelist）
+    this.onToolsChanged?.();
+  }
+
+  /**
    * 注入图片摄取端口（`read_image` 的宿主实现）。
    *
    * 本类不做能力裁决：可用性（端口存在 + **路由后** provider 支持视觉）由 loop 的
@@ -973,6 +1035,8 @@ export class ToolExecutor {
    * 后者决定「模型硬点名时放不放行」。只此一份规则，不并列第二套白名单判据（两个轴）。
    *
    * 判据分层（tool-exposure-model 特权声明模型）：
+   * - **deny 集：第一层，且必须早于 `customTools.has(name)`**——宿主注册的自定义 / MCP 工具
+   *   在第一层之外是「注入即恒暴露」，deny 排在它后面就等于写工具绕过 deny（变异测试钉住）；
    * - 自定义工具 / search_project：宿主能力面，注入即暴露（角色包能力声明不越权过滤）；
    * - DEFAULT_EXPOSED_TOOLS：常驻豁免集，无条件暴露（能力收窄只收窄特权工具）；
    * - 其余特权工具：`toolWhitelist === null` 全暴露；非 null 只在名单内暴露
@@ -986,6 +1050,8 @@ export class ToolExecutor {
    * @returns 此刻是否在 LLM 可见的工具面内
    */
   private isToolExposed(name: string): boolean {
+    // deny 是唯一减法：必须排第一行、必须先于自定义工具恒暴露分支（否则 MCP / 自定义写工具绕过）
+    if (this.denyTools.has(name)) return false;
     // 自定义工具（含 MCP 桥接注册）恒暴露：宿主注册属宿主能力面
     if (this.customTools.has(name)) return true;
     // search_project 注入即暴露（方案乙）：本地只读，等价 read_file 的只读语义
@@ -1100,9 +1166,9 @@ export class ToolExecutor {
     //   （`loop.ts` 的 executeToolCalls 旁路分支），根本走不到本方法；
     // · `ask_user`：loop 在派发前经 `willSuspendForAsk` 收口挂起，同批其余调用补占位，
     //   也不会走本方法；
-    // · 自定义工具（含 MCP 桥接注册）：`isToolExposed` 第一层判 true（宿主能力面恒暴露）；
-    // · `search_project`：provider 注入即暴露（`isToolExposed` 第二层）；
-    // · 常驻豁免集 `DEFAULT_EXPOSED_TOOLS`：`isToolExposed` 第三层恒 true；
+    // · 自定义工具（含 MCP 桥接注册）：`isToolExposed` 在 deny 之后判 true（宿主能力面恒暴露）；
+    // · `search_project`：provider 注入即暴露（`isToolExposed` 第三层）；
+    // · 常驻豁免集 `DEFAULT_EXPOSED_TOOLS`：`isToolExposed` 第四层恒 true；
     // · 未装配的 toolName：不是"未暴露"，保持原 `default` 分支的「未注册工具」报错。
     //
     // 已知代价（口径 b：执行时现算）：本闸只判「能力面是否暴露」，不消费 loop 的逐轮过滤

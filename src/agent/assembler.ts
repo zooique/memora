@@ -273,6 +273,7 @@ type AssembleRuntimeParams = Pick<
   | 'codeExecutionProvider'
   | 'projectSearchProvider'
   | 'imageReadPort'
+  | 'denyTools'
   | 'environmentProvider'
   | 'workspaceTrusted'
   | 'scriptNodePath'
@@ -853,6 +854,13 @@ export async function assembleComponents(
   // 不注入 ⇒ resolveActiveTools 不暴露 read_image（能力缺失，不摆一个必失败的工具）
   if (input.imageReadPort) {
     toolExec.setImageReadPort(input.imageReadPort);
+  }
+
+  // 工具 deny 集（工具面第二根轴 · 减法，v1 子会话专用）：装配期一次性注入，必须早于
+  // createAgentLoopAndDeps 里 `toolDefinitions: toolExec.list` 的快照求值。
+  // 默认空数组不调用 ⇒ 父会话行为零变化（不触发一次多余的暴露面通知）。
+  if (input.denyTools && input.denyTools.length > 0) {
+    toolExec.setDenyTools(input.denyTools);
   }
 
   // ── 会话管理器（先于 loop 创建）──
