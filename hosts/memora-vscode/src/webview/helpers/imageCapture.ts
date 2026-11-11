@@ -43,7 +43,6 @@ import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
-import { syncRowEdges } from './chipRow.js';
 import { getIconSvg } from '../scripts/icons.js';
 
 /** `image_ingest_result` 载荷类型（从协议联合取型，禁手写第二份字段表） */
@@ -109,8 +108,14 @@ export interface ImageCaptureDeps {
   input: HTMLTextAreaElement | null;
   /** 拖放监听目标（`dragover` 必须 preventDefault 才收得到 drop） */
   dropZone: HTMLElement | null;
-  /** chip 容器（`#imageChips`） */
-  row: HTMLElement | null;
+  /**
+   * 候选变化通知（图片行已并入附件行，2026-11-11 汇流）。
+   *
+   * 本层**不再持行容器**：空/隐判据、行清空与成员顺序归 `attachmentRowView` 单点
+   * （见 `appendChips`）。采集层只负责「一枚图 chip 长什么样」与候选真值，
+   * 状态一变就喊调用方整行重绘——若这里还去清行 / 藏行，就又是「一个行两个写入者」。
+   */
+  onChange?: () => void;
   /** SHA-256 提案实现（默认走 Web Crypto；注入以便测试） */
   sha256?: (bytes: Uint8Array) => Promise<string>;
   /** 读 `File` 字节（默认 `Blob.arrayBuffer()` → `FileReader` 兜底；注入以便测试） */
@@ -193,6 +198,13 @@ export interface ImageCaptureHandle {
    *   `false` 处理——宁可先灰后亮，不可先亮后灰（后者诱导用户点了才发现发不出）。
    */
   setAttachEnabled(vision: boolean): void;
+  /**
+   * 把当前候选 chip 追加进附件行（顺序 = 失败项在前，成功项在后）。
+   *
+   * 只追加，**不清行、不判空/隐**：那是 `attachmentRowView.render()` 的单点判据。
+   * 图片行并入附件行后（2026-11-11），本层与引用 chip 同容器，谁都不许单独藏行。
+   */
+  appendChips(parent: HTMLElement): void;
   clear(): void;
   dispose(): void;
 }
@@ -288,7 +300,9 @@ export function bytesToBase64(bytes: Uint8Array): string {
 }
 
 export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
-  const { doc, input, dropZone, row } = deps;
+  const { doc, input, dropZone } = deps;
+  // 变化通知缺省为空实现：单测只验 chip 外形时可不接行渲染域
+  const onChange = deps.onChange ?? (() => {});
   const sha256 = deps.sha256 ?? defaultSha256;
   const readBytes = deps.readBytes ?? defaultReadBytes;
   // 上行缺省为空实现：单测不搭宿主时采集仍完整可用（且不会误发消息）
@@ -298,25 +312,30 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
   const accepted: CapturedImage[] = [];
   const rejected: RejectedImage[] = [];
 
-  function render(): void {
-    if (!row) return;
+  /**
+   * 候选变化通知：本层不再自持行容器，只喊调用方整行重绘（图片行已并入附件行）。
+   *
+   * 清空 / 隐行 / 成员顺序都是 `attachmentRowView.render()` 的单点判据——这里再判一次，
+   * 就回到「引用行与图片行各藏各的」老形态，两套真源必然漂移。
+   */
+  function notifyChange(): void {
     // 重建前先收起：chip 节点即将被替换，浮层若还指向旧节点就是悬在空处的一张图
     hidePreview();
-    row.textContent = '';
-    const total = accepted.length + rejected.length;
-    if (total === 0) {
-      row.hidden = true;
-      return;
-    }
-    row.hidden = false;
+    onChange();
+  }
+
+  /**
+   * 把当前候选 chip 追加进附件行（失败项在前）。
+   *
+   * 只产 DOM 不碰行状态：空/隐与清空归行渲染域；顺序理由见下方 rejected 注释。
+   */
+  function appendChips(parent: HTMLElement): void {
     /**
      * 失败项排在**前面**：探针阶段要的是「一眼看见出事了」。等正式版接入落盘与预览后，
      * 这条顺序可以再议（届时失败项通常不进 chip 行，而是走瞬态提示）。
      */
-    for (const item of rejected) row.appendChild(buildRejectedChip(item));
-    for (const item of accepted) row.appendChild(buildChip(item));
-    // 重建后必须按新宽度重算渐隐（与引用行同一判据，见 chipRow 注释）
-    syncRowEdges(row);
+    for (const item of rejected) parent.appendChild(buildRejectedChip(item));
+    for (const item of accepted) parent.appendChild(buildChip(item));
   }
 
   /** chip 外形与引用 chip 同构（D28：只显示文件名，不做缩略图） */
@@ -380,13 +399,13 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
   function removeAccepted(target: CapturedImage): void {
     const i = accepted.indexOf(target);
     if (i >= 0) accepted.splice(i, 1);
-    render();
+    notifyChange();
   }
 
   function removeRejected(target: RejectedImage): void {
     const i = rejected.indexOf(target);
     if (i >= 0) rejected.splice(i, 1);
-    render();
+    notifyChange();
   }
 
   function describe(item: CapturedImage): string {
@@ -551,7 +570,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
         // 必须显式做——同一张图发两遍 = 双倍 token + 无意义视觉重复。
         if (accepted.some((it) => it.sha256 === digest)) {
           notice(l10n.t('This image is already added'));
-          render();
+          notifyChange();
           return;
         }
         accepted.push({
@@ -595,7 +614,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
         reason: l10n.t('Read failed: {0}', err instanceof Error ? err.message : String(err)),
       });
     }
-    render();
+    notifyChange();
   }
 
   /**
@@ -623,7 +642,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
       target.sha256 = msg.ref.sha256;
       // tokens 只在回执真带了才记：缺省保持 undefined（= 未知），不做「0 假算」
       if (msg.tokens !== undefined) target.tokens = msg.tokens;
-      render();
+      notifyChange();
       return;
     }
     if (!target) return;
@@ -638,7 +657,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
           ? l10n.t('The receipt is missing the image reference')
           : l10n.t('The image was not adopted')),
     });
-    render();
+    notifyChange();
   }
 
   /**
@@ -670,7 +689,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
         tokens: msg.tokens,
         previewUri: msg.uri,
       });
-      render();
+      notifyChange();
       return;
     }
     rejected.push({
@@ -683,7 +702,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
           ? l10n.t('The receipt is missing the image reference')
           : l10n.t('The image was not adopted')),
     });
-    render();
+    notifyChange();
   }
 
   /**
@@ -773,7 +792,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
             'Images inside rich text are not parsed: save the image as a file first, then paste or drop it',
           ),
         });
-        render();
+        notifyChange();
       }
       return;
     }
@@ -863,10 +882,11 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     resolveSendable,
     explainEmptySend,
     checkTurnLimits,
+    appendChips,
     clear() {
       accepted.length = 0;
       rejected.length = 0;
-      render();
+      notifyChange();
     },
     dispose() {
       input?.removeEventListener('paste', onPaste);
@@ -877,8 +897,8 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
       attachBtn?.removeEventListener('click', onAttachClick);
       accepted.length = 0;
       rejected.length = 0;
-      if (row) row.textContent = '';
-      hidePreview();
+      // 候选清零后通知整行重绘（行是否隐藏归 attachmentRowView，不在本层判）
+      notifyChange();
     },
   };
 }

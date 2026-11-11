@@ -206,13 +206,14 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <span class="btn-icon" data-icon="scroll-bottom"></span>
     </button>
     <div id="inputWrap">
-      <!-- 附件行（选择态行）：你亲手选的内容（skill，将来图片/手动记忆等）统一排在盒内文字上方——
-           面单贴在信封上；盒外留给系统运行时条，两种来源由物理位置分界，不混住。
-           空态 hidden 零高度，盒子不预留空行 -->
+      <!-- 附件行（选择态行）：你亲手选的能力（skill）排在盒内文字上方——面单贴在信封上；
+           盒外留给系统运行时条，两种来源由物理位置分界，不混住。空态 hidden 零高度。
+           ⚠️ 能力选择 ≠ 附件：技能行保持独立（差异清单见台账 HOST-ATT-1） -->
       <div id="skillChips" class="skill-chip-row" hidden></div>
+      <!-- 附件行（运行时挂载）：活动文件 / 注入 / 图片 / 引用回复 / 引用 chip 单点渲染
+           （attachmentRowView）。原图片行 #imageChips 已并入本行（2026-11-11 汇流），
+           不许再拆出第二条运行时行 -->
       <div id="refChips" class="skill-chip-row" hidden></div>
-      <!-- 图片附件行：粘贴 / 拖入采集的 chip（与上面两行同构单轨，D28 只显示文件名不做缩略图） -->
-      <div id="imageChips" class="skill-chip-row" hidden></div>
       <textarea id="input" rows="1" placeholder="${vscode.l10n.t('@ to reference files, / to pick a skill; Enter to send, Shift+Enter for newline')}" aria-label="${vscode.l10n.t('Message input')}"></textarea>
       <div id="inputFooter">
         <!-- Row 1 · 一级直面：左侧功能群 + 右侧唯一发送按钮（发送突出化） -->

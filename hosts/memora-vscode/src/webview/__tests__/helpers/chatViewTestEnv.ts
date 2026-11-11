@@ -107,9 +107,8 @@ const HTML = `
     <div id="inputWrap">
       <!-- 与生产骨架同步：附件行在 inputWrap 内、textarea 上（P6 骨架双源同挪纪律） -->
       <div id="skillChips" class="skill-chip-row" hidden></div>
+      <!-- 附件行：活动文件 / 注入 / 图片 / 引用回复 / 引用 chip 单点渲染（图片行已并入，2026-11-11） -->
       <div id="refChips" class="skill-chip-row" hidden></div>
-      <!-- 图片附件行：采集层（helpers/imageCapture）产出的 chip 落在这里 -->
-      <div id="imageChips" class="skill-chip-row" hidden></div>
       <textarea id="input"></textarea>
       <div id="inputFooter">
         <div class="composer-row composer-row--actions">

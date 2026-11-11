@@ -1,15 +1,21 @@
 /**
- * 附件行渲染域（活动文件 chip / 注入 chip / 引用回复胶囊 / 引用 chip 编排 / 注入回执）
+ * 附件行渲染域（活动文件 chip / 注入 chip / 图片 chip / 引用回复胶囊 / 引用 chip 编排 / 注入回执）
  *
  * 从 chatView.ts 外置的自足渲染单元（CHATPANEL-MARGIN-1 第一刀）：chatView.ts 物理行数已贴死
  * eslint max-lines 上限（只降不升），而「附件行里每个 chip 长什么样、点哪儿干什么」本来就是
  * 一段自足逻辑。
  *
- * 边界（守 SSOT）：本模块**只产 DOM、不持状态**——`activeFile` / `activeFileTokens` /
- * `currentInjections` / `currentRefs` 的真源仍在 chatView 闭包；每次渲染由调用方传入状态快照，
- * 交互一律经回调回流（与 refChips / skillPickerView 同构，不造第二份附件状态）。
+ * HOST-ATT-1 汇流（2026-11-11）：原独立的图片行 `#imageChips` 并入本行——图片与引用同属
+ * 「本轮随消息发送的附件」（逐条可删、发送即清），故是同一条附件行；`#skillChips` 仍是
+ * 独立行（能力选择 ≠ 附件，差异清单见台账 HOST-ATT-1）。图片 chip 的 DOM 由采集层产，
+ * 但**行显隐、清空与成员顺序只归本模块**（一个行只能有一个写入者）。
  *
- * 行内顺序 = 视觉顺序：活动文件（常态背景）→ 注入（带内容）→ 引用回复胶囊 → 引用 chip。
+ * 边界（守 SSOT）：本模块**只产 DOM、不持状态**——`activeFile` / `activeFileTokens` /
+ * `currentInjections` / `currentRefs` / 图片候选的真源仍在调用方；每次渲染由调用方传入状态
+ * 快照，交互一律经回调回流（与 refChips / skillPickerView 同构，不造第二份附件状态）。
+ *
+ * 行内顺序 = 视觉顺序：活动文件（常态背景）→ 注入（带内容）→ 图片（内容）→ 引用回复胶囊
+ * → 引用 chip。引用组（胶囊 + refs + 清空按钮）必须连续，别把图片插进中间。
  *
  * @module attachmentRowView
  */
@@ -42,6 +48,8 @@ export interface AttachmentRowState {
   activeFileTokens?: number;
   /** 本轮挂载的注入型来源（数组顺序即 chip 顺序） */
   injections: readonly MountableInjectionSource[];
+  /** 图片候选数（真源在采集层；本模块只据此判行显隐，不持图片状态） */
+  imageCount: number;
   /** 当前引用全量（含钉住态 / 宿主下发的失效投影） */
   refs: readonly RefChip[];
   /** 引用回复快照胶囊（无草稿 = null） */
@@ -60,6 +68,8 @@ export interface AttachmentRowViewDeps {
   post(msg: WebviewToExtensionMessage): void;
   /** 移除一枚注入 chip；从真源过滤 + 重绘由调用方完成 */
   onRemoveInjection(source: MountableInjectionSource): void;
+  /** 把图片 chip 追加进行内（采集层产 DOM；插在哪、行隐不隐归本模块） */
+  appendImageChips(parent: HTMLElement): void;
   /** 引用 chip 交互出口（打开 / 钉住 / 移除 / 清空，全部归调用方改真源） */
   refHandlers: RefChipHandlers;
 }
@@ -80,7 +90,7 @@ export interface AttachmentRowView {
  * @param deps 容器 / 回执行两个 DOM 出口 + 三类交互回流（上行 / 移除注入 / 引用 chip 出口）
  */
 export function createAttachmentRowView(deps: AttachmentRowViewDeps): AttachmentRowView {
-  const { document, row, receipt, post, onRemoveInjection, refHandlers } = deps;
+  const { document, row, receipt, post, onRemoveInjection, appendImageChips, refHandlers } = deps;
 
   /**
    * 注入原因 → 展示短语（唯一产地：chip 徽记与 title 共用，别在调用点各写一套）
@@ -310,7 +320,8 @@ export function createAttachmentRowView(deps: AttachmentRowViewDeps): Attachment
   }
 
   /**
-   * 构建/清空附件行：**活动文件 chip + 注入 chip + 引用 chip** 共用一个容器（`#refChips`）。
+   * 构建/清空附件行：**活动文件 chip + 注入 chip + 图片 chip + 引用 chip** 共用一个容器
+   * （`#refChips`；原 `#imageChips` 已于 2026-11-11 并入）。
    *
    * 引用 chip 形态：`文件名(+行号) + 🔒 + ×`（HOST-CTX-17 降噪：可见文本只留文件名，
    * 完整相对路径降级到 title / aria-label——hover 与屏幕阅读器仍拿得到，见 refDisplayName），
@@ -319,7 +330,7 @@ export function createAttachmentRowView(deps: AttachmentRowViewDeps): Attachment
    * 文件名/行号 span 点击 = 上报 open_ref 跳编辑器定位；注入 chip（第四类，⚠ 图标 +
    * 圆角矩形 + warn 色）在活动文件之后、引用之前——它带内容，故与注入方（活动文件）同侧，
    * 与纯指针的引用分开。
-   * 显隐判据只写一次（`isEmpty`）：四类 chip 任一存在即显示——分成多处各判一次，
+   * 显隐判据只写一次（与下面那一处 if）：五类成员任一存在即显示——分成多处各判一次，
    * 必然出现「refs 清空后活动文件 chip 被连坐隐藏」这类漂移。
    *
    * @param state 本次重绘的状态快照（真源仍在调用方）
@@ -331,6 +342,7 @@ export function createAttachmentRowView(deps: AttachmentRowViewDeps): Attachment
       state.activeFile.kind === 'none' &&
       state.refs.length === 0 &&
       state.injections.length === 0 &&
+      state.imageCount === 0 &&
       !state.quoteChip
     ) {
       row.hidden = true;
@@ -341,6 +353,9 @@ export function createAttachmentRowView(deps: AttachmentRowViewDeps): Attachment
     const activeChip = buildActiveFileChip(state.activeFile, state.activeFileTokens);
     if (activeChip) row.appendChild(activeChip);
     for (const source of state.injections) row.appendChild(buildInjectionChip(source));
+    // 图片 chip 由采集层产 DOM，但插在哪只由本模块定；放在引用组之前——引用组
+    //（胶囊 + refs + 清空按钮）必须连续，否则「清空引用」会被图片夹在中间读成清空全部
+    appendImageChips(row);
     // 引用回复快照胶囊（COPY-2 形态优化）：快照语义 ≠ 文件指针，但同属「本轮挂载的引用」混排
     if (state.quoteChip) row.appendChild(state.quoteChip);
     // 引用 chip 渲染外置 helpers/refChips.ts（只产 DOM、不持状态）：排序（钉住置顶）、

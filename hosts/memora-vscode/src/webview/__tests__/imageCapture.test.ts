@@ -13,9 +13,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   bytesToBase64,
-  createImageCapture,
+  createImageCapture as createImageCaptureBase,
   parseUriList,
   pickImageFiles,
+  type ImageCaptureDeps,
   type ImageCaptureHandle,
 } from '../helpers/imageCapture.js';
 import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
@@ -74,20 +75,44 @@ function mountDom(): {
 } {
   document.body.innerHTML = `
     <div id="inputWrap">
-      <div id="imageChips" class="skill-chip-row" hidden></div>
+      <div id="attachmentChips" class="skill-chip-row" hidden></div>
       <textarea id="input"></textarea>
     </div>`;
   return {
     input: document.getElementById('input') as HTMLTextAreaElement,
     dropZone: document.getElementById('inputWrap') as HTMLElement,
-    row: document.getElementById('imageChips') as HTMLElement,
+    row: document.getElementById('attachmentChips') as HTMLElement,
   };
 }
 
 const SHA = 'a1b2c3d4e5f6a7b8';
 
+/**
+ * 测试替身工厂：图片行已于 2026-11-11 并入附件行（`#refChips`），行清空 / 隐行 / 追加
+ * 归 `attachmentRowView` 单点。本文件只验采集层，故用最小替身复刻那三步，让既有断言
+ * 仍对着「一个行容器」验证。
+ *
+ * ⚠️ 替身**不复制**附件行的合并判据（活动文件 / 注入 / 引用任一存在都影响行显隐）——
+ * 那属于行渲染域的职责；本文件只保证「采集层产出 chip、且自己不再持行」。
+ */
+function createImageCapture(deps: ImageCaptureDeps & { row: HTMLElement }): ImageCaptureHandle {
+  const { row, ...rest } = deps;
+  // 先置空再赋值：onChange 只可能在 create 返回后触发，用可空引用避免自引用初始化
+  let handle: ImageCaptureHandle | null = null;
+  handle = createImageCaptureBase({
+    ...rest,
+    onChange: () => {
+      if (!handle) return;
+      row.textContent = '';
+      row.hidden = handle.accepted.length + handle.rejected.length === 0;
+      handle.appendChips(row);
+    },
+  });
+  return handle;
+}
+
 function chips(): HTMLElement[] {
-  return Array.from(document.querySelectorAll<HTMLElement>('#imageChips .image-chip'));
+  return Array.from(document.querySelectorAll<HTMLElement>('#attachmentChips .image-chip'));
 }
 
 describe('parseUriList（RFC 2483 子集）', () => {

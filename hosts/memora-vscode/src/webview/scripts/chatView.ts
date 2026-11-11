@@ -234,8 +234,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     document,
     scrollToBottom: () => scrollToBottom(messages),
   }).clamp;
-  // 图片附件行（粘贴 / 拖入采集的 chip；D28：与引用 chip 同构、只显示文件名不做缩略图）
-  const imageChipRow = document.getElementById('imageChips') as HTMLElement | null;
   let currentRefs: RefChip[] = [];
   /**
    * 活动文件投影（宿主推送，**纯显示**）：当前打开文件会不会进本轮上下文
@@ -3933,7 +3931,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     });
   }
 
-  // 附件行（活动文件 / 注入 / 引用回复胶囊 + 引用 chip 编排 + 注入回执）渲染域外置
+  // 图片采集层（粘贴 / 拖入 / 上传按钮）：采集即写盘（Q1）——校验通过当场上行
+  // `image_ingest`，宿主回执经 handleMessage 转 `applyIngestResult` 把 chip 提案值换真。
+  // ⚠️ 本层不持行容器（图片行已于 2026-11-11 并入附件行）：候选一变就 `renderAttachmentRow`
+  // 整行重绘，行显隐/清空只由 attachmentRowView 判（一个行只能有一个写入者）。
+  const imageCapture = createImageCapture({
+    doc: document,
+    input,
+    dropZone: inputWrap,
+    post: (msg) => vscode.postMessage(msg),
+    notice: (text) => activityDrawerView.showActivity('info', text),
+    attachBtn: imageAttachBtn,
+    onChange: () => renderAttachmentRow(),
+  });
+
+  // 附件行（活动文件 / 注入 / 图片 / 引用回复胶囊 + 引用 chip 编排 + 注入回执）渲染域外置
   // `attachmentRowView`：状态真源全在本闭包，每次重绘只传一份快照，交互经回调回流改真源。
   const attachmentRowView = createAttachmentRowView({
     document,
@@ -3944,6 +3956,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       currentInjections = currentInjections.filter((s) => s !== source);
       renderAttachmentRow();
     },
+    // 图片 chip 仍由采集层产 DOM，插在哪由附件行决定（引用组必须连续，见模块头）
+    appendImageChips: (parent) => imageCapture.appendChips(parent),
     refHandlers: {
       // 载荷只带协议字段（钉住态不随 open_ref 上行）
       onOpen: (ref) => vscode.postMessage({ type: 'open_ref', ref }),
@@ -3972,12 +3986,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     },
   });
 
-  /** 附件行重绘：从本闭包取状态快照交给渲染域（引用回复草稿的胶囊同批取） */
+  /** 附件行重绘：从本闭包取状态快照交给渲染域（引用回复草稿胶囊 / 图片候选数同批取） */
   function renderAttachmentRow(): void {
     attachmentRowView.render({
       activeFile,
       activeFileTokens,
       injections: currentInjections,
+      // 图片真源在采集层：这里只取候选计数供行显隐判据（不复制候选数组）
+      imageCount: imageCapture.accepted.length + imageCapture.rejected.length,
       refs: currentRefs,
       quoteChip: quoteDraft.chip(),
     });
@@ -3986,26 +4002,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 行元素在脚本加载时已存在；窗口尺寸变化只影响是否溢出，
   // 重算一次边缘类即可——不为「侧栏拖宽」引入 ResizeObserver（Chat 面板拖宽不触发
   // window resize，但此时行内也不滚动，渐隐最多残留到下次滚动/重渲染，代价可接受）。
-  // 技能 chip 行的单轨绑定随域移入 `skillPickerView`（工厂创建即绑），此处只管引用行与图片行
+  // 技能 chip 行的单轨绑定随域移入 `skillPickerView`（工厂创建即绑）；此处只绑附件行
+  // （引用 / 活动文件 / 注入 / 图片共用同一行，2026-11-11 汇流后只有这一条）
   bindSingleTrackRow(refChipRow);
-  bindSingleTrackRow(imageChipRow);
-  // 图片采集层（粘贴 / 拖入）：采集即写盘（Q1）——校验通过当场上行 `image_ingest`，
-  // 宿主回执经 handleMessage 转 `applyIngestResult` 把 chip 提案值换真
-  const imageCapture = createImageCapture({
-    doc: document,
-    input,
-    dropZone: inputWrap,
-    row: imageChipRow,
-    post: (msg) => vscode.postMessage(msg),
-    notice: (text) => activityDrawerView.showActivity('info', text),
-    attachBtn: imageAttachBtn,
-  });
   window.addEventListener(
     'resize',
     () => {
       skillPickerView.refreshEdges();
       syncRowEdges(refChipRow);
-      syncRowEdges(imageChipRow);
       // 大纲条（HOST-NAV-1）：视口高变 ⇒ 压密预算重算。sync 内 applyMetrics 总会跑，
       // 故即便轮数/签名未变，也会按新预算重排条列（与上面两行同一 resize 拍子）。
       roundNavController.sync();
