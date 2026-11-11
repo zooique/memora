@@ -2528,6 +2528,54 @@ describe('turn_update 含运行时 live 轮（M3b-2a）', () => {
     expect(live.processEvents?.some((e) => e.type === 'tool_start')).toBe(true);
   });
 
+  // 变异验证锚点：把 emitEvent 里的 `if (liveBuffer.currentRoundKey)` 守卫去掉（无键也 push）
+  // → 本用例 ② 转红。本用例是注释口径「有键才进缓冲」的唯一机械证据。
+  it('无归轮键的宿主自造事件只即时投影、不进缓冲（重放时不会被错挂到别的轮）', async () => {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setRoundStore(roundStore);
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    seedSession(store, roundStore, '2026-08-15-s1', historyPair);
+    provider.setAgent(
+      chatAgentStub(() =>
+        (async function* () {
+          // 本流一个带 roundId 的 chunk 都没有 ⇒ currentRoundKey 恒为空
+          yield { type: 'aborted', reason: '早停' } as AgentChunk;
+          yield { type: 'done' } as AgentChunk;
+        })(),
+      ),
+    );
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    // 流正常收场时 liveBuffer 会被清空（chatPanel 流尾 `runtime.liveBuffer = undefined`）⇒
+    // 必须在收到 process_event 的**当下**快照分桶数，等 sendInput 返回就读不到了
+    const bucketSizesDuringStream: number[] = [];
+    const view = (
+      provider as unknown as {
+        _view: { webview: { postMessage(m: unknown): Promise<boolean> } };
+      }
+    )._view;
+    const passThrough = view.webview.postMessage.bind(view.webview);
+    view.webview.postMessage = (msg: unknown): Promise<boolean> => {
+      if ((msg as { type?: string }).type === 'process_event') {
+        const buf = (
+          provider as unknown as {
+            runtimeFor(): { liveBuffer?: { eventsByRound: Map<string, unknown[]> } };
+          }
+        ).runtimeFor().liveBuffer;
+        bucketSizesDuringStream.push(buf?.eventsByRound.size ?? -1);
+      }
+      return passThrough(msg);
+    };
+    await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('新问题');
+
+    // ① 即时投影不依赖归轮键：webview 照样收到该过程事件
+    const events = ofType<{ type: string; event: { type: string } }>(posted, 'process_event');
+    expect(events.some((m) => m.event.type === 'aborted')).toBe(true);
+
+    // ② 缓冲区一个分桶都不建：无键时不缓冲（切会话重建不会把它错挂到别的轮）
+    expect(bucketSizesDuringStream.length).toBeGreaterThan(0);
+    expect(bucketSizesDuringStream.every((n) => n === 0)).toBe(true);
+  });
+
   it('软暂停：live 轮仍入列（该轮正在生长、未收场）', async () => {
     const last = await driveAndGetLastUpdate(
       [{ type: 'text', content: '半截', roundId: 'round-9' }, { type: 'paused' }],

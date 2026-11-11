@@ -3113,7 +3113,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // seq 实例级全局单调（_processSeq）：step 原子检查点按 seq 幂等合并，跨流/跨轮不冲突
       const seq = ++this._processSeq;
       const event = { type: typeKey, seq, ts: new Date().toISOString(), payload } as ProcessEvent;
-      // 归属当前 turn 分段（无 roundId 的宿主自造事件归入最近 turn）
+      // 归属当前 turn 分段：**有**归轮键 ⇒ 进缓冲（切会话重建的真相源，与即时投影同一份数据）；
+      // **无**归轮键 ⇒ 只即时投影、不进缓冲。无键 = 本流还没出现过任何带 roundId 的 chunk
+      // （轮身份在 prepare 入口就已确定，正常路径下不会落到这里）——此时没有「最近 turn」可归属，
+      // 强行缓冲会造出无主分桶、重放时错挂到别的轮上。二态行为由
+      // `chatPanelHistory.test.ts`「无归轮键的宿主自造事件只即时投影、不进缓冲」钉住。
       if (liveBuffer.currentRoundKey) {
         const list = eventsByRound.get(liveBuffer.currentRoundKey) ?? [];
         list.push(event);
