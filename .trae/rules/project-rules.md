@@ -147,7 +147,7 @@ src/
 
 ## 6. 规则文件索引
 
-> 列出 `.trae/rules/` 全部规则文件，方便按需加载。**`alwaysApply: true` 随会话自动加载，其余需 AI 主动读取。**
+> **常用规则文件索引（非全集，以目录为准）**，方便按需加载；未列出的规则直接按目录读，**不补登**（补齐等于再维护一份清单，下次照样腐烂）。**`alwaysApply: true` 随会话自动加载，其余需 AI 主动读取。**
 
 | 类别 | 文件 |
 |------|------|
@@ -161,6 +161,7 @@ src/
 | 网络为土壤思维模型 | [network-soil-mindset.md](./generic/network-soil-mindset.md) |
 | UI 工程化心智 | [ui-engineering-mindset-rules.md](./generic/ui-engineering-mindset-rules.md) |
 | 渐进式重构 | [progressive-refactor-rules.md](./generic/progressive-refactor-rules.md) |
+| 托管执行纪律（派发 / 并发 / 自证 / 汇报 / 边界） | [delegation-discipline-rules.md](./generic/delegation-discipline-rules.md) |
 | 安全 / 测试 | [security_rules.md](./generic/security_rules.md) / [testing_rules.md](./generic/testing_rules.md) |
 | 跨文档引用 / 新增模块 | [cross-document-reference.md](./generic/cross-document-reference.md) / [new-module-guide.md](./generic/new-module-guide.md) |
 | 决策记录 | `decisions/`（[README](../decisions/README.md) = **索引唯一真源**；技术栈变更先更新 ADR，§1①）。⚠️ **不在此处登记 ADR 条数**——计数是时点快照、每次新增即过期（历史已漂移三次：37 → 25 → 26 → 30）⇒ 需要引用时**现读 README 索引** |
