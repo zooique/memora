@@ -739,6 +739,26 @@ describe('builtinTools · 写盘声明位（diskWrite）与派生索引', () => 
     ).toBe('opaque');
   });
 
+  it('同名多条取最保守：任一条可能有写盘能力即按会写盘处理', () => {
+    // 为什么不能「取第一条」：调用方可能把「内置 + 自定义」合集当快照传入（内置在前），
+    // 取第一条会让后者的漏声明被内置的 'none' 顶掉 ⇒ 修复被静默绕过，且无任何测试会红。
+    const def = (diskWrite?: 'none' | 'path' | 'opaque') => ({
+      name: 'dup_tool',
+      description: '',
+      parameters: { type: 'object' as const, properties: {}, required: [] as string[] },
+      ...(diskWrite === undefined ? {} : { diskWrite }),
+    });
+    // 一条声明只读、一条未声明 ⇒ 未声明那条可能写盘 ⇒ 'opaque'
+    expect(resolveWriteCapability('dup_tool', [def('none'), def()])).toBe('opaque');
+    expect(resolveWriteCapability('dup_tool', [def(), def('none')])).toBe('opaque');
+    // 只读 + 路径写 ⇒ 按更保守的 'path'
+    expect(resolveWriteCapability('dup_tool', [def('none'), def('path')])).toBe('path');
+    // 三条含 opaque ⇒ 'opaque'
+    expect(resolveWriteCapability('dup_tool', [def('none'), def('path'), def('opaque')])).toBe(
+      'opaque',
+    );
+  });
+
   it('声明契约钉：path 集 / opaque 集的工具名（行内声明变动必须复审本例）', () => {
     // 跨模块契约钉：串行闸与宿主改动追踪都由这两个集合派生，名单变动 = 排序语义变动。
     // 序无关比较（派生序 = 定义排布序，不承载语义）；opaque 集直接由定义行派生（7.0.0 起）

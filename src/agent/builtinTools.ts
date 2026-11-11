@@ -990,16 +990,31 @@ export const ALL_BUILTIN_TOOL_DEFS: readonly ToolDefinition[] = [
 ];
 
 /**
+ * 三态的**保守度序**（值越大越保守）：同名多条时按最坏情况取，宁多排一次屏障、不漏一次写盘。
+ */
+const WRITE_CAPABILITY_ORDER: Record<WriteCapability, number> = {
+  none: 0,
+  path: 1,
+  opaque: 2,
+};
+
+/**
  * 「这个工具算不算写盘工具、以什么方式写盘」的**唯一派生点**
  *
  * 所有消费面（写串行闸 / 写后缓存失效 / 护栏 write_loop / 宿主事件投影 / 确认入口派生）
  * 都只能经本函数拿结论，禁止再按工具名手写判断。
  *
- * 查找顺序：**先看运行时定义快照里有没有同名定义**（含宿主 `registerTool` 注册的自定义工具）——
- * - 有同名定义 ⇒ **只认它的 `diskWrite`**；它没声明就归 `'opaque'`，**不得回落内置同名声明**
+ * 查找范围：**先看运行时定义快照里有没有同名定义**（含宿主 `registerTool` 注册的自定义工具）——
+ * - 有同名定义 ⇒ 只在这些同名定义里判，**不得回落内置同名声明**
  *   （同名影子工具与 `web_search` / `web_fetch` / `search_project` 撞名时，回落会把「未知写盘」
  *   静默读成内置那个只读工具 ⇒ 串行闸、写后缓存失效、宿主改盘追踪同时失效）；
  * - 无同名定义（或调用方没传快照）⇒ 再看内置全量定义。
+ *
+ * **同名多条取最保守**：这里不是「同名挑一条」，而是「**只要有一条可能有写盘能力，就按会写盘处理**」
+ * （保守度 `'opaque'` > `'path'` > `'none'`）。任一条未声明即归 `'opaque'`——因为调用方可能把
+ * 「内置 + 自定义」的合集（如 `allToolDefinitions`）当快照传进来，取第一条会让后者的漏声明
+ * 被前者的 `'none'` 顶掉，修复被静默绕过。
+ *
  * **fail-closed**：未声明 / 未知工具 ⇒ `'opaque'`（按会改盘处理），不再把「缺省」解释成只读；
  * 要只读语义必须显式声明 `'none'`。
  */
@@ -1007,12 +1022,21 @@ export function resolveWriteCapability(
   name: string,
   definitions?: readonly ToolDefinition[],
 ): WriteCapability {
-  // 运行时同名定义优先：存在即「这个名字在本会话被谁占用」的答案，其未声明不得借内置声明补位
-  const runtimeDef = definitions?.find((t) => t.name === name);
-  const declared = runtimeDef
-    ? runtimeDef.diskWrite
-    : ALL_BUILTIN_TOOL_DEFS.find((t) => t.name === name)?.diskWrite;
-  return declared ?? 'opaque';
+  // 运行时同名定义优先（存在即「这个名字在本会话被谁占用」的答案）；没有同名才看内置全量定义
+  const runtimeDefs = definitions?.filter((t) => t.name === name) ?? [];
+  const candidates =
+    runtimeDefs.length > 0 ? runtimeDefs : ALL_BUILTIN_TOOL_DEFS.filter((t) => t.name === name);
+  // 一条候选都没有 = 未知工具 ⇒ fail-closed
+  if (candidates.length === 0) return 'opaque';
+  let capability: WriteCapability = 'none';
+  for (const def of candidates) {
+    // 任一条没声明 = 「它可能写盘」⇒ 直接按会改盘处理（不猜它是不是只读）
+    if (def.diskWrite === undefined) return 'opaque';
+    if (WRITE_CAPABILITY_ORDER[def.diskWrite] > WRITE_CAPABILITY_ORDER[capability]) {
+      capability = def.diskWrite;
+    }
+  }
+  return capability;
 }
 
 /** 按 `args.path` 定位目标的写工具名集（派生契约钉；判据真源 = `resolveWriteCapability`，不得反向当判据） */
