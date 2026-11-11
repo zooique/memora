@@ -631,21 +631,31 @@ export const SUBAGENT_DENIED_TOOLS: readonly string[] = [
 ];
 
 /**
- * 条件内置工具名（provider 注入才进 `assembledTools`，但名字恒被 `execute()` 占用）
+ * 注册期无条件拒绝的工具名（**判据**见下，名单只是判据的实例化）
  *
- * 这四个名字在 `execute()` 的 `switch (name)` 里各有一个**同名内置分支**：provider 未注入时
- * 分支返回 `NOT_AVAILABLE`，注入时走 provider。自定义 handler 只会在 `default` 分支的
- * `customTools` 回退里被查 ⇒ 同名自定义工具**结构性到不了 handler**（注册成功 = 进 list、
- * `isToolExposed` 判可见，执行却恒失败的死承诺）。故注册期无条件拒绝，不按 provider 是否注入分叉。
+ * 判据 —— 同时满足两条即必须登记进本集合：
+ *   ① `execute()` 的 `switch (name)` 里有**同名 case**（该名字的 handler 落点被那一支占用，
+ *      不会落到 `default` 的 `customTools` 回退）；
+ *   ② 该名字**不在 `BUILTIN_TOOLS`** 里（在的话已被 registerTool 的上一条 guard 无条件拒绝，
+ *      无需重复登记）。
+ *
+ * 满足判据的名字 = 「provider / 端口注入才暴露」的条件内置：provider 未注入时分支返回
+ * `NOT_AVAILABLE`，注入时走注入端口；两种情况下自定义 handler 都结构性到不了 ⇒ 允许注册就是
+ * 死承诺（进 `list`、`isToolExposed` 判可见，调用却恒失败）。故注册期无条件拒绝，
+ * 不按 provider 是否注入分叉——把「调用期恒失败」提前成「注册期可见的错误」。
+ *
+ * 新增同类工具（switch 加了 case、定义又不在 `BUILTIN_TOOLS`）时本集合必须同步；
+ * 漏登记由 `toolExecutor.test.ts` 的结构性守卫用例从源码反查判红，不靠人记。
  *
  * ⚠️ `search_project` 的「暴露」来自 `projectSearchProvider` 注入（`assembledTools` /
  * `isToolExposed` 各自判），与自定义注册是两条独立的路：拒绝同名自定义工具不会砍掉 provider 那条路。
  */
-const SWITCH_OWNED_TOOL_NAMES: ReadonlySet<string> = new Set([
+export const SWITCH_OWNED_TOOL_NAMES: ReadonlySet<string> = new Set([
   WEB_SEARCH_TOOL.name,
   WEB_FETCH_TOOL.name,
   RUN_CODE_TOOL.name,
   SEARCH_PROJECT_TOOL.name,
+  DELEGATE_TASK_TOOL.name,
 ]);
 
 /**
@@ -958,9 +968,9 @@ export class ToolExecutor {
    * 注册自定义工具
    *
    * 宿主项目调用此方法注册领域专属工具（如 run_tests、query_database、send_email 等业务专属操作）。
-   * 工具名不能与内置工具重复（含 `web_search` / `web_fetch` / `run_code` / `search_project`
-   * 这四个「provider 注入才暴露」的条件内置——它们名字被 `execute()` 的同名分支占用，
-   * **无条件拒绝**，与 provider 是否注入无关），也不能重复注册。
+   * 工具名不能与内置工具重复（含「名字被 `execute()` 同名 switch 分支占用、定义又不在
+   * `BUILTIN_TOOLS` 内」的条件内置——判据与实例见 `SWITCH_OWNED_TOOL_NAMES`，
+   * 这些名字**无条件拒绝**，与 provider / 端口是否注入无关），也不能重复注册。
    * 注册后工具会出现在 `tools.list` 列表中，
    * LLM 可通过 tool_call 调用，execute() 会路由到 handler。
    *

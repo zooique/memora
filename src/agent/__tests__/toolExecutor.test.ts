@@ -11,12 +11,14 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import {
   ToolExecutor,
   sanitizeExternalText,
   BUILTIN_TOOLS,
   SUBAGENT_DENIED_TOOLS,
+  SWITCH_OWNED_TOOL_NAMES,
 } from '@/agent/toolExecutor.js';
 import type { WebSearchExecInfo } from '@/agent/toolExecutor.js';
 // 内置工具定义全量（P2 守卫：deny 清单里的每个名字必须在真实定义中存在）
@@ -3356,8 +3358,8 @@ describe('工具执行器（6 个工具）', () => {
     });
 
     // web_fetch / run_code / search_project 与 web_search 同族：名字恒被 execute() 同名分支占用
-    it.each(['web_fetch', 'run_code', 'search_project'])(
-      '未注入对应 provider 时，注册 %s 也应抛错（同名内置分支结构性占用 handler 落点）',
+    it.each(['web_fetch', 'run_code', 'search_project', 'delegate_task'])(
+      '未注入对应 provider / 端口时，注册 %s 也应抛错（同名内置分支结构性占用 handler 落点）',
       (name) => {
         const def = {
           name,
@@ -3490,6 +3492,49 @@ describe('工具执行器（6 个工具）', () => {
       expect(() => executorWithCode.registerTool(codeDef, async () => '')).toThrow(
         /不能覆盖内置工具/,
       );
+    });
+  });
+
+  /**
+   * registerTool 保留名判据的结构性守卫（比名单本身更重要）
+   *
+   * 判据（与 toolExecutor.ts 内 `SWITCH_OWNED_TOOL_NAMES` 注释同源）：
+   * 在 `execute()` 的 switch 里有同名 case、且不在 `BUILTIN_TOOLS` 里的名字，必须全部在拒绝集内。
+   * 直接读源码收集 case 名，不在测试里另维护一份手工名单——手工名单会与实现一起漂移，
+   * 而这份守卫在「switch 新增同类 case 却忘登记」时直接判红。
+   */
+  describe('registerTool 保留名判据（结构性守卫）', () => {
+    /** toolExecutor.ts 源码路径（相对本测试文件：`__tests__` 的上一级） */
+    const sourcePath = fileURLToPath(new URL('../toolExecutor.ts', import.meta.url));
+    /** 源码全文（模块加载时只读一次） */
+    const source = readFileSync(sourcePath, 'utf-8');
+    /** execute() 内 switch 的全部 case 名（本文件只有这一个 switch，正则命中即全集） */
+    const switchCaseNames = [...source.matchAll(/^\s+case '([^']+)':/gm)].map(
+      (match) => match[1] as string,
+    );
+
+    it('switch 有同名 case、且不在 BUILTIN_TOOLS 的名字，必须与拒绝集完全一致', () => {
+      /** 第一道 guard 已覆盖的内置名（BUILTIN_TOOLS 是它的判据真源） */
+      const builtinNames = new Set(BUILTIN_TOOLS.map((tool) => tool.name));
+      /** 判据推导出的应有拒绝集（排序只为断言与登记顺序无关） */
+      const expected = switchCaseNames.filter((name) => !builtinNames.has(name)).sort();
+      expect([...SWITCH_OWNED_TOOL_NAMES].sort()).toEqual(expected);
+    });
+
+    it('拒绝集内每个名字的真实注册行为都是抛错（判据与实际 guard 同源）', () => {
+      const probe = new ToolExecutor(tmpProject, security, index);
+      for (const name of SWITCH_OWNED_TOOL_NAMES) {
+        expect(() =>
+          probe.registerTool(
+            {
+              name,
+              description: `守卫探针：${name}`,
+              parameters: { type: 'object', properties: {}, required: [] },
+            },
+            async () => '',
+          ),
+        ).toThrow(/不能覆盖内置工具/);
+      }
     });
   });
 });
