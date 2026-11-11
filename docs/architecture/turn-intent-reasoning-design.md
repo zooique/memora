@@ -129,7 +129,7 @@ systemPrompt 固定段注入（内核定义，不开放键；D2 边界论证见 
 | `echo`（复述不等待） | 由 Part 2 边界指令覆盖（需要时自然输出策略叙述），删除 |
 | `confirm`（复述并等待确认） | 并入 `askOn['confirm']` + ask_user 工具通道（机制级真源），删除 |
 
-迁移映射（定案时同步执行）：
+迁移映射（定案时已同步执行，2026-09-13）：
 - 共鸣小说家（原小说助手）：askOn 已含 `confirm` → 仅删 understandingConfirm 键，行为由既有 ask_user 通道继续承载（包随更名，原 manifest 路径已不适用）。
 - 方案设计师 / 文档设计师：askOn 加 `'confirm'` 后删键（行为从"每轮必复述确认"变为"需要时提问确认"——对设计协作场景更合理：模糊时对齐、清晰时直接推进）。两包随后于 0ba12c55 退役，其设计方法论与文档编排由白话方案设计师吸收承接。
 
@@ -165,7 +165,7 @@ systemPrompt 固定段注入（内核定义，不开放键；D2 边界论证见 
 - [memory-tool-recall-design.md](./memory-tool-recall-design.md)（记忆软引导现状 + 硬收窄砍除历史，Part 2 记忆引导不重复的实证依据）
 - [process-event-log-replay-design.md](./process-event-log-replay-design.md)（reasoning/narrate 落盘与平铺展示依据）
 - [策略键消费矩阵.md](../策略键消费矩阵.md)（understandingConfirm 已回收，见该文档「2026-09-13 收敛补记」）
-- [role-pack-spec.md](./role-pack-spec.md) / [role-pack-开放键指南.md](../role-pack-开放键指南.md)（开放键文档，定案时同步）
+- [role-pack-spec.md](./role-pack-spec.md) / [role-pack-开放键指南.md](../role-pack-开放键指南.md)（角色包开放键说明，已按 2026-09-13 回收口径同步）
 - 土壤来源：Plan-and-Execute（CSDN 实战 / arXiv 2605.14290）、Pre-Act（arXiv 2505.09970）、Think Tool 模式（bswen）、Anthropic Thinking + Fable 5 prompt 指南（目标+约束 vs 步骤脚本）、Claude Code Plan Mode（inside-claude-code 剖析 / OpenReplay）、Open WebUI reasoning、代码编排 vs LLM 规划（dev.to，2026-09-13 搜索）
 
 ## 十、实施拆解（2026-09-13）

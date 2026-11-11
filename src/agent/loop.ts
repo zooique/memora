@@ -2083,9 +2083,12 @@ export class AgentLoop {
   /**
    * 解析工具的写盘能力（写序判定的唯一入口）
    *
-   * 真源 = `resolveWriteCapability`（`builtinTools` 的唯一派生点）：当前工具定义快照
-   * （`opts.toolDefinitions`，**含宿主 `registerTool` 注册的自定义工具**）→ 内置全量定义兜底；
-   * **未声明 / 未知工具由派生点按 fail-closed 回 `'opaque'`**——漏声明不得再静默当成「不改盘」。
+   * 真源 = `resolveWriteCapability`（`builtinTools` 的唯一派生点），按「有无同名定义」二态查找：
+   * - 运行时快照（`opts.toolDefinitions`，**含宿主 `registerTool` 注册的自定义工具**）**有同名定义**
+   *   ⇒ 只在这些同名定义里判，**不回落内置同名声明**（回落会把未声明的自定义工具静默读成内置只读工具）；
+   * - 无同名定义（或未传快照）⇒ 才看内置全量定义。
+   * 同名多条取最保守（`'opaque'` > `'path'` > `'none'`），**任一条未声明即 `'opaque'`**；
+   * 未声明 / 未知工具同样 fail-closed 归 `'opaque'`——漏声明不得再静默当成「不改盘」。
    */
   private resolveDiskWrite(name: string): WriteCapability {
     return resolveWriteCapability(name, this.opts.toolDefinitions);
