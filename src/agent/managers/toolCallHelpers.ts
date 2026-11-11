@@ -265,6 +265,25 @@ export function blockedOutcome(
   return { status: 'blocked', text, blockedReason: reason, hasRealFailure };
 }
 
+/**
+ * 构造「工具本轮未暴露」的 blocked 结果（**执行闸与 loop 自执行旁路共用**）。
+ *
+ * 为什么抽出来：`ask_user` / `remember_intel` 不走 `ToolExecutor.execute`（在 loop 内直接分派），
+ * 若各自手抄 `[ERR:TOOL:NOT_EXPOSED]` 前缀，改一处漏一处即文案漂移。
+ * `cause` 由调用方按真实原因给（白名单未开启 / 当前会话禁用），本函数不猜。
+ *
+ * @param name 工具名
+ * @param cause 未暴露的具体原因（拼进给模型看的说明）
+ */
+export function notExposedOutcome(name: string, cause: string): ToolOutcome {
+  return blockedOutcome(
+    'not_exposed',
+    `[ERR:TOOL:NOT_EXPOSED] 工具 "${name}" 本轮未暴露：模型可见的工具列表中没有它` +
+      `（${cause}），已拒绝执行。不要重试该工具，` +
+      `请改用本轮已暴露的工具，或直接说明无法完成。`,
+  );
+}
+
 /** 供调用方复用的类型（避免深导入 agent/types） */
 export type { AskQuestion };
 

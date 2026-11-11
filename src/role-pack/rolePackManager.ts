@@ -1035,14 +1035,31 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
 
   // ── 系统提示 ──────────────────────────────────────
 
-  /** 构建 system prompt 的角色包段：personaPrompt + L1 技能清单（渐进披露）；name 缺省用当前激活包 */
-  buildSystemPrompt(name?: string): string {
+  /**
+   * 构建 system prompt 的角色包段：personaPrompt + L1 技能清单（渐进披露）；name 缺省用当前激活包
+   *
+   * @param name 角色包名（缺省 = 当前激活包）
+   * @param options 装配开关（子会话专用；父会话不传 ⇒ 行为与既有完全一致）
+   *   - `includeSkills=false`：不追加 L1 内嵌技能清单（子会话只保留全局技能，v1 定案）；
+   *   - `suppressFollowupAsk=true`：用不含「主动提问规则」的基础段（子会话禁用 ask_user，
+   *     保留该规则只会引导它调用一个不可见工具）。
+   */
+  buildSystemPrompt(
+    name?: string,
+    options?: { includeSkills?: boolean; suppressFollowupAsk?: boolean },
+  ): string {
     const targetName = name ?? this.activePackName;
     if (!targetName) return '';
     const pack = this.items.find((p) => p.meta.name === targetName);
     if (!pack) return '';
     // 使用预缓存的 Assembly，避免重复构建
     const assembly = pack._cachedAssembly ?? assembleRolePack(pack);
+    // 提问规则抑制：取**同源基础段**（不是对成品 prompt 做字符串切割，正文含同名标题也不会误伤）
+    const personaPrompt = options?.suppressFollowupAsk
+      ? assembly.personaBasePrompt
+      : assembly.personaPrompt;
+    // 子会话不注入角色包内嵌技能清单（缺失时也直接返回 persona，不再拼接技能块）
+    if (options?.includeSkills === false) return personaPrompt;
 
     const skills = assembly.skills.filter((s) => s.name || s.file);
     const skillCount = skills.length;
@@ -1053,7 +1070,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     //   > 50 技能：切换 list_skills 工具动态查询，不在 system prompt 枚举
     if (skillCount > L1_LIST_TOOL_THRESHOLD) {
       return (
-        assembly.personaPrompt +
+        personaPrompt +
         `\n\n【可用技能（${skillCount} 个，数量较多，使用 list_skills 工具查询具体清单）】`
       );
     }
@@ -1073,7 +1090,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const skillListBlock =
       listed.length > 0 ? `\n\n【可用技能（渐进披露 L1）${modeNote}】\n${listed.join('\n')}` : '';
 
-    return assembly.personaPrompt + skillListBlock;
+    return personaPrompt + skillListBlock;
   }
 
   /**

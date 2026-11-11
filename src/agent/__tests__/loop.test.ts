@@ -410,6 +410,141 @@ describe('AgentLoop · deny 轴两侧同源（子 agent v1 第一刀）', () => 
   });
 });
 
+// ─── deny 轴对 loop 自执行旁路的收口（P0-1）──────────────────────────────
+// ask_user / remember_intel 不走 ToolExecutor.execute：前者在 loop 内直接挂起父 turn，
+// 后者在派发前直接写情报区。只把 deny 做在清单/执行闸上时，模型硬点名就能绕过。
+describe('AgentLoop · deny 命中 loop 自执行旁路（硬点名必须被挡）', () => {
+  /** 建一个真实执行器（deny 经 isToolExposed 生效，list 即暴露面真源） */
+  async function withExecutor(
+    deny: string[],
+    fn: (executor: ToolExecutor) => Promise<void>,
+  ): Promise<void> {
+    const projectPath = await mkdtemp(join(tmpdir(), 'memora-loop-bypass-'));
+    const dataDir = await mkdtemp(join(tmpdir(), 'memora-loop-bypass-data-'));
+    try {
+      const executor = new ToolExecutor(
+        projectPath,
+        new SecurityGuard(projectPath, dataDir, [], false, 'owner'),
+        new InMemoryStorage(),
+      );
+      executor.setDenyTools(deny);
+      await fn(executor);
+    } finally {
+      await rm(projectPath, { recursive: true, force: true });
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  }
+
+  it('deny 晚注入（loop 构造后）同样生效：经 refreshToolDefinitions 重建快照', async () => {
+    // P3：deny 注入不必「早于 toolDefinitions 快照」——onToolsChanged 接上后晚注入也会重建。
+    await withExecutor([], async (executor) => {
+      const loop = new AgentLoop({
+        provider: mockProvider([]),
+        bootstrapMemories: [],
+        toolExecutor: vi.fn(),
+        toolDefinitions: executor.list,
+      });
+      expect(loop.getMessages()[0]!.content).toContain('ask_user');
+
+      // 装配链路的同一接线：setDenyTools → onToolsChanged → loop.refreshToolDefinitions
+      executor.setOnToolsChanged(() => loop.refreshToolDefinitions(executor.list));
+      executor.setDenyTools(['ask_user']);
+
+      expect(loop.getMessages()[0]!.content).not.toContain('ask_user');
+    });
+  });
+
+  it('deny ask_user 后硬点名：父 turn 不被挂起，回喂 not_exposed', async () => {
+    await withExecutor(['ask_user'], async (executor) => {
+      const onPendingQuestion = vi.fn();
+      const loop = new AgentLoop({
+        provider: mockMultiTurnProvider([
+          [
+            {
+              toolCalls: [
+                {
+                  id: 'ask_denied',
+                  type: 'function',
+                  function: { name: 'ask_user', arguments: JSON.stringify({ question: '确认？' }) },
+                },
+              ],
+            },
+          ],
+          // 若旁路闸失效，第一轮会 paused 而走不到这里；走到这里即证明未挂起
+          [{ content: '收到' }],
+        ]),
+        bootstrapMemories: [],
+        toolExecutor: (name, args, emit, id, signal) =>
+          executor.execute(name, args, undefined, emit, id, signal),
+        toolDefinitions: executor.list,
+        onPendingQuestion,
+      });
+
+      const chunks: AgentChunk[] = [];
+      for await (const c of loop.processUserInput('直接做')) chunks.push(c);
+
+      // 未被挂起、未发提问
+      expect(chunks.some((c) => c.type === 'paused')).toBe(false);
+      expect(onPendingQuestion).not.toHaveBeenCalled();
+      // 硬点名被挡：tool 消息回喂 not_exposed（而不是执行挂起）
+      expect(
+        loop
+          .getMessages()
+          .some(
+            (m) => typeof m.content === 'string' && m.content.includes('[ERR:TOOL:NOT_EXPOSED]'),
+          ),
+      ).toBe(true);
+    });
+  });
+
+  it('deny remember_intel 后硬点名：情报区内容不变（零写入）', async () => {
+    await withExecutor(['remember_intel'], async (executor) => {
+      const loop = new AgentLoop({
+        provider: mockMultiTurnProvider([
+          [
+            {
+              toolCalls: [
+                {
+                  id: 'intel_denied',
+                  type: 'function',
+                  function: {
+                    name: 'remember_intel',
+                    arguments: JSON.stringify({ note: '不该被写入的笔记' }),
+                  },
+                },
+              ],
+            },
+          ],
+          [{ content: '整合完成' }],
+        ]),
+        bootstrapMemories: [],
+        toolExecutor: (name, args, emit, id, signal) =>
+          executor.execute(name, args, undefined, emit, id, signal),
+        toolDefinitions: executor.list,
+      });
+
+      for await (const _c of loop.processUserInput('收集情报')) void 0;
+
+      // 情报区未创建（= 内容不变）：与「写入后必有单条 [情报区 system」同源判据
+      const intelMsgs = loop
+        .getMessages()
+        .filter(
+          (m) =>
+            m.role === 'system' && typeof m.content === 'string' && m.content.startsWith('[情报区'),
+        );
+      expect(intelMsgs).toHaveLength(0);
+      // 且硬点名被挡（回喂 not_exposed，而不是静默吞掉）
+      expect(
+        loop
+          .getMessages()
+          .some(
+            (m) => typeof m.content === 'string' && m.content.includes('[ERR:TOOL:NOT_EXPOSED]'),
+          ),
+      ).toBe(true);
+    });
+  });
+});
+
 describe('AgentLoop · processUserInput 纯文本流式输出', () => {
   it('应该流式 yield LLM 返回的文本块', async () => {
     const loop = new AgentLoop({

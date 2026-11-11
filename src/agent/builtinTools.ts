@@ -164,6 +164,9 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   search_project: 'read-only',
   // run_team_meeting：评估型会议（注入多角色 persona 一次调用），产出可变、代价高 → read-only（永不跳过）
   run_team_meeting: 'read-only',
+  // delegate_task：派生一次独立的子会话（会发起新的 LLM 对话），结果不可预期且代价高
+  // → non-idempotent（禁止跳过），重发必须真的再跑一次
+  delegate_task: 'non-idempotent',
 };
 
 /**
@@ -497,6 +500,55 @@ export const SEARCH_PROJECT_TOOL: ToolDefinition = {
       maxResults: { type: 'string', description: '返回结果数量上限，默认 "20"，最大 "100"' },
     },
     required: [],
+  },
+};
+
+/**
+ * delegate_task 内置工具定义（把独立任务派给空白上下文的子会话，父 turn 内同步递归）
+ *
+ * 形态：子会话是**父 turn 内的同步递归**，不落 Round、不进会话列表；深度固定 1（子会话装配时
+ * 根本不注入本工具端口，见 `ToolExecutor.setDelegateTask`）。
+ *
+ * 结果契约：工具结果第一行由**内核按子会话执行流的终态标志**生成
+ * `[SUBAGENT:completed]` / `[SUBAGENT:interrupted]` / `[SUBAGENT:failed]`，正文随后。
+ * 头部绝不由子模型写——否则模型可以自封「完成」骗过队长。
+ *
+ * 条件工具：只有装配层注入端口时才进 `assembledTools`（父会话默认注入；子会话不注入 ⇒ 结构性不可见）。
+ */
+export const DELEGATE_TASK_TOOL: ToolDefinition = {
+  name: 'delegate_task',
+  // 显式 none：子会话被强制只读，本工具自身不改任何磁盘。
+  // 不能靠「不声明」——未声明按 fail-closed 归 'opaque'，会被拉进执行面确认清单
+  // （`confirmEntry` 派生集），而它没有确认入口，运行到确认点即 fail-closed 抛错。
+  diskWrite: 'none',
+  description:
+    '把一段边界清晰的独立任务派给一个空白上下文的子会话去完成，等它把最终回答交回来。' +
+    '适合「读多写少」的调查/汇总：查代码、读文档、检索资料后归纳。' +
+    '子会话看不到当前对话历史，必须把必要背景完整写进 task；它同步执行，一次只做一件事。' +
+    '可选 rolePack 指定子会话采用的角色包（只取 persona 与规则，不继承父角色包）；' +
+    '可选 capabilities 授予联网能力（只接受 web:search / web:fetch）。' +
+    '子会话只读：不能写盘、执行命令、登记情报/任务，也不能向你提问。' +
+    '工具结果第一行是内核生成的 [SUBAGENT:completed|interrupted|failed] 终态标识，正文是子会话的最终回答。',
+  // 只读闸：子会话自身只读；父会话在 readonly 模式下仍可派活（不改变项目磁盘）
+  readonly: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      task: {
+        type: 'string',
+        description: '交给子会话的完整任务描述（它看不到父对话，必要背景与验收标准要写全）',
+      },
+      rolePack: {
+        type: 'string',
+        description: '可选：子会话采用的角色包名（只取 persona 与规则，不会继承父角色包）',
+      },
+      capabilities: {
+        type: 'array',
+        description: '可选：授予子会话的联网能力，只接受 web:search / web:fetch；其余值会被拒绝',
+        items: { type: 'string', properties: {}, required: [] },
+      },
+    },
+    required: ['task'],
   },
 };
 
@@ -1005,6 +1057,8 @@ export const ALL_BUILTIN_TOOL_DEFS: readonly ToolDefinition[] = [
   WEB_FETCH_TOOL,
   RUN_CODE_TOOL,
   SEARCH_PROJECT_TOOL,
+  // delegate_task：条件工具（装配层注入端口才暴露），定义在此供只读闸/写盘派生索引查询
+  DELEGATE_TASK_TOOL,
 ];
 
 /**

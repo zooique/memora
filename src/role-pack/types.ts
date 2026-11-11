@@ -277,6 +277,15 @@ export interface RolePackAssembly {
   readonly packageRoot?: string;
   /** 合并后的 persona prompt（含规则注入与主动提问指令） */
   readonly personaPrompt: string;
+  /**
+   * persona prompt 的**基础段**（persona 正文 + 规则，**不含**主动提问指令）。
+   *
+   * 为什么要单独带出：子会话（delegate_task）禁用了 ask_user，`userFollowup='ask'` 注入的
+   * 「主动提问规则」对它只会有害（引导调用一个不可见工具）。子装配跳过该段需要一份
+   * 「不带提问指令」的原文，而不是在 personaPrompt 上做字符串手术（正文里出现同名标题即误切）。
+   * 与 personaPrompt 同源构建：追加提问指令前的那一份 promptParts，父子两段不会漂移。
+   */
+  readonly personaBasePrompt: string;
   /** 内嵌技能注册（manifest.skills，对象数组，支持多个） */
   readonly skills: readonly RolePackManifestSkill[];
   /**

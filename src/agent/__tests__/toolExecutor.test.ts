@@ -19,6 +19,8 @@ import {
   SUBAGENT_DENIED_TOOLS,
 } from '@/agent/toolExecutor.js';
 import type { WebSearchExecInfo } from '@/agent/toolExecutor.js';
+// 内置工具定义全量（P2 守卫：deny 清单里的每个名字必须在真实定义中存在）
+import { ALL_BUILTIN_TOOL_DEFS } from '@/agent/builtinTools.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { estimateTokensText } from '@/agent/contextManager.js';
 import {
@@ -122,13 +124,14 @@ describe('工具执行器（6 个工具）', () => {
     it('allToolDefinitions 应含全部内置 + 条件工具（只读闸查询源，不受白名单影响）', () => {
       const defs = executor.allToolDefinitions;
       const names = defs.map((t) => t.name);
-      // 始终内置 23 + 条件 4（web_search / web_fetch / run_code / search_project）
-      expect(names.length).toBe(27);
+      // 始终内置 23 + 条件 5（web_search / web_fetch / run_code / search_project / delegate_task）
+      expect(names.length).toBe(28);
       expect(names).toContain('write_file');
       expect(names).toContain('web_search');
       expect(names).toContain('web_fetch');
       expect(names).toContain('run_code');
       expect(names).toContain('search_project');
+      expect(names).toContain('delegate_task');
       expect(names).toContain('compress_context');
       expect(names).toContain('remember_intel');
       // 只读闸语义完整性：写/执行工具非只读（falsy），读工具只读（含 web_search 4-2 修复）
@@ -138,6 +141,8 @@ describe('工具执行器（6 个工具）', () => {
       expect(defs.find((t) => t.name === 'web_fetch')!.readonly).toBe(true);
       // search_project 只读搜索，readonly 语义覆盖
       expect(defs.find((t) => t.name === 'search_project')!.readonly).toBe(true);
+      // delegate_task 只读：子会话自身只读，父会话 readonly 模式下仍可派活
+      expect(defs.find((t) => t.name === 'delegate_task')!.readonly).toBe(true);
       // 渐进披露的四个读工具（READONLY-BUILTIN-1）：只读标记必须显式 true
       for (const name of ['read_skill', 'read_resource', 'list_resources', 'list_skills']) {
         expect(defs.find((t) => t.name === name)!.readonly, `${name} 缺 readonly:true`).toBe(true);
@@ -405,28 +410,38 @@ describe('工具执行器（6 个工具）', () => {
     it('SUBAGENT_DENIED_TOOLS 常量清单按副作用覆盖：写盘 / 执行 / 交互 / 父状态 + 职责例外', () => {
       // 清单是子会话唯一减法真源：写/执行面、loop 层交互（ask_user）、
       // 以及有副作用但不写盘的常驻工具（改父会话 / 项目状态）都必须在内。
-      expect(SUBAGENT_DENIED_TOOLS).toEqual(
-        expect.arrayContaining([
-          // 写盘
-          'write_file',
-          'delete_file',
-          // 执行
-          'run_command',
-          'kill_command',
-          'run_project_script',
-          'run_skill_script',
-          'run_code',
-          // 交互（readonly: true，只读闸管不到，靠 deny 从可见面移除）
-          'ask_user',
-          // 有副作用但不写盘
-          'remember_intel',
-          'task_table_write',
-          'task_table_update',
-          'register_work',
-          // 职责例外：队长对外的评审端口，唯一不按副作用禁的一项
-          'run_team_meeting',
-        ]),
-      );
+      // 全集比对（排序后）：多一项、少一项、名字改错都会红——arrayContaining 证明不了「该有的都在」。
+      const EXPECTED = [
+        // 写盘
+        'write_file',
+        'delete_file',
+        // 执行
+        'run_command',
+        'kill_command',
+        'run_project_script',
+        'run_skill_script',
+        'run_code',
+        // 交互（readonly: true，只读闸管不到，靠 deny 从可见面移除）
+        'ask_user',
+        // 有副作用但不写盘
+        'remember_intel',
+        'task_table_write',
+        'task_table_update',
+        'register_work',
+        // 职责例外：队长对外的评审端口，唯一不按副作用禁的一项
+        'run_team_meeting',
+      ];
+      expect([...SUBAGENT_DENIED_TOOLS].sort()).toEqual([...EXPECTED].sort());
+
+      // 守卫：每个名字必须在内置工具定义里真实存在——拼错一个名字现在等于静默失效
+      const realNames = new Set(ALL_BUILTIN_TOOL_DEFS.map((t) => t.name));
+      for (const name of SUBAGENT_DENIED_TOOLS) {
+        expect(
+          realNames.has(name),
+          `SUBAGENT_DENIED_TOOLS 中的 "${name}" 不存在于内置工具定义`,
+        ).toBe(true);
+      }
+
       // 清单内不得混入纯读工具（防止有人凭工具名直觉扩大 deny 误伤子会话）
       for (const readOnlyName of ['read_file', 'list_dir', 'search_memories', 'search_project']) {
         expect(SUBAGENT_DENIED_TOOLS).not.toContain(readOnlyName);

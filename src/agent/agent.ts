@@ -47,13 +47,13 @@ import { estimateTokensMessages } from '@/agent/contextManager.js';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
 // 输入增强管线（角色/记忆/技能增强，Agent 只保留编排调用点）
 import type { ContextPreparer } from '@/agent/contextPreparer.js';
+import { chatBusyError, configError } from '@/utils/errors.js';
+// 执行流消费的纯逻辑（正文累积 + 中止/失败分类），与子会话共用同一真源
 import {
-  chatBusyError,
-  configError,
-  isAbortError,
-  isTimeoutAbortSignal,
-  isTimeoutError,
-} from '@/utils/errors.js';
+  classifyExecutionStreamError,
+  createExecutionStreamState,
+  observeExecutionChunk,
+} from '@/agent/executionStream.js';
 import { toError } from '@/utils/toError.js';
 // SessionManager 实例由组装器创建，Agent 仅持有类型引用
 import type { SessionManager, AgentForkResult } from '@/agent/managers/sessionManager.js';
@@ -796,11 +796,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     { content: string; aborted: boolean; paused: boolean; failed: boolean },
     unknown
   > {
-    let content = '';
-    let aborted = false;
     // 软暂停标记：loop 在 step 边界挂起（用户 requestPause / ask_user 主动提问）时置真，
     // 供编排器据此推迟摘要——回合未完成不产摘要，保摘要与外部输入 1:1
     let paused = false;
+    // 正文累积/终态标志的纯逻辑与子会话共用（executionStream），此处只持有同一份累积态
+    const streamState = createExecutionStreamState();
 
     try {
       for await (const chunk of source) {
@@ -818,66 +818,22 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         }
         yield chunk;
         // 累积 assistantContent 用于持久化到 history：只累积正常回答（stage≠self_review）。
-        // 自审查文本是内部思考过程——宿主渲染进 round-block § 自审查输出折叠区（不进正文流），
-        // 也不应持久化到会话历史（重启后不应在对话记录里看到自审查内容）。
-        // 注：loop.messages 里自审查 assistant 仍保留（LLM 下一轮迭代可能需参考），过滤只在持久化出口。
-        if (chunk.type === 'text' && chunk.stage !== 'self_review') {
-          content += chunk.content;
-        } else if (chunk.type === 'narrate' && chunk.withdrawn) {
-          // 回抽：首轮工具步的叙述文本先作为 text 流式累积进正文（上面分支），
-          // 确认工具轮后从**持久化正文**扣除——与宿主正文撤回同源（同一 withdrawn 字段，SSOT）。
-          // 契约：该段为最近追加的正文文本（后缀）；不符（多 turn 复用流/异常序）则忽略并告警，
-          // 宁可正文多一段叙述也不误删真实答案。
-          if (content.endsWith(chunk.withdrawn)) {
-            content = content.slice(0, content.length - chunk.withdrawn.length);
-          } else {
-            logger.warn(
-              { withdrawnLen: chunk.withdrawn.length, contentLen: content.length },
-              'narrate 回抽：持久化正文不含该段（后缀契约不符），已忽略',
-            );
-          }
-        } else if (chunk.type === 'aborted') {
-          aborted = true;
-        }
+        // 规则真源 = executionStream.observeExecutionChunk（与子会话同一份实现）。
+        observeExecutionChunk(streamState, chunk);
       }
     } catch (err) {
-      if (isAbortError(err)) {
-        // signal 已 abort（宿主/插话合并信号）→ 真用户取消：非失败——置 aborted 供 act() 走
-        // 「中断保留已产出文本」分支，半截回答落盘。
-        if (signal?.aborted) {
-          // 锁超时中断（signal.reason=TimeoutError）≠ 用户取消：stopReason 区分，宿主映射超时文案
-          yield {
-            type: 'aborted',
-            reason: isTimeoutAbortSignal(signal)
-              ? 'LLM request timed out (no response)'
-              : 'User cancelled the conversation',
-            stopReason: isTimeoutAbortSignal(signal) ? 'timeout' : 'user',
-          };
-          return { content, aborted: true, paused, failed: false };
-        }
-        // signal 未 abort 却抛 AbortError → provider/网络内部中断（连接被抽断/代理异常）：
-        // 非用户取消，判为「连接中断」——与普通错误同归 error 分支，用结构化 category
-        // 标记连接中断（宿主按 category 映射友好文案），避免谎报为用户取消。
+      // 异常三分类（用户取消 / 连接中断 / 失败）真源 = executionStream.classifyExecutionStreamError
+      const classified = classifyExecutionStreamError(err, signal);
+      if (classified.kind === 'internal-abort') {
         logger.warn({ err }, 'LLM 请求非用户取消原因中断，判为连接中断');
-        const raw = err instanceof Error ? err.message : String(err);
-        yield {
-          type: 'error',
-          // 连接中断分类：语义走 category 字段，不携带裸前缀；message 保留原始细节（调试/报错可追溯）
-          category: 'connection',
-          message: raw,
-        };
-        return { content, aborted, paused, failed: true };
       }
-      // 超时（典型 = SSE 停摆看门狗 reject 的 DOMException TimeoutError）补结构化分类：
-      // 不补 → 宿主 `friendlyByCategory` 无键可映射 → 用户只能读到原始技术文案。
-      // 判据 SSOT = isTimeoutError（与上方 isTimeoutAbortSignal 同族，同一 name 判据、不同载体）。
-      // 注：非 abort 路径故不入 aborted 分支，它属「失败」并由本 catch 收口。
-      yield {
-        type: 'error',
-        ...(isTimeoutError(err) ? { category: 'timeout' as const } : {}),
-        message: err instanceof Error ? err.message : String(err),
+      yield classified.chunk;
+      return {
+        content: streamState.content,
+        aborted: classified.aborted,
+        paused: streamState.paused || paused,
+        failed: classified.failed,
       };
-      return { content, aborted, paused, failed: true };
     } finally {
       // 释放暂停幂等锁覆盖三路——残留会让 requestPause 的幂等检查永久拒绝后续暂停请求
       this._sessionManager?.cancelPendingPause();
@@ -885,7 +841,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.requireLoop.clearPauseRequest();
     }
 
-    return { content, aborted, paused, failed: false };
+    return {
+      content: streamState.content,
+      aborted: streamState.aborted,
+      paused: streamState.paused || paused,
+      failed: false,
+    };
   }
 
   /**

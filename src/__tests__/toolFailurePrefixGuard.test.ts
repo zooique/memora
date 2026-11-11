@@ -261,6 +261,12 @@ const TOOL_RESULT_TAGS: Readonly<Record<string, string>> = {
   后台命令已终止: '后台任务被终止通知（系统事件来源标记，非失败；刻意不贴退出码）',
   后台命令超时: '后台任务超时被终止通知（系统事件来源标记，非失败；结局由 body 承载）',
   后台命令运行中: '后台任务运行中通知（系统事件来源标记，非失败；穷尽表防御键，通知仅在终态发出）',
+
+  // ── 子会话终态族（SUBAGENT-DELEGATE-1）：首标签由**内核按流标志**生成，不是子模型自述 ──
+  // 拼接位 `[SUBAGENT:${status}]` 的成员由 `SubagentTerminalStatus` 真源展开，此处只为三态定性。
+  SUBAGENT_completed: '子会话正常完成（非失败；正文 = 子会话最终回答原文，可当完整产出）',
+  SUBAGENT_interrupted: '子会话被中断（父 turn 中止传导；正文可能不完整，不可当完整产出）',
+  SUBAGENT_failed: '子会话执行失败（异常 / 预期不可达的 paused 收口；正文仅为已累积片段）',
 };
 
 /** 软降级族（语义非失败）—— 精度用例点名用，与登记表语义理由互为交叉验证 */
@@ -299,6 +305,20 @@ function deriveToolErrorCodes(): readonly string[] {
   const block = /export const ToolErrorCode = \{([\s\S]*?)\} as const;/.exec(src);
   if (!block) throw new Error('deriveToolErrorCodes 提取失败：找不到 ToolErrorCode 常量');
   return [...block[1]!.matchAll(/^\s*[A-Z_]+:\s*'([^']+)'/gm)].map((m) => m[1]!);
+}
+
+/**
+ * 从真源读取子会话终态联合类型成员（`assembler.ts` 的 `SubagentTerminalStatus` 声明）
+ *
+ * 锚定**具名类型**而非 `formatSubagentResult(status: …)` 的函数签名：
+ * 签名换行 / 拆参都会让差异匹配失配，具名类型是稳定入口（提取失败即 throw，响亮红）。
+ */
+function deriveSubagentStatusUnion(): readonly string[] {
+  const src = readFileSync(join(SRC_ROOT, 'agent/assembler.ts'), 'utf8');
+  const decl = /export type SubagentTerminalStatus = ((?:'[^']+'\s*\|\s*)*'[^']+');/.exec(src);
+  if (!decl)
+    throw new Error('deriveSubagentStatusUnion 提取失败：找不到 SubagentTerminalStatus 声明');
+  return [...decl[1]!.matchAll(/'([^']+)'/g)].map((m) => m[1]!);
 }
 
 /**
@@ -368,6 +388,7 @@ function deriveBackgroundNoticeTags(): readonly string[] {
 function expandTemplateTags(): ReadonlyMap<string, readonly string[]> {
   const kinds = deriveKindUnion();
   const codes = deriveToolErrorCodes();
+  const statuses = deriveSubagentStatusUnion();
   return new Map<string, readonly string[]>([
     ['${labels.kind}_ERROR', kinds.map((k) => `${k}_ERROR`)],
     ['${labels.kind}_TIMEOUT', kinds.map((k) => `${k}_TIMEOUT`)],
@@ -375,6 +396,8 @@ function expandTemplateTags(): ReadonlyMap<string, readonly string[]> {
     ['ERR:TOOL:${code}', codes.map((c) => `ERR:TOOL:${c}`)],
     // 后台通知查表产出：模板键从扫描器路径提取，展开成员 = 穷尽表值全集
     [deriveBackgroundNoticeTemplate(), deriveBackgroundNoticeTags()],
+    // 子会话终态首标签（assembler.formatSubagentResult）：展开成员 = 终态联合类型成员
+    ['SUBAGENT:${status}', statuses.map((s) => `SUBAGENT_${s}`)],
   ]);
 }
 
@@ -579,6 +602,10 @@ describe('工具结果首标签 · 反向对账守卫（SCRIPT-2 B5-e 补丁）'
     expect([...kinds].sort()).toEqual(['CODE', 'COMMAND', 'SCRIPT']);
     const bgTags = deriveBackgroundNoticeTags();
     expect(bgTags.length, '后台通知表值提取为空——判据输入失配，必须红').toBeGreaterThan(0);
+    // 子会话终态：三态是契约（头部只能来自流标志），缺一即真源变形
+    const statuses = deriveSubagentStatusUnion();
+    expect(statuses.length, '子会话终态联合类型提取为空——判据输入失配，必须红').toBeGreaterThan(0);
+    expect([...statuses].sort()).toEqual(['completed', 'failed', 'interrupted']);
   });
 
   it('扫描面非空（扫描器没坏，否则反向对账恒真通过 = 假绿）', () => {

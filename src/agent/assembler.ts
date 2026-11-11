@@ -15,6 +15,21 @@
 import { join } from 'node:path';
 import { AgentLoop } from '@/agent/loop.js';
 import { ToolExecutor } from '@/agent/toolExecutor.js';
+// 子会话减法真源（deny 轴）与派发请求类型
+import { SUBAGENT_DENIED_TOOLS, type DelegateTaskRequest } from '@/agent/toolExecutor.js';
+// 执行流消费纯逻辑（子会话与父会话同一份正文累积/终态分类）
+import {
+  classifyExecutionStreamError,
+  createExecutionStreamState,
+  observeExecutionChunk,
+} from '@/agent/executionStream.js';
+import type { SecurityGuard } from '@/security/pathGuard.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import type { ISessionStore } from '@/memory/sessionStore.js';
+import type { IWebSearchProvider } from '@/web-search/types.js';
+import type { IFetchProvider } from '@/web-fetch/types.js';
+import type { IProjectSearchProvider } from '@/project-search/types.js';
+import type { ImageReadPort } from '@/agent/types.js';
 import { MessageHistory } from '@/agent/messageHistory.js';
 import type { ProjectContext } from '@/memory/projectManager.js';
 import { SkillManager } from '@/skill/skillManager.js';
@@ -195,6 +210,326 @@ export function buildSystemPromptPrefix(
   // 时间戳与 Turn 起始策略无条件 push，systemPrefixParts 恒非空（len ≥ 2）——
   // 分隔线无条件追加（各段均无条件 push，无需 filter(Boolean) 兜底）。
   return systemPrefixParts.join('\n\n') + '\n\n---\n\n';
+}
+
+// ─── 子会话（delegate_task）装配 ─────────────────────────────
+
+/**
+ * 可在子会话中按 capabilities 授予的联网能力 → 工具名映射
+ *
+ * 唯一允许的两种能力（其余值一律拒绝，不做「尽力而为之」的降级）。
+ * 未来新增能力必须同时在此登记并在 `ToolExecutor` 对应的条件工具上接线。
+ */
+const SUBAGENT_GRANTABLE_CAPABILITIES: ReadonlyMap<string, string> = new Map([
+  ['web:search', 'web_search'],
+  ['web:fetch', 'web_fetch'],
+]);
+
+/** 子会话结果正文截断上限（字符）：防止一次派发把父上下文撑爆（评估文档定案 20,000） */
+const SUBAGENT_RESULT_MAX_CHARS = 20_000;
+
+/** 同一步并发子会话上限（派发端口信号量硬限，超出直接报错而非排队） */
+const SUBAGENT_MAX_CONCURRENT = 2;
+
+/**
+ * 子会话装配参数（父装配期捕获的快照，逐次派发复用）
+ *
+ * 刻意与 `AssembleInput` 分开：子会话只取「只读世界」所需的最小面，
+ * 不携带宿主自定义工具注册表 / preExecutionCheck / onToolExecuted（那些会写父状态）。
+ */
+export interface SubagentRuntimeParams {
+  /** 前台 LLM provider（子会话与父同一模型路由） */
+  provider: LlmProvider;
+  /** 项目根目录（路径闸与工具根） */
+  projectPath: string;
+  /** 路径安全守卫（与父共用只读能力，不新建第二套路径规则） */
+  security: SecurityGuard;
+  /** 记忆索引（只读检索 + accessedAt 元数据更新） */
+  memoryIndex: IMemoryStorage;
+  /** 会话存储（只读能力：search_memories 的排除集与溯源） */
+  sessionStore?: ISessionStore;
+  /** 联网搜索提供者（仅 web:search 能力授予时装配） */
+  webSearchProvider?: IWebSearchProvider;
+  /** 网页抓取提供者（仅 web:fetch 能力授予时装配） */
+  fetchProvider?: IFetchProvider;
+  /** 项目检索提供者（只读，默认注入） */
+  projectSearchProvider?: IProjectSearchProvider;
+  /** 图片按路径摄取端口（只读，透传） */
+  imageReadPort?: ImageReadPort;
+  /** 脚本 node 路径（子会话仍禁用脚本工具，保留仅为构造签名一致） */
+  scriptNodePath?: string;
+  /** 上下文窗口上限（继承父配置口径） */
+  maxContextTokens?: number;
+  /** 输出预算（继承父配置口径） */
+  maxTokens?: number;
+  /** 角色包管理器（子会话按 rolePack 取 persona 与规则） */
+  rolePackManager: RolePackManager;
+  /** 全局技能管理器（子会话唯一可见的技能来源） */
+  skillManager: SkillManager;
+  /** 作品投影装配块（父装配期快照） */
+  workProjectionContext?: string;
+  /** 运行环境事实段（父装配期快照） */
+  environmentContext?: string;
+  /** 项目规则段（父装配期快照；未信任/无条目时为空） */
+  residentRulesContext?: string;
+  /** 时间戳 locale（父装配同源） */
+  locale?: string;
+}
+
+/**
+ * 校验并展开 capabilities（唯一语义校验点）
+ *
+ * @param capabilities 工具入参原值
+ * @returns 授予的工具名列表（供 toolWhitelist）
+ * @throws 出现未登记能力时抛 toolError（回喂模型，不静默忽略）
+ */
+function resolveSubagentCapabilities(capabilities: readonly string[] | undefined): string[] {
+  if (!capabilities || capabilities.length === 0) return [];
+  const granted: string[] = [];
+  for (const capability of capabilities) {
+    const toolName = SUBAGENT_GRANTABLE_CAPABILITIES.get(capability);
+    if (!toolName) {
+      throw toolError(
+        `delegate_task 不支持的 capabilities：「${capability}」`,
+        `只接受 ${[...SUBAGENT_GRANTABLE_CAPABILITIES.keys()].join(' / ')}`,
+        ['移除该能力，或改用支持的能力名'],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
+    }
+    if (!granted.includes(toolName)) granted.push(toolName);
+  }
+  return granted;
+}
+
+/**
+ * 创建子会话的独立工具执行器
+ *
+ * 结构性约束（不是靠 deny 兜底）：
+ *   - **全新实例**，不继承宿主的 customTools / MCP 注册表（否则 MCP 写工具一道都不在 deny 名单里）；
+ *   - `denyTools = SUBAGENT_DENIED_TOOLS`（常量清单，唯一减法真源）；
+ *   - `toolWhitelist` 只放 capabilities 映射出的工具（无能力时为空 = 只剩常驻只读集）；
+ *   - 不注入代码执行 provider、不注入 delegate_task 端口（深度 1）。
+ *
+ * @param params 子会话装配参数
+ * @param request 本次派发请求（task/rolePack/capabilities）
+ */
+export function createSubagentToolExecutor(
+  params: SubagentRuntimeParams,
+  request: DelegateTaskRequest,
+): ToolExecutor {
+  const grantedTools = resolveSubagentCapabilities(request.capabilities);
+  const capabilities = new Set(request.capabilities ?? []);
+
+  const exec = new ToolExecutor(
+    params.projectPath,
+    params.security,
+    params.memoryIndex,
+    // 联网能力按需装配：未授予即不注入 provider ⇒ 条件工具结构上不存在
+    capabilities.has('web:search') ? params.webSearchProvider : undefined,
+    params.sessionStore,
+    capabilities.has('web:fetch') ? params.fetchProvider : undefined,
+    // 代码执行属特权（code:execute）：子会话永不装配
+    undefined,
+    // 项目检索只读，默认可用（等价于编辑器的全局搜索）
+    params.projectSearchProvider,
+    params.scriptNodePath,
+  );
+
+  // 减法轴：写盘/执行/交互/父状态工具一律不可见
+  exec.setDenyTools(SUBAGENT_DENIED_TOOLS);
+  // 加法轴：只把能力档映射出的工具加进白名单（空数组 = 只有常驻只读集）
+  exec.setToolWhitelist(grantedTools);
+  if (params.imageReadPort) exec.setImageReadPort(params.imageReadPort);
+
+  // 技能面：**只留全局技能**（不查角色包内嵌技能，v1 定案）。
+  // 这里改的是装配入口的数据源，不动 read_skill 的解析链。
+  exec.readSkill = async (skillName: string) => {
+    const globalSkill = params.skillManager.get(skillName);
+    return globalSkill ? globalSkill.content : null;
+  };
+  exec.readResource = async (skillName: string, resourcePath: string) =>
+    params.skillManager.readResource(skillName, resourcePath);
+  exec.listResources = async (skillName: string) =>
+    JSON.stringify(
+      params.skillManager.listResources(skillName).map((r) => ({ path: r.path, size: r.size })),
+      null,
+      2,
+    );
+  exec.listSkills = async () => {
+    const lines: string[] = ['【全局通用技能】'];
+    for (const skill of params.skillManager.listAvailable()) {
+      const formatted = SkillManager.formatSkillForPrompt(skill);
+      if (formatted) lines.push(formatted);
+    }
+    return lines.join('\n');
+  };
+
+  return exec;
+}
+
+/**
+ * 子会话终态（**唯一真源**：工具结果首标签 `[SUBAGENT:<status>]` 的成员即此联合类型）
+ *
+ * 单独具名而非内联在参数上：`toolFailurePrefixGuard` 需要从真源展开这个拼接模板，
+ * 锚定具名类型比正则匹配函数签名稳（签名换行 / 拆参都不会让提取失配）。
+ */
+export type SubagentTerminalStatus = 'completed' | 'interrupted' | 'failed';
+
+/**
+ * 按子会话执行流的终态生成工具结果文本
+ *
+ * **第一行必须是内核生成的 `[SUBAGENT:*]` 标识**——它来自流标志（completed/interrupted/failed），
+ * 绝不允许子模型自己在正文里写（否则模型可以自封完成骗过队长）。
+ *
+ * @param status 终态
+ * @param content 子会话累积正文
+ */
+export function formatSubagentResult(status: SubagentTerminalStatus, content: string): string {
+  const header = `[SUBAGENT:${status}]`;
+  const body = content.trim();
+  if (!body) {
+    const note =
+      status === 'completed'
+        ? '（子会话未返回正文）'
+        : status === 'interrupted'
+          ? '（子会话被中止，未产出正文）'
+          : '（子会话执行失败，未产出正文）';
+    return `${header}\n${note}`;
+  }
+  // 截断在头部之后做：头部永远完整，正文按字符上限截断并显式标注
+  const truncated =
+    body.length > SUBAGENT_RESULT_MAX_CHARS
+      ? `${body.slice(0, SUBAGENT_RESULT_MAX_CHARS)}\n…（结果超过 ${SUBAGENT_RESULT_MAX_CHARS} 字符，已截断）`
+      : body;
+  return `${header}\n${truncated}`;
+}
+
+/**
+ * 创建子会话的 AgentLoop（独立 messages / 独立执行器 / 强制只读 / 深度 1）
+ *
+ * 为什么与 `createAgentLoopAndDeps` 同模块：父侧以后新增安全选项（新的端口、新的只读判据、
+ * 新的 deny 轴）时，同文件的子装配必须一起看一遍——放到别的模块就会漏配且无人发现。
+ *
+ * @param params 子会话装配参数
+ * @param request 本次派发请求
+ * @returns 子 loop 与它的执行器（执行器一并返回供测试断言暴露面）
+ */
+export function createSubagentLoop(
+  params: SubagentRuntimeParams,
+  request: DelegateTaskRequest,
+): { loop: AgentLoop; toolExec: ToolExecutor; systemPromptPrefix: string } {
+  // rolePack 传了就**必须存在**：静默退回空白会让队长以为「按角色派活」而实际没有
+  let rolePackPrompt = '';
+  if (request.rolePack) {
+    const packExists = params.rolePackManager
+      .listMeta()
+      .some((meta) => meta.name === request.rolePack);
+    if (!packExists) {
+      throw toolError(
+        `delegate_task 指定的角色包不存在：「${request.rolePack}」`,
+        '角色包名拼写错误或该包未装载',
+        ['检查角色包名，或省略 rolePack 使用空白子会话'],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
+    }
+    const assembly = params.rolePackManager.get(request.rolePack);
+    // 规则 3：角色包声明 toolMode=block 时拒绝（子会话必须能执行只读工具）
+    if (assembly?.strategy?.act?.toolMode === 'block') {
+      throw toolError(
+        `delegate_task 不能使用禁止工具的角色包：「${request.rolePack}」`,
+        '该角色包的策略 toolMode=block，子会话无法执行任何工具',
+        ['换一个允许工具的角色包，或省略 rolePack'],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
+    }
+    // 只取 persona 与规则：跳过内嵌技能清单，并抑制「主动提问规则」（子会话禁用 ask_user）
+    rolePackPrompt = params.rolePackManager.buildSystemPrompt(request.rolePack, {
+      includeSkills: false,
+      suppressFollowupAsk: true,
+    });
+  }
+
+  // 与父同一 SSOT：全局技能清单 / 项目规则 / 作品投影 / 环境 / 时间戳 / Turn 起始策略
+  const systemPromptPrefix = buildSystemPromptPrefix(
+    rolePackPrompt,
+    params.skillManager.buildSkillList(),
+    params.locale,
+    params.workProjectionContext,
+    params.environmentContext,
+    params.residentRulesContext,
+  );
+
+  const toolExec = createSubagentToolExecutor(params, request);
+
+  const loop = new AgentLoop({
+    provider: params.provider,
+    // 独立 messages：不继承父对话历史与父记忆
+    bootstrapMemories: [],
+    systemPromptPrefix,
+    toolExecutor: (name, args, emitOutcome, toolCallId, signal) =>
+      toolExec.execute(name, args, undefined, emitOutcome, toolCallId, signal),
+    // 暴露面快照来自子执行器（不含宿主自定义工具）
+    toolDefinitions: toolExec.list,
+    allTools: () => toolExec.allToolDefinitions,
+    maxContextTokens: params.maxContextTokens,
+    defaultMaxTokens: params.maxTokens,
+    imageReadPort: params.imageReadPort,
+  });
+
+  // 强制只读：工具可见不等于可写；只读闸是第二道独立保证
+  loop.setStrategy({ toolReadonly: 'readonly' });
+
+  return { loop, toolExec, systemPromptPrefix };
+}
+
+/**
+ * 跑一次子会话并返回**已格式化**的工具结果文本
+ *
+ * 终态判据全部来自子会话执行流标志：
+ *   - 正常收尾 → completed；
+ *   - aborted / 父 signal 中止 → interrupted；
+ *   - 抛错、或出现 `paused`（子递归里应不可达）→ failed。
+ *
+ * @param params 子会话装配参数
+ * @param request 本次派发请求
+ * @param signal 父 turn 中止信号（直接透传：父被中止 → 子同步中止）
+ */
+export async function runSubagent(
+  params: SubagentRuntimeParams,
+  request: DelegateTaskRequest,
+  signal?: AbortSignal,
+): Promise<string> {
+  const { loop } = createSubagentLoop(params, request);
+  const state = createExecutionStreamState();
+  let failed = false;
+
+  try {
+    // 父 abort 直接透传（processUserInput 的 signal 参数会一路传到 provider 与工具执行）
+    for await (const chunk of loop.processUserInput(request.task, signal)) {
+      observeExecutionChunk(state, chunk);
+    }
+  } catch (err) {
+    // 与父会话同一分类真源：用户取消 → interrupted；内部中断 / 异常 → failed
+    const classified = classifyExecutionStreamError(err, signal);
+    if (classified.kind === 'internal-abort') {
+      logger.warn({ err }, '子会话 LLM 请求非用户取消原因中断，判为连接中断');
+    }
+    return formatSubagentResult(classified.aborted ? 'interrupted' : 'failed', state.content);
+  }
+
+  // paused 在子递归里应不可达（子会话禁用了 ask_user，也没有父的暂停入口）：
+  // 真出现按 failed 收口并留日志，不静默当成完成
+  if (state.paused) {
+    logger.warn({ task: request.task }, '子会话出现 paused（预期不可达），按 failed 收口');
+    failed = true;
+  }
+  if (state.aborted) {
+    return formatSubagentResult('interrupted', state.content);
+  }
+  return formatSubagentResult(failed ? 'failed' : 'completed', state.content);
 }
 
 /**
@@ -856,8 +1191,10 @@ export async function assembleComponents(
     toolExec.setImageReadPort(input.imageReadPort);
   }
 
-  // 工具 deny 集（工具面第二根轴 · 减法，v1 子会话专用）：装配期一次性注入，必须早于
-  // createAgentLoopAndDeps 里 `toolDefinitions: toolExec.list` 的快照求值。
+  // 工具 deny 集（工具面第二根轴 · 减法，v1 子会话专用）：装配期一次性注入。
+  // 时序**不是硬约束**：`setDenyTools` 会经 onToolsChanged → loop.refreshToolDefinitions 重建
+  // toolDefinitions 快照，晚注入同样生效（有测试覆盖该重建路径）。此处提前注入只是让
+  // createAgentLoopAndDeps 首次读取 `toolExec.list` 时一次到位，少一次无谓重建。
   // 默认空数组不调用 ⇒ 父会话行为零变化（不触发一次多余的暴露面通知）。
   if (input.denyTools && input.denyTools.length > 0) {
     toolExec.setDenyTools(input.denyTools);
@@ -1106,6 +1443,49 @@ export async function assembleComponents(
       residentRulesContext: residentRules.contextBlock(),
     });
   loopRef = loop;
+
+  // ── delegate_task 派发端口（子会话 v1）──
+  // 子装配与本模块 createAgentLoopAndDeps 同源：父侧新增安全选项时同文件可见、不会漏配。
+  // 并发硬限：同一步最多 2 个（信号量；超出直接报错，不排队——排队会把父 step 拖成长尾）。
+  const subagentParams: SubagentRuntimeParams = {
+    provider,
+    projectPath,
+    security: pctx.security,
+    memoryIndex: pctx.index,
+    sessionStore,
+    webSearchProvider: input.webSearchProvider,
+    fetchProvider: input.fetchProvider,
+    projectSearchProvider: input.projectSearchProvider,
+    imageReadPort: input.imageReadPort,
+    scriptNodePath: input.scriptNodePath,
+    maxContextTokens,
+    maxTokens,
+    rolePackManager,
+    skillManager,
+    workProjectionContext,
+    environmentContext,
+    residentRulesContext: residentRules.contextBlock(),
+    locale,
+  };
+  // 在途子会话计数：只用于并发闸，不参与深度判定（深度由「子装配不注入端口」结构性保证）
+  let inFlightSubagents = 0;
+  toolExec.setDelegateTask(async (request, signal) => {
+    if (inFlightSubagents >= SUBAGENT_MAX_CONCURRENT) {
+      throw toolError(
+        'delegate_task 并发超限',
+        `同一步最多 ${SUBAGENT_MAX_CONCURRENT} 个子会话同时执行`,
+        ['等已派发的子会话返回后再派发新的任务'],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
+    }
+    inFlightSubagents++;
+    try {
+      return await runSubagent(subagentParams, request, signal);
+    } finally {
+      inFlightSubagents--;
+    }
+  });
 
   // 装配 loop 运行时回调 + 任务表管理（onPendingQuestion/onPlanItemBoundary/getTaskTable/planManager）
   wireRuntimeCallbacks(loop, toolExec, sessionManager, hooks, history);

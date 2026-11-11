@@ -56,6 +56,7 @@ import {
   blockedOutcome,
   okOutcome,
   failedOutcome,
+  notExposedOutcome,
 } from '@/agent/managers/toolCallHelpers.js';
 import type { ToolOutcome } from '@/agent/managers/toolCallHelpers.js';
 import { LlmCaller } from '@/agent/managers/llmCaller.js';
@@ -1729,19 +1730,45 @@ export class AgentLoop {
   }
 
   /**
+   * 旁路工具是否在本轮暴露面内（`ask_user` / `remember_intel` 自执行入口的唯一闸）。
+   *
+   * 为什么旁路要单独查：这两个工具**不走 `ToolExecutor.execute`**——`ask_user` 在
+   * `willSuspendForAsk` 命中后直接挂起父 turn，`remember_intel` 在派发前由 loop 直接写情报区。
+   * 执行闸（EXPOSURE-GATE-1）覆盖不到它们，deny 若只作用于工具清单，模型硬点名
+   * （幻觉，或被读到的文件内容注入诱导）就能让子会话挂起父 turn / 改父情报区。
+   *
+   * **不另立判定**：`opts.toolDefinitions` 就是 `ToolExecutor.list` 的产物
+   * （已经过 `isToolExposed` 过滤的暴露面快照），本方法只做「在不在快照里」的查询，
+   * 不复制白名单 / deny 规则。快照随 `refreshToolDefinitions` 更新（deny 晚注入同样生效）。
+   *
+   * `undefined`（未提供工具面：纯单测 / 无工具场景）= 没有暴露面信息，按既有行为放行，
+   * 不因闸门缺失而误伤父会话。
+   *
+   * @param name 工具名
+   */
+  private isToolExposedInLoop(name: string): boolean {
+    const exposed = this.opts.toolDefinitions;
+    if (exposed === undefined) return true;
+    return exposed.some((t) => t.name === name);
+  }
+
+  /**
    * 本迭代将因 ask_user 挂起（决策关口，与用户暂停同属挂起型气口）？
-   * 含 ask_user 且未超 askLimit、非工具屏蔽。SSOT：onPlanItemBoundary 的 planItemLog 排除判定
-   * 与 handleToolCalls 挂起检出共用同一谓词（防两处判定漂移）——收口验收：
+   * 含 ask_user 且未超 askLimit、非工具屏蔽、**且该工具在本轮暴露面内**。SSOT：onPlanItemBoundary
+   * 的 planItemLog 排除判定与 handleToolCalls 挂起检出共用同一谓词（防两处判定漂移）——收口验收：
    * ask_user 挂起谓词字面全仓仅此一处。
    * 注：边界处传 llmResult.toolCalls（原始集）、挂起检出传 effectiveToolCalls（toolStepLimit
    * 截断后集）；截断把 ask_user 裁掉的窗口 → 边界多跳一轮不记日志，安全向（少记而非错记）。
    * askLimit 超限的 ask_user 走 executeToolCalls 拒绝（[ASK_LIMIT]），迭代照常执行 → 不判挂起。
+   * deny 命中时（`isToolExposedInLoop` 为假）同样不判挂起：调用继续下沉到执行闸，
+   * 由后者回喂 not_exposed —— 「看不见」之外再补上「挂不起来」。
    */
   private willSuspendForAsk(toolCalls: Message['toolCalls']): boolean {
     return (
       !this.strategy.toolCallsBlocked &&
       toolCalls !== undefined &&
       toolCalls.some((tc) => tc.function.name === ASK_USER_TOOL.name) &&
+      this.isToolExposedInLoop(ASK_USER_TOOL.name) &&
       this.askCountThisTurn < this.strategy.askLimit
     );
   }
@@ -2402,7 +2429,13 @@ export class AgentLoop {
       if (tc.function.name === COMPRESS_CONTEXT_TOOL.name) {
         promise = this.compressContext(tc.function.arguments, signal);
       } else if (tc.function.name === REMEMBER_INTEL_TOOL.name) {
-        promise = Promise.resolve(this.handleRememberIntel(tc.function.arguments));
+        // 旁路闸：deny / 白名单外时不得写情报区（本分支不经 ToolExecutor.execute，
+        // 执行闸拦不到）。未暴露 ⇒ 与该闸同源的 not_exposed blocked 结果，情报区零改动。
+        promise = Promise.resolve(
+          this.isToolExposedInLoop(REMEMBER_INTEL_TOOL.name)
+            ? this.handleRememberIntel(tc.function.arguments)
+            : notExposedOutcome(REMEMBER_INTEL_TOOL.name, '当前会话禁用了该工具'),
+        );
       } else if (useWriteBarrier) {
         // 屏障：排在全部在途写链尾之后（同/异路径写与既有屏障都要等），执行后成为新屏障尾
         const prior = [...writeChains.values(), ...(opaqueWriteTail ? [opaqueWriteTail] : [])];

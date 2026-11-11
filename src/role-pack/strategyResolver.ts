@@ -454,6 +454,10 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
     promptParts.push(`## 规则\n${pack.rules.map((r) => `- ${r}`).join('\n')}`);
   }
 
+  // 基础段（persona 正文 + 规则）：在追加主动提问指令**之前**定格，
+  // 供子会话（delegate_task）跳过提问规则时使用，避免对成品 prompt 做字符串切割。
+  const personaBasePrompt = promptParts.join('\n\n');
+
   // 主动提问指令注入：userFollowup=ask 时，将 askOn/askLimit 转为 LLM 指令。
   // 提问通道 = ask_user 内置工具（对齐 Claude Code AskUserQuestion 机制）：
   // 提问 = 一次普通工具调用，用户答案以 tool result 回填。
@@ -498,6 +502,7 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
     // 包根随装配带出：宿主经 rpm.get() 拿的是 Assembly，缺此字段就会退回按 filePath 反推
     packageRoot: pack.packageRoot,
     personaPrompt,
+    personaBasePrompt,
     skills: pack.skills,
     capabilities,
     strategy,

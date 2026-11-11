@@ -27,6 +27,7 @@ import {
   buildRunCodeTool,
   SEARCH_PROJECT_TOOL,
   DEFAULT_WRITE_FILE_MODE,
+  DELEGATE_TASK_TOOL,
   type ToolDefinition,
 } from '@/agent/builtinTools.js';
 import { sanitizeExternalText, stripControlChars } from '@/agent/textSanitize.js';
@@ -35,6 +36,7 @@ import {
   failedOutcome,
   failedOutcomeWithCode,
   blockedOutcome,
+  notExposedOutcome,
   type ToolOutcome,
 } from '@/agent/managers/toolCallHelpers.js';
 import { BuiltinToolHandlers, SCRIPT_READ_MAX_LEN } from '@/agent/builtinToolHandlers.js';
@@ -111,6 +113,21 @@ export interface WebSearchExecInfo {
   count: number;
   /** 结果标题（净化 + 截断后，最多 WEB_SEARCH_EVIDENCE_MAX_TITLES 条） */
   titles: string[];
+}
+
+/**
+ * delegate_task 的请求载荷（工具入参的已完成类型校验形态）
+ *
+ * 语义校验（capabilities 白名单、rolePack 是否存在）不在此层做——那属装配层职责，
+ * 本接口只保证「字段类型对、task 非空」，语义错误由端口抛 toolError 回喂模型。
+ */
+export interface DelegateTaskRequest {
+  /** 交给子会话的完整任务描述（非空） */
+  task: string;
+  /** 可选：子会话采用的角色包名（只取 persona 与规则，不继承父角色包） */
+  rolePack?: string;
+  /** 可选：授予子会话的联网能力（只接受 web:search / web:fetch） */
+  capabilities?: readonly string[];
 }
 
 // ─── web_fetch / run_code 注入防御常量 ─────────────────
@@ -560,6 +577,12 @@ export const DEFAULT_EXPOSED_TOOLS: ReadonlySet<string> = new Set([
  * 调它等于花一个完整 step 买一次无意义的多人自评，且这条成本路径不受「每步最多 2 个」
  * 信号量约束。注意：新增工具时按副作用核一遍会漏掉这条，必须单独按「职责」再核一遍。
  *
+ * **留 / 禁的界线（必须按内容判，不按 readonly 标记判）**：
+ * **改内容 → 禁；只改权重 / 元数据且不改内容 → 留**。
+ * 已知例外 = `search_memories`：它声明 `readonly: true`，命中即 `UPDATE accessedAt`（SQLite 真写，
+ * 影响排序权重与 GC 依据），但**不改记忆正文**；禁掉等于砍掉子会话读记忆的核心只读能力。
+ * 故留在名单外。下一个按「有写就禁」核这张表的人，先读这条界线再动手。
+ *
  * **代价（有意选择）**：子会话不能贡献情报与任务项，由队长汇总后写入；不是遗漏。
  */
 export const SUBAGENT_DENIED_TOOLS: readonly string[] = [
@@ -625,7 +648,7 @@ export class ToolExecutor {
    *
    * 白名单只能加不能减，deny 是唯一能把「已经可见」的工具拿掉的通道。
    * 判定位置见 `isToolExposed` 第一行（必须早于 `customTools.has(name)`）。
-   * 子会话 v1 经 `AgentOptions.denyTools` 注入 `SUBAGENT_DENIED_TOOLS`。
+   * 子会话 v1 由装配层在 `createSubagentToolExecutor` 里直接 `setDenyTools(SUBAGENT_DENIED_TOOLS)`。
    */
   private denyTools: ReadonlySet<string> = new Set();
 
@@ -795,6 +818,18 @@ export class ToolExecutor {
    * 未注入时 run_team_meeting 返回不可用提示。
    */
   runTeamMeeting?: (group: string, topic: string) => Promise<string>;
+
+  /**
+   * delegate_task 派发端口（由 agent 装配时注入；**子会话装配不注入**）
+   *
+   * 结构性深度 1：子会话的 ToolExecutor 从不设置本端口 ⇒ `delegate_task` 不进
+   * `assembledTools` ⇒ 子会话既看不见也调不动，不靠运行时计数判深度。
+   *
+   * 端口返回的字符串即工具结果（含内核生成的 `[SUBAGENT:*]` 首行与已截断正文）。
+   * 未注入时 delegate_task 不暴露（父会话默认注入，单测/极简装配可不注入）。
+   * 私有：唯一的写入入口是 `setDelegateTask`（装配注入后不再变更，收窄可达成员面）。
+   */
+  private delegateTask?: (request: DelegateTaskRequest, signal?: AbortSignal) => Promise<string>;
 
   constructor(
     projectPath: string,
@@ -1010,6 +1045,22 @@ export class ToolExecutor {
   }
 
   /**
+   * 注入 delegate_task 派发端口（与 `setImageReadPort` 同形态的装配期注入）
+   *
+   * 注入即暴露：`assembledTools` 按端口存在性决定是否加入 `DELEGATE_TASK_TOOL`，
+   * 因此**不注入 = 结构上不可见**（子会话装配刻意不调用本方法，深度 1 不靠计数）。
+   *
+   * @param port 派发实现（请求 + 父 turn 中止信号 → 已格式化的工具结果文本）
+   */
+  setDelegateTask(
+    port: (request: DelegateTaskRequest, signal?: AbortSignal) => Promise<string>,
+  ): void {
+    this.delegateTask = port;
+    // 暴露面变化 ⇒ 通知 loop 刷新 toolDefinitions 快照与 system prompt
+    this.onToolsChanged?.();
+  }
+
+  /**
    * 当前已装配的工具定义（暴露判定的原料 · 与 `list` 同源）
    *
    * 「已装配」= 内置工具 + 已注入 provider 的条件工具 + 宿主注册的自定义工具 + search_project。
@@ -1025,6 +1076,9 @@ export class ToolExecutor {
     let baseTools = BUILTIN_TOOLS;
     if (this.webSearchProvider) baseTools = [...baseTools, WEB_SEARCH_TOOL];
     if (this.fetchProvider) baseTools = [...baseTools, WEB_FETCH_TOOL];
+    // delegate_task：仅当装配层注入派发端口时存在（**子会话不注入 ⇒ 结构性不可见**，
+    // 这是「深度固定 1」的实现方式，不依赖运行时计数）
+    if (this.delegateTask) baseTools = [...baseTools, DELEGATE_TASK_TOOL];
     // run_code 定义按宿主执行器声明生成（命令执行能力方案 §10.4-①(b)）：声明 supportedLanguages →
     // 描述列举「支持：a、b、c」；未声明 → buildRunCodeTool 缺省形态（去承诺文案，不列举）
     if (this.codeExecutionProvider)
@@ -1085,8 +1139,9 @@ export class ToolExecutor {
   /**
    * 全部工具定义（只读闸查询用，单一真理源）
    *
-   * 含全部始终内置工具 + 条件工具（web_search / web_fetch / run_code，仅定义层面，
-   * 不论 provider 是否注入）+ 宿主 `registerTool` 注册的自定义工具。不过白名单过滤——
+   * 含全部始终内置工具 + 条件工具（web_search / web_fetch / run_code / search_project /
+   * delegate_task，仅定义层面，不论 provider / 端口是否注入）+ 宿主 `registerTool` 注册的
+   * 自定义工具。不过白名单过滤——
    * 只读闸（ToolRunner）需要「全部定义」以查 readonly 标记，而非「当前暴露面」（被白名单
    * 过滤的工具 LLM 调不到，但 readonly 语义应覆盖全部写操作，自定义工具同理）。
    * 定义合集真源 = `builtinTools.ALL_BUILTIN_TOOL_DEFS` + `customTools`，此处只转手、不另存清单。
@@ -1185,12 +1240,10 @@ export class ToolExecutor {
     // （`searchDisabled`）。同批内搜索限额置真后，web_search 仍判 exposed，由 search_limit
     // 护栏挡下；若把逐轮屏蔽并入本闸，会出现「模型本轮刚看到、执行时却判未暴露」的假拒。
     if (this.assembledTools.some((t) => t.name === name) && !this.isToolExposed(name)) {
-      const text =
-        `[ERR:TOOL:NOT_EXPOSED] 工具 "${name}" 本轮未暴露：模型可见的工具列表中没有它` +
-        `（角色包能力白名单未开启该能力），已拒绝执行。不要重试该工具，` +
-        `请改用本轮已暴露的工具，或直接说明无法完成。`;
-      emitOutcome?.(blockedOutcome('not_exposed', text));
-      return text;
+      // 文案构造收口到 notExposedOutcome（与 loop 的 ask_user / remember_intel 旁路共用同一前缀）
+      const outcome = notExposedOutcome(name, '角色包能力白名单未开启该能力');
+      emitOutcome?.(outcome);
+      return outcome.text;
     }
 
     // 参数类型校验 + 自动修正
@@ -2186,6 +2239,58 @@ export class ToolExecutor {
           );
         }
         return await this.runTeamMeeting(group, topic);
+      }
+      case 'delegate_task': {
+        // 条件工具：未注入端口 = 不该出现在 list（此处兜底防手工构造调用）
+        if (!this.delegateTask) {
+          const naOutcome = failedOutcomeWithCode(
+            'NOT_AVAILABLE',
+            'delegate_task 不可用：未装配子会话派发端口',
+          );
+          emitOutcome?.(naOutcome);
+          return naOutcome.text;
+        }
+        const task = strArg('task').trim();
+        if (!task) {
+          throw toolError(
+            'delegate_task 缺少 task 参数',
+            '未传要交给子会话的任务描述',
+            ['把任务与必要背景写进 task（子会话看不到父对话）'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        const rolePackRaw = args.rolePack;
+        if (rolePackRaw !== undefined && rolePackRaw !== null && typeof rolePackRaw !== 'string') {
+          throw toolError(
+            'delegate_task 的 rolePack 参数类型错误',
+            `期望字符串，实际 ${typeof rolePackRaw}`,
+            ['省略 rolePack（空白子会话）或传角色包名字符串'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        const capabilitiesRaw = args.capabilities;
+        if (
+          capabilitiesRaw !== undefined &&
+          capabilitiesRaw !== null &&
+          (!Array.isArray(capabilitiesRaw) || capabilitiesRaw.some((c) => typeof c !== 'string'))
+        ) {
+          throw toolError(
+            'delegate_task 的 capabilities 参数类型错误',
+            '期望字符串数组',
+            ['传 ["web:search"] 或 ["web:fetch"]；其余值会被拒绝'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        const rolePack =
+          typeof rolePackRaw === 'string' && rolePackRaw.trim() ? rolePackRaw.trim() : undefined;
+        const capabilities = Array.isArray(capabilitiesRaw)
+          ? (capabilitiesRaw as string[])
+          : undefined;
+        // 结果文本（含 [SUBAGENT:*] 首行）由装配层端口按子会话终态生成，本层不判完成度
+        return await this.delegateTask({ task, rolePack, capabilities }, signal);
       }
       default: {
         // 自定义工具 fallback：查找 customTools Map
