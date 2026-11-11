@@ -63,12 +63,29 @@ describe('toolActionLabel（兜底链：映射 → 展示名）', () => {
     expect(toolActionLabel('ask_user', '{}')).toBe('Ask user');
     expect(toolActionLabel('read_file', '{}')).toBe('Read file');
   });
+  it('read_image 显示图片路径；delegate_task 显示子任务描述；缺参均回退展示名', () => {
+    expect(toolActionLabel('read_image', '{"path":"assets/logo.png"}')).toBe(
+      'Read image: assets/logo.png',
+    );
+    expect(toolActionLabel('read_image', '{}')).toBe('Read image');
+    expect(toolActionLabel('delegate_task', '{"task":"调查登录链路"}')).toBe(
+      'Delegate task: 调查登录链路',
+    );
+    expect(toolActionLabel('delegate_task', '{}')).toBe('Delegate task');
+  });
 });
 
 describe('toolActionType / toolSummaryText', () => {
   it('未收录工具归 other；other 不参与成句只计入总数', () => {
     expect(toolActionType('mystery_tool')).toBe('other');
     expect(toolSummaryText(['mystery_tool', 'mystery_tool2'])).toBe('Tools ×2');
+  });
+  it('read_image 归读取类、delegate_task 归执行类（不再落 other 被摘要跳过）', () => {
+    expect(toolActionType('read_image')).toBe('read');
+    expect(toolActionType('delegate_task')).toBe('run');
+    expect(toolSummaryText(['read_image', 'delegate_task'])).toBe(
+      'Tools ×2 (Read image 1 · Delegate task 1)',
+    );
   });
   it('空数组返回空串（调用方据此省略整段）', () => {
     expect(toolSummaryText([])).toBe('');

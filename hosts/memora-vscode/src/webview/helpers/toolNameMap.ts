@@ -8,7 +8,8 @@
  *   · extension/host/confirmCoordinator（宿主）—— 确认卡描述与决策记录 logLabel。
  *
  * **键集合对齐约束**：本映射的键须与内核内置工具清单（完整面 = ToolExecutor.allToolDefinitions：
- * 22 常驻 + 4 能力门控 web_search/web_fetch/run_code/search_project）保持一致——webview 沙箱
+ * 23 常驻 + 5 能力门控 web_search/web_fetch/run_code/search_project/delegate_task，合计 28）
+ * 保持一致——webview 沙箱
  * 不可 import 内核，故由本文件显式对齐维护；新增内置工具时须同步补键（否则工具卡片回退英文名），
  * 删除工具时须删幽灵键。守卫：helpers/__tests__/toolNameMap.test.ts 双向闭合断言（读内核源码）。
  *

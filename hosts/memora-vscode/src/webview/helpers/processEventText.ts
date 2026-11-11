@@ -73,6 +73,11 @@ const TOOL_ACTION_LABELS: Record<string, ToolActionFn> = {
     const p = argStr(a, 'path');
     return p ? l10n.t('Read file: {0}', p) : undefined;
   },
+  // read_image：与 read_file 同参数面（path），叙述里露出图片路径才有可追溯性
+  read_image: (a) => {
+    const p = argStr(a, 'path');
+    return p ? l10n.t('Read image: {0}', p) : undefined;
+  },
   write_file: (a) => {
     const p = argStr(a, 'path');
     return p ? l10n.t('Write file: {0}', p) : undefined;
@@ -149,6 +154,13 @@ const TOOL_ACTION_LABELS: Record<string, ToolActionFn> = {
     return p ? l10n.t('Register work: {0}', p) : undefined;
   },
   compress_context: () => l10n.t('Compact context'),
+  // delegate_task（条件工具）：唯一可叙述面 = 子任务描述（task）。
+  // 该描述可能很长，但本表**统一不截断**（同 run_command 的命令原文）——
+  // 参数原文的完整形态已由展开体的 args pre 承载，叙述行与之一致，不另造第二套截断口径。
+  delegate_task: (a) => {
+    const task = argStr(a, 'task');
+    return task ? l10n.t('Delegate task: {0}', task) : undefined;
+  },
 };
 
 /** 安全取工具 args 的字符串参数（args 为 JSON 解析后的对象；类型不符 / 空返回 undefined） */
@@ -190,6 +202,7 @@ export type ToolActionType = 'read' | 'search' | 'write' | 'run' | 'other';
 export function toolActionType(name: string): ToolActionType {
   if (
     name === 'read_file' ||
+    name === 'read_image' ||
     name === 'read_skill' ||
     name === 'read_resource' ||
     name === 'trace_summary' ||
@@ -218,7 +231,10 @@ export function toolActionType(name: string): ToolActionType {
     name === 'run_code' ||
     name === 'run_skill_script' ||
     name === 'run_command' ||
-    name === 'kill_command'
+    name === 'kill_command' ||
+    // delegate_task：派发子会话执行独立任务，归「执行」类；现有枚举无更贴合的组名，
+    // 且不新造组名（组名是收尾叙述的机器键面，扩容需两侧同改）
+    name === 'delegate_task'
   )
     return 'run';
   return 'other';
