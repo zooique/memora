@@ -1075,6 +1075,7 @@
   "Archive mode changed: {0} → {1}": "",
   "Role pack switching is locked: {0}; try again in {1} seconds": "",
   "Cannot open reference: {0}": "",
+  "This reference pointed to lines {0}-{1}, but the file now has only {2} lines; opened at the end without selecting anything.": "",
   "File count exceeds {0} and has been truncated (built-in ignored directories already excluded); type keywords to narrow down (multi-select, Esc to cancel)…": "",
   "Select a file to attach as a reference, or pick {0} to inject context (multi-select, Esc to cancel)…": "",
   "A response is being generated; wait before changing the conversation": "",

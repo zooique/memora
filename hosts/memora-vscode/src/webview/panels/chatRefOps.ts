@@ -116,6 +116,31 @@ export function createChatRefOps(deps: ChatRefOpsDeps): ChatRefOps {
           // 协议 1-based 闭区间 → VS Code 0-based：逆转换唯一收口（协议 ChatRef 注释 SSOT，
           // webview 与协议层保持 1-based，两处各转一次必漂移）
           const lastLine = Math.max(0, doc.lineCount - 1);
+          // 越界 = 引用指向的行已不存在（引用后文件被改短）。判据只看 end（归一化保证
+          // start <= end）；「行数没变但内容被换」判不了——指针语义，本条不承诺。
+          // 点击时才判（复用上面已打开的文档，零额外读盘），不在切会话/渲染时探测。
+          if (ref.range.end > doc.lineCount) {
+            // 走既有 notice 提示条（非阻塞、能带数字）：说清引用区间与现有行数。
+            // level 用 error 而非 info——这条的职责就是告知「你点的那段已不存在」，
+            // 短暂显示等于没提示。
+            deps.post({
+              type: 'notice',
+              level: 'error',
+              message: vscode.l10n.t(
+                'This reference pointed to lines {0}-{1}, but the file now has only {2} lines; opened at the end without selecting anything.',
+                String(ref.range.start),
+                String(ref.range.end),
+                String(doc.lineCount),
+              ),
+            });
+            // 落点 = 文件末尾，但**不设 selection**：选中末尾会暗示「这段就是那条引用」，
+            // 是另一种误导；只 reveal 让用户视线有落点，避免「点了没反应」。
+            editor.revealRange(
+              new vscode.Range(lastLine, 0, lastLine, 0),
+              vscode.TextEditorRevealType.InCenter,
+            );
+            return;
+          }
           const startLine = Math.min(Math.max(ref.range.start - 1, 0), lastLine);
           const endLine = Math.min(Math.max(ref.range.end - 1, startLine), lastLine);
           const start = new vscode.Position(startLine, 0);
