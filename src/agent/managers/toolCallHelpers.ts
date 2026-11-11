@@ -7,6 +7,7 @@
 
 import { isRetryableErrorCode, type ToolErrorCodeValue } from '@/utils/errors.js';
 import type { AskQuestion } from '@/agent/types.js';
+import type { ImageRef } from '@/llm/provider.js';
 
 /** 待解析的 ask_user 工具调用形状（只取所需字段，避免耦合完整 ToolCall） */
 type AskCallLike = readonly { id: string; function: { arguments: string } }[];
@@ -211,6 +212,14 @@ export interface ToolOutcome {
    * `ABORTED` 故意不入错误码体系（不触发 Reflection，见 toolRunner 注释）。
    */
   readonly errorCode?: ToolErrorCodeValue;
+  /**
+   * 图片附件（可选）：仅 `read_image` 等「工具产出图片」的生产者使用。
+   *
+   * 用途 = loop 出站视图合成（`_prepareContext` 尾部挂一条 synthetic user 消息），
+   * **绝不写进 tool 消息**（OpenAI 兼容协议下 tool content 只能是文本）。
+   * 消费者只有 loop；不进持久化、不进 UI 消息。
+   */
+  readonly attachments?: readonly ImageRef[];
 }
 
 /**
@@ -236,9 +245,11 @@ export function failedOutcomeWithCode(code: ToolErrorCodeValue, detail: string):
   return { status: 'failed', text: `[ERR:TOOL:${code}] ${detail}`, errorCode: code };
 }
 
-/** 构造 ok outcome */
-export function okOutcome(text: string): ToolOutcome {
-  return { status: 'ok', text };
+/** 构造 ok outcome（`attachments` 仅图片生产者传，见 `ToolOutcome.attachments`） */
+export function okOutcome(text: string, attachments?: readonly ImageRef[]): ToolOutcome {
+  return attachments && attachments.length > 0
+    ? { status: 'ok', text, attachments }
+    : { status: 'ok', text };
 }
 
 /**

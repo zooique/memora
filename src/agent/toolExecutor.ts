@@ -38,6 +38,7 @@ import {
   type ToolOutcome,
 } from '@/agent/managers/toolCallHelpers.js';
 import { BuiltinToolHandlers, SCRIPT_READ_MAX_LEN } from '@/agent/builtinToolHandlers.js';
+import type { ImageReadPort } from '@/agent/types.js';
 import type { BackgroundTaskRegistry } from '@/agent/backgroundTasks.js';
 import type { BackgroundTaskScheduler } from '@/utils/backgroundTask.js';
 import type { AgentEventMap } from '@/utils/eventEmitter.js';
@@ -502,6 +503,9 @@ function resolvePlanItemId(planItemId: string, plan: PlanItemIdPlanRef[]): PlanI
 export const DEFAULT_EXPOSED_TOOLS: ReadonlySet<string> = new Set([
   // 项目内读写（判据 A；写删的危险度由 confirmWrites/guest 确认层管）
   'read_file',
+  // 按路径读图（与 read_file 平权）：能力位（当前 provider 是否支持视觉）不在本集裁决，
+  // 由 `resolveActiveTools` 每个 step 现算裁剪——本集只回答「角色包白名单是否豁免」
+  'read_image',
   'write_file',
   'delete_file',
   'list_dir',
@@ -924,6 +928,16 @@ export class ToolExecutor {
   }
 
   /**
+   * 注入图片摄取端口（`read_image` 的宿主实现）。
+   *
+   * 本类不做能力裁决：可用性（端口存在 + **路由后** provider 支持视觉）由 loop 的
+   * `resolveActiveTools` 逐 step 现算。`DEFAULT_EXPOSED_TOOLS` 只回答角色包白名单是否豁免。
+   */
+  setImageReadPort(port: ImageReadPort): void {
+    this.builtinHandlers.setImageReadPort(port);
+  }
+
+  /**
    * 当前已装配的工具定义（暴露判定的原料 · 与 `list` 同源）
    *
    * 「已装配」= 内置工具 + 已注入 provider 的条件工具 + 宿主注册的自定义工具 + search_project。
@@ -1132,6 +1146,13 @@ export class ToolExecutor {
           strArg('offset') || undefined,
           strArg('limit') || undefined,
         );
+      case 'read_image': {
+        // 图片不进 tool 消息（协议下 tool content 只能文本）：经结构化 outcome 的 attachments
+        // 交给 loop，在出站视图尾部合成 user 消息；本分支只返回文字说明
+        const { text, ref } = await this.builtinHandlers.readImage(strArg('path'));
+        emitOutcome?.(okOutcome(text, [ref]));
+        return text;
+      }
       case 'write_file':
         return this.builtinHandlers.writeFile(
           strArg('path'),

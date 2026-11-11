@@ -192,6 +192,10 @@ const GRAMMAR_BLIND_TAGS: Readonly<Record<string, readonly string[]>> = {
     'Context window management',
     'Recent conversation',
     'compress_context',
+    // 2026-11-11 新增：出站视图合成消息的**给模型看的标注**（read_image 读到的图挂在其后）。
+    // 语义 = 上下文注入族（不是工具结果）：该串是合成 user 消息的 content 首行，
+    // 只为让模型区分「工具读到的图」与「用户新上传的图」，不进任何 tool_result 通道。
+    'read_image 工具读取的图片',
     '任务进度:',
     '情报区',
     '情报区 · 仅供你私有查看并作为后续作答的参考',

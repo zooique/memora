@@ -72,6 +72,14 @@ export interface Message {
    * 白名单必须显式拷此字段，否则重启 / 切会话后图静默消失（方案 §7 P0-12）。
    */
   attachments?: readonly ImageRef[];
+  /**
+   * 出站视图合成标记：**只允许写 `true`**（不写 `false`，避免三态歧义）。
+   *
+   * 该消息由 loop 只为**出站视图**临时合成（`_prepareContext` 返回值），绝不写入
+   * `this.messages`、不进存储、不参与对话计数与压缩锚点。语义与消费者
+   * （`isSyntheticMessage` / `determineTaskType`）定义在 agent 层，LLM 层只承载标记。
+   */
+  synthetic?: true;
 }
 
 export interface ChatOptions {

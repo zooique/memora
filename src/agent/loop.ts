@@ -27,6 +27,7 @@ import type {
   PreExecutionResult,
   TextChunkStage,
   AskQuestion,
+  ImageReadPort,
 } from '@/agent/types.js';
 import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
 import type { ContextBudget, ContextOccupancy } from '@/agent/budget.js';
@@ -133,6 +134,11 @@ export interface AgentLoopOptions {
   needsPlanningOverride?: (text: string) => boolean;
   /** 工具定义列表（内置 + 自定义），用于 system prompt 追加工具描述 */
   toolDefinitions?: ToolDefinition[];
+  /**
+   * 图片按路径摄取端口（宿主实现，可选）：`read_image` 的**执行面**依赖它。
+   * 暴露面判定 = 本端口存在 且 路由后 provider 支持视觉（`resolveActiveTools` 逐 step 现算）。
+   */
+  imageReadPort?: ImageReadPort;
   /** 全部工具定义**提供者**（内置 + 自定义），供只读模式（toolReadonly）查询 readonly 标记；
    *  与 `toolDefinitions`（暴露面，受白名单过滤）刻意分离——闸查全量，不查可见面。
    *  🔴 惰性取数（非数组快照）：registerTool 可在 loop 构造后注册自定义工具，
@@ -383,6 +389,23 @@ export class AgentLoop {
    *  闭环内有效（resetTurnState 清），与 toolResultCache 同生命周期。
    *  替身回显分支据此在「原文已压缩」时回显摘要，而非放行重读（永动机）或空拦（死锁）。 */
   private readonly fileExposure = new FileExposureLedger();
+  /**
+   * 本轮待挂到出站视图的图片（`read_image` 工具产出，按 sha256 去重）。
+   *
+   * 只在 `_prepareContext` 的**返回值副本**尾部合成 user 消息，绝不写进 `this.messages`
+   * （契约 §2.4：否则移动压缩锚点、虚增对话计数、污染落盘）。
+   * 生命周期 = turn（`resetTurnState` 清零）；软暂停续跑保留已读图是后续独立一笔。
+   */
+  private pendingImageReads: ImageRef[] = [];
+  /**
+   * system prompt 里工具清单对应的**暴露面签名**（工具名有序串；工具通道关闭时为空串）。
+   *
+   * 为什么需要：提示词是装配期构建、按事件重建的（构造 / refreshToolDefinitions /
+   * 搜索硬上限 / 策略与角色切换），而暴露面按 step 现算（视觉能力位随 provider 热切换变）。
+   * 签名一致 ⇒ 提示词仍准确，跳过重建；不一致 ⇒ 重建一次。避免每 step 重写 system 消息
+   * （prompt caching 与 token 计费面），同时杜绝「提示词说能用、实际下发被裁掉」的分叉。
+   */
+  private activeToolsKey = '';
   /** 运行时护栏注册表（SSOT）：判定序 / 文案 / 阈值单一真理源在 guardRail.ts；
    *  本字段只是 loop 的装载点（createDefaultGuards 出厂即覆盖 5 类前置拦截型护栏）。
    *  write_loop/read_failed 的计数状态内聚进其 guard 实例闭包，loop 仅负责
@@ -679,9 +702,25 @@ export class AgentLoop {
       minRecentRounds: opts.minRecentRounds,
     });
 
+    // LLM 调用族执行器：**必须早于 system prompt 初始化**——`resolveActiveTools`
+    // 要按「路由后 provider」的视觉位裁剪 read_image（禁读 opts.provider 快照）。
+    this.llmCaller = new LlmCaller({
+      metrics: this.metrics,
+      getStrategy: () => this.strategy,
+      getProvider: () => this.opts.provider,
+      getProviderRouter: () => this.opts.providerRouter,
+      getCachedProvider: (taskType) => this.providerRouteCache.get(taskType),
+      setCachedProvider: (taskType, provider) => this.providerRouteCache.set(taskType, provider),
+      contextManager: this.contextManager,
+      tracer: this.tracer,
+      hasToolExecutedThisTurn: () => this.toolExecutedThisTurn,
+    });
+
     // 初始化 system prompt（基于永驻记忆，加前缀）
     const prefix = opts.systemPromptPrefix ?? '';
     this.appendSystemMessage(prefix + this.buildSystemPrompt(opts.bootstrapMemories));
+    // 记录初始暴露面签名（提示词刚按同一真源构建）：首次 prepare 不会多余重建一次
+    this.activeToolsKey = this.activeToolsKeyOf();
     // 角色包底盘占用（装配时即确定，早于 prepare）：取 opts 透传的装配真值
     if (opts.rolePackBaseTokens !== undefined) {
       this.rolePackBaseTokens = opts.rolePackBaseTokens;
@@ -699,19 +738,6 @@ export class AgentLoop {
       onToolExecuted: opts.onToolExecuted,
       getStrategy: () => this.strategy,
       tracer: this.tracer,
-    });
-
-    // LLM 调用族执行器（构造期最后初始化，确保 contextManager / tracer 已就绪）
-    this.llmCaller = new LlmCaller({
-      metrics: this.metrics,
-      getStrategy: () => this.strategy,
-      getProvider: () => this.opts.provider,
-      getProviderRouter: () => this.opts.providerRouter,
-      getCachedProvider: (taskType) => this.providerRouteCache.get(taskType),
-      setCachedProvider: (taskType, provider) => this.providerRouteCache.set(taskType, provider),
-      contextManager: this.contextManager,
-      tracer: this.tracer,
-      hasToolExecutedThisTurn: () => this.toolExecutedThisTurn,
     });
   }
 
@@ -1142,6 +1168,11 @@ export class AgentLoop {
     this.toolResultCache.clear();
     // 文件覆盖度台账同步清空（与防重缓存同生命周期）
     this.fileExposure.clear();
+    // 待挂出站视图的读图结果随轮清空：续跑入口同样清（本笔按定案「不保留已读图」；
+    // 软暂停保留为后续独立一笔，不得在此顺手改语义）。
+    // ⚠️ 本行是 **turn 级清空**：后续做「软暂停续跑保留已读图」时必须从这里挪到
+    //    continueAfterPause 的独立保留位，**不是顺手删**——删掉会让上一轮的图挂进下一轮出站视图。
+    this.pendingImageReads = [];
     // 失败硬闸 + 写侧连写止损计数随轮清空（guard 内部闭包状态由 reset('perTurn') 归零；
     // 跨闭环复用时若残留，会误拒本轮合法的新失败重试 / 误判新写入路径）
     this.guardier.reset('perTurn');
@@ -1573,6 +1604,8 @@ export class AgentLoop {
   private async _prepareContext(
     effectiveSignal: AbortSignal | undefined,
   ): Promise<{ chatOpts: ChatOptions; safeMessages: readonly Message[] }> {
+    // 出站前先对齐提示词工具清单与逐 step 裁剪结果（视觉位热切换 / 搜索硬上限都会改变暴露面）
+    this.syncToolListInSystemPrompt();
     // 调用 LLM（带重试 + 截断保护）
     const chatOpts = this.buildChatOptions();
 
@@ -1678,7 +1711,21 @@ export class AgentLoop {
       }
     }
 
-    return { chatOpts, safeMessages };
+    // 出站视图尾部合成读图消息（契约 §2.4）：tool 角色在协议下只能承载文本，
+    // 故图片以一条**仅有出站副本**的 user 消息送入。返回新数组，this.messages 零改动
+    // （否则移动压缩锚点、虚增对话计数、污染落盘）。
+    if (this.pendingImageReads.length === 0) {
+      return { chatOpts, safeMessages };
+    }
+    const syntheticImageMessage: Message = {
+      role: 'user',
+      content:
+        '[read_image 工具读取的图片]\n以下图片来自工具读取，仅供你查看，不是用户的新输入；' +
+        '请结合此前的工具结果与用户问题作答。',
+      attachments: [...this.pendingImageReads],
+      synthetic: true,
+    };
+    return { chatOpts, safeMessages: [...safeMessages, syntheticImageMessage] };
   }
 
   /**
@@ -2960,8 +3007,45 @@ export class AgentLoop {
    */
   private resolveActiveTools(): readonly ToolDefinition[] {
     const all = this.opts.toolDefinitions ?? [];
-    // 搜索硬上限命中后：从工具集剔除 web_search（确定性停搜，与 system 提示双闸）
-    return this.searchDisabled ? all.filter((t) => t.name !== 'web_search') : all;
+    // 读图能力位：端口已注入 且 **路由后** provider 声明视觉（与 callWithRetry 入口门禁同源）。
+    // 必须每 step 现算：toolDefinitions 是装配期快照，setProvider 热切换后按快照裁剪会立即过期。
+    const readImageEnabled =
+      this.opts.imageReadPort !== undefined &&
+      this.llmCaller.resolveProvider(this.messages).supportsVision === true;
+    return all.filter((t) => {
+      // 搜索硬上限命中后：从工具集剔除 web_search（确定性停搜，与 system 提示双闸）
+      if (t.name === 'web_search') return !this.searchDisabled;
+      // 视觉能力不足 / 摄取端口未注入：剔除 read_image（不摆一个必失败的工具）
+      if (t.name === 'read_image') return readImageEnabled;
+      return true;
+    });
+  }
+
+  /**
+   * 当前暴露面的签名（工具通道关闭时为空串——此时提示词不含工具段，与下发清单同为空）。
+   *
+   * 只取工具名：描述 / 参数的变更走 `refreshToolDefinitions` 显式重建（那里不做签名比对），
+   * 而按 step 现算会变化的只有「名字集合」（搜索硬上限、视觉能力位）。
+   */
+  private activeToolsKeyOf(): string {
+    if (!this.toolCallingEnabled()) return '';
+    return this.resolveActiveTools()
+      .map((t) => t.name)
+      .join('\n');
+  }
+
+  /**
+   * 出站前对齐 system prompt 的工具清单与「本轮实际下发清单」（唯一真源 = resolveActiveTools）。
+   *
+   * 历史包袱：提示词是装配期构建一次 + 若干显式事件重建（构造 / refreshToolDefinitions /
+   * 搜索硬上限 / 策略与角色切换），但 `read_image` 的可用性按 **step** 现算。
+   * 若不同步，就复现「提示词告诉模型能用 read_image、实际下发被裁掉」——与搜索硬上限那条
+   * 旧伤同族（当时用「首次置位即 rebuild」打补丁，只覆盖了那一个开关）。
+   * 本方法把「按需重建」收口为单点：签名变了才重建，避免每 step 重写 system 消息。
+   */
+  private syncToolListInSystemPrompt(): void {
+    if (this.activeToolsKeyOf() === this.activeToolsKey) return;
+    this.rebuildSystemMessage();
   }
 
   /**
@@ -3123,6 +3207,8 @@ export class AgentLoop {
         role: 'system',
         content: prefix + affect + this.buildSystemPrompt(this.opts.bootstrapMemories),
       };
+      // 重建完成后同步签名：此后 syncToolListInSystemPrompt 只在暴露面**再次变化**时重建
+      this.activeToolsKey = this.activeToolsKeyOf();
     }
   }
 
@@ -3750,6 +3836,14 @@ export class AgentLoop {
       // ERR 前缀仅兜底 errorCode 缺失的旧形态文本（该正则不锚定行首，包裹内仍可识别）
       const wrapped = wrapToolResult(tc.function.name, outcome.text);
       this.appendToolMessage(wrapped, tc.id);
+
+      // 图片附件：只累积到「出站视图待挂队列」（按 sha256 去重），**绝不写进 tool 消息**
+      // （协议下 tool content 只能文本）。挂载时机 = 下一次 _prepareContext 的返回值副本
+      for (const ref of outcome.attachments ?? []) {
+        if (!this.pendingImageReads.some((r) => r.sha256 === ref.sha256)) {
+          this.pendingImageReads.push(ref);
+        }
+      }
 
       // 计数读 status（禁另立文本判据——判据面与渲染面分离是 SCRIPT-2 的核心契约）
       if (outcome.status === 'blocked') {

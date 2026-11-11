@@ -19,6 +19,7 @@
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { ProviderRouter, TaskType, LlmChunk } from '@/llm/types.js';
 import type { AgentChunk, TextChunkStage } from '@/agent/types.js';
+import { isSyntheticMessage } from '@/agent/types.js';
 import type { ITracer } from '@/agent/tracer.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
@@ -136,7 +137,10 @@ export function determineTaskType(messages: readonly Message[]): TaskType {
     i >= 0 && recentUserContents.length < LOOP_CONSTANTS.TASK_TYPE_WINDOW;
     i--
   ) {
-    if (messages[i]?.role === 'user') {
+    // 合成消息（如 read_image 的出站附图消息）不是用户意图，不参与路由判据：
+    // 一条超长的合成消息会把 simple 拉成 reasoning（且没有测试会红）。判据与合成面共用
+    // `isSyntheticMessage`，禁各写一份。
+    if (messages[i]?.role === 'user' && !isSyntheticMessage(messages[i]!)) {
       recentUserContents.push(messages[i]!.content ?? '');
     }
   }

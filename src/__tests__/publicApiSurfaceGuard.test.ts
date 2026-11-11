@@ -285,6 +285,8 @@ const PUBLIC_SURFACE_SNAPSHOT: readonly string[] = [
   'IGNORED_DIR_NAMES',
   'ILogger',
   'ImageRef',
+  'ImageReadPort',
+  'ImageReadResult',
   'InterjectOutcome',
   'ImageResolver',
   'imageTokens',

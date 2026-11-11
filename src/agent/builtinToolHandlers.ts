@@ -43,6 +43,8 @@ import type { WriteExtensions } from '@/agent/toolExecutor.js';
 import { sanitizeExternalText, stripControlChars } from '@/agent/toolExecutor.js';
 import type { BackgroundTaskScheduler } from '@/utils/backgroundTask.js';
 import { touchScores } from '@/memory/keywordsTouch.js';
+import type { ImageRef } from '@/llm/provider.js';
+import type { ImageReadPort } from '@/agent/types.js';
 import type { AgentEventMap } from '@/utils/eventEmitter.js';
 import type { AgentSearchHit, MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
@@ -194,6 +196,21 @@ export class BuiltinToolHandlers {
   }
 
   /**
+   * 图片按路径摄取端口（装配期注入；未注入 = `read_image` 不暴露，方法内兜底拒绝）。
+   *
+   * 与 `memoryInspector` 同型：ToolExecutor 先于宿主端口持有者构造，故用「构造后注入」。
+   */
+  private imageReadPort: ImageReadPort | null = null;
+
+  /**
+   * 注入图片摄取端口（宿主实现：读盘 → 校验 → 字节入缓存 → 返回 ref）。
+   * 视觉位的执行面拒绝在宿主端口内部完成，内核不重复判据。
+   */
+  setImageReadPort(port: ImageReadPort): void {
+    this.imageReadPort = port;
+  }
+
+  /**
    * 注入 memoryRecalled 事件发射回调（宿主消费，§2.4「保留改语义」定案）。
    * 搜索工具命中记忆时触发，文案语义 =「LLM 查询记忆命中 N 条」。
    * **唯一触发位**：全库仅本类 emit memoryRecalled（无其他发射点）。
@@ -299,6 +316,82 @@ export class BuiltinToolHandlers {
   }
 
   // ─── 内置工具实现 ──────────────────────────────────────
+
+  /**
+   * 读取图片（`read_image`）：路径守卫与 `read_file` 同源（黑名单优先、硬拒、先拒后读盘）。
+   *
+   * 字节**不经过本方法**：宿主端口负责读盘、校验（5 MiB / 4 格式）与字节入缓存，
+   * 返回 `ImageRef`；本方法只产出「工具结果文本 + ref」，图由 loop 在出站视图尾部合成
+   * user 消息送模型（tool 角色在 OpenAI 兼容协议下只能承载文本）。
+   *
+   * @param relativePath 相对项目根的路径（也接受绝对路径；白名单判定由 guardPathOrThrow）
+   * @returns 工具结果文本 + 图片引用（供 `ToolOutcome.attachments` 结构化通道）
+   */
+  async readImage(relativePath: string): Promise<{ text: string; ref: ImageRef }> {
+    if (!relativePath) {
+      throw toolError(
+        'read_image 工具调用缺少 path 参数',
+        'LLM 未传 path',
+        ['检查工具描述是否明确了 read_image 的用法', '检查 LLM 输出'],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
+    }
+
+    // 路径守卫：与 read_file 同一套（先拒后读盘，绝不在校验前 stat/read）
+    const absolutePath = this.resolveSafePath(relativePath);
+    this.guardPathOrThrow(absolutePath, 'read_image');
+
+    // 读前预检：目标是目录时直接给出改用 list_dir 的指引（与 read_file 同款文案策略）
+    await this.assertFileNotDir(
+      absolutePath,
+      relativePath,
+      'read_image',
+      '改用 list_dir 列出该目录下的内容',
+    );
+
+    const port = this.imageReadPort;
+    if (!port) {
+      throw toolError(
+        'read_image 不可用',
+        '当前会话未注入图片摄取端口',
+        ['不要调用 read_image；需要文本内容时改用 read_file'],
+        undefined,
+        ToolErrorCode.NOT_AVAILABLE,
+      );
+    }
+
+    let result: Awaited<ReturnType<ImageReadPort>>;
+    try {
+      result = await port(absolutePath);
+    } catch (err) {
+      const e = toError(err);
+      throw toolError(
+        '读取图片失败',
+        e.message,
+        ['确认文件存在且可读', '确认文件是受支持的图片格式（png/jpeg/webp/gif）'],
+        e,
+        ToolErrorCode.UNKNOWN,
+      );
+    }
+    if (!result.ok) {
+      // 执行面第二层拒绝：宿主读同一份 provider 配置判定视觉位（防模型幻觉调用）
+      throw toolError(
+        'read_image 不可用',
+        result.text,
+        ['当前模型未声明支持视觉时不要调用本工具'],
+        undefined,
+        ToolErrorCode.NOT_AVAILABLE,
+      );
+    }
+
+    const { ref } = result;
+    const kb = Math.max(1, Math.round(ref.bytes / 1024));
+    return {
+      text: `已读取图片 ${ref.name}（${ref.mime}，${ref.width}x${ref.height}，${kb} KB），图像已附在本轮消息末尾供查看。`,
+      ref,
+    };
+  }
 
   /**
    * 读取文件（带路径白名单校验；支持按行分段）

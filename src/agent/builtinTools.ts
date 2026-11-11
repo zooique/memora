@@ -604,6 +604,24 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: 'read_image',
+    diskWrite: 'none',
+    description:
+      '读取项目内的图片文件并查看其内容（png / jpeg / webp / gif，单张 ≤ 5 MiB）。' +
+      '路径必须相对项目根目录；路径限制与 read_file 相同（黑名单优先、越界直接拒绝）。' +
+      '图片会附在本轮消息末尾供你查看，工具结果本身只有文字说明。' +
+      '同一张图重复读取不会重复附图（按 sha256 去重）。' +
+      '不要用它读文本文件（文本用 read_file）；仅在当前模型支持视觉时可用。',
+    readonly: true,
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: '相对项目根目录的图片路径' },
+      },
+      required: ['path'],
+    },
+  },
+  {
     name: 'write_file',
     description:
       '写入或创建文件。owner 模式默认自动批准；guest 模式会要求用户确认。写入路径受白名单限制。' +

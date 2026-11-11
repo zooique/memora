@@ -429,7 +429,7 @@ export interface AskQuestion {
 
 // ─── Agent 门面类型 ─────────────────────────────────────
 
-import type { LlmProvider } from '@/llm/provider.js';
+import type { LlmProvider, ImageRef } from '@/llm/provider.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { IRoundStore } from '@/memory/roundStore.js';
@@ -545,6 +545,36 @@ export interface IEnvironmentProvider {
   getEnvironment(): HostEnvironmentInfo | null;
 }
 
+/**
+ * 图片按路径摄取端口（内核只定类型，实现由宿主注入，内核零外部 IO）。
+ *
+ * 楼层归属 agent（而非 llm）：`ImageResolver` 是模型接口抽象（sha256 → 可取用 URL），
+ * 本端口含「从磁盘读图」的宿主语义，LLM 层不得依赖文件语义。`ImageRef` 由本文件
+ * 单向 import `provider.ts`（agent → provider，不反向）。
+ *
+ * 与 `ImageResolver` 的分工：resolver 读缓存，本端口按路径生产 ref
+ * （路径 → 校验 → 字节入缓存 → ref）。内核在调用前已完成路径白名单/黑名单判定
+ * （`resolveSafePath` + `guardPathOrThrow`），宿主只做摄取。
+ *
+ * 宿主实现必须自己拒绝「当前 provider 不支持视觉」的调用（执行面第二层）：工具暴露面
+ * 已被 `resolveActiveTools` 按同一视觉位裁掉，本层只防模型幻觉调用把 turn 打崩。
+ */
+export type ImageReadResult = { ok: true; ref: ImageRef } | { ok: false; text: string };
+
+/**
+ * @param absolutePath 已通过内核路径守卫的绝对路径（宿主不再做白名单裁决）
+ */
+export type ImageReadPort = (absolutePath: string) => Promise<ImageReadResult>;
+
+/**
+ * 是否为 loop 合成的出站消息（路由面与合成面共用同一份谓词，禁两边各写）。
+ *
+ * 判据只看 `synthetic === true`（类型上只允许写 `true`，不写 `false`）；不看角色。
+ */
+export function isSyntheticMessage(m: { readonly synthetic?: true }): boolean {
+  return m.synthetic === true;
+}
+
 /** Agent 构造选项 */
 export interface AgentOptions {
   /** 项目路径（必须） */
@@ -640,6 +670,12 @@ export interface AgentOptions {
   codeExecutionProvider?: ICodeExecutionProvider;
   /** 项目搜索提供者（可选，不配则不启用 search_project；等价 IDE 全局搜索，由宿主实现） */
   projectSearchProvider?: IProjectSearchProvider;
+  /**
+   * 图片按路径摄取端口（可选，不配则 `read_image` 不暴露）：内核负责路径白名单/黑名单判定，
+   * 宿主负责「读盘 → 校验 → 字节入缓存 → 返回 ref」。执行面第二层拒绝（当前 provider 不支持
+   * 视觉）由宿主实现自己完成——暴露面已按同一视觉位裁掉，本层只防模型幻觉调用。
+   */
+  imageReadPort?: ImageReadPort;
   /**
    * 宿主环境提供者（可选，不配则 system prompt 不注入环境段）：宿主上报运行环境事实
    * （OS / shell / 可用运行时），内核经 buildEnvironmentContextBlock 注入 system prompt。

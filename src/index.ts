@@ -93,6 +93,9 @@ export type { LlmProvider, ChatOptions } from '@/llm/provider.js';
 // ImageResolver 是 type 别名（函数签名），公开成员面守卫对其无成员可查，导出不触基线；
 // ImageRef 是 interface，须在 publicMemberSurfaceGuard EXPECTED 补登记（见该测试）。
 export type { ImageRef, ImageResolver } from '@/llm/provider.js';
+// 图片按路径摄取端口（read_image）：内核只定类型、宿主实现。含「从磁盘读图」的宿主语义，
+// 故归 agent 层（不进 llm 层）；ImageReadResult 是联合 type 别名，公开成员面守卫无成员可查。
+export type { ImageReadPort, ImageReadResult } from '@/agent/types.js';
 
 // 单图 token 折算（方案 §5.9）：宿主入口限额要用「图片 token ≤ contextWindow 25%」（§6.7 / G3）
 // 做准入判断。若宿主另写一份 ceil(w/28)×ceil(h/28) 与上界 clamp，就是同一公式的第二份实现——

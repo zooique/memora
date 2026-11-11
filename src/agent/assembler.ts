@@ -272,6 +272,7 @@ type AssembleRuntimeParams = Pick<
   | 'fetchProvider'
   | 'codeExecutionProvider'
   | 'projectSearchProvider'
+  | 'imageReadPort'
   | 'environmentProvider'
   | 'workspaceTrusted'
   | 'scriptNodePath'
@@ -316,6 +317,7 @@ type LoopAndDepsParams = Pick<
   | 'sessionStore'
   | 'locale'
   | 'hooks'
+  | 'imageReadPort'
 > & {
   pctx: ProjectContext;
   /** 激活角色包的 L1 persona prompt（档 2-1 后角色包唯一；无激活角色包时为空串） */
@@ -574,6 +576,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     locale,
     sessionManager,
     hooks,
+    imageReadPort,
     workProjectionContext,
     environmentContext,
     residentRulesContext,
@@ -644,6 +647,8 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     systemPromptPrefix,
     rolePackBaseTokens,
     toolDefinitions: toolExec.list,
+    // 图片摄取端口：loop 的 resolveActiveTools 据此 + 路由后 provider 视觉位逐 step 裁剪 read_image
+    imageReadPort,
     // 全部工具定义注入只读闸（toolReadonly 查询 readonly 标记；含自定义工具，与暴露面无关）。
     // 传提供者而非快照：宿主可在 loop 构造后 registerTool，闸必须实时看到新注册的工具。
     allTools: () => toolExec.allToolDefinitions,
@@ -843,6 +848,12 @@ export async function assembleComponents(
   // **两路共用同一实例**，故 close() 单点等待即可覆盖全部后台副作用（旧模块级单例已按 SSOT 归位到实例）。
   const backgroundTasks = new BackgroundTaskScheduler();
   toolExec.setBackgroundTaskScheduler(backgroundTasks);
+
+  // 图片按路径摄取端口（可选）：透传给 read_image 的宿主实现。
+  // 不注入 ⇒ resolveActiveTools 不暴露 read_image（能力缺失，不摆一个必失败的工具）
+  if (input.imageReadPort) {
+    toolExec.setImageReadPort(input.imageReadPort);
+  }
 
   // ── 会话管理器（先于 loop 创建）──
 
@@ -1080,6 +1091,7 @@ export async function assembleComponents(
       locale,
       sessionManager,
       hooks,
+      imageReadPort: input.imageReadPort,
       workProjectionContext,
       environmentContext,
       // 项目规则段：同步读上一步 refresh 得到的段（未信任 / 无条目 / 读失败时为空串，不注入）

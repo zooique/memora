@@ -489,6 +489,12 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'enableContextSummary',
       'environmentProvider',
       'fetchProvider',
+      // 2026-11-11 新增（模型按路径读图 · IMAGE-TOOL-MESSAGE-1，非 Breaking）：
+      // 定性 = 真能力（非 no-op 谎报）：read_image 的**执行面**端口，宿主实现路径→ImageRef
+      // 摄取（读盘 + 魔数嗅探 + sha256 落盘）；缺省 undefined ⇒ 暴露面裁剪 read_image，
+      // 既有调用零变化。暴露面判定归 resolveActiveTools 逐 step 现算（视觉位真源 = 路由后
+      // provider），装配期快照不参与裁决。
+      'imageReadPort',
       'maxContextTokens',
       'maxTokens',
       'messages',
@@ -1258,6 +1264,10 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
       'setBackgroundTasks',
       'setBudgetProvider',
       'setExclusionRoundIdsProvider',
+      // 2026-11-11 新增（模型按路径读图 · IMAGE-TOOL-MESSAGE-1）：装配期把
+      // AgentOptions.imageReadPort 转交 builtinToolHandlers，与 setBackgroundTaskScheduler
+      // 同形态（装配注入后不再变更）。真消费者 = assembler.createAgentLoopAndDeps。
+      'setImageReadPort',
       'setMemoryInspector',
       'setOnMemoryRecalled',
       'setOnToolsChanged',
