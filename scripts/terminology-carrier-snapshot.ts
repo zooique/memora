@@ -453,6 +453,11 @@ const BASELINE_CODE: readonly string[] = [
   'a1b2c3d4-step-1',
   'alignment-iteration',
   'animation-iteration-count',
+  // 门禁流水线语义（同族：ALL_STEPS / SECONDARY_HOST_STEPS，2026-10-18 已登记）：
+  // `scripts/local-ci.mjs` 的步骤定义取值锁表态校验（assertStepsDeclareTestLock = 校验门禁步骤
+  // 是否显式声明 holdsTestLock；selfCheckStepLockGuard = 该校验器自检；undeclaredStep = 自检里
+  // 抹掉字段的那份门禁步骤副本）。三者指的均非任务表语义，2026-11-11 补基线
+  'assertStepsDeclareTestLock',
   'c9d0e1f2-step-3',
   'cachedAtIteration',
   'currentIteration',
@@ -486,6 +491,9 @@ const BASELINE_CODE: readonly string[] = [
   'runIterationLoop',
   'runStep',
   'selectSteps',
+  // 同上门禁流水线语义：`selectSteps()` = 按 preset 从 ALL_STEPS 选门禁步骤；
+  // `selfCheckStepLockGuard()` = 步骤锁表态校验器自检，2026-11-11 补基线
+  'selfCheckStepLockGuard',
   'step',
   'step$',
   'step-0',
@@ -507,6 +515,8 @@ const BASELINE_CODE: readonly string[] = [
   'steps',
   'toolIdsInStep',
   'toolStepLimit',
+  // 同上门禁流水线语义：自检中抹掉 holdsTestLock 的那份门禁步骤副本，2026-11-11 补基线
+  'undeclaredStep',
   'withStepIndex',
   '步骤',
   '第N步',
@@ -542,6 +552,8 @@ const BASELINE_TEXT: readonly string[] = [
   'a1b2c3d4-step-1',
   'animation-iteration-count',
   'appendPlanStep',
+  // 台账 / flake SOP 对门禁步骤锁表态校验的合法引用（非任务表语义），2026-11-11 补基线
+  'assertStepsDeclareTestLock',
   'block__step',
   'completeStep',
   'currentIteration',
@@ -584,6 +596,10 @@ const BASELINE_TEXT: readonly string[] = [
   'roundStepIndex',
   'runIterationLoop',
   'runStepSequence',
+  // 台账 / flake SOP 对 `selectSteps()`（按 preset 选门禁步骤）与 `selfCheckStepLockGuard()`
+  // （步骤锁表态校验器自检）的合法引用，2026-11-11 补基线
+  'selectSteps',
+  'selfCheckStepLockGuard',
   'step',
   'step-atomic-persistence',
   'step-boundary',
