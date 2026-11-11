@@ -1,7 +1,7 @@
 ﻿/**
  * 6.0.0 批 1 验收 ④：fork 后父子会话**同时各跑一轮**（20 次零差异）
  *
- * 背景（口径真源 = `tasks/6.0.0-落地排产表-临时.md` §2 批 1）：
+ * 背景（当时口径 = `tasks/6.0.0-落地排产表-临时.md` §2 批 1；该表为临时文档，此处仅作当时陈述）：
  * ② 同会话第二写者被拒、③ kill 后锁自愈、① 两进程不同会话 20 轮零丢失，
  * 已由 `sessionLockAcceptance.test.ts` 逐条覆盖（① 另有 `sessionSplitAcceptance.test.ts` 同型用例）。
  * **唯独 ④ 从未被完整机判**：`roundRefFreezeAcceptance.test.ts` 有 fork，但「父子同时各跑一轮」

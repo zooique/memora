@@ -144,9 +144,12 @@ function run() {
   console.log(`\n❌ [ledger-fold] 折叠遗失：${r.lost.length} 条在主台账消失且归档无副本`);
   for (const id of r.lost.slice(0, 40)) console.log(`   - ${id}`);
   if (r.lost.length > 40) console.log(`   … 另有 ${r.lost.length - 40} 条`);
+  // 本门不判关闭状态（只判「消失的 ID 在 archive 有无副本」），打开/关闭的分流口径见 `tasks/archive/README.md` 纪律 3。
   console.log(
-    '\n   处置：把该 ID 补进对应版本的 `tasks/archive/<version>-<kernel|host>.md`\n' +
-      '   （加 `- **ID** — …` 条目行，或写进章节标题；合并/改名也要留痕，本门不接受口头结论）。',
+    '\n   处置（按该条是否已关闭二选一）：\n' +
+      '   ① 该条已关闭 → 补进 `tasks/archive/<version>-<kernel|host>.md`；\n' +
+      '   ② 该条未关闭 → 移回主台账（口径见 `tasks/archive/README.md` 纪律 3）。\n' +
+      '   合并 / 改名也要留痕，本门不接受口头结论。',
   );
   return 1;
 }
