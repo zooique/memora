@@ -631,6 +631,24 @@ export const SUBAGENT_DENIED_TOOLS: readonly string[] = [
 ];
 
 /**
+ * 条件内置工具名（provider 注入才进 `assembledTools`，但名字恒被 `execute()` 占用）
+ *
+ * 这四个名字在 `execute()` 的 `switch (name)` 里各有一个**同名内置分支**：provider 未注入时
+ * 分支返回 `NOT_AVAILABLE`，注入时走 provider。自定义 handler 只会在 `default` 分支的
+ * `customTools` 回退里被查 ⇒ 同名自定义工具**结构性到不了 handler**（注册成功 = 进 list、
+ * `isToolExposed` 判可见，执行却恒失败的死承诺）。故注册期无条件拒绝，不按 provider 是否注入分叉。
+ *
+ * ⚠️ `search_project` 的「暴露」来自 `projectSearchProvider` 注入（`assembledTools` /
+ * `isToolExposed` 各自判），与自定义注册是两条独立的路：拒绝同名自定义工具不会砍掉 provider 那条路。
+ */
+const SWITCH_OWNED_TOOL_NAMES: ReadonlySet<string> = new Set([
+  WEB_SEARCH_TOOL.name,
+  WEB_FETCH_TOOL.name,
+  RUN_CODE_TOOL.name,
+  SEARCH_PROJECT_TOOL.name,
+]);
+
+/**
  * 工具执行器
  *
  * 职责：工具注册 + 分发 + 参数校验。
@@ -940,7 +958,9 @@ export class ToolExecutor {
    * 注册自定义工具
    *
    * 宿主项目调用此方法注册领域专属工具（如 run_tests、query_database、send_email 等业务专属操作）。
-   * 工具名不能与内置工具重复，也不能重复注册。
+   * 工具名不能与内置工具重复（含 `web_search` / `web_fetch` / `run_code` / `search_project`
+   * 这四个「provider 注入才暴露」的条件内置——它们名字被 `execute()` 的同名分支占用，
+   * **无条件拒绝**，与 provider 是否注入无关），也不能重复注册。
    * 注册后工具会出现在 `tools.list` 列表中，
    * LLM 可通过 tool_call 调用，execute() 会路由到 handler。
    *
@@ -962,21 +982,10 @@ export class ToolExecutor {
         '请使用不同的工具名称',
       ]);
     }
-    // web_search 仅当 webSearchProvider 已注入时由内核管理，不允许覆盖
-    // 未注入时宿主可自由注册自己的 web_search 实现
-    if (this.webSearchProvider && definition.name === WEB_SEARCH_TOOL.name) {
-      throw configError(`不能覆盖内置工具：${definition.name}`, undefined, [
-        '请使用不同的工具名称',
-      ]);
-    }
-    // web_fetch 仅当 fetchProvider 已注入时由内核管理，不允许覆盖
-    if (this.fetchProvider && definition.name === WEB_FETCH_TOOL.name) {
-      throw configError(`不能覆盖内置工具：${definition.name}`, undefined, [
-        '请使用不同的工具名称',
-      ]);
-    }
-    // run_code 仅当 codeExecutionProvider 已注入时由内核管理，不允许覆盖
-    if (this.codeExecutionProvider && definition.name === RUN_CODE_TOOL.name) {
+    // 条件内置（provider 注入才暴露）：名字被 execute() 的同名 switch 分支结构性占用，
+    // 自定义 handler 永远到不了 default 回退 ⇒ 注册期无条件拒绝（不按 provider 是否注入分叉）。
+    // 这不是「覆盖」语义问题：未注入时也拒绝，是把「调用期恒失败」提前成「注册期可见的错误」。
+    if (SWITCH_OWNED_TOOL_NAMES.has(definition.name)) {
       throw configError(`不能覆盖内置工具：${definition.name}`, undefined, [
         '请使用不同的工具名称',
       ]);

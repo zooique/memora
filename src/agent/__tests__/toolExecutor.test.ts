@@ -3339,7 +3339,10 @@ describe('工具执行器（6 个工具）', () => {
       }
     });
 
-    it('未注入 webSearchProvider 时，宿主可注册 web_search 工具', () => {
+    // 旧断言（not.toThrow）记录的是死承诺：注册确实成功，但 execute() 先命中 case 'web_search'，
+    // provider 缺失时恒回 NOT_AVAILABLE ⇒ 自定义 handler 结构性到不了（REGISTER-TOOL-DEAD-PROMISE-1）。
+    // 方案 B：注册期无条件拒绝，把「调用期恒失败」提前成「注册期可见的错误」。
+    it('未注入 webSearchProvider 时，注册 web_search 应抛错（旧断言记录的是死承诺）', () => {
       const webSearchDef = {
         name: 'web_search',
         description: '宿主自定义 web_search（打开浏览器模式）',
@@ -3349,9 +3352,74 @@ describe('工具执行器（6 个工具）', () => {
           required: [],
         },
       };
-      expect(() => executor.registerTool(webSearchDef, async () => '')).not.toThrow();
-      // 清理：移除已注册的工具，避免影响后续测试
-      executor.removeTool('web_search');
+      expect(() => executor.registerTool(webSearchDef, async () => '')).toThrow(/不能覆盖内置工具/);
+    });
+
+    // web_fetch / run_code / search_project 与 web_search 同族：名字恒被 execute() 同名分支占用
+    it.each(['web_fetch', 'run_code', 'search_project'])(
+      '未注入对应 provider 时，注册 %s 也应抛错（同名内置分支结构性占用 handler 落点）',
+      (name) => {
+        const def = {
+          name,
+          description: `试图自注册 ${name}`,
+          parameters: {
+            type: 'object' as const,
+            properties: {},
+            required: [],
+          },
+        };
+        expect(() => executor.registerTool(def, async () => '')).toThrow(/不能覆盖内置工具/);
+      },
+    );
+
+    it('provider 注入时四个条件内置仍正常暴露且可执行（防止方案 B 退化成「暴露面拒绝」）', async () => {
+      // 方案 A（在 isToolExposed 里按名字拒绝）会连带砍掉 provider 注入后的真内置工具；
+      // 本用例钉住 B 的边界：拒绝只发生在自定义注册面，注入路径一字不动。
+      const mockWebSearch = {
+        async search(query: string) {
+          return [{ title: `结果:${query}`, url: 'https://example.com', snippet: '摘要' }];
+        },
+      };
+      const mockFetch = {
+        async fetch(url: string) {
+          return { url, title: '注入抓取标题', content: '注入抓取正文' };
+        },
+      };
+      const mockCode = {
+        async execute() {
+          return { stdout: 'ok', stderr: '', exitCode: 0, timedOut: false };
+        },
+      };
+      const mockProjectSearch = {
+        async searchFiles() {
+          return { matches: [] };
+        },
+        async searchText() {
+          return { matches: [], truncated: false };
+        },
+      };
+      const execAll = new ToolExecutor(
+        tmpProject,
+        security,
+        index,
+        mockWebSearch,
+        undefined,
+        mockFetch,
+        mockCode,
+        mockProjectSearch,
+      );
+
+      const names = execAll.list.map((t) => t.name);
+      for (const name of ['web_search', 'web_fetch', 'run_code', 'search_project']) {
+        expect(names).toContain(name);
+      }
+      // 执行面仍走 provider（不是 NOT_AVAILABLE，也不是被拒）
+      const fetched = await execAll.execute(
+        'web_fetch',
+        JSON.stringify({ url: 'https://example.com' }),
+      );
+      expect(fetched).toContain('注入抓取正文');
+      expect(fetched).not.toContain('网页抓取功能未配置');
     });
 
     it('注入 webSearchProvider 后，注册 web_search 应抛错', () => {
