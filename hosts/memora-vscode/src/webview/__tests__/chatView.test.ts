@@ -8152,7 +8152,7 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     expect(row.textContent).toContain('Run command (background): npm run build');
   });
 
-  it('kill_command 无专属叙述器，回退通用显示名（不显示任务 id）', () => {
+  it('kill_command 叙述任务 id（否则只见「终止后台命令」，不知停的是哪个）', () => {
     mountChatView();
     beginRound();
     dispatch({
@@ -8169,12 +8169,12 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
       },
     });
     const row = document.querySelector('.round-block__tool') as HTMLElement;
-    expect(row.textContent).toContain('Stop background command');
+    expect(row.textContent).toContain('Stop background command: bg-1');
   });
 
   it('工具展示名接入（2026-09-19，B9-A 起为英文源键）：无参数可叙述的未收录工具与参数缺失场景均显展示名，不裸露协议名', () => {
     // 背景：toolActionLabel 兜底若为 `?? name`（协议英文原名）——两类场景在 UI 裸露工具协议名：
-    // ①未收录工具（ask_user / remember_intel / run_project_script / kill_command / run_team_meeting，
+    // ①未收录工具（ask_user / remember_intel / run_project_script / run_team_meeting，
     //   均未建 TOOL_ACTION_LABELS 叙述器）；②已收录但本次 args 缺参（如 read_file 无 path）。
     // toolNameMap.getToolDisplayName 统一回退展示名（英文源键，消费侧过 l10n），本条锁死该回退契约。
     mountChatView();

@@ -129,6 +129,12 @@ const TOOL_ACTION_LABELS: Record<string, ToolActionFn> = {
       ? l10n.t('Run command (background): {0}', cmd)
       : l10n.t('Run command: {0}', cmd);
   },
+  // kill_command：唯一可叙述面 = 目标任务 id（否则只见「终止后台命令」，不知停的是哪个）。
+  // 与 run_command 同口径：参数缺失回退显示名；id 短、不截断。
+  kill_command: (a) => {
+    const id = argStr(a, 'taskId');
+    return id ? l10n.t('Stop background command: {0}', id) : undefined;
+  },
   read_skill: (a) => {
     const n = argStr(a, 'name');
     return n ? l10n.t('Read skill: {0}', n) : undefined;
@@ -197,11 +203,11 @@ export function parseToolArgs(raw: string | undefined): Readonly<Record<string, 
  *
  * 兜底走 toolNameMap.getToolDisplayName（**工具展示名的唯一真源**，值为英文源键）——
  * 两类场景在 UI 上不裸露英文工具名：①未收录工具（`ask_user` / `remember_intel` /
- * `run_project_script` / `kill_command` / `run_team_meeting`，均未建 `TOOL_ACTION_LABELS`
- * 叙述器，回退显示名）；②已收录但本次 args 缺参（如 `read_file` 无 `path`）。
- * 未收录 ≠「都无可叙述参数」：`run_project_script` 有 `script_path`、`kill_command` 有
- * `taskId`、`ask_user` 有 `question`、`run_team_meeting` 有 `group`/`topic`；`ask_user` 由
- * 专用问答卡承载、`remember_intel` 是私有工作笔记不应对用户展示，其余暂按通用显示名呈现。
+ * `run_project_script` / `run_team_meeting`，均未建 `TOOL_ACTION_LABELS` 叙述器，回退
+ * 显示名）；②已收录但本次 args 缺参（如 `read_file` 无 `path`）。
+ * 未收录 ≠「都无可叙述参数」：`run_project_script` 有 `script_path`、`ask_user` 有
+ * `question`、`run_team_meeting` 有 `group`/`topic`；`ask_user` 由专用问答卡承载、
+ * `remember_intel` 是私有工作笔记不应对用户展示，其余暂按通用显示名呈现。
  * 补叙述器时按 `src/agent/builtinTools.ts` 的参数名加键（保持参数名同源）。
  * 显示名本身是 l10n 键，故这里再过一次 `l10n.t`（表值不预解析，见 phaseLabel 同注）。
  */

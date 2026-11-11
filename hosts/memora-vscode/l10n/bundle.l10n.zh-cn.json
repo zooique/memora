@@ -894,6 +894,7 @@
   "Delete file": "删除文件",
   "Delegate task": "派发子任务",
   "Stop background command": "终止后台命令",
+  "Stop background command: {0}": "终止后台命令：{0}",
   "List directory": "列出目录",
   "List resources": "列出资源",
   "List sessions": "列出会话",
