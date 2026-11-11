@@ -129,9 +129,14 @@ describe('attachmentRowView · 显隐判据', () => {
     expect(row.querySelector(`[${IMAGE_MARK}]`)).not.toBeNull();
   });
 
-  it('零成员时行隐藏且清空（图片计数为 0 不得让空行露头）', () => {
+  it('可见态迁回空态时行隐藏且清空（图片计数为 0 不得让空行露头）', () => {
     const row = mountRow();
     const view = createView(row);
+
+    // 先造一个有成员的可见态：不先转一次可见，后面的「hidden === true」会被初始态白送
+    view.render(stateOf({ imageCount: 1 }));
+    expect(row.hidden).toBe(false);
+    expect(row.children.length).toBeGreaterThan(0);
 
     view.render(stateOf());
 
