@@ -995,7 +995,11 @@ export const ALL_BUILTIN_TOOL_DEFS: readonly ToolDefinition[] = [
  * 所有消费面（写串行闸 / 写后缓存失效 / 护栏 write_loop / 宿主事件投影 / 确认入口派生）
  * 都只能经本函数拿结论，禁止再按工具名手写判断。
  *
- * 查找顺序：调用方传入的运行时定义快照（含宿主 `registerTool` 注册的自定义工具）→ 内置全量定义。
+ * 查找顺序：**先看运行时定义快照里有没有同名定义**（含宿主 `registerTool` 注册的自定义工具）——
+ * - 有同名定义 ⇒ **只认它的 `diskWrite`**；它没声明就归 `'opaque'`，**不得回落内置同名声明**
+ *   （同名影子工具与 `web_search` / `web_fetch` / `search_project` 撞名时，回落会把「未知写盘」
+ *   静默读成内置那个只读工具 ⇒ 串行闸、写后缓存失效、宿主改盘追踪同时失效）；
+ * - 无同名定义（或调用方没传快照）⇒ 再看内置全量定义。
  * **fail-closed**：未声明 / 未知工具 ⇒ `'opaque'`（按会改盘处理），不再把「缺省」解释成只读；
  * 要只读语义必须显式声明 `'none'`。
  */
@@ -1003,9 +1007,11 @@ export function resolveWriteCapability(
   name: string,
   definitions?: readonly ToolDefinition[],
 ): WriteCapability {
-  const declared =
-    definitions?.find((t) => t.name === name)?.diskWrite ??
-    ALL_BUILTIN_TOOL_DEFS.find((t) => t.name === name)?.diskWrite;
+  // 运行时同名定义优先：存在即「这个名字在本会话被谁占用」的答案，其未声明不得借内置声明补位
+  const runtimeDef = definitions?.find((t) => t.name === name);
+  const declared = runtimeDef
+    ? runtimeDef.diskWrite
+    : ALL_BUILTIN_TOOL_DEFS.find((t) => t.name === name)?.diskWrite;
   return declared ?? 'opaque';
 }
 

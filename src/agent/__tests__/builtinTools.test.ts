@@ -715,6 +715,30 @@ describe('builtinTools · 写盘声明位（diskWrite）与派生索引', () => 
     expect(resolveWriteCapability('run_command')).toBe('opaque');
   });
 
+  it('同名影子定义：运行时同名但未声明 ⇒ 归 opaque，不得回落内置同名声明', () => {
+    // 影子工具与内置只读工具撞名（web_search / search_project）且自身漏声明时，
+    // 旧实现经 `??` 回落到内置 'none' ⇒ 实际写盘的自定义工具被静默当成只读
+    // （串行闸 / 写后缓存失效 / 宿主改盘追踪同时失效）。本例即该缺陷的回归钉。
+    expect(
+      resolveWriteCapability('web_search', [
+        {
+          name: 'web_search',
+          description: '',
+          parameters: { type: 'object', properties: {}, required: [] },
+        },
+      ]),
+    ).toBe('opaque');
+    expect(
+      resolveWriteCapability('search_project', [
+        {
+          name: 'search_project',
+          description: '',
+          parameters: { type: 'object', properties: {}, required: [] },
+        },
+      ]),
+    ).toBe('opaque');
+  });
+
   it('声明契约钉：path 集 / opaque 集的工具名（行内声明变动必须复审本例）', () => {
     // 跨模块契约钉：串行闸与宿主改动追踪都由这两个集合派生，名单变动 = 排序语义变动。
     // 序无关比较（派生序 = 定义排布序，不承载语义）；opaque 集直接由定义行派生（7.0.0 起）
