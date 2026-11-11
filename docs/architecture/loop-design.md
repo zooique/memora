@@ -158,13 +158,13 @@
 2. `toolWhitelist = []` 不是 `null`（空数组 = 仅常驻集；`null` = 全开）。
 3. 强制只读，且拒绝 `toolMode='block'` 的角色包（block 会把整个工具面关死，子递归连只读工具都用不了）。
 4. `userFollowup='ask'` 注入的「主动提问规则」（`src/role-pack/strategyResolver.ts:457-460`）要能按子会话开关抑制——否则 `ask_user` 被 deny 后，提示词仍引导模型去提问。
-5. 子会话不注入 `delegate_task` 端口（深度 1 的结构性保证：孙派发工具根本不存在）；同一步最多 2 个由派发端口信号量硬限。
+5. 子会话不注入 `delegate_task` 端口（深度 1 的结构性保证：孙派发工具根本不存在）；同一步并发由派发端口信号量 `SUBAGENT_MAX_CONCURRENT` 硬限（取值真源 `src/agent/assembler.ts`，本文不复述数字）。
 6. `capabilities` 入参必须按白名单校验：只接受 `web:search` / `web:fetch`；传 `code:execute` 或任何未知名字 → **工具直接报错**，不许过滤后静默放行。
 
 **deny 轴（工具面第二根轴）**
 
 - 判据必须放在 `isToolExposed` 第一行、**在 `customTools.has(name)` 之前**（`src/agent/toolExecutor.ts:988-997`，`customTools` 分支在 `:990`），否则 MCP / 自定义工具会先命中「恒暴露」而绕过 deny。
-- 按「副作用」枚举，不按工具名直觉：写盘 / 删文件 / 跑命令 / 杀命令 / 跑项目脚本 / 跑技能脚本 / `run_code` / `ask_user`，再加 `remember_intel` / `task_table_write` / `task_table_update` / `register_work`。`run_code` 不是与白名单重复的冗余：`code:execute` 属特权，空白名单只是「今天看不见」而非「结构上看不见」，它是第六条夹紧规则在工具层的兜底。**唯一按职责而非按副作用禁的例外是 `run_team_meeting`**（队长对外的评审端口，子会话单角色调用等于花一个 step 买一次无意义的多人自评，且成本不受每步 2 个信号量约束）——新增工具时按副作用核一遍会漏掉它，必须单独按职责再核一遍。工具名真源 = `DEFAULT_EXPOSED_TOOLS`（`src/agent/toolExecutor.ts:503-537`）。**代价**：子会话不能贡献情报和任务项，由队长汇总——有意选择，不是遗漏。
+- 按「副作用」枚举，不按工具名直觉：写盘 / 删文件 / 跑命令 / 杀命令 / 跑项目脚本 / 跑技能脚本 / `run_code` / `ask_user`，再加 `remember_intel` / `task_table_write` / `task_table_update` / `register_work`。`run_code` 不是与白名单重复的冗余：`code:execute` 属特权，空白名单只是「今天看不见」而非「结构上看不见」，它是第六条夹紧规则在工具层的兜底。**唯一按职责而非按副作用禁的例外是 `run_team_meeting`**（队长对外的评审端口，子会话单角色调用等于花一个 step 买一次无意义的多人自评，且成本不受派发端口 `SUBAGENT_MAX_CONCURRENT` 信号量约束）——新增工具时按副作用核一遍会漏掉它，必须单独按职责再核一遍。工具名真源 = `DEFAULT_EXPOSED_TOOLS`（`src/agent/toolExecutor.ts:503-537`）。**代价**：子会话不能贡献情报和任务项，由队长汇总——有意选择，不是遗漏。
 - deny **不能替代** `toolReadonly` 的理由只有三条（详见评估 §7.4 依据一的重写）：从模型可见面隐藏、`ask_user` 在 loop 层挂起、有副作用但不写盘的常驻工具。
 
 **状态回传（不建假 Round）**

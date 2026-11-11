@@ -235,8 +235,12 @@ const SUBAGENT_GRANTABLE_CAPABILITIES: ReadonlyMap<string, string> = new Map([
 /** 子会话结果正文截断上限（字符）：防止一次派发把父上下文撑爆（评估文档定案 20,000） */
 const SUBAGENT_RESULT_MAX_CHARS = 20_000;
 
-/** 同一步并发子会话上限（派发端口信号量硬限，超出直接报错而非排队） */
-const SUBAGENT_MAX_CONCURRENT = 2;
+/**
+ * 同一步并发子会话上限（派发端口信号量硬限，超出直接报错而非排队）
+ *
+ * 导出仅供测试与调用方文档引用，避免上限值在注释 / 用例里各写一遍。
+ */
+export const SUBAGENT_MAX_CONCURRENT = 2;
 
 /**
  * 子会话装配参数（父装配期捕获的快照，逐次派发复用）
@@ -648,8 +652,10 @@ export async function runSubagent(
  *
  * 两条硬约束都在这里，不散落到装配回调里：
  *   - **并发硬限**：同一步最多 `SUBAGENT_MAX_CONCURRENT` 个。判据在端口入口**同步**执行
- *     （计数自增发生在第一个 await 之前），故同一批并发的第三个调用必然看到满额后报错；
- *     超出直接报错不排队——排队会把父 step 拖成长尾。
+ *     （计数自增发生在第一个 await 之前），故同一批并发的第三个调用必然看到满额后报错。
+ *     **超出直接快速失败、不排队**：父 turn 是同步递归等待子会话的，排队会让父无限等；
+ *     而父没有取消单个子任务的能力，等不到也断不掉，只能把整轮拖死。快速失败把选择权
+ *     交回父模型（等前面的完成后重派）。
  *   - **abort 立即返回真终态**：父 turn 中止时立刻用已累积正文返回 `interrupted`，
  *     后台子 loop 继续收同一 signal 自己收场；名额在端口 promise 返回时释放，不等子 loop settle。
  *
@@ -668,31 +674,24 @@ export function createDelegateTaskPort(params: SubagentRuntimeParams): {
     request: DelegateTaskRequest,
     signal?: AbortSignal,
   ): Promise<DelegateTaskPortResult> => {
-    /** 排队计时起点：进入端口、尚未拿到并发名额 */
-    const queueStart = Date.now();
     if (inFlight >= SUBAGENT_MAX_CONCURRENT) {
+      // 文案自解释：上限 / 当前在跑数 / 该怎么办。这句会进 tool_result，
+      // 父模型读到后才知道该等前面完成再派，而不是盲目重试或直接放弃。
       throw toolError(
         'delegate_task 并发超限',
-        `同一步最多 ${SUBAGENT_MAX_CONCURRENT} 个子会话同时执行`,
+        `同一步最多 ${SUBAGENT_MAX_CONCURRENT} 个子会话同时执行，当前已有 ${inFlight} 个在跑`,
         ['等已派发的子会话返回后再派发新的任务'],
         undefined,
         ToolErrorCode.ARGUMENT_ERROR,
       );
     }
     inFlight++;
-    /**
-     * 排队耗时 = 拿并发名额前后的时间差。
-     * 注意：本端口超限**直接报错、不排队**，所以这个值实际恒为 0——字段保留是为了
-     * 将来若引入真排队，回执无需改契约即可带上等待时间。
-     */
-    const queuedMs = Date.now() - queueStart;
-    /** 执行计时起点：拿到名额之后，**不含排队** */
+    /** 执行计时起点：拿到名额（即端口开始执行）之后 */
     const execStart = Date.now();
-    /** 把两段耗时叠加到收场结果：执行耗时在此收口，绝不与排队相加成一个数 */
+    /** 把执行耗时叠加到收场结果（唯一计时产地） */
     const withTiming = (result: DelegateTaskResult): DelegateTaskPortResult => ({
       ...result,
       durationMs: Date.now() - execStart,
-      queuedMs,
     });
     try {
       const run = startSubagent(params, request, signal);
@@ -1645,7 +1644,8 @@ export async function assembleComponents(
 
   // ── delegate_task 派发端口（子会话 v1）──
   // 子装配与本模块 createAgentLoopAndDeps 同源：父侧新增安全选项时同文件可见、不会漏配。
-  // 并发硬限：同一步最多 2 个（信号量；超出直接报错，不排队——排队会把父 step 拖成长尾）。
+  // 并发硬限：同一步最多 SUBAGENT_MAX_CONCURRENT 个（信号量；超出直接报错，不排队——
+  // 排队会把父 step 拖成长尾，父又无法取消单个子任务）。
   const subagentParams: SubagentRuntimeParams = {
     provider,
     projectPath,

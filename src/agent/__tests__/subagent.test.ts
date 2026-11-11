@@ -23,6 +23,7 @@ import {
 import { SecurityGuard } from '@/security/pathGuard.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import {
+  SUBAGENT_MAX_CONCURRENT,
   createDelegateTaskPort,
   createSubagentLoop,
   createSubagentToolExecutor,
@@ -558,12 +559,10 @@ describe('派发端口：终态映射与 abort 立即收口（P0-2 / P0-3）', (
       const observed: Array<{ status: string; ok: boolean }> = [];
       for (const status of ['completed', 'incomplete', 'interrupted', 'failed'] as const) {
         const exec = new ToolExecutor(params.projectPath, params.security, params.memoryIndex);
-        // 两段耗时故意取不同值：验证回执**原样分开携带**，没有相加成一个数
         exec.setDelegateTask(async () => ({
           status,
           text: formatSubagentResult(status, '正文'),
           durationMs: 47_000,
-          queuedMs: 12_000,
         }));
         const outcomes: ToolOutcome[] = [];
         const text = await exec.execute(
@@ -581,7 +580,6 @@ describe('派发端口：终态映射与 abort 立即收口（P0-2 / P0-3）', (
           terminal: status,
           excerpt: '正文',
           durationMs: 47_000,
-          queuedMs: 12_000,
         });
         observed.push({ status, ok: outcomes[0]!.status === 'ok' });
       }
@@ -590,14 +588,12 @@ describe('派发端口：终态映射与 abort 立即收口（P0-2 / P0-3）', (
     });
   });
 
-  it('端口产出两段耗时：排队与执行分开携带（不合并成一个数）', async () => {
+  it('端口产出执行耗时：只量执行一段，不挂恒为 0 的排队字段', async () => {
     await withRuntimeParams(async (params) => {
       const { port } = createDelegateTaskPort(params);
       const result = await port({ task: '普通任务' });
-      // 字段集合即契约：只有 durationMs / queuedMs 两段，没有 totalMs 之类的合并数
-      expect(Object.keys(result).sort()).toEqual(['durationMs', 'queuedMs', 'status', 'text']);
-      // 端口超限直接报错、不排队 ⇒ 排队耗时恒为 0；执行耗时独立测量
-      expect(result.queuedMs).toBe(0);
+      // 字段集合即契约：只有 durationMs，没有 queuedMs / totalMs
+      expect(Object.keys(result).sort()).toEqual(['durationMs', 'status', 'text']);
       expect(result.durationMs).toBeGreaterThanOrEqual(0);
     });
   });
@@ -668,19 +664,24 @@ describe('派发端口变异锚点（P1-3）', () => {
     });
   });
 
-  it('同一步并发上限 2：第三个派发明确报超限，前两个正常收场', async () => {
+  it('同一步并发上限：超出名额的派发快速失败并说明原因', async () => {
     await withRuntimeParams(async (params) => {
       const { port, inFlight } = createDelegateTaskPort(params);
-      // 同步发起三次：计数自增在第一个 await 之前，第三个必然看到满额
-      const first = port({ task: 'A' });
-      const second = port({ task: 'B' });
-      const third = port({ task: 'C' });
+      // 同步发起 N+1 次：计数自增在第一个 await 之前，最后一个必然看到满额
+      const accepted = Array.from({ length: SUBAGENT_MAX_CONCURRENT }, (_, i) =>
+        port({ task: `任务-${i}` }),
+      );
+      const overflow = port({ task: '超额任务' });
 
+      // 文案自解释：上限 / 当前在跑数 / 该怎么办（父模型读到才知道该等而非重试）
       // 去掉并发信号量 → 此断言转红
-      await expect(third).rejects.toThrow(/并发超限/);
-      const [a, b] = await Promise.all([first, second]);
-      expect(a.status).toBe('completed');
-      expect(b.status).toBe('completed');
+      await expect(overflow).rejects.toMatchObject({
+        title: 'delegate_task 并发超限',
+        detail: `同一步最多 ${SUBAGENT_MAX_CONCURRENT} 个子会话同时执行，当前已有 ${SUBAGENT_MAX_CONCURRENT} 个在跑`,
+        suggestions: ['等已派发的子会话返回后再派发新的任务'],
+      });
+      const settled = await Promise.all(accepted);
+      expect(settled.every((r) => r.status === 'completed')).toBe(true);
       expect(inFlight()).toBe(0);
     });
   });

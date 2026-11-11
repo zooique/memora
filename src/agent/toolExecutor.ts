@@ -154,16 +154,14 @@ export interface DelegateTaskResult {
 }
 
 /**
- * 派发端口返回结果：收场结果 + 两段耗时（delegate 回执的计时**唯一产地**）
+ * 派发端口返回结果：收场结果 + 执行耗时（delegate 回执的计时**唯一产地**）
  *
- * 两段故意分开：`queuedMs` = 等并发名额的时间，`durationMs` = 子会话真正执行的耗时。
- * 合并成一个数会让「排队慢」与「执行慢」无法区分（用户看到的元信息 `排队 · 执行` 需要两者）。
+ * 只量执行耗时：端口在并发超限时直接报错、不排队（原因见 `createDelegateTaskPort` 注释），
+ * 不存在「等待名额」的时间段，故不挂一个恒为 0 的排队字段。
  */
 export interface DelegateTaskPortResult extends DelegateTaskResult {
-  /** 子会话执行耗时（毫秒，**不含排队**） */
+  /** 子会话执行耗时（毫秒） */
   readonly durationMs: number;
-  /** 等待并发名额耗时（毫秒） */
-  readonly queuedMs: number;
 }
 
 /** delegate_task 结论摘录硬上限（字符）：超限定长截断，**不补省略号**（截断标注由宿主做） */
@@ -633,8 +631,9 @@ export const DEFAULT_EXPOSED_TOOLS: ReadonlySet<string> = new Set([
  *
  * **唯一按职责而非按副作用禁的例外：`run_team_meeting`**。它无外部写副作用，但它是
  * **队长对外的评审端口**（一次 `provider.chat()` 拉 N 个 persona）：子会话只有一个角色，
- * 调它等于花一个完整 step 买一次无意义的多人自评，且这条成本路径不受「每步最多 2 个」
- * 信号量约束。注意：新增工具时按副作用核一遍会漏掉这条，必须单独按「职责」再核一遍。
+ * 调它等于花一个完整 step 买一次无意义的多人自评，且这条成本路径不受派发端口
+ * `SUBAGENT_MAX_CONCURRENT` 信号量约束。注意：新增工具时按副作用核一遍会漏掉这条，
+ * 必须单独按「职责」再核一遍。
  *
  * **留 / 禁的界线（必须按内容判，不按 readonly 标记判）**：
  * **改内容 → 禁；只改权重 / 元数据且不改内容 → 留**。
@@ -2381,7 +2380,6 @@ export class ToolExecutor {
           terminal: result.status,
           excerpt: extractDelegateExcerpt(result.text),
           durationMs: result.durationMs,
-          queuedMs: result.queuedMs,
         };
         emitOutcome?.({
           ...(result.status === 'completed' ? okOutcome(result.text) : failedOutcome(result.text)),

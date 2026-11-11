@@ -20,7 +20,7 @@ export type RoundTagged = { roundId?: string };
  * delegate_task 派发回执（AgentChunk / ProcessEvent 的可选数据面）
  *
  * 存在的理由：`tool_result` 在 chunk 边界原本只剩 `{ok, summary, blocked}`——四态终态被压成
- * 布尔、结论被截到 100 字、执行与排队两段耗时都没留下，宿主只能显示 `Succeeded / Failed`。
+ * 布尔、结论被截到 100 字、执行耗时也没留下，宿主只能显示 `Succeeded / Failed`。
  *
  * `summary` 与 `excerpt` **同源不同粒度**：两者都取自子会话结果文本（首行 `[SUBAGENT:*]`
  * 之后的正文），`summary` 仍是 loop 通用路径的 100 字截断（牵动全部工具，不改），
@@ -34,10 +34,8 @@ export interface DelegateTaskReceipt {
    * 截断处**不补省略号**——「已截断」标注由宿主按长度是否达到上限决定。
    */
   excerpt: string;
-  /** 子会话执行耗时（毫秒，**不含排队**） */
+  /** 子会话执行耗时（毫秒） */
   durationMs: number;
-  /** 等待并发名额耗时（毫秒；与执行耗时是两段，不合并成一个数） */
-  queuedMs: number;
 }
 
 export type AgentChunk = (
