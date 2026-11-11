@@ -8152,7 +8152,7 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     expect(row.textContent).toContain('Run command (background): npm run build');
   });
 
-  it('kill_command 叙述任务 id（否则只见「终止后台命令」，不知停的是哪个）', () => {
+  it('kill_command 无专属叙述器，回退通用显示名（不显示任务 id）', () => {
     mountChatView();
     beginRound();
     dispatch({
