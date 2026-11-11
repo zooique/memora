@@ -2694,6 +2694,40 @@ export const chatStyles = `
     font-size: var(--font-xs, 10px); line-height: var(--lh-snug);
     white-space: pre-wrap; word-break: break-all; overflow-wrap: anywhere;
   }
+  /* delegate_task 派发回执：主行四态徽标 + 两段展开体（派发 / 回执）。
+     只给状态文字染色，不整行染色——避免与进行中/失败块的左缘色打架。
+     视觉口径：incomplete 用警告色（不是错误色），interrupted 用灰色（不是红色）。 */
+  .round-block__tool.is-delegate-task .round-block__tool-status { font-weight: 600; }
+  .round-block__tool.is-delegate-warning .round-block__tool-status { color: var(--warn, #d7ba7d); }
+  .round-block__tool.is-delegate-muted .round-block__tool-status {
+    color: var(--text-secondary, #9aa0a6);
+    opacity: 0.75; /* 灰色档：只比常规状态更暗，不引入新令牌、也不用错误色 */
+  }
+  .round-block__tool.is-delegate-error .round-block__tool-status { color: var(--danger, #f14c4c); }
+  .round-block__delegate-section-title {
+    margin-top: var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px);
+    font-weight: 600;
+    color: var(--text-secondary, #9aa0a6);
+  }
+  .round-block__delegate-excerpt {
+    margin-top: var(--sp-1, 4px);
+    font-size: var(--font-xs, 10px);
+    white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
+    color: var(--text-primary, #cccccc);
+  }
+  .round-block__delegate-meta {
+    margin-top: var(--sp-1, 4px);
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+  }
+  .round-block__delegate-truncated { color: var(--warn, #d7ba7d); }
+  /* 摘录为空（interrupted 常如此）：只留状态说明，不留空标题/空占位 */
+  .round-block__delegate-status-note {
+    margin-top: var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+  }
   /* 实时相位行：进行中 details 顶部单条「当前正在做什么」（呼吸点动画，遵守 prefers-reduced-motion） */
   .round-block__phase {
     display: flex; align-items: center; gap: var(--sp-2, 6px);

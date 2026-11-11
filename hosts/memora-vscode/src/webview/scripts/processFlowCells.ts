@@ -18,12 +18,25 @@
 import type { ProcessEvent } from '@zooique/memora';
 import * as l10n from '@vscode/l10n';
 import {
+  argStr,
+  fmtDuration,
   isPlanItemBoundaryEvent,
+  parseToolArgs,
   toolActionLabel,
   toolSummaryText,
 } from '../helpers/processEventText.js';
-import type { MemoryHitEntry, ToolBatch, WebSearchEvidence } from '../helpers/processFlowModel.js';
-import { decideTerminus, toolRowStatus } from '../helpers/processFlowModel.js';
+import type {
+  DelegateTone,
+  MemoryHitEntry,
+  ToolBatch,
+  WebSearchEvidence,
+} from '../helpers/processFlowModel.js';
+import {
+  decideTerminus,
+  delegateRowUi,
+  isToolFailureResult,
+  toolRowStatus,
+} from '../helpers/processFlowModel.js';
 import { setTerminus } from '../helpers/statusAttrs.js';
 import { getIconSvg } from './icons.js';
 import type { MemoryHitsBlock } from './memoryHitsBlock.js';
@@ -191,6 +204,106 @@ export function visibleInputTs(
   return [...ts];
 }
 
+/** 派发徽标文本：前导空格 + 括号包住状态。
+ *  角括号形态由 zh 译文提供（英文源键是 `[{0}]`），不在源码里写死 CJK 标点。 */
+function delegateBadgeText(label: string): string {
+  return ` ${l10n.t('[{0}]', label)}`;
+}
+
+/** 结论摘录硬上限（镜像内核 `DELEGATE_EXCERPT_MAX_CHARS`）：达到即由宿主补「已截断」标注 */
+const DELEGATE_EXCERPT_MAX_CHARS = 800;
+
+/** delegate_task 回执数据面（从 ProcessEvent 派生，内核未把该类型加入公共导出） */
+type DelegateReceipt = NonNullable<
+  Extract<ProcessEvent, { type: 'tool_result' }>['payload']['delegate']
+>;
+
+/** 派发徽标的四态 class（应用/清理一处收敛，避免散落多处） */
+const DELEGATE_TONE_CLASSES = [
+  'is-delegate-normal',
+  'is-delegate-warning',
+  'is-delegate-muted',
+  'is-delegate-error',
+] as const;
+
+/**
+ * 给 delegate 行打视觉档位 class（幂等）：先清四档再按当前档位加一档。
+ * 非 delegate 行 / 老数据（无回执）不动 class——保持原有两态样式。
+ */
+function applyDelegateRowTone(row: HTMLElement, ui: { tone: DelegateTone } | undefined): void {
+  if (!ui) return;
+  row.classList.add('is-delegate-task');
+  const activeClass = `is-delegate-${ui.tone}`;
+  for (const cls of DELEGATE_TONE_CLASSES) row.classList.toggle(cls, cls === activeClass);
+}
+
+/**
+ * 「派发」段：`args.task` 全文 + capabilities 列表。
+ *
+ * capabilities 那行是「这次子会话有没有联网权」的**唯一可见面**，不能省；
+ * 空列表显式写「无」，避免读者把「没写」误读成「有」。
+ */
+function buildDelegateDispatch(doc: Document, argsRaw: string | undefined): HTMLElement {
+  const wrap = doc.createElement('div');
+  wrap.className = 'round-block__delegate-dispatch';
+  const title = doc.createElement('div');
+  title.className = 'round-block__delegate-section-title';
+  title.textContent = l10n.t('Dispatch');
+  const pre = doc.createElement('pre');
+  pre.className = 'round-block__pre';
+  const args = parseToolArgs(argsRaw);
+  const task = argStr(args, 'task') ?? argsRaw ?? '';
+  const capabilities = Array.isArray(args.capabilities)
+    ? args.capabilities.filter((c): c is string => typeof c === 'string')
+    : [];
+  const capsText = capabilities.length > 0 ? capabilities.join(', ') : l10n.t('none');
+  pre.textContent = `${task}\n\n${l10n.t('Capabilities: {0}', capsText)}`;
+  wrap.append(title, pre);
+  return wrap;
+}
+
+/**
+ * 「回执」段：结论摘录全文 + 尾部元信息（排队 · 执行）+ 截断标注。
+ *
+ * 摘录为空（interrupted 常如此）时**不渲染空标题/空占位**，只留一行状态说明；
+ * 元信息两段耗时直接来自内核回执，不再相加。
+ */
+function buildDelegateReceipt(
+  doc: Document,
+  delegate: DelegateReceipt,
+  statusLabel: string,
+): HTMLElement {
+  if (!delegate.excerpt) {
+    const note = doc.createElement('div');
+    note.className = 'round-block__delegate-status-note';
+    note.textContent = statusLabel;
+    return note;
+  }
+  const wrap = doc.createElement('div');
+  wrap.className = 'round-block__delegate-receipt';
+  const title = doc.createElement('div');
+  title.className = 'round-block__delegate-section-title';
+  title.textContent = l10n.t('Receipt');
+  const body = doc.createElement('div');
+  body.className = 'round-block__delegate-excerpt';
+  body.textContent = delegate.excerpt;
+  const meta = doc.createElement('div');
+  meta.className = 'round-block__delegate-meta';
+  meta.textContent = l10n.t(
+    'Queued {0} · Executed {1}',
+    fmtDuration(delegate.queuedMs),
+    fmtDuration(delegate.durationMs),
+  );
+  if (delegate.excerpt.length >= DELEGATE_EXCERPT_MAX_CHARS) {
+    const truncated = doc.createElement('span');
+    truncated.className = 'round-block__delegate-truncated';
+    truncated.textContent = ` · ${l10n.t('Truncated')}`;
+    meta.appendChild(truncated);
+  }
+  wrap.append(title, body, meta);
+  return wrap;
+}
+
 /**
  * 工具行状态局部更新：tool_result 到达时，定位已渲染的工具行更新 状态/展开/结果摘要。
  * （进行中工具行已由增量追加创建，result 后到只需原地更新，不重建 DOM）
@@ -207,20 +320,40 @@ export function updateToolRowState(
       `.round-block__tool[data-tool-call-id="${result.payload.toolCallId}"]`,
     )
     .forEach((row) => {
-      const { label: status, open, running } = toolRowStatus(result);
+      const { label, open, running } = toolRowStatus(result);
+      // delegate_task：四态徽标覆盖两态文案，且默认展开态由四态决定；
+      // 老数据（无 delegate 字段）delegateRowUi 返回 undefined，原样走两态回退。
+      const delegateUi = delegateRowUi(result);
+      const status = delegateUi ? delegateUi.label : label;
+      const effectiveOpen = delegateUi ? delegateUi.open : open;
       // 结构化管理：仅更新状态标签 span 文本（不动整体 summary，保留 label / elapsed 子节点）。
       // 幂等写：文本未变不重写（重写销毁文本节点，点击目标抖动）
       const statusEl = row.querySelector('.round-block__tool-status');
-      const statusText = ` (${status})`;
+      // delegate 用角括号徽标（与定稿主行一致）；普通工具保持 ` (Succeeded)` 原格式
+      const statusText = delegateUi ? delegateBadgeText(status) : ` (${status})`;
       if (statusEl && statusEl.textContent !== statusText) statusEl.textContent = statusText;
       // 用户意图闩（data-user-toggled，写入点 = summary 点击委托）：用户动过开合的行，
       // 默认值（成功收起/失败展开）不再覆盖——每次事件都回写会把用户的展开态打回。
       // 唯一例外通道 = openForUserVisibility（用户输入恒可见强制展开，只作用任务项分组）
-      if (row.dataset.userToggled !== 'true') row.open = open;
+      if (row.dataset.userToggled !== 'true') row.open = effectiveOpen;
       // result 已到达 → 移除进行中态（恢复普通行样式）
       row.classList.toggle('is-tool-running', running);
+      applyDelegateRowTone(row, delegateUi);
       // 工具已出结果 → 移除该行等待时长标签（瞬态退场，不再刷新）
       row.querySelector(':scope .round-block__elapsed')?.remove();
+      // delegate 回执：结论摘录/状态说明补进展开体（首次到达补 DOM，重复投递不重入）。
+      // delegate 行不再叠通用 100 字 summary——回执已是同源的更完整粒度。
+      if (result.payload.delegate) {
+        if (
+          !row.querySelector('.round-block__delegate-receipt') &&
+          !row.querySelector('.round-block__delegate-status-note')
+        ) {
+          row.appendChild(
+            buildDelegateReceipt(document, result.payload.delegate, delegateUi?.label ?? status),
+          );
+        }
+        return;
+      }
       // 结果摘要：首次到达补 DOM（后续到达不重复）；已有命中块则不出——
       // 与 renderToolRow 同一取舍（那里按解析结果判、这里按已渲染 DOM 判，
       // 两条路径互斥：实时增量走本函数，收场/重放走 renderToolRow）
@@ -552,14 +685,15 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
     }
     const titleText = toolSummaryText(batch.entries.map((e) => e.start.payload.name));
     if (title.textContent !== titleText) title.textContent = titleText;
-    // 失败/被拒统计（留段内，块级标红）：ok=false 且非 blocked = 失败；blocked = 被拒/拦截
+    // 失败/被拒统计（留段内，块级标红）：blocked = 被拒/拦截；失败只认 failed 口径
+    // （delegate 的 incomplete/interrupted 不算失败，与轮指标同一判据）
     let failed = 0;
     let blocked = 0;
     for (const e of batch.entries) {
       const r = e.result;
       if (!r) continue;
       if (r.payload.blocked === true) blocked += 1;
-      else if (!r.payload.ok) failed += 1;
+      else if (isToolFailureResult(r.payload)) failed += 1;
     }
     block.classList.toggle('is-tool-batch-failed', failed + blocked > 0);
     const parts: string[] = [];
@@ -640,14 +774,18 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
       (e): e is Extract<ProcessEvent, { type: 'tool_result' }> =>
         e.type === 'tool_result' && e.payload.toolCallId === start.payload.toolCallId,
     );
-    const { label: status, open, running } = toolRowStatus(result);
+    const { label, open, running } = toolRowStatus(result);
+    // delegate_task 四态覆盖两态；老数据（无 delegate 字段）→ undefined，原样两态回退
+    const delegateUi = delegateRowUi(result);
+    const status = delegateUi ? delegateUi.label : label;
     const row = document.createElement('details');
     row.className = 'round-block__tool';
     // 增量追加去重锚点：toolCallId（唯一标识）+ seq（顶层按序平铺，insertPlanItemInOrder）；ts 时间键
     row.dataset.toolCallId = start.payload.toolCallId;
     row.dataset.seq = String(start.seq);
     row.dataset.ts = start.ts;
-    row.open = open;
+    row.open = delegateUi ? delegateUi.open : open;
+    applyDelegateRowTone(row, delegateUi);
     // TS-11b：进行中态 class（未出结果时高亮；result 到达由 updateToolRowState 移除）
     row.classList.toggle('is-tool-running', running);
     const summary = document.createElement('summary');
@@ -665,10 +803,14 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
     labelSpan.textContent = toolActionLabel(start.payload.name, start.payload.args);
     const statusSpan = document.createElement('span');
     statusSpan.className = 'round-block__tool-status';
-    statusSpan.textContent = ` (${status})`; // 前导空格：span 间空白不折叠，显式补「叙述 (状态)」间距
+    // 前导空格：span 间空白不折叠，显式补「叙述 (状态)」间距；delegate 用定稿的角括号徽标
+    statusSpan.textContent = delegateUi ? delegateBadgeText(status) : ` (${status})`;
     summary.append(iconSpan, labelSpan, statusSpan);
     row.appendChild(summary);
-    if (start.payload.args) {
+    if (start.payload.name === 'delegate_task') {
+      // 派发段：task 全文 + capabilities（唯一可见的联网权说明）
+      row.appendChild(buildDelegateDispatch(document, start.payload.args));
+    } else if (start.payload.args) {
       const pre = document.createElement('pre');
       pre.className = 'round-block__pre';
       pre.textContent = start.payload.args;
@@ -680,7 +822,16 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
     // （loop.ts `result.slice(0, 100)`，真机截图截到 `(a` 半句）——有结构化命中块时不再渲染，
     // 同源信息不双渲染（与 HOST-S3-2「同源信号不双渲染」同一纪律）。
     // 无命中块时保持原样（零命中 / 被拦 / 非记忆工具都靠它传达结果）。
-    if (result?.payload.summary && !(memHits && memHits.size > 0)) {
+    // delegate_task 例外：回执（摘录 800 字）与 summary 同源不同粒度，只渲染回执，不叠 summary。
+    if (result?.payload.delegate) {
+      row.appendChild(
+        buildDelegateReceipt(
+          document,
+          result.payload.delegate,
+          delegateUi?.label ?? result.payload.summary ?? '',
+        ),
+      );
+    } else if (result?.payload.summary && !(memHits && memHits.size > 0)) {
       const sum = document.createElement('div');
       sum.className = 'round-block__tool-summary';
       sum.textContent = result.payload.summary;

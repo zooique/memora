@@ -6,15 +6,22 @@
  * 证据解析的主配 / 回退双通道。
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import type { ProcessEvent } from '@zooique/memora';
 import type { RoundView } from '../../../shared/protocol.js';
+import type { DelegateTerminal } from '../processFlowModel.js';
 import {
   buildMemoryHitsEvidenceResolver,
   buildSearchEvidenceResolver,
+  countToolFailures,
   decideTerminus,
+  delegateRowUi,
+  delegateTerminalUi,
   findRunningTool,
   groupThoughtBuckets,
   groupToolBatches,
+  isToolFailureResult,
   planItemStatesFromEvents,
   stopReasonLabel,
   thoughtLabel,
@@ -72,6 +79,102 @@ describe('toolRowStatus（工具行状态四档）', () => {
       blocked: true,
     });
     expect(toolRowStatus(blocked)).toEqual({ label: 'Blocked', open: true, running: false });
+  });
+});
+
+describe('delegate_task 四态映射与失败口径', () => {
+  /** 构造一条带内核回执的 delegate tool_result（excerpt/两段耗时是内核给的既定数据） */
+  const delegateResult = (
+    terminal: DelegateTerminal,
+  ): Extract<ProcessEvent, { type: 'tool_result' }> =>
+    event('tool_result', 9, {
+      toolCallId: 'd',
+      name: 'delegate_task',
+      ok: terminal === 'completed',
+      summary: 'r',
+      delegate: { terminal, excerpt: '结论', durationMs: 47_000, queuedMs: 12_000 },
+    });
+
+  it('四态文案、视觉档位与默认展开穷尽映射', () => {
+    expect(delegateTerminalUi('completed')).toEqual({
+      label: 'Subagent completed',
+      tone: 'normal',
+      open: false,
+    });
+    expect(delegateTerminalUi('incomplete')).toEqual({
+      label: 'Subagent incomplete: the subagent did not produce a conclusion',
+      tone: 'warning',
+      open: true,
+    });
+    expect(delegateTerminalUi('interrupted')).toEqual({
+      label: 'Subagent interrupted: the turn was stopped before the subagent finished',
+      tone: 'muted',
+      open: true,
+    });
+    expect(delegateTerminalUi('failed')).toEqual({
+      label: 'Subagent failed',
+      tone: 'error',
+      open: true,
+    });
+  });
+
+  it('无 delegate 字段的老数据 / 非 delegate 行 → undefined（回退两态，不补假徽标）', () => {
+    expect(delegateRowUi(undefined)).toBeUndefined();
+    expect(delegateRowUi(toolResult(2, 'a', false))).toBeUndefined();
+    expect(delegateRowUi(delegateResult('incomplete'))?.tone).toBe('warning');
+  });
+
+  it('失败口径：只有 failed 计失败，incomplete / interrupted 不算', () => {
+    expect(isToolFailureResult(delegateResult('failed').payload)).toBe(true);
+    expect(isToolFailureResult(delegateResult('interrupted').payload)).toBe(false);
+    expect(isToolFailureResult(delegateResult('incomplete').payload)).toBe(false);
+    expect(isToolFailureResult(delegateResult('completed').payload)).toBe(false);
+    // 普通工具保持原口径（!ok 且非 blocked）
+    expect(isToolFailureResult(toolResult(3, 'b', false).payload)).toBe(true);
+    expect(isToolFailureResult(toolResult(4, 'c', true).payload)).toBe(false);
+  });
+
+  it('轮指标只数 failed：用户自己按停止不再被算成一次失败', () => {
+    const events: ProcessEvent[] = [
+      delegateResult('interrupted'),
+      delegateResult('incomplete'),
+      delegateResult('failed'),
+      toolResult(5, 'x', false),
+    ];
+    expect(countToolFailures(events)).toBe(2);
+  });
+});
+
+describe('delegate_task 文案键完整性（l10n 成对）', () => {
+  it('四条状态键 + 两段/元信息键在两份 bundle 中都存在，且 zh-cn 值非空', () => {
+    /** 从测试文件回溯到宿主 l10n 目录（helpers/__tests__ → webview → src → 宿主根） */
+    const l10nDir = fileURLToPath(new URL('../../../../l10n/', import.meta.url));
+    const en = JSON.parse(readFileSync(`${l10nDir}bundle.l10n.json`, 'utf8')) as Record<
+      string,
+      string
+    >;
+    const zh = JSON.parse(readFileSync(`${l10nDir}bundle.l10n.zh-cn.json`, 'utf8')) as Record<
+      string,
+      string
+    >;
+    const keys = [
+      'Subagent completed',
+      'Subagent incomplete: the subagent did not produce a conclusion',
+      'Subagent interrupted: the turn was stopped before the subagent finished',
+      'Subagent failed',
+      'Dispatch',
+      'Receipt',
+      'Capabilities: {0}',
+      'none',
+      'Queued {0} · Executed {1}',
+      'Truncated',
+      '[{0}]',
+    ];
+    for (const key of keys) {
+      expect(en, `en bundle missing: ${key}`).toHaveProperty(key);
+      expect(typeof zh[key], `zh bundle missing: ${key}`).toBe('string');
+      expect(zh[key].length, `zh bundle empty: ${key}`).toBeGreaterThan(0);
+    }
   });
 });
 

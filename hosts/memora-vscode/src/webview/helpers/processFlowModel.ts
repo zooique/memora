@@ -191,6 +191,87 @@ export function findRunningTool(
 }
 
 /**
+ * delegate_task 四态终态：从内核回执字段**派生**，不新增内核公共导出。
+ * 老 Round 的 tool_result 没有 delegate 字段 ⇒ 这里的值不可达，调用方必须先判空。
+ */
+export type DelegateTerminal = NonNullable<
+  Extract<ProcessEvent, { type: 'tool_result' }>['payload']['delegate']
+>['terminal'];
+
+/** 派发徽标视觉档位：正常 / 警告（未完成）/ 灰色（中断）/ 错误（失败） */
+export type DelegateTone = 'normal' | 'warning' | 'muted' | 'error';
+
+/**
+ * 派发四态 → 文案 + 视觉 + 默认展开（**宿主侧唯一映射**）。
+ *
+ * 穷尽 switch + `never` 兜底：内核枚举加一态而宿主漏键时编译不过，避免运行时静默回落。
+ * 视觉口径（用户定稿）：completed 正常；incomplete 警告色（不是错误色）；
+ * interrupted 灰色（不是红色）；failed 错误色。
+ */
+export function delegateTerminalUi(terminal: DelegateTerminal): {
+  label: string;
+  tone: DelegateTone;
+  open: boolean;
+} {
+  switch (terminal) {
+    case 'completed':
+      return { label: l10n.t('Subagent completed'), tone: 'normal', open: false };
+    case 'incomplete':
+      return {
+        label: l10n.t('Subagent incomplete: the subagent did not produce a conclusion'),
+        tone: 'warning',
+        open: true,
+      };
+    case 'interrupted':
+      return {
+        label: l10n.t('Subagent interrupted: the turn was stopped before the subagent finished'),
+        tone: 'muted',
+        open: true,
+      };
+    case 'failed':
+      return { label: l10n.t('Subagent failed'), tone: 'error', open: true };
+    default: {
+      const exhausted: never = terminal;
+      return exhausted;
+    }
+  }
+}
+
+/**
+ * delegate_task 行的回执展示模型；非 delegate 行 / 老数据（无 delegate 字段）→ undefined。
+ *
+ * 返回 undefined 的语义 = **诚实降级**：调用方回退原有的 Succeeded / Failed 两态展示，
+ * 不补假徽标、不猜状态。
+ */
+export function delegateRowUi(
+  result: Extract<ProcessEvent, { type: 'tool_result' }> | undefined,
+): { label: string; tone: DelegateTone; open: boolean } | undefined {
+  const delegate = result?.payload.delegate;
+  return delegate ? delegateTerminalUi(delegate.terminal) : undefined;
+}
+
+/** tool_result payload 类型别名（失败口径判据的入参） */
+type ToolResultPayload = Extract<ProcessEvent, { type: 'tool_result' }>['payload'];
+
+/**
+ * 展示口径：这条工具结果是否算「失败」。
+ *
+ * 普通工具沿用 `!ok`；delegate_task 只看四态里的 `failed`——`incomplete` / `interrupted`
+ * 不是失败（用户自己按停止不应该被算成一次失败，那是实打实的失真）。
+ * blocked 恒不计（它是「被拦下」，走独立计数）。
+ */
+export function isToolFailureResult(payload: ToolResultPayload): boolean {
+  if (payload.blocked === true) return false;
+  if (payload.delegate) return payload.delegate.terminal === 'failed';
+  return !payload.ok;
+}
+
+/** 轮指标：工具失败数（与行级展示同一口径，避免两处各判一遍） */
+export function countToolFailures(events: readonly ProcessEvent[]): number {
+  return events.filter((e) => e.type === 'tool_result' && isToolFailureResult(e.payload)).length;
+}
+
+/**
  * 工具行状态（单一推导，renderToolRow/updateToolRowState 共用）：
  * 无结果=进行中（TS-11b 默认展开 + running 标记，让正在执行的工具可见）；
  * 策略拦截（blocked）=已拦截且默认展开（拒绝文案应直接可见）；

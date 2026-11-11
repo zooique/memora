@@ -155,13 +155,20 @@ const TOOL_ACTION_LABELS: Record<string, ToolActionFn> = {
   },
   compress_context: () => l10n.t('Compact context'),
   // delegate_task（条件工具）：唯一可叙述面 = 子任务描述（task）。
-  // 该描述可能很长，但本表**统一不截断**（同 run_command 的命令原文）——
-  // 参数原文的完整形态已由展开体的 args pre 承载，叙述行与之一致，不另造第二套截断口径。
+  // 与 run_command 不同，这里**要截断**：task 常是整段 prompt，不截断会把主行撑满。
+  // 只取首行前 60 字做「这次派了什么」的提示；全文仍在展开体「派发」段（args.task 原文）。
   delegate_task: (a) => {
     const task = argStr(a, 'task');
-    return task ? l10n.t('Delegate task: {0}', task) : undefined;
+    if (!task) return undefined;
+    const firstLine = task.split(/\r?\n/, 1)[0]?.trim() ?? '';
+    return firstLine
+      ? l10n.t('Delegate task: {0}', firstLine.slice(0, DELEGATE_TASK_LABEL_MAX_CHARS))
+      : undefined;
   },
 };
+
+/** delegate_task 主行任务描述上限（字符）：只取首行并截断，避免整段 prompt 撑满主行 */
+const DELEGATE_TASK_LABEL_MAX_CHARS = 60;
 
 /** 安全取工具 args 的字符串参数（args 为 JSON 解析后的对象；类型不符 / 空返回 undefined） */
 export function argStr(args: Readonly<Record<string, unknown>>, key: string): string | undefined {

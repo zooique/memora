@@ -12145,6 +12145,90 @@ describe('块类型标与折叠箭头（批次三）', () => {
     expect(row().querySelector('.round-block__tool-status')?.textContent).toBe(' (Succeeded)');
   });
 
+  it('delegate_task：四态徽标 + 派发/回执两段；摘录为空时不留空段', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '派个子任务' });
+    dispatchEv({
+      type: 'tool_start',
+      seq: 2,
+      ts: 'T1',
+      payload: {
+        toolCallId: 'd1',
+        name: 'delegate_task',
+        args: JSON.stringify({ task: '调查认证链路', capabilities: ['web_search'] }),
+        stepIndex: 1,
+      },
+    });
+    dispatchEv({
+      type: 'tool_result',
+      seq: 3,
+      ts: 'T2',
+      payload: {
+        toolCallId: 'd1',
+        name: 'delegate_task',
+        ok: false,
+        summary: '通用摘要',
+        delegate: {
+          terminal: 'interrupted',
+          excerpt: '',
+          durationMs: 47_000,
+          queuedMs: 12_000,
+        },
+      },
+    });
+    const row = () => document.querySelector('.round-block__tool[data-tool-call-id="d1"]')!;
+    // 四态徽标（中断 = 灰色档）+ 方括号形态（zh 译文里是角括号），不再显示 Running/Failed
+    expect(row().classList.contains('is-delegate-task')).toBe(true);
+    expect(row().classList.contains('is-delegate-muted')).toBe(true);
+    expect(row().querySelector('.round-block__tool-status')?.textContent).toBe(
+      ' [Subagent interrupted: the turn was stopped before the subagent finished]',
+    );
+    // 派发段：task 全文 + capabilities（唯一可见的联网权说明）
+    const dispatchPre = row().querySelector('.round-block__delegate-dispatch pre');
+    expect(dispatchPre?.textContent).toContain('调查认证链路');
+    expect(dispatchPre?.textContent).toContain('Capabilities: web_search');
+    // 空摘录：只留状态说明，不留空标题/空占位，也不叠通用 summary
+    expect(row().querySelector('.round-block__delegate-status-note')?.textContent).toBe(
+      'Subagent interrupted: the turn was stopped before the subagent finished',
+    );
+    expect(row().querySelector('.round-block__delegate-receipt')).toBeNull();
+    expect(row().querySelector('.round-block__tool-summary')).toBeNull();
+  });
+
+  it('delegate_task 老数据（无 delegate 字段）：诚实回退 Succeeded / Failed 两态', () => {
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'r-old-delegate',
+        processEvents: [
+          { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+          {
+            type: 'tool_start',
+            seq: 2,
+            ts: '',
+            payload: { toolCallId: 'o1', name: 'delegate_task', args: '{"task":"旧任务"}' },
+          },
+          {
+            type: 'tool_result',
+            seq: 3,
+            ts: '',
+            payload: { toolCallId: 'o1', name: 'delegate_task', ok: false, summary: '旧结论' },
+          },
+        ],
+        assistantMessage: { content: '完成', ts: '' },
+        status: 'complete',
+      }),
+    );
+    const rb = document.querySelector('.round-block');
+    expect(rb).not.toBeNull();
+    const row = document.querySelector('.round-block__tool[data-tool-call-id="o1"]')!;
+    // 不补假徽标：无 delegate 字段 → 原两态文案与无档位 class
+    expect(row.querySelector('.round-block__tool-status')?.textContent).toBe(' (Failed)');
+    expect(row.classList.contains('is-delegate-task')).toBe(false);
+    expect(row.querySelector('.round-block__delegate-receipt')).toBeNull();
+    expect(row.querySelector('.round-block__delegate-status-note')).toBeNull();
+  });
+
   it('工具批 summary 前置 tool 类型标（行批共用）；finalize 重刷后 icon 不丢', () => {
     mountChatView();
     dispatch({ type: 'chunk', content: '连做两件事' });

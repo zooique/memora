@@ -130,6 +130,8 @@ import { loadMessagesHistory, loadRoundBasedHistory } from '../helpers/historyLo
 import { DraftSessionController } from '../helpers/draftSession.js';
 // 过程事件 / 指标段级合并（纯函数，HOST-SPLIT-1 切片自本类外置；三条调用面共用同一语义）
 import { mergeProcessEvents } from '../helpers/processEventMerge.js';
+// 工具失败数的展示口径（delegate 四态只把 failed 当失败）：与行级徽标共用同一判据
+import { countToolFailures } from '../helpers/processFlowModel.js';
 // 启动会话归属裁决（首选被另一窗口占用时让位）——判据单点，面板与验收测试共用同一实现
 import { claimStartupSession } from '../helpers/sessionStartupClaim.js';
 import {
@@ -3248,6 +3250,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             ok: chunk.ok,
             summary: chunk.summary,
             ...(chunk.blocked ? { blocked: true } : {}),
+            // delegate_task 回执原样透传（四态/摘录/两段耗时）；其它工具无此字段
+            ...(chunk.delegate ? { delegate: chunk.delegate } : {}),
           });
           // 文件改动追踪：写后合并（按文件路径；blocked/失败自动丢弃）
           this._fileChangeSink?.noteToolResult({
@@ -3462,11 +3466,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         durationMs: Date.now() - flowStartMs,
         tokenIn: Math.max(0, metricsNow.llm.totalInputTokens - metricsBefore.in),
         tokenOut: Math.max(0, metricsNow.llm.totalOutputTokens - metricsBefore.out),
-        // 工具失败计数：与内核口径对齐（策略拦截 blocked 既非成功亦非失败，不计入失败），
-        // 语义为本轮增量。内核对应用计数是累计（this.metrics.toolFailureCount），非本轮 diff，不可直接复用。
-        toolFailureCount: [...eventsByRound.values()]
-          .flat()
-          .filter((e) => e.type === 'tool_result' && !e.payload.ok && !e.payload.blocked).length,
+        // 工具失败计数（本轮增量）：普通工具沿用 !ok 且排除策略拦截；
+        // delegate_task 只把四态里的 failed 当失败——incomplete/interrupted 不是失败
+        // （用户自己按停止不应被记成「一次失败」，否则轮指标失真）。
+        // 注意：内核累计口径（metrics.toolFailureCount）仍是 outcome 级，二者不直接对齐。
+        toolFailureCount: countToolFailures([...eventsByRound.values()].flat()),
         // 本轮未解析文本工具意图增量：「想调用工具却未走原生协议」不得显示为成功收尾
         unparsedToolIntentCount: Math.max(
           0,
