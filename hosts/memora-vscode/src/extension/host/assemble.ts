@@ -29,6 +29,7 @@ import type {
   LlmProvider,
   ArchiveMode,
   ImageResolver,
+  ImageReadPort,
 } from '@zooique/memora';
 import type { ILogger } from '@zooique/memora';
 import type { CustomSearchEngineConfig } from '../../shared/protocol.js';
@@ -346,6 +347,13 @@ export interface AssembleOptions {
    * 的 `resolver` 注入。未注入 = 图片序列化走 D7 二级降级占位（不阻断对话）。
    */
   imageResolver?: ImageResolver;
+  /**
+   * 图片按路径摄取端口（`read_image` 的**执行面**）
+   *
+   * 运行时回调、不入 DTO（函数不可持久化）；由 extension.ts 用「同一 ImageCache +
+   * ProviderStore 视觉位」构造。未注入 ⇒ 内核不暴露 `read_image`（暴露面按端口存在性裁剪）。
+   */
+  imageReadPort?: ImageReadPort;
   /** 环境变量（默认 process.env，便于测试注入） */
   env?: NodeJS.ProcessEnv;
 }
@@ -398,6 +406,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     mcpToolAllowlist,
     extensionVersion,
     imageResolver,
+    imageReadPort,
   } = options;
 
   // 日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核；
@@ -461,6 +470,10 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // 角色包组（会议名单，用户级数据；内核 buildTeamContextBlock 注入组/成员清单供 LLM 组织会议）
     rolePackTeams,
     provider,
+    // 图片按路径摄取（`read_image` 执行面）：宿主读盘 + 校验 → 同一 ImageCache。
+    // 暴露面（是否列出该工具）由内核 resolveActiveTools 逐 step 现算，与本端口的
+    // 第二层拒绝是两个独立判定点（端口不假设调用方一定守规矩）。
+    imageReadPort,
     // Provider 路由策略（激活 AgentLoop 路由缓存优化；按任务类型返回对应 Provider）
     providerRouter,
     // 后台模型 Provider（摘要 / 归档 / 润色等后台任务走独立轻量模型；undefined 回退前台）

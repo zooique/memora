@@ -40,6 +40,7 @@ const TOOL_LABELS: Record<string, string> = {
   list_sessions: 'List sessions',
   list_skills: 'List skills',
   read_file: 'Read file',
+  read_image: 'Read image',
   read_resource: 'Read resource',
   read_skill: 'Read skill',
   register_work: 'Register work',

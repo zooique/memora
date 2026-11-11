@@ -203,6 +203,23 @@ export class ProviderStore {
   }
 
   /**
+   * 当前激活 Provider 是否声明支持视觉（`supportsVision`，fail-closed）。
+   *
+   * 与 `getActiveName` 同一「同步读配置」形态：视觉位是**配置态**，不涉 SecretStorage，
+   * 故不走 `readRuntimeEntry` 那条会抛「未存储 key」的异步链。三条取不到即 false：
+   * 未设激活项 / 目标条已被删 / 字段未声明——宁可不对外声明视觉能力，也不给模型
+   * 一个必失败的工具（与内核 `supportsVision` fail-closed 同一立场）。
+   *
+   * 注意：这是**配置侧**能力位，只给宿主端口做第二层拒绝用；内核暴露面仍以
+   * 「路由后 provider」的 supportsVision 逐 step 裁决，二者独立取值，互不替代。
+   */
+  getActiveVision(): boolean {
+    const name = this.getActiveName();
+    if (!name) return false;
+    return this.readConfig().find((p) => p.name === name)?.supportsVision === true;
+  }
+
+  /**
    * 读取运行面目标条（getActive / getBackground 共用的唯一通道）
    *
    * 与 list 的关键差异：**只读目标条一个 key**。此前两方法走 `list()` 读全部

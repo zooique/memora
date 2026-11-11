@@ -122,6 +122,28 @@ export class ImageCache {
   }
 
   /**
+   * 直接以**内存字节**入缓存（不读盘、不落副本）——`read_image` 端口的专用入口。
+   *
+   * 与 `preload` 的差异仅「字节来自哪里」：那边从附件文件读，这里由工具执行面读入后交来；
+   * 入缓存后的消费链（`resolver` 三值校验 / LRU / 淘汰）完全一致。
+   *
+   * ⚠️ **必须先查 `entries.has` 再 put**：`put` 只累加 `totalBytes`，不做同键覆盖扣减。
+   * 既有唯一调用点 `preload` 已先判 `entries.has`，故从未暴露；本入口是新增调用点，
+   * 若直接重复 set 会重复累加，把字节上限提前顶穿（LRU 提前淘汰仍在用的图）。
+   *
+   * @param ref 已由校验链产出的引用（sha256 为键；mime/bytes 供消费侧三值校验）
+   * @param bytes 图片原始字节（长度必须与 `ref.bytes` 一致，调用方保证）
+   */
+  ingestBytes(ref: ImageRef, bytes: Buffer): void {
+    if (this.entries.has(ref.sha256)) {
+      // 同 sha 已在缓存：只刷新 LRU 位次，不重复累加 totalBytes
+      this.touch(ref.sha256);
+      return;
+    }
+    this.put(ref.sha256, { bytes, mime: ref.mime });
+  }
+
+  /**
    * 会话加载期预读：只取**最近窗口内**轮次的 user 附件，逐条 `preload`。
    *
    * 只在「会话被打开/切回」时调用（chatPanel.replayHistory），**不得**挂到每步投影的

@@ -31,6 +31,7 @@ import { broadcastRolePackTeams } from './host/rolePackTeams.js';
 import { attachRolePackCatalog } from './host/rolePackCatalog.js';
 import { MemoryGcScheduler } from './host/memoryGcScheduler.js';
 import { ImageCache } from './host/imageCache.js';
+import { createImageReadPort } from './host/imageReadPort.js';
 import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { formatDiagnosticsSnapshot } from '../webview/panels/hostDiagnostics.js';
@@ -288,6 +289,12 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
     extensionVersion: extensionVersion || undefined,
     // 图片解析器（IMG-2 §5.4）：运行时回调，与能力位 supportsVision 一起才构成可用视觉链
     imageResolver: deps.imageCache.resolver,
+    // 图片按路径摄取（read_image 执行面）：读盘 → 同一 ImageCache；端口内用配置侧视觉位
+    // 做**第二层拒绝**（内核暴露面裁剪是第一层，二者独立）。未注入 ⇒ 内核不暴露该工具。
+    imageReadPort: createImageReadPort({
+      cache: deps.imageCache,
+      getActiveVision: () => deps.providerStore.getActiveVision(),
+    }),
     outputChannel: deps.outputChannel,
     // 记忆存储单例（多 Agent 共享同一对象；所有权归宿主，close 单个实例不关它）
     storage: deps.storage(),

@@ -119,6 +119,32 @@ describe('ImageCache — 预读 → resolver 命中', () => {
   });
 });
 
+describe('ImageCache — ingestBytes（read_image 直入内存字节）', () => {
+  it('直接入缓存 → resolver 命中（不依赖附件文件已落盘）', () => {
+    const bytes = fakeBytes('ingest-hit');
+    const ref = refOf(bytes);
+    const cache = new ImageCache();
+
+    cache.ingestBytes(ref, Buffer.from(bytes));
+
+    const resolved = cache.resolver(ref);
+    expect(resolved).not.toBeNull();
+    expect((resolved as { url: string }).url.startsWith('data:image/png;base64,')).toBe(true);
+  });
+
+  it('同一 sha 重复 ingest 不重复计字节（先查后 put，不把自己挤出字节闸）', () => {
+    const bytes = fakeBytes('ingest-idempotent');
+    const ref = refOf(bytes);
+    // 字节闸恰好等于单条大小：若直接 put 重复累加，唯一一条会被自己淘汰掉
+    const cache = new ImageCache({ maxEntries: 32, maxTotalBytes: bytes.length });
+
+    cache.ingestBytes(ref, Buffer.from(bytes));
+    cache.ingestBytes(ref, Buffer.from(bytes));
+
+    expect(cache.resolver(ref)).not.toBeNull();
+  });
+});
+
 describe('ImageCache — D20 三值交叉校验（消费侧）', () => {
   it('同 sha 但 mime 不符 → 视为未命中（宁可降级，不可发错图）', () => {
     const dir = makeTempDir('memora-imgcache-');
