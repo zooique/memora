@@ -114,11 +114,18 @@ const STEP_TIMEOUT_MS = 15 * 60 * 1000; // 单步 15 分钟上限，防挂死
  * `lint-staged` 只扫 **staged** 文件，未 stage 的越限文件提交时完全不被看见（行数闸实锤：
  * 提交时绿、推送时才被 full 档拦下 =「提交时以为干净」）。实测两侧 lint 合计 ≈17s，
  * fast 档总耗时约 50s，仍在「默认路径便宜」预算内 ⇒ 宁可提交时多 17s，不要推送时才发现。
- * @type {{id:string,name:string,cmd:string,cwd:string,required:boolean,presets:string[],optionalFlag?:string,env?:Record<string,string>,holdsTestLock?:boolean}[]}
+ * @type {{id:string,name:string,cmd:string,cwd:string,required:boolean,presets:string[],holdsTestLock:boolean,optionalFlag?:string,env?:Record<string,string>}[]}
  *
- * `holdsTestLock`（2026-11-11 增）：本步会执行**全量测试套件** ⇒ 本次门禁必须取测试互斥锁。
+ * `holdsTestLock`（2026-11-11 增、同日改为**必填**）：本步会执行**全量测试套件** ⇒ 本次门禁必须取测试互斥锁。
  * 判据只看「这一步是否真的拉起全量」，不看档名——`selectSteps()` 之后用
- * `steps.some(s => s.holdsTestLock)` 决定取不取锁（见 main）。漏标 = 全量在无锁状态下跑（正是锁要治的病）。
+ * `steps.some(s => s.holdsTestLock)` 决定取不取锁（见 main）。
+ *
+ * **为什么必填、不写就抛错**：漏标时该步骤以 `undefined` 参与判断 ⇒ 新增的全量测试步骤会在
+ * **无锁**状态下静默并发，而门禁照样全绿（没有任何判据会红——「锁保护失效」本身零信号）。
+ * 故每一步都必须显式写 `true` / `false`，由 `assertStepsDeclareTestLock()` 在启动时校验。
+ * **为什么不用名字猜**（含 `test` / `coverage` 之类）：名字是描述不是判据——
+ * `kernel:surface-guard` 名字不带 test 却真跑一个 vitest 文件（只是单文件、不取锁），
+ * 而将来的全量步骤也未必叫 test；按名字分类两边都会错。
  */
 const ALL_STEPS = [
   // 工具链前置（ENV-PNPM-1）：`host:sync` 的 `pnpm` 解析哪个版本，取决于**宿主 cwd** 的
@@ -129,6 +136,7 @@ const ALL_STEPS = [
   {
     id: 'toolchain:pnpm',
     name: '工具链钉版（pnpm 声明 = 宿主 cwd 实跑）',
+    holdsTestLock: false,
     cmd: 'node scripts/verify-toolchain-pin.mjs',
     cwd: ROOT,
     required: true,
@@ -137,6 +145,7 @@ const ALL_STEPS = [
   {
     id: 'kernel:typecheck',
     name: '内核 TypeScript 类型检查',
+    holdsTestLock: false,
     cmd: 'npm run typecheck',
     cwd: ROOT,
     required: true,
@@ -151,6 +160,7 @@ const ALL_STEPS = [
   {
     id: 'kernel:surface-guard',
     name: '公开成员面冻结基线守卫（新增公开成员必登记）',
+    holdsTestLock: false,
     cmd: 'node node_modules/vitest/vitest.mjs run src/__tests__/publicMemberSurfaceGuard.test.ts --silent --reporter=dot',
     cwd: ROOT,
     required: true,
@@ -166,6 +176,7 @@ const ALL_STEPS = [
   {
     id: 'lock:verify',
     name: '测试互斥锁矩阵自检（令牌继承 / 双泄漏接管 / 单文件豁免 / 豁免口子反例）',
+    holdsTestLock: false,
     cmd: 'node scripts/verify-test-lock.mjs',
     cwd: ROOT,
     required: true,
@@ -174,6 +185,7 @@ const ALL_STEPS = [
   {
     id: 'kernel:lint',
     name: '内核 ESLint（含 --max-warnings 0）',
+    holdsTestLock: false,
     cmd: 'npm run lint',
     cwd: ROOT,
     required: true,
@@ -217,6 +229,7 @@ const ALL_STEPS = [
   {
     id: 'kernel:build',
     name: '内核生产构建（清 dist + build）',
+    holdsTestLock: false,
     cmd: 'npm run build:clean',
     cwd: ROOT,
     required: true,
@@ -232,6 +245,7 @@ const ALL_STEPS = [
   {
     id: 'host:sync',
     name: '宿主镜像刷新（pnpm install --offline）',
+    holdsTestLock: false,
     cmd: 'pnpm install --offline',
     cwd: HOST,
     required: true,
@@ -247,6 +261,7 @@ const ALL_STEPS = [
   {
     id: 'host:typecheck',
     name: '宿主 TypeScript 类型检查',
+    holdsTestLock: false,
     cmd: 'npm run typecheck',
     cwd: HOST,
     required: true,
@@ -255,6 +270,7 @@ const ALL_STEPS = [
   {
     id: 'host:lint',
     name: '宿主 ESLint（含 --max-warnings 0）',
+    holdsTestLock: false,
     cmd: 'npm run lint',
     cwd: HOST,
     required: true,
@@ -267,6 +283,7 @@ const ALL_STEPS = [
   {
     id: 'host:manifest',
     name: '宿主本地化（nls / bundle / webview 三面）',
+    holdsTestLock: false,
     cmd: 'node scripts/verify-nls.mjs',
     cwd: HOST,
     required: true,
@@ -286,6 +303,7 @@ const ALL_STEPS = [
   {
     id: 'host:build',
     name: '宿主构建（tsc + esbuild 内联内核）',
+    holdsTestLock: false,
     cmd: 'npm run compile',
     cwd: HOST,
     required: true,
@@ -297,6 +315,7 @@ const ALL_STEPS = [
   {
     id: 'verify:dist-contract',
     name: 'dist 契约（宿主 bundle 与内核同代）',
+    holdsTestLock: false,
     cmd: 'node scripts/verify-dist-contract.mjs',
     cwd: ROOT,
     required: true,
@@ -307,6 +326,7 @@ const ALL_STEPS = [
   {
     id: 'docs:links',
     name: '全仓文档死链检查',
+    holdsTestLock: false,
     cmd: 'npm run docs:links:repo',
     cwd: ROOT,
     required: true,
@@ -317,6 +337,7 @@ const ALL_STEPS = [
   {
     id: 'terminology:check',
     name: '术语载体集合漂移检查',
+    holdsTestLock: false,
     cmd: 'npm run terminology:check',
     cwd: ROOT,
     required: true,
@@ -327,6 +348,7 @@ const ALL_STEPS = [
   {
     id: 'rules:refs',
     name: '规则裸路径引用有效性检查',
+    holdsTestLock: false,
     cmd: 'npm run rules:refs',
     cwd: ROOT,
     required: true,
@@ -339,6 +361,7 @@ const ALL_STEPS = [
   {
     id: 'phrase:scan',
     name: '短语类穷尽扫描（枚举 + 逐条分类）',
+    holdsTestLock: false,
     cmd: 'npm run scan:phrase:check',
     cwd: ROOT,
     required: true,
@@ -352,6 +375,7 @@ const ALL_STEPS = [
   {
     id: 'ledger:receipt',
     name: '台账销项同步检查（告警档）',
+    holdsTestLock: false,
     cmd: 'node scripts/verify-ledger-receipt.mjs',
     cwd: ROOT,
     required: false,
@@ -377,6 +401,7 @@ const ALL_STEPS = [
   {
     id: 'ledger:hygiene',
     name: '台账结构卫生检查（结构 / 归档 / 观察区保质期 · 硬闸）',
+    holdsTestLock: false,
     cmd: 'npm run verify:ledger-hygiene',
     cwd: ROOT,
     required: true,
@@ -393,6 +418,7 @@ const ALL_STEPS = [
   {
     id: 'modal:cancel',
     name: '模态确认框唯一入口（窄闸 + 严闸）',
+    holdsTestLock: false,
     cmd: 'npm run verify:modal-cancel',
     cwd: ROOT,
     required: true,
@@ -408,6 +434,7 @@ const ALL_STEPS = [
   {
     id: 'ledger:fold',
     name: '台账折叠结清检查（移走条目必须有归档副本 · 硬闸）',
+    holdsTestLock: false,
     cmd: 'npm run verify:ledger-fold -- --since=origin/main',
     cwd: ROOT,
     required: true,
@@ -418,6 +445,7 @@ const ALL_STEPS = [
   {
     id: 'format:check',
     name: '排版格式检查（prettier）',
+    holdsTestLock: false,
     cmd: 'npm run format:check',
     cwd: ROOT,
     required: true,
@@ -426,6 +454,7 @@ const ALL_STEPS = [
   {
     id: 'audit',
     name: '依赖安全审计（允许失败）',
+    holdsTestLock: false,
     cmd: 'npm audit --audit-level=high',
     cwd: ROOT,
     required: false,
@@ -455,6 +484,7 @@ for (const hostDir of SECONDARY_HOSTS) {
   SECONDARY_HOST_STEPS.push({
     id: `host:${label}:typecheck`,
     name: `${label} TypeScript 类型检查`,
+    holdsTestLock: false,
     cmd: 'npm run typecheck',
     cwd: hostDir,
     required: true,
@@ -464,6 +494,7 @@ for (const hostDir of SECONDARY_HOSTS) {
     SECONDARY_HOST_STEPS.push({
       id: `host:${label}:build`,
       name: `${label} 构建`,
+      holdsTestLock: false,
       cmd: 'npm run build',
       cwd: hostDir,
       required: true,
@@ -478,6 +509,7 @@ for (const hostDir of SECONDARY_HOSTS) {
     SECONDARY_HOST_STEPS.push({
       id: `host:${label}:smoke`,
       name: `${label} 端到端冒烟（stdio 全链路）`,
+      holdsTestLock: false,
       cmd: 'npm run smoke',
       cwd: hostDir,
       required: true,
@@ -494,6 +526,61 @@ for (const hostDir of SECONDARY_HOSTS) {
   }
   ALL_STEPS.splice(insertAt, 0, ...SECONDARY_HOST_STEPS);
 }
+
+/**
+ * 步骤定义「取不取测试锁」强制表态校验 —— 漏标即抛错
+ *
+ * 治的是**构造性缺口**：`holdsTestLock` 曾是可选项，将来新增一个全量测试步骤忘了标，
+ * 那份全量就在无锁状态下跑，且**没有任何闸会红**（静默失效，与「守卫有实现 ≠ 守卫会跑」同族）。
+ *
+ * 判据 = 字段必须是**布尔**（`true` / `false` 都算表态），出现 `undefined` 即拒。
+ * 不猜名字、不推断命令内容——只看有没有表态，因为「这一步是不是全量」只有写的人知道。
+ *
+ * @param {Array<{id?:string, holdsTestLock?:unknown}>} steps 待校验的步骤定义
+ *   （生产传组装完成的 ALL_STEPS；自检传抹掉该字段的真实步骤副本）
+ * @throws {Error} 一次列出**全部**漏标 id（不做「首个即停」，避免改一条再跑一条）
+ */
+function assertStepsDeclareTestLock(steps) {
+  const undeclared = steps.filter((step) => typeof step.holdsTestLock !== 'boolean');
+  if (undeclared.length === 0) return;
+  throw new Error(
+    `[local-ci] 步骤定义缺 holdsTestLock 表态：${undeclared.map((s) => s.id ?? '<无 id>').join(', ')}。` +
+      '每个步骤都必须显式写 holdsTestLock: true（跑全量测试套件）或 false（不跑）——' +
+      '漏标会让新增的全量测试在无锁状态下静默并发，且没有任何判据会红。',
+  );
+}
+
+/**
+ * 校验器自检：证明「漏标会红」
+ *
+ * 反例从生产定义派生（复制真实步骤后删掉该字段），不另写一份步骤清单——
+ * 手写反例会在字段改名 / 清单重构后照样通过，等于自检与真实结构脱钩。
+ *
+ * 变异验证口径：把 `assertStepsDeclareTestLock` 改成空实现，本自检必须抛错 ⇒ 门禁直接红。
+ * （若只删掉下面那两行调用，自检不会红——但那时生产定义也全部漏检，属另一种形态的失效。）
+ */
+function selfCheckStepLockGuard() {
+  const sample = ALL_STEPS[0];
+  if (!sample) throw new Error('[local-ci] 自检失败：ALL_STEPS 为空，无法派生反例');
+  const undeclaredStep = { ...sample };
+  delete undeclaredStep.holdsTestLock;
+  let rejected = false;
+  try {
+    assertStepsDeclareTestLock([undeclaredStep]);
+  } catch {
+    rejected = true;
+  }
+  if (!rejected) {
+    throw new Error(
+      '[local-ci] 自检失败：缺 holdsTestLock 的步骤未被拒绝——强制表态校验已失效，' +
+        '「新增全量步骤忘表态却全绿」的缺口会原样回来，禁止放行。',
+    );
+  }
+}
+
+// 启动即校验：**任何档位**（fast / full）都在选步骤之前红，不留「只有 full 才查」的盲区
+assertStepsDeclareTestLock(ALL_STEPS);
+selfCheckStepLockGuard();
 
 function selectSteps() {
   const preset = argOf('preset') ?? 'full';

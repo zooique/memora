@@ -129,7 +129,7 @@
 **为什么这条属于本 SOP**：它不改变任何用例判据，只消除一种**假红发生器** —— 两份全量并发抢 CPU ⇒ 超时类假红 ⇒ §3「先数 `AssertionError`」的诊断被污染 ⇒ 训练出「红了先重跑」的习惯 ⇒ 那个习惯迟早放行一个真红。**价值不在省时间，在红灯的可信度。**
 
 - **唯一真源**：`scripts/lib/gateLock.mjs`（门禁与 `npm test` 共用同一锁文件 `.workbuddy/tmp/local-ci.lock`、同一判据，**不设第二把锁**）。锁目录在 `.workbuddy/`（已 gitignore）。
-- **锁的作用域 = 含全量测试步骤的执行（2026-11-11 订正）**：`scripts/local-ci.mjs` 先 `selectSteps()` 再决定取不取锁，`holdsTestLock` 只标在 `kernel:test` / `kernel:coverage` / `host:test` 上。`fast` 档（pre-commit `gate-fast`）零全量步骤 ⇒ **不取锁、不排队**，有活锁时只打一行「另一份全量正在跑（…），本次不取锁」告警。
+- **锁的作用域 = 含全量测试步骤的执行（2026-11-11 订正）**：`scripts/local-ci.mjs` 先 `selectSteps()` 再决定取不取锁；`holdsTestLock` 是**每个步骤必填的布尔字段**（`true` 仅 `kernel:test` / `kernel:coverage` / `host:test` 三个全量步骤，其余显式 `false`），漏写由 `assertStepsDeclareTestLock()` 在启动时抛错（任何档位直接红，不留「只有 full 才查」的盲区；另有一条自检反例证明漏标必拒）。`fast` 档（pre-commit `gate-fast`）零全量步骤 ⇒ **不取锁、不排队**，有活锁时只打一行「另一份全量正在跑（…），本次不取锁」告警。
   - **为什么必须改**：旧实现无条件取锁 ⇒ 2026-11-11 实锤另一份 `npm test`（pid 26528，已跑 327s）在跑时，pre-commit 的 `gate-fast` **一条判据都没跑**就被 `acquireGateLock` 拒掉（`exit status 2` → gate-fast 退出码 1）。判据没红，是锁挡的。
   - **为什么不拆锁 / 不排队**：拆两把 = 两个互斥源 = 没有互斥（台账判据① 不新造第二把锁）；排队 = full 实测 671.9s，commit 挂十分钟 ⇒ 人只会 Ctrl+C 或加逃生开关（`test-run.mjs` 原文已否过排队）。
 - **`fast` 不取锁的写冲突核查（2026-11-11，查完结论：无真实写冲突）**：两侧 `lint` 均无 `--cache`（`eslint . --max-warnings 0`，`eslint.config.mjs` 无 cache）⇒ 不写 `.eslintcache`；两侧 `typecheck` 均 `tsc --noEmit` 且 tsconfig 无 `incremental` / `composite` ⇒ 不写 `.tsbuildinfo`、无产物；`verify-nls` / `ledger:hygiene` / `modal:cancel` 三个校验脚本 grep 无 `writeFileSync` / `appendFileSync` / `rmSync`（纯只读）；`lock:verify` 用独立临时锁目录；唯一跑 vitest 的 `kernel:surface-guard` 是单文件、无 `--coverage`，且 `node_modules/.vite` 的 mtime 停在 2026-10-17（此后多次全量未触碰）⇒ 不写共享缓存。每个门禁只额外写一份按时间戳命名的日志（`local-ci-<ISO>.log`）。
