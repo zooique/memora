@@ -10,7 +10,9 @@
  * 与内核 Agent；webview 脚本一旦值导入它，就会把整个扩展宿主依赖树拖进 webview bundle。
  * 本文件只含类型、零运行时值，两侧一律 `import type`。
  *
- * 判据纪律：这里的字段全是「内核已算好的显示形状」，webview 不得据此复算
+ * 判据纪律：语义字段来自内核（`resident` / `hasFailure` / `description` 等），
+ * `statusText` / `tooltip` 则由宿主派生层按同一份内核数据拼装（l10n 文案 + `failureLabel`）；
+ * webview 不得据此复算
  * 「是不是项目规则 / 有没有失效」——那两个判断的唯一真源是内核 `listManagedWorks()`
  * 与 `Agent.residentSegmentReport`，派生在 `host/workProjectionRows.ts` 单点完成。
  */

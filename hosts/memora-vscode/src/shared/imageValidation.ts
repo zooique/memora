@@ -101,8 +101,9 @@ function le32(b: Uint8Array, i: number): number {
  */
 export function sniffImageMime(bytes: Uint8Array): ImageMime | null {
   if (bytes.length < 12) {
-    // 最短合法格式（GIF 头 6 字节 / WebP 签名 12 字节）：不足 12 字节只可能是截断或损坏。
-    // GIF/WEBP 判别需要到第 12 字节，故此处统一门槛；PNG/JPEG 实际需更少字节但不单列分支。
+    // 门槛按最长的判别需求取：WebP 要读到第 12 字节（`RIFF....WEBP`），GIF 只看前 6 字节
+    // （`GIF87a` / `GIF89a`），PNG 与 JPEG 需得更少。统一取 12 是工程选择（一个门槛管住全部分支），
+    // 不是格式的客观需要——不足 12 字节一律视为截断或损坏。
     return null;
   }
   // PNG：89 50 4E 47 0D 0A 1A 0A
@@ -148,12 +149,14 @@ export function sniffImageMime(bytes: Uint8Array): ImageMime | null {
 }
 
 /**
- * 第 6 步：解析像素尺寸。四种格式**各自只读文件头几十字节**，不解码整图。
+ * 第 6 步：解析像素尺寸。只读文件头区域、不解码整图，但读取量按格式不同：
+ * PNG / GIF / WebP 只需固定偏移上的十到三十字节；JPEG 要按段长逐段跳过 Appn / EXIF 等段，
+ * 一直走到 SOF 段才拿得到宽高，带大 EXIF 段时可跳过数十 KB 甚至更多。
  *
  * 为什么必须做：`ImageRef.width/height` 是 token 计量（§5.9）与 alt 显示的**唯一来源**，
  * 而没有任何现成 API 能白给（零依赖约束）。若此处省掉，`width/height` 就是两个死字段，
- * token 估算退化成 0（低估 ⇒ 爆窗）或 NaN（比较恒 false ⇒ 静默失效），
- * 且**没有任何现有测试会红**（无附件路径不走这条分支）。
+ * token 估算退化成 0（低估 ⇒ 爆窗）或 NaN（比较恒 false ⇒ 静默失效）。
+ * 解析出的宽高必须 > 0（损坏头可能解析出全零），否则一律返回 null，按「无法解析尺寸」处理。
  */
 export function parseImageSize(bytes: Uint8Array, mime: ImageMime): ImageSize | null {
   switch (mime) {

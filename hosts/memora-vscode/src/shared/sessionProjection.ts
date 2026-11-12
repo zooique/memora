@@ -56,7 +56,8 @@ export interface SessionProjection {
  * @param input 单会话素材（见 `SessionProjectionInput`）
  */
 export function deriveSessionProjection(input: SessionProjectionInput): SessionProjection {
-  // 先合并：live 轮按 roundId 原位替换历史轮（无 live 时原样返回历史，零拷贝开销）
+  // 先合并：live 轮按 roundId 原位替换历史轮。
+  // 元素原样返回（不深拷贝轮对象），但数组每次新建（浅拷贝）——目的是不改写调用方传入的历史数组
   const rounds = mergeLiveRound([...input.history], input.live);
   const last = rounds.length > 0 ? rounds[rounds.length - 1] : undefined;
   // 再折叠：判据全在 deriveTurnState 内（ask > pause > pausePending > running > settled > idle）
