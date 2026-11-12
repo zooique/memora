@@ -65,7 +65,7 @@ export default [
     // 闸门自报 4353 → 4118（净减 235）。**当时的动作**：按要求留出 82 行可用余量
     // （后续 UI 项不再一写就红），基线 = 4118 + 82，仍低于原 4353（只降不升未破）。
     // **现状**：此后外置使文件变小、基线按闸门自报下调后余量仍留着 —— 该余量已接受
-    // （不是待清的虚空余量），见 `tasks/待完成任务.md` 的 CHATPANEL-MARGIN-1 条目。
+    // （不是待清的虚空余量），见 `tasks/archive/0.10.0-host.md` 的 CHATPANEL-MARGIN-1 条目。
     rules: { 'max-lines': ['error', { max: 4200 }] },
   },
   {
@@ -81,7 +81,7 @@ export default [
     // E4 批 4 会话活跃度（+64）撞顶格 ⇒ 顺带外置纯静态 HTML 骨架到 `panels/chatPanelHtml.ts`
     // （零 this / 零运行时状态，与 settingsPanelHtml 同型），净减 210；
     // 基线按闸门自报下调为 4243（**当时的动作**：不留虚空余量）；**现状**：此后外置使文件变小，
-    // 余量已接受，见 `tasks/待完成任务.md` 的 CHATPANEL-MARGIN-1 条目。
+    // 余量已接受，见 `tasks/archive/0.10.0-host.md` 的 CHATPANEL-MARGIN-1 条目。
     // BGTASK-SWITCH-REPUSH-1 撞顶格 ⇒ 历史会话列表投影外置 `helpers/sessionList.ts`
     // （store → DTO 纯映射），基线按闸门自报再降为 4242（只降不升）。
     files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法；诊断聚合 + thought 折叠域 + 过程事件合并域 + HTML 骨架 + 会话列表投影已外置）
