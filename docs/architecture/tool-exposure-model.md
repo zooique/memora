@@ -50,7 +50,7 @@ LLM 现写、无轨迹的任意代码 → 特权（角色启动 + 需宿主注�
 
 ## 三、机制影响
 
-1. **capabilityMap 语义翻转**：从 allow-list（默认全关、声明才开）翻转为 default-on（默认全开、特权才声明）。`file:read` / `file:write` / `file:list` / `memory:recall` / `project:search` 五个能力键**不再控制可见性**，仅保留"声明面广告"或清理（待裁决，倾向清理以免僵尸键）。
+1. **capabilityMap 语义翻转**：从 allow-list（默认全关、声明才开）翻转为 default-on（默认全开、特权才声明）。`file:read` / `file:write` / `file:list` / `memory:recall` / `project:search` 五个能力键**不再控制可见性**。**裁决落定（暂定 · 待复核 2026-11-12）**：**不清理**——五键保留于中立字典（role-pack-spec §四·一），memora 侧一律不映射（= 未登记键，声明产生 `UNREGISTERED_CAPABILITY` warning 诊断），与 `task:plan` 同款处置。当时倾向「清理以免僵尸键」，实际走向保留：中立门纪律保护已冻结键不擅动，且教学位（spec 示例 / authoring guide / 开放键指南 / schema description）已全部改用已登记键，僵尸键不再进入教学面。
 2. **M2.1「换角色→工具集切换」验收语义变更**：白名单从"工具全集的黑名单式过滤"变为"特权工具的加法"。角色包声明 capabilities = 声明**超越默认边界的特权**，而非逐项打开本地能力。
 3. **文档口径同步**：`docs/architecture/role-pack-spec.md` 及角色包 authoring guide 需更新"能力声明=特权声明"表述。
 4. **暴露面与工具执行确认解耦**：写删等危险操作收敛到确认层（confirmWrites/guest），关闭"靠工具显隐做安全"的不当耦合。
@@ -58,7 +58,7 @@ LLM 现写、无轨迹的任意代码 → 特权（角色启动 + 需宿主注�
 ## 四、实现落点
 
 - `src/agent/toolExecutor.ts` `list` getter：常驻豁免集常量（`DEFAULT_EXPOSED_TOOLS`，条目以该常量为真源、此处不落计数），对豁免集跳过白名单过滤；特权工具（web_* / run_code）仍按现有 `toolWhitelist` 过滤——即 baseTools 拆「豁免 ∪ 特权」两段拼接。
-- `src/role-pack/capabilityMap.ts`：裁剪不再控制可见性的能力键（file:read/write/list、memory:recall、project:search、**task:plan**），收敛为特权能力映射（web:search / web:fetch / code:execute）。
+- `src/role-pack/capabilityMap.ts`：裁剪不再控制可见性的能力键（file:read/write/list、memory:recall、project:search、**task:plan**），收敛为已登记能力映射（web:search / web:fetch / code:execute 映射特权工具；另保留 llm:summarize 为已登记**空映射**键——声明不产生 warning、也不解锁任何工具）。
 - `src/agent/types.ts` / `agent.ts`：白名单语义微调（null=全部；[]=仅常驻；非空=常驻+名单内特权），现有 `setToolWhitelist` 通道与 onToolsChanged 刷新链路不变。
 
 ## 五、deny 轴（v1 新增第三道闸，2026-11-11）
