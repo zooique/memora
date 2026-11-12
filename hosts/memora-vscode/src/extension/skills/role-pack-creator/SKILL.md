@@ -94,7 +94,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 `prepare`（1）默认值：`summaryFocus`(≤500字符，默认省略)。注：`understandingConfirm` 不作为开放键——confirm 并入 `askOn` 含 `'confirm'` 触发，echo 由内核 Turn 起始策略覆盖，勿再填写；`memoryRecall`/`memoryRecallPercent`/`minFallback`/`contextAssembly`/`recallConfidence`/`summaryRecall` 6 个召回键不存在——记忆检索改由 `memory_search` 工具触发，勿再填写。
 `act`（8）默认值：`toolMode`=allow｜`temperature`=0.7(0~2)｜`outputLimit`=0(0~65536，0=不干预、与 per-LLM 配置取更小值语义下不设额外上限)｜`toolStepLimit`=20(0~100)｜`providerRouting`=auto｜`multiStepReasoning`=auto｜`toolReadonly`=full｜`subagentConcurrency`=4(0~16，0=关闭派发；越界直接报错不回退；只管同一批 tool_call 内能并行几个，不会让模型自动并行)
 `reflect`（3）默认值：`summary`=on｜`selfReview`=0(0~10，布尔数字：0=关闭，>0 一律收敛为 1=终审一次，写 2 与写 1 效果相同)｜`userFollowup`=silent
-`global`（6）默认值：`askOn`=['ambiguity','decision','missing_info']｜`askLimit`=10(1~10)｜`webSearchLimit`=6(1~20，联网搜索硬护栏)｜`errorHandling`=retry｜`contextLimit`=0(0~2000000，0=不设额外上限、跟随 provider 窗口)｜`stepBudget`=0(0 或 10~500，0=走内核兜底；1~9 非法)
+`global`（6）默认值：`askOn`=['ambiguity','decision','missing_info']｜`askLimit`=10(1~10)｜`webSearchLimit`=6(1~20，联网搜索硬护栏)｜`errorHandling`=retry｜`contextLimit`=0(0 或 120000~2000000，0=不设额外上限、跟随 provider 窗口；1~119999 非法)｜`stepBudget`=0(0 或 10~500，0=走内核兜底；1~9 非法)
 
 ### 第四步：校验（写→验→用闭环）
 
