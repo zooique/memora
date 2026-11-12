@@ -24,18 +24,14 @@ export function parseLlmJson<T = unknown>(raw: string): T | null {
   // 1. 直接解析
   try {
     return JSON.parse(trimmed) as T;
-  } catch {
-    // 继续
-  }
+  } catch {}
 
   // 2. 剥离 markdown 代码块标记（```json ... ```）
   const codeBlockMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
   if (codeBlockMatch?.[1]) {
     try {
       return JSON.parse(codeBlockMatch[1].trim()) as T;
-    } catch {
-      // 继续
-    }
+    } catch {}
   }
 
   // 3. 修复常见错误后重试
@@ -47,18 +43,14 @@ export function parseLlmJson<T = unknown>(raw: string): T | null {
     .replace(/,\s*]/g, ']');
   try {
     return JSON.parse(fixed) as T;
-  } catch {
-    // 继续
-  }
+  } catch {}
 
   // 4. 正则提取首个 JSON 对象
   const objectMatch = trimmed.match(/\{[\s\S]*\}/);
   if (objectMatch) {
     try {
       return JSON.parse(objectMatch[0]) as T;
-    } catch {
-      // 放弃
-    }
+    } catch {}
   }
 
   return null;

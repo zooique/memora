@@ -64,14 +64,11 @@ export class BackgroundTaskScheduler {
     factory: () => Promise<unknown>,
     onFailure?: (err: unknown) => void,
   ): void {
-    // 调用即计入在途（立即执行 or 排队均算）
     this.pendingCount++;
 
     if (this.activeCount < MAX_CONCURRENT_BACKGROUND_TASKS) {
-      // 有空闲槽位 → 立即执行
       this.executeTask(label, factory, onFailure);
     } else {
-      // 槽位已满 → 排队等待
       logger.debug({ label }, '后台任务排队等待执行');
       this.pendingQueue.push({ label, factory, onFailure });
     }

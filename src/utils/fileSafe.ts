@@ -49,7 +49,7 @@ export function statSyncSafe(path: string): Stats | null {
   }
 }
 
-/** 安全的存在性同步调用：不可访问按不存在处理，不抛异常（实现即 `existsSync`，名字与之一致） */
+/** 安全的存在性同步调用：不可访问按不存在处理，不抛异常 */
 export function existsSyncSafe(path: string): boolean {
   try {
     return existsSync(path);

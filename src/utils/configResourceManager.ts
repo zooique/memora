@@ -188,21 +188,16 @@ export abstract class ConfigResourceManager<T extends ConfigResource, TOptions =
 
   /** 从扫描条目构建资源对象（子类实现差异化字段解析；返回 null 跳过该条目） */
   protected async createEntry(_entry: ScannedMarkdownEntry): Promise<T | null> {
-    // 默认空实现：不解析任何条目，子类可覆写
     return null;
   }
 
   // ── 生命周期钩子（子类可选覆写） ──────────────────────────
 
   /** load() 完成后的回调（子类可做激活选择） */
-  protected onAfterLoad(_items: T[], _options?: TOptions): void {
-    // 默认空实现
-  }
+  protected onAfterLoad(_items: T[], _options?: TOptions): void {}
 
   /** reload() 完成后的回调（子类可保持当前激活状态） */
-  protected onAfterReload(_items: T[]): void {
-    // 默认空实现
-  }
+  protected onAfterReload(_items: T[]): void {}
 
   // ── 私有方法 ──────────────────────────────────────────
 
