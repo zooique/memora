@@ -43,12 +43,7 @@ export interface PanelSnapshotDeps {
   post: (msg: ExtensionToWebviewMessage) => void;
   /** 当前执行栈是否属于后台流（写本域缓存前必须挡） */
   isBackground: () => boolean;
-  /**
-   * 当前**显示**会话的标识（收起偏好与去重签名的会话维度键）
-   *
-   * `taskId` 只在单个 Agent 实例内唯一（`bg-${seq}`）⇒ 不带会话维度就无法区分
-   * 「A 的 bg-1」与「B 的 bg-1」。
-   */
+  /** 当前**显示**会话的标识（收起偏好与去重签名的会话维度键；`taskId` 跨会话重名见文件头） */
   getSessionId: () => string;
   /** 本地化注入面（后台任务状态标签的词形；生产传 `vscode.l10n`） */
   l10n: { t(message: string): string };
@@ -75,10 +70,8 @@ export class PanelSnapshots {
 
   /**
    * 用户已手动收起的后台任务，**按会话分组**：只存用户偏好，不存任务数据。
-   * 放宿主（webview 折叠重建会丢）；生命周期 = 宿主实例。
-   *
-   * 用例：A 会话收起 `bg-1` 后，B 会话的 `bg-1` 必须仍显示——`taskId` 是每实例序号，
-   * 不带会话维度即跨会话串台（`BGTASK-DISMISS-CROSSTALK-1`）。
+   * 放宿主（webview 折叠重建会丢）；生命周期 = 宿主实例。分桶理由见文件头
+   * （`taskId` 跨会话重名，不分桶会让 A 的收起连带隐藏 B 的同名任务）。
    */
   private readonly _dismissedBySession = new Map<string, Set<string>>();
 
@@ -98,12 +91,12 @@ export class PanelSnapshots {
     // 后台流不推：读的是当前显示会话实例，推出去即串台
     if (!agent || this._deps.isBackground()) return;
     const checkpoint = agent.getCheckpoint();
-    // checkpoint 不存在时推空消息让 webview 清看板；plan 为空也推（autoClearPlan 后）
+    // checkpoint 不存在 / 无 plan / plan 为空（turn 结束 autoClearPlan 或 LLM 写入空计划）
+    // 三种情形都推空消息让 webview 清看板
     if (!checkpoint || !checkpoint.plan) {
       this._deps.post({ type: 'plan_update', items: [] });
       return;
     }
-    // plan 为空时也推（turn 结束 autoClearPlan 或 LLM 新任务写入空 plan）
     if (checkpoint.plan.length === 0) {
       this._deps.post({ type: 'plan_update', items: [] });
       return;
@@ -142,11 +135,9 @@ export class PanelSnapshots {
    * agent 未就绪时不推（`_agent` 为空 = 未装配，与 `postPlan` 同守卫形态）——不静默推
    * 空快照，否则「未就绪」会被 UI 读成「没有后台任务」。
    *
-   * 推送时机 = 宿主侧多个事件点（无定时器、无轮询）：`step_boundary`（任务刚启动）/
-   * `background_report`（turn 终态批量变化）/ `background_kill` 处理后回推 /
-   * 内核 `backgroundTaskSettled` 事件（turn 结束后自然终态）/ webview ready（force，
-   * 重建对齐）/ 会话切换重投影 / 收起终态行等。step 边界周期性到达 ⇒
-   * 无任务时逐 step 推空快照纯属 IPC 噪音，由签名去重拦掉。
+   * 推送时机清单属跨进程契约，真源在 `shared/protocol.ts` 的 `background_tasks` 注释
+   * （本文件不复制，避免两份清单漂移）。step 边界周期性到达 ⇒ 无任务时逐 step 推空
+   * 快照纯属 IPC 噪音，由签名去重拦掉。
    *
    * @param mode `dedup`（默认）= 周期推送点，走签名去重降噪；`force` = **webview ready 全量
    *   对齐**，绕过去重——签名存于面板实例、跨 webview 重建（折叠/关闭再打开）残留，
@@ -186,7 +177,7 @@ export class PanelSnapshots {
   /**
    * 取（或建）某会话的「已收起任务」集合
    *
-   * @param sessionId 会话标识（`taskId` 只在实例内唯一，必须按会话分桶）
+   * @param sessionId 会话标识（按会话分桶，理由见 `_dismissedBySession`）
    */
   private _dismissedFor(sessionId: string): Set<string> {
     let set = this._dismissedBySession.get(sessionId);
@@ -219,8 +210,7 @@ export class PanelSnapshots {
    * @param taskId 目标后台任务标识
    */
   dismiss(taskId: string): void {
-    // 只记到当前会话桶：同名 taskId 属于两个会话的两条不同任务，收起 A 的那条
-    // 不得连带隐藏 B 的同名任务（BGTASK-DISMISS-CROSSTALK-1）
+    // 只记到当前会话桶（`BGTASK-DISMISS-CROSSTALK-1`；理由见文件头）
     this._dismissedFor(this._deps.getSessionId()).add(taskId);
     // ⚠️ 必须把签名置为**永不可能与真实签名相等的哨兵**再推，不能置空串：
     // 最后一条被收起时过滤后 `items` 为空 ⇒ 签名也是空串，置空串等于「没变」⇒
@@ -260,8 +250,10 @@ export class PanelSnapshots {
    * 推送上下文占用快照（预算可视化 · 输入区常驻指示器）
    *
    * 与 postMetrics 不同：本推送**脱离 memora.showMetrics 开关**，每轮流式结束必推，
-   * 供输入区常驻渲染「上下文占用比例条 + hover 明细」。数据来自内核
-   * AgentMetrics.context.occupancy（prepare 期真实用量），宿主只透传、不重算。
+   * 供输入区常驻渲染「上下文占用比例条 + hover 明细」。数据主体来自内核
+   * AgentMetrics.context.occupancy（prepare 期真实用量），稳态下宿主直接透传；仅当
+   * `ctx.rolePackBaseTokens` 与快照不一致（角色包刚切换、早于下一轮 prepare）时，
+   * 用内核 `estimateOccupancy` 按新底盘重算——仍是同一 SSOT，宿主不复制公式。
    */
   postOccupancy(): void {
     const agent = this._deps.getAgent();
@@ -273,6 +265,8 @@ export class PanelSnapshots {
     // 用最新底盘值覆盖快照中的旧值，使圆环在角色包切换即时反映，无需等到下一轮。
     const freshRolePack = ctx.rolePackBaseTokens;
     if (freshRolePack !== undefined && freshRolePack !== occ.rolePackBaseTokens) {
+      // 契约：仅当 outputReserveRatio 与 prepare 侧同源时，这次重算才与下一轮 prepare 对齐。
+      // 当前两处都不传 ratio，同吃内核默认值（`src/agent/budget.ts` 的 estimateOccupancy 缺省分支）。
       this._deps.post({
         type: 'context_occupancy',
         occupancy: estimateOccupancy({
