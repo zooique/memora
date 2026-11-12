@@ -1,5 +1,5 @@
 /**
- * settingsTabs — 设置面板选项卡的标识、顺序与可见名（宿主面板 / webview / 协议共用，零依赖）
+ * settingsTabs — 设置面板选项卡的标识、顺序与可见名
  *
  * **为什么独立成文件**：宿主侧 `settingsPanel.ts` 与 webview 侧 `settingsView.ts` 都要
  * **值导入** tab 表，两侧各自打进不同 bundle；放进 `protocol.ts` 会把协议运行时常量一并

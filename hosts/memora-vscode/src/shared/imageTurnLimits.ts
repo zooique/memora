@@ -43,7 +43,9 @@ export interface ImageTurnLimitsInput {
   totalTokens: number | undefined;
   /**
    * 当前有效上下文窗口（webview 取 `chat_providers.limitTokens` 投影；宿主经
-   * `resolveContextWindow` 解析）。`0 / undefined` = 不限，与内核 tokenBudget 口径一致。
+   * `resolveContextWindow` 解析）。`0 / undefined` 只在本文件这一维按**不限**处理——宿主侧约定，
+   * 不是内核口径：内核把 0 当真窗口（`??` 不兜 0）⇒ 每轮判输入过大，0 绝不能传给内核。
+   * 正常也收不到 0：`providerStore` 读侧已把非法 `contextWindow` 归一成 `undefined`。
    */
   limitTokens: number | undefined;
 }
@@ -110,7 +112,7 @@ export function checkImageTurnLimits(input: ImageTurnLimitsInput): ImageTurnLimi
       over: input.totalBytes - MAX_TURN_BYTES,
     };
   }
-  // 窗口缺省 / 0 ⇒ token 维不做限制（与内核 tokenBudget 口径一致）；token 合计未知 ⇒ 跳过不假算
+  // 窗口缺省 / 0 ⇒ 仅本维不做限制（宿主侧约定；0 传给内核会被当零窗口）；合计未知 ⇒ 跳过不假算
   const window = input.limitTokens ?? 0;
   if (input.totalTokens !== undefined && window > 0) {
     const limit = Math.floor(window * IMAGE_TOKEN_WINDOW_RATIO);

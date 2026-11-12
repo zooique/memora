@@ -27,7 +27,8 @@ import { IMAGE_TOKEN_WINDOW_RATIO } from './imageTurnLimits.js';
 export interface ImageTokenBudgetInput {
   /** 已通过校验的候选图（含宽高） */
   sizes: ReadonlyArray<ImageSize>;
-  /** 该模型配置的上下文窗口 token 数（0 / undefined = 不限，与内核预算口径一致） */
+  /** 该模型配置的上下文窗口 token 数（0 / undefined 仅在本维按「不限」处理——宿主侧约定，
+   *  不是内核口径：内核把 0 当零窗口；读侧归一后 0 实际不会传到这里） */
   contextWindow: number | undefined;
 }
 
@@ -53,7 +54,9 @@ export interface ImageTokenBudgetResult {
  * （有超窗风险的窗口被当成安全放行）——这才是「别拿 2125 估算、也别把 1568 当 high 档准确值」
  * 的原因。换算必须走**内核单点** `imageTokens`，不得在此重写公式。
  *
- * `contextWindow` 为 0 / undefined（= 不限，与内核 tokenBudget 口径一致）时不做限制。
+ * `contextWindow` 为 0 / undefined 时不做限制——「不限」只作用于本维（宿主侧约定），
+ * 与内核口径相反：内核把 0 当真窗口（每轮判输入过大），0 不得传进内核；
+ * `providerStore` 读侧已把非法值归一成 `undefined`，正常不会收到 0。
  *
  * @param input 候选图尺寸列表 + 该模型的上下文窗口
  * @returns 放行与否 + 合计 token + 上限 + 超限文案
@@ -63,12 +66,10 @@ export function checkImageTokenBudget(input: ImageTokenBudgetInput): ImageTokenB
   const tokens = input.sizes.map((s) => imageTokens(s));
   // 合计占用：判据必须是**合计**而非单张峰值（单图被上界钳住 ⇒ 只能靠累加触发）
   const totalTokens = tokens.reduce((a, b) => a + b, 0);
-  // 窗口缺省 / 0 ⇒ 不限（与内核 tokenBudget 口径一致）
   const window = input.contextWindow ?? 0;
   if (window <= 0) {
     return { ok: true, totalTokens, limit: Number.POSITIVE_INFINITY, message: '' };
   }
-  // 窗口 × 比例取整 = 该模型的图片 token 上限
   const limit = Math.floor(window * IMAGE_TOKEN_WINDOW_RATIO);
   return totalTokens > limit
     ? {

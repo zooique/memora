@@ -31,16 +31,17 @@ export const MEMORY_RECYCLE_RETENTION_DAYS = 30;
 
 /** 用户级 globalState 键前缀（「初始化」清空判据）：
  *  globalState 是 VS Code **跨扩展共享**存储库，无脑枚举全清会删其他扩展的键
- *  ⇒ 初始化只清本前缀的键。本插件全部 globalState 键（rolePackTeams/
- *  confirmScripts）均带此前缀；新增用户级 globalState 键时自动纳入清空范围，
- *  无需维护第二份清单（SSOT：清空判据从存储真源派生，不手写枚举）。 */
+ *  ⇒ 初始化只清 `startsWith(本前缀)` 的键。注意这层关系**只对清空判据成立**：
+ *  各键（rolePackTeams / confirmScripts）仍以字面量书写，只是当前都以前缀开头——
+ *  改前缀不会自动跟着改键名，新增用户级键时须自己保持该前缀。
+ *  清空判据从存储真源派生、不维护第二份枚举清单（SSOT）。 */
 export const USER_STATE_KEY_PREFIX = 'memora.';
 
 /** globalStorageUri 下的用户技能目录名（用户级）：extension 激活期创建、
  *  「初始化」清空目标，三处（创建 / 打开目录 / 清空）共用本常量，禁散落字面量。 */
 export const USER_SKILLS_DIR_NAME = 'skills';
 
-/** globalStorageUri 下的用户角色包目录名（用户级）：同上，与技能目录对偶。 */
+/** globalStorageUri 下的用户角色包目录名（用户级） */
 export const USER_ROLE_PACKS_DIR_NAME = 'role-packs';
 
 /** 用户主输入长度上限（INPUT-LIMIT-1）：在**输入框阶段**以原生 maxLength 截断——
@@ -52,7 +53,7 @@ export const MAX_INPUT_CHARS = 20000;
  *  消费点：ask-inline 每题输入框（askInlineView 创建处）+ clarifyBar 兜底输入框。
  *  取 4000 的依据：ask 回答的常见超档场景是粘贴报错/日志，而栈回溯的关键信息
  *  （异常行 / Caused by）在尾部，maxLength 保留头部砍尾部 ⇒ 档位必须容得下单段
- *  日志（4000 字符 ≈ 1000+ token，10 问最坏 ≈ 1 万 token，内核默认窗口（真源 = AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS）仍安全）；
+ *  日志（4000 字符 ≈ 1000+ token，按提问次数上界估算最坏 ≈ 1 万 token，内核默认窗口（真源 = AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS）仍安全）；
  *  更长的内容语义上属「材料」，应走主输入框或存文件（agent 有读文件工具）。 */
 export const MAX_ASK_ANSWER_CHARS = 4000;
 
