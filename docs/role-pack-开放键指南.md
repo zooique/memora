@@ -148,8 +148,8 @@
     "global": { "contextLimit": 0 }
   },
   "capabilities": [
-    { "capability": "file:write", "description": "写文件" },
-    { "capability": "web:search", "description": "搜索" }
+    { "capability": "web:search", "description": "搜索" },
+    { "capability": "llm:summarize", "description": "提炼资料" }
   ],
   "handoffPrompt": "你好，我是白话方案设计师，请告诉我你想解决什么模糊想法或痛点。"
 }
