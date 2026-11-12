@@ -117,8 +117,9 @@ export function setTerminus(el: HTMLElement | null | undefined, kind: TerminusKi
   // 成对写入可见文案（同 setCursorStatus：键给选择器，label 给 content）
   el.dataset.terminusLabel = label;
   // 加引号的原因：`content` 的取值语法只接受字符串等取值，裸标识符（即使是单个单词）也不是
-  // 合法取值；不合法时该声明在计算值阶段失效、属性回退 initial，故把文案序列化成带引号的
-  // 字符串。CSS 侧消费的是 `content: var(--terminus-label)`（chatStyles 底栏 ::after）。
+  // 合法取值；不合法时该声明在计算值阶段失效、属性回退初始值（`normal`，即无内容），
+  // 故把文案序列化成带引号的字符串。CSS 侧消费的是
+  // `content: var(--terminus-label)`（chatStyles 底栏 ::after）。
   // 底栏标签的文案通道：`round-group__footer::after` 与载体**不是同一元素**，CSS attr()
   // 跨不过去；容器级自定义属性可被 footer（后代）继承，故把同一文案写进容器。
   // 等价性：容器此刻不存在 ⇒ 载体不可能落在任何容器内 ⇒ `:has(...)` 底栏规则永不匹配，
