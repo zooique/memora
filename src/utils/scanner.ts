@@ -157,7 +157,7 @@ export async function scanMarkdownDir(dir: string): Promise<ScannedMarkdownEntry
     }
   }
 
-  // 子目录中的 SKILL.md（文件夹形式，Claude Code 标准）
+  // 子目录中的 SKILL.md（文件夹形式，Agent Skills 开放标准）
   for (const item of items) {
     // 跳过隐藏目录和私有目录
     if (item.startsWith('.') || item.startsWith('_')) continue;

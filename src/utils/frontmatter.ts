@@ -30,8 +30,8 @@ export function parseFrontmatter(raw: string): {
     return { frontmatter: {}, body: raw };
   }
 
-  // match[1] / match[2] 的类型为 string | undefined：regex 结构匹配时两者实际必有值，
-  // 这里仍以 ?? '' 兜底，不依赖"正则已保证非空"这一隐含前提来收窄类型
+  // match[1] / match[2] 的类型为 string | undefined：regex 结构匹配时两者必为 string，可能为空串；
+  // 这里以 ?? '' 兜底，不依赖「正则已保证非空」这一隐含前提来收窄类型
   const fmBlock = match[1] ?? '';
   const body = match[2] ?? '';
   const frontmatter: Record<string, string> = {};
