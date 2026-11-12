@@ -12,7 +12,8 @@
 /**
  * 按 accessedAt 字段降序排序（最近使用优先）的比较函数
  *
- * 使用轨迹唯一事实源为 accessedAt；采集/推荐等需要「采样 top-N」的场景统一按 accessedAt 降序。
+ * 使用轨迹唯一事实源为 accessedAt；记忆的按来源列举与检索结果统一按 accessedAt 降序
+ * （消费者：`memory/inMemoryStorage` 的 `getBySource` 与 `sortCopyLimit`）。
  */
 export function byAccessedDesc<T extends { accessedAt: string }>(a: T, b: T): number {
   // ISO 8601 字符串可直接按字典序比较（时间正序 → 字符串升序）

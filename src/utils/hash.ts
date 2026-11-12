@@ -20,7 +20,7 @@ import { createHash } from 'node:crypto';
  *     让宿主在调试时能对比"本轮注入的内容是否变化"，而不必存储全量内容
  *
  * @param input 输入字符串
- * @returns 64 位小写 hex 哈希
+ * @returns SHA-256 摘要的 hex 表示（256 位，即 64 个小写字符）
  */
 export function sha256Fingerprint(input: string): string {
   return createHash('sha256').update(input, 'utf-8').digest('hex');

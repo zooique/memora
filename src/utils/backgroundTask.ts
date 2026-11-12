@@ -96,7 +96,8 @@ export class BackgroundTaskScheduler {
         logger.warn({ pending: this.pendingCount, timeoutMs }, '等待后台任务超时，放弃剩余任务');
         break;
       }
-      // 等待下一个微任务周期，让 pending 计数有机会被更新
+      // 每 50ms 轮询 pendingCount：setTimeout 是宏任务，能让出事件循环、等得到真实完成的任务回调；
+      // 50ms 只是轮询间隔，总等待上限由上面的 timeoutMs 控制
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
 

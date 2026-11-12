@@ -100,7 +100,7 @@ export function extractDisplayName(body: string): string | undefined {
  *
  * 支持两种形式：
  *   1. 单文件形式：直接子项下的 *.md 文件
- *   2. 文件夹形式：子目录中的 SKILL.md（Claude Code 标准）
+ *   2. 文件夹形式：子目录中的 SKILL.md（Agent Skills 开放标准）
  *
  * 排除规则（单文件）：
  *   - 文件名以 `.` 开头的隐藏文件
