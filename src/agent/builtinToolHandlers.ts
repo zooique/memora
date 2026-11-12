@@ -412,14 +412,14 @@ export class BuiltinToolHandlers {
 
     const port = this.imageReadPort;
     if (!port) {
-      // 原因①（宿主侧）：宿主没注入读图端口（例如 MCP 宿主）——必须与「模型无视觉」分开说，
+      // 原因①（运行环境侧）：当前运行环境没提供读图能力（例如 MCP 客户端）——必须与「模型无视觉」分开说，
       // 且明确「不是文件问题」，否则模型会反复换路径重试，把能力缺失误诊成文件缺失
       throw toolError(
-        'read_image 不可用（当前宿主不支持读图）',
-        '当前宿主没有注入读图端口（例如 MCP 宿主不支持读图）。这不是文件问题——文件本身可能完全正常。',
+        'read_image 不可用（当前运行环境不支持读图）',
+        '当前运行环境没有提供读图能力（例如 MCP 客户端不支持读图）。这不是文件问题——文件本身可能完全正常。',
         [
           '需要文本内容时改用 read_file',
-          '不要在支持读图的宿主之外反复重试 read_image；需要看图请让用户在支持读图的宿主中操作',
+          '需要看图请在 VS Code 的 Memora 中使用；不要在 MCP 环境中反复重试 read_image',
         ],
         undefined,
         ToolErrorCode.NOT_AVAILABLE,
@@ -473,7 +473,7 @@ export class BuiltinToolHandlers {
         result.text,
         [
           `单张图片需 ≤ 5 MiB 且为 ${READ_IMAGE_SUPPORTED_EXTENSIONS.join(' / ')}：` +
-            '超限时先裁剪或压缩（降分辨率 / 转 JPEG 或 WebP）再读，内核不做本地缩放',
+            '超限时先裁剪或压缩（降低分辨率，或转成 JPEG / WebP）再读',
           '若当前模型未声明支持图片输入（provider 配置项 supportsVision）：命令面板运行「Memora: 配置大模型」→ 编辑当前模型服务 → 勾选「支持图片输入」后重试；只需要文本内容时改用 read_file',
         ],
         undefined,
@@ -582,7 +582,7 @@ export class BuiltinToolHandlers {
         )}，超过单次 ${formatImageSize(READ_IMAGE_MAX_BYTES_PER_CALL)} 上限。`,
         [
           `分批读取（每次合计不超过 ${formatImageSize(READ_IMAGE_MAX_BYTES_PER_CALL)}）`,
-          '或先裁剪/压缩图片再重试（内核不做本地缩放）',
+          '或先缩小/压缩图片（单张控制在 5 MiB 以内）后重试',
         ],
         undefined,
         ToolErrorCode.ARGUMENT_ERROR,

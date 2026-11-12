@@ -221,7 +221,7 @@ describe('read_image · 两种「不可用」原因分开说', () => {
     // 主动挡下（能力缺失不是「执行了一次没成功」）
     expect(outcomes[0]!.status).toBe('blocked');
     expect(outcomes[0]!.blockedReason).toBe('not_exposed');
-    expect(outcomes[0]!.text).toContain('当前宿主不支持读图');
+    expect(outcomes[0]!.text).toContain('当前运行环境不支持读图');
     expect(outcomes[0]!.text).toContain('MCP');
     expect(outcomes[0]!.text).toContain('不是文件问题');
     // 两种原因不得互相污染
@@ -248,7 +248,7 @@ describe('read_image · 两种「不可用」原因分开说', () => {
     // 指到具体设置位置（不只说「未开启」）：命令 + 勾选项，用户知道去哪开
     expect(outcomes[0]!.text).toContain('Memora: 配置大模型');
     expect(outcomes[0]!.text).toContain('支持图片输入');
-    expect(outcomes[0]!.text).not.toContain('当前宿主不支持读图');
+    expect(outcomes[0]!.text).not.toContain('当前运行环境不支持读图');
     // 执行前拦截：宿主端口与 executor 都未被触碰（不制造「读了文件才发现不行」的假象）
     expect(port).not.toHaveBeenCalled();
     expect(executor).not.toHaveBeenCalled();
@@ -286,7 +286,7 @@ describe('read_image · handler 侧原因文案（绕过 loop 直调执行器时
     }
     const visible = `${err.title} ${err.detail} ${err.suggestions.join(' ')}`;
     expect(err.errorCode).toBe(ToolErrorCode.NOT_AVAILABLE);
-    expect(visible).toContain('宿主不支持读图');
+    expect(visible).toContain('运行环境不支持读图');
     expect(visible).toContain('MCP');
     expect(visible).toContain('不是文件问题');
   });
@@ -529,7 +529,7 @@ describe('read_image · 出站视图合成', () => {
     // 去重结论必须写进 tool 结果文本：否则用户/模型数不明白「为什么只看到 1 张」
     const toolTexts = persisted.filter((m) => m.role === 'tool').map((m) => m.content as string);
     expect(toolTexts[0]).not.toContain('【附件去重】');
-    expect(toolTexts[1]).toContain('本次 1 张中有 1 张与已有图重复，已略过');
+    expect(toolTexts[1]).toContain('本次 1 张中有 1 张与本轮已有图片重复，已略过');
   });
 
   it('同一轮附图总数上限 12：超出的图明确告知留待下一轮（不静默丢弃）', () => {

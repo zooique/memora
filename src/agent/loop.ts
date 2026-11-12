@@ -333,9 +333,9 @@ const INTEL_INTRO =
  */
 const READ_IMAGE_UNAVAILABLE_CAUSES = {
   'host-no-port':
-    '当前宿主不支持读图——宿主没有注入读图端口，例如 MCP 宿主。这不是文件问题，文件本身可能完全正常',
+    '当前运行环境不支持读图（例如 MCP 客户端没有提供读图能力）。这不是文件问题，文件本身可能完全正常',
   'model-blind':
-    '当前模型未声明支持图片输入——这是 provider 的 supportsVision 配置项未开启，不是文件问题，文件本身可能完全正常。' +
+    '当前模型未声明支持图片输入——这是模型服务里「支持图片输入」开关未开启（配置项 supportsVision），不是文件问题，文件本身可能完全正常。' +
     '开启方式：命令面板运行「Memora: 配置大模型」→ 编辑当前模型服务 → 勾选「支持图片输入」' +
     '（或把 VS Code 设置 memora.providers[].supportsVision 置为 true）；' +
     '输入框的图片按钮置灰时点击也会直接跳转到该设置',
@@ -4018,7 +4018,7 @@ export class AgentLoop {
         if (duplicateCount > 0) {
           // 用「】」而非方括号开头：工具结果首标签文法只认 `[TAG]`，这里只是说明文字
           notes.push(
-            `【附件去重】本次 ${attachments.length} 张中有 ${duplicateCount} 张与已有图重复，已略过（按 sha256）`,
+            `【附件去重】本次 ${attachments.length} 张中有 ${duplicateCount} 张与本轮已有图片重复，已略过`,
           );
         }
         if (overflowCount > 0) {
