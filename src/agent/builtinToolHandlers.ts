@@ -230,7 +230,8 @@ function binaryReadSuggestions(probe: BinaryProbe, relativePath: string): string
     case 'image':
       return [
         `若本轮工具清单里有 read_image，用它并让 path 填相对项目根的路径（例如 {"path":"${relativePath}"}；支持 ${READ_IMAGE_SUPPORTED_EXTENSIONS.join(' / ')}）；` +
-          '若清单里没有，说明当前模型未开启「支持图片输入」，需要看图请让用户在「Memora: 配置大模型」里勾选「支持图片输入」后重试',
+          '若清单里没有，有两种可能：① 当前模型未开启「支持图片输入」——请用户到「Memora: 配置大模型」勾选「支持图片输入」后重试；' +
+          '② 当前运行环境未提供读图能力（如非 VS Code 宿主）——这不是配置问题，需换宿主或入口',
       ];
     case 'pdf':
       return [
@@ -242,7 +243,8 @@ function binaryReadSuggestions(probe: BinaryProbe, relativePath: string): string
       ];
     default:
       return [
-        '用 list_dir / search_project 确认路径是否写错；若确认是文本文件，检查其编码（如 GBK 请先转 UTF-8）',
+        '用 list_dir / search_project 确认路径是否写错；若确认是文本文件，检查其编码（如 GBK 请先转 UTF-8）；' +
+          `若确认是图片但未被识别为受支持格式，当前只支持 ${READ_IMAGE_SUPPORTED_EXTENSIONS.join(' / ')}`,
       ];
   }
 }

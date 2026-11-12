@@ -17,6 +17,8 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
+// 图片格式唯一清单：unknown 分支的「只支持这些格式」断言直接复用，测试不另写后缀
+import { READ_IMAGE_SUPPORTED_EXTENSIONS } from '@/agent/builtinTools.js';
 import { SecurityGuard, type WriteConfirmationInfo } from '@/security/pathGuard.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { MemoryInspector, type AgentSearchHit } from '@/agent/managers/memoryInspector.js';
@@ -208,7 +210,9 @@ describe('BuiltinToolHandlers.readFile', () => {
     expect(visible).toContain('PNG 图片');
     // 图片建议是条件句：只在「本轮工具清单里有 read_image」时引导，不再无条件断言改道
     expect(visible).toContain('若本轮工具清单里有 read_image');
-    expect(visible).toContain('未开启「支持图片输入」');
+    // 被裁的两条原因必须并列写明：只归因配置会让「勾了视觉仍不生效」的宿主问题被误诊
+    expect(visible).toContain('当前模型未开启「支持图片输入」');
+    expect(visible).toContain('当前运行环境未提供读图能力');
     expect(visible).toContain('path');
     // 反例：旧的无条件谎报文案不得复活（当时 read_image 可能已被视觉位裁掉）
     expect(visible).not.toContain('要看图片请调用 read_image');
@@ -232,6 +236,8 @@ describe('BuiltinToolHandlers.readFile', () => {
     expect(visible).not.toContain('read_image');
     expect(visible).toContain('list_dir');
     expect(visible).toContain('search_project');
+    // 魔数识别不了也可能「其实是图片但格式不支持」：必须给出唯一清单里的受支持格式
+    expect(visible).toContain(READ_IMAGE_SUPPORTED_EXTENSIONS.join(' / '));
   });
 
   it('非法 UTF-8 字节（无 BOM、无 NUL）→ 返回工具错误，文案含「不是有效的 UTF-8 文本」', async () => {
