@@ -142,8 +142,10 @@ export class PanelSnapshots {
    * agent 未就绪时不推（`_agent` 为空 = 未装配，与 `postPlan` 同守卫形态）——不静默推
    * 空快照，否则「未就绪」会被 UI 读成「没有后台任务」。
    *
-   * 推送点共五个：`step_boundary` / `background_report` / `background_kill` 后回推 /
-   * 内核 `backgroundTaskSettled` 事件 / webview ready（force）。step 边界周期性到达 ⇒
+   * 推送时机 = 宿主侧多个事件点（无定时器、无轮询）：`step_boundary`（任务刚启动）/
+   * `background_report`（turn 终态批量变化）/ `background_kill` 处理后回推 /
+   * 内核 `backgroundTaskSettled` 事件（turn 结束后自然终态）/ webview ready（force，
+   * 重建对齐）/ 会话切换重投影 / 收起终态行等。step 边界周期性到达 ⇒
    * 无任务时逐 step 推空快照纯属 IPC 噪音，由签名去重拦掉。
    *
    * @param mode `dedup`（默认）= 周期推送点，走签名去重降噪；`force` = **webview ready 全量

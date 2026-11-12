@@ -934,10 +934,10 @@ export function resolveCommandTimeoutMs(timeoutMs: number | undefined): number {
 /**
  * 命令结果进入上下文的**定长真源**（字符层）+ 格式化收口
  *
- * **定长为何住在格式化层而非调用方**：命令结果有**两个消费面**——① `run_command` 的工具
- * 返回值 ② 后台命令完成的回流通知（`formatBackgroundTaskNotice`）。上限若住在
- * toolExecutor 的模块私有常量里，第二个消费面就看不到它 ⇒ 回流路径无上限
- * （2MB 内存护栏放行的输出可直灌上下文）。定义在两者的**共同下游**，两个消费面
+ * **定长为何住在格式化层而非调用方**：命令结果有**多个消费面**——`run_command` 的工具
+ * 返回值、`kill_command` 的回传、后台命令完成的回流通知（`formatBackgroundTaskNotice`）。
+ * 上限若住在 toolExecutor 的模块私有常量里，其余消费面就看不到它 ⇒ 回流路径无上限
+ * （2MB 内存护栏放行的输出可直灌上下文）。定义在这些消费面的**共同下游**，各面
  * 自动一致、无法漏配。
  *
  * 量纲纪律：与 `MAX_COLLECTED_OUTPUT_BYTES`（**字节**，防 Node 进程内存膨胀）、

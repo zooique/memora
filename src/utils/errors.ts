@@ -11,7 +11,7 @@
  * 另有统一文案模板 `chatBusyError`（对话繁忙，内部走 configError）。
  * ⚠️ 旧注释曾写「4 大类 ConfigError/NetworkError/…」——**本文件不存在这些 PascalCase 类名**
  * （既非类也非工厂名），且实为 **6 个 category 值**：`security` 由 securityError 产出、
- * 被 security/pathGuard 生产消费 4 处；`unknown` 为兜底值（当前无工厂产出，供直接构造保留）。
+ * 在 security/pathGuard 的多处校验出口抛出；`unknown` 为兜底值（当前无工厂产出，供直接构造保留）。
  * 勿按旧注释去改分类集合。
  *
  * ⚠️ 与 `LlmErrorCategory`（'connection'|'timeout'|'unknown'）**不是同一个联合**：

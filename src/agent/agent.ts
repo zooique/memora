@@ -134,7 +134,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   // ─── 纯内部组件聚合（无宿主 getter 契约，init 后填充、close 统一清空） ───
   /**
-   * 内部组件聚合对象——收敛 12 个「仅门面内部消费、不对宿主暴露」的专职组件，
+   * 内部组件聚合对象——收敛一批「仅门面内部消费、不对宿主暴露」的专职组件，
    * 减少门面扁平字段数；宿主 getter 契约字段（memory/works/polish 等）不在此列。
    */
   private internals: {
