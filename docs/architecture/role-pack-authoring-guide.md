@@ -217,7 +217,7 @@
 | companion 缺 AI 身份/未声明 minorProtection | error   | 校验不通过                  |
 | companion 正文含虚拟亲属/伴侣红线词               | error   | 拒绝装载                   |
 
-> ⚠️ **数值键越界的唯一例外：`strategy.act.subagentConcurrency`**——本键越界即报错，**不静默回退**：validator 直接报 `INVALID_STRATEGY_VALUE`（error），解析器 `resolveSubagentConcurrency` 直接抛 `configError`；只有「未声明」才走内核缺省 `4`（其余数值键越界时运行时回退内核默认/忽略）。
+> ⚠️ **数值键越界的唯一例外：`strategy.act.subagentConcurrency`**——本键越界即报错，**不静默回退**：validator 直接报 `INVALID_STRATEGY_VALUE`（error），解析器 `resolveSubagentConcurrency` 直接抛 `configError`；只有「未声明」才走内核缺省 `4`（其余数值键越界时运行时回退内核默认/忽略）。注意两层并非并列面向用户：**装载期只要 validator 报出任意 error 级问题，`RolePackManager.load` 就整包 `return null` 跳过装载**（仅留一条 logger warn），角色包根本进不到运行时——所以改 manifest 的人实际看到的是 validator 的「取值 X 不符合约束，合法区间……」；resolver 那条带「0=关闭派发 / 省略=缺省 4」的友好建议**仅在此路径可见**——只对绕过校验、直接注入 `strategy` 的程序化调用生效（防御性设计，不是主路径提示）。
 
 > 数值键越界报错信息会带合法区间提示，如：
 > `strategy.global.contextLimit 取值 50000 不符合约束，合法区间 0 或 [120000, 2000000]`
