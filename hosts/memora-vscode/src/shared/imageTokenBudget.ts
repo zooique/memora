@@ -48,8 +48,10 @@ export interface ImageTokenBudgetResult {
  *
  * 为什么必须补这一维（方案 §6.7 / G3）：张数 / 单图字节 / 总字节三个维度都**看不见** token ——
  * 单图被内核 1568 上界钳住，一张 4K 图即 1568 token，5 张 = 7840，而 `contextWindow` 可低到 8k
- * ⇒ 这是唯一「真机上真会爆」的一条（注：2125 是 OpenAI high detail 的后端上界，不是本内核
- * 公式对 4K 的输出，别拿它估算单图占用）。换算必须走**内核单点** `imageTokens`，不得在此重写公式。
+ * ⇒ 这是唯一「真机上真会爆」的一条。注：2125 是 OpenAI high detail 的后端上界，不是本内核
+ * 公式对 4K 的输出；而内核按 1568 估，走 high detail 时会低估约 26%，后果是装配期预算偏松
+ * （有超窗风险的窗口被当成安全放行）——这才是「别拿 2125 估算、也别把 1568 当 high 档准确值」
+ * 的原因。换算必须走**内核单点** `imageTokens`，不得在此重写公式。
  *
  * `contextWindow` 为 0 / undefined（= 不限，与内核 tokenBudget 口径一致）时不做限制。
  *
