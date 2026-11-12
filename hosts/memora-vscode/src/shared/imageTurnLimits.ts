@@ -81,7 +81,8 @@ function mib(bytes: number): string {
  * IMG-8 三维聚合限额：张数 ≤5 / 总字节 ≤20 MiB / token ≤25% 窗口。
  *
  * 为什么必须是「聚合」判据而内核只有逐张判：`validateImageCandidate` 六步全是单张校验，
- * 单图被 1568 上界钳住 ⇒ 超限只能靠**累加**触发（5 张 4K ≈10.6k token，低窗口模型必爆）。
+ * 单图被 1568 上界钳住（4K 的 147×147 tile 会被 Math.min 压到 1568）⇒ 超限只能靠**累加**
+ * 触发（5 张 4K = 5 × 1568 = 7840 token，对 8k 窗口已逼近上限）。
  *
  * @param input 三维用量 + 窗口（见各字段 JSDoc）
  * @returns 放行与否 + 超限文案（首个越界维度的具体数字）

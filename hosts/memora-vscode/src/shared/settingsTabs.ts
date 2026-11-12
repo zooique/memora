@@ -28,8 +28,9 @@
  *   ⑤ `webview/styles/` 该页样式（按 root 前缀分文件，共享类只许复用不许追加）；
  *   ⑥ `webview/panels/settingsPanel.ts`：`handleMessage` 分支 + `refreshAll` 的 loader 表。
  * ①-④ 缺即红（tsc 穷尽 / 集合断言）。⑤⑥ 曾长期是「缺了不红、只有真机发现」的
- * **静默半残**；2026-11-09 起由 `settingsTabWiring.test.ts` 对拍 + `SETTINGS_TAB_LOADERS`
- * 的 `Record` 穷尽收口 ⇒ **不许再把「静默半残」当既定事实写进方案**，缺守卫本身就是一条伤。
+ * **静默半残**；2026-11-09 起由 `settingsTabWiring.test.ts` 对拍 + `LOADER_SNIPPETS`
+ * （`satisfies Record<SettingsTab, string>`，断言 `refreshAll()` 方法体里出现对应调用片段）
+ * 收口 ⇒ **不许再把「静默半残」当既定事实写进方案**，缺守卫本身就是一条伤。
  * 导航侧已无成本：`memora.openSettings(tab)` 收任意 `SettingsTab`，webview 发
  * `open_settings_tab` 即可直达，不必新增命令或映射表（2026-10-26 收口）。
  *
@@ -102,7 +103,7 @@ export const SETTINGS_TAB_ARIA_LABELS: Record<SettingsTab, string> = {
   works: 'Works and rules: list and project-rule evaluation',
 };
 
-/** 子视图根容器 id（此前 5 个 id 在 HTML / webview 脚本 / CSS 三处各自硬写） */
+/** 子视图根容器 id（此前每个 tab 的根容器 id 都在 HTML / webview 脚本 / CSS 三处各自硬写，单一来源即本文件 `SETTINGS_TABS`） */
 export function settingsRootId(tab: SettingsTab): string {
   return `${tab}-root`;
 }

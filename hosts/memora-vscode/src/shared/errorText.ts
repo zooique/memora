@@ -1,5 +1,5 @@
 /**
- * 流式错误 category → 用户可见文案（webview 重放路映射；**单一真理源**）
+ * 流式错误 category → 用户可见文案（webview 重放路映射；**webview 侧单一真源**）
  *
  * 消费面（2026-11-09 起）：webview 侧 `processFlowModel`（中断轮平铺停止行，含失败原因）。
  * 宿主实时路（chatPanel 窗口提示）已改走 `host/windowNotices.ts` 的 `flowError`

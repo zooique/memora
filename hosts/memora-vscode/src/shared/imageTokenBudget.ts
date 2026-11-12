@@ -47,8 +47,9 @@ export interface ImageTokenBudgetResult {
  * G3 入口限额第四维：单轮图片 token 合计 ≤ 模型 `contextWindow` 的 25%。
  *
  * 为什么必须补这一维（方案 §6.7 / G3）：张数 / 单图字节 / 总字节三个维度都**看不见** token ——
- * 一张 4K 图 ≈2125 token，5 张 ≈10.6k，而 `contextWindow` 可低到 8k ⇒ 这是唯一
- * 「真机上真会爆」的一条。换算必须走**内核单点** `imageTokens`，不得在此重写公式。
+ * 单图被内核 1568 上界钳住，一张 4K 图即 1568 token，5 张 = 7840，而 `contextWindow` 可低到 8k
+ * ⇒ 这是唯一「真机上真会爆」的一条（注：2125 是 OpenAI high detail 的后端上界，不是本内核
+ * 公式对 4K 的输出，别拿它估算单图占用）。换算必须走**内核单点** `imageTokens`，不得在此重写公式。
  *
  * `contextWindow` 为 0 / undefined（= 不限，与内核 tokenBudget 口径一致）时不做限制。
  *
