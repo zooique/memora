@@ -100,7 +100,8 @@ export class ImageCache {
    */
   preload(ref: ImageRef, projectPath: string): void {
     // 已在缓存：刷新位次即可。不重读盘——同一 sha 的字节内容按定义只有一份，
-    // 若历史 ref 的 mime/bytes 与缓存不符，`resolver` 的三值校验会在消费侧拦下
+    // 若历史 ref 的 mime/bytes 与缓存不符，`resolver` 的三值校验会在消费侧拦下。
+    // 这里的 has 短路是「省一次读盘」的优化，不是记账前提（`put` 自己处理同键覆盖）
     if (this.entries.has(ref.sha256)) {
       this.touch(ref.sha256);
       return;
@@ -127,19 +128,13 @@ export class ImageCache {
    * 与 `preload` 的差异仅「字节来自哪里」：那边从附件文件读，这里由工具执行面读入后交来；
    * 入缓存后的消费链（`resolver` 三值校验 / LRU / 淘汰）完全一致。
    *
-   * ⚠️ **必须先查 `entries.has` 再 put**：`put` 只累加 `totalBytes`，不做同键覆盖扣减。
-   * 既有唯一调用点 `preload` 已先判 `entries.has`，故从未暴露；本入口是新增调用点，
-   * 若直接重复 set 会重复累加，把字节上限提前顶穿（LRU 提前淘汰仍在用的图）。
+   * 不做 `entries.has` 快路径：同键覆盖由 `put` 负责（扣旧长度 + 刷新位次），
+   * 这样「重复 ingest 不重复计字节」走的是真正的覆盖分支，而不是被调用点提前挡掉。
    *
    * @param ref 已由校验链产出的引用（sha256 为键；mime/bytes 供消费侧三值校验）
    * @param bytes 图片原始字节（长度必须与 `ref.bytes` 一致，调用方保证）
    */
   ingestBytes(ref: ImageRef, bytes: Buffer): void {
-    if (this.entries.has(ref.sha256)) {
-      // 同 sha 已在缓存：只刷新 LRU 位次，不重复累加 totalBytes
-      this.touch(ref.sha256);
-      return;
-    }
     this.put(ref.sha256, { bytes, mime: ref.mime });
   }
 
@@ -184,8 +179,19 @@ export class ImageCache {
     this.entries.set(sha256, hit);
   }
 
-  /** 写入缓存并累计字节数，随后按上限淘汰（D25） */
+  /**
+   * 写入缓存并累计字节数，随后按上限淘汰（D25）。
+   *
+   * **同键覆盖是合法调用**（同一 sha 重复 ingest）：先扣掉旧条目长度，再按「最近使用」重新入队。
+   * 记账正确性收在本方法内——调用点不需要「先查 has 再 put」，否则每个新入口都得记得同一约定。
+   */
   private put(sha256: string, image: CachedImage): void {
+    const previous = this.entries.get(sha256);
+    if (previous) {
+      // Map.set 对已存在的键只换值、不改插入序，故先删再 set，让覆盖等价于一次 touch
+      this.totalBytes -= previous.bytes.length;
+      this.entries.delete(sha256);
+    }
     this.entries.set(sha256, image);
     this.totalBytes += image.bytes.length;
     // 淘汰：队首是最久未用。条目上限与字节上限任一超出即继续淘汰——

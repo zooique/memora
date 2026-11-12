@@ -132,12 +132,13 @@ describe('ImageCache — ingestBytes（read_image 直入内存字节）', () => 
     expect((resolved as { url: string }).url.startsWith('data:image/png;base64,')).toBe(true);
   });
 
-  it('同一 sha 重复 ingest 不重复计字节（先查后 put，不把自己挤出字节闸）', () => {
+  it('同一 sha 重复 ingest 不重复计字节（put 同键覆盖不重复累加，不把自己挤出字节闸）', () => {
     const bytes = fakeBytes('ingest-idempotent');
     const ref = refOf(bytes);
-    // 字节闸恰好等于单条大小：若直接 put 重复累加，唯一一条会被自己淘汰掉
+    // 字节闸恰好等于单条大小：若同键覆盖重复累加，唯一一条会被自己淘汰掉
     const cache = new ImageCache({ maxEntries: 32, maxTotalBytes: bytes.length });
 
+    // 走公开入口连插两次：ingestBytes 不做 has 快路径，第二次必然落到 put 的覆盖分支
     cache.ingestBytes(ref, Buffer.from(bytes));
     cache.ingestBytes(ref, Buffer.from(bytes));
 
