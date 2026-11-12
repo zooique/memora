@@ -2,6 +2,7 @@
  * 项目搜索集成入口：带超时保护的加载包装，组合宿主自定义实现。
  * 搜索失败时不抛异常、不中断对话流程（30s 超时防卡死 Agent 主循环）；
  * 但**失败不再降级为「空结果」**——二者必须可区分，见 `safeSearchProjectText` 的注释。
+ * 定时器必须外部持有 + finally 清理，否则残留定时器会拖住进程退出。
  */
 import type {
   IProjectSearchProvider,
@@ -38,10 +39,8 @@ export async function safeSearchProjectFiles(
   try {
     return await Promise.race([provider.searchFiles(options), timeoutPromise]);
   } catch {
-    // 失败不抛异常，但**不再伪装成可信的零命中**
     return { matches: [], truncated: false, failed: true };
   } finally {
-    // 成功/失败均清理超时定时器，防残留定时器拖住进程
     clearTimeout(timer);
   }
 }
@@ -54,8 +53,8 @@ export async function safeSearchProjectFiles(
  * 区分这两态）。失败→上报 `failed: true`（**不是** error，对齐
  * "no results is not an error"：不置错、不重试，只在文案里如实说明检索未完成），由调用方分流表述。
  *
- * 注：`safeSearchProjectFiles`（name 模式）与 content 同一套元信息载体
- * （`ProjectFileSearchResult` + 失败→`failed: true`）。
+ * 注：`safeSearchProjectFiles`（name 模式）与 content 是**同构的两套载体**
+ * （`ProjectFileSearchResult` / `ProjectTextSearchResult`），失败均置 `failed: true`。
  */
 export async function safeSearchProjectText(
   provider: IProjectSearchProvider,
@@ -72,10 +71,8 @@ export async function safeSearchProjectText(
   try {
     return await Promise.race([provider.searchText(options), timeoutPromise]);
   } catch {
-    // 失败不抛异常，但**不再伪装成可信的零命中**
     return { matches: [], truncated: false, failed: true };
   } finally {
-    // 成功/失败均清理超时定时器，防残留定时器拖住进程
     clearTimeout(timer);
   }
 }

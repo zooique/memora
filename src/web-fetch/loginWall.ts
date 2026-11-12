@@ -40,7 +40,6 @@ const URL_LOGIN_SEGMENT_RE =
 /** 标题登录词（中英；不含「密码」——谈密码的文章标题不应触发弱信号） */
 const TITLE_LOGIN_RE = /登录|登陆|登入|sign\s*in|log\s*in|logon/i;
 
-/** 正文密码词（登录表单/提示语特征） */
 const PASSWORD_WORD_RE = /密码|password|passcode/i;
 
 /**

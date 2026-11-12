@@ -8,7 +8,10 @@ import type {
   ICodeExecutionProvider,
 } from '@/code-exec/types.js';
 
-/** 代码执行外层兜底超时（毫秒）：对齐 run_skill_script 的最大执行超时 */
+/**
+ * 代码执行外层兜底超时（毫秒），默认 120s：覆盖绝大多数代码执行、又不至于让 run_code
+ * 单次调用占满一次对话；取值与宿主执行器的单次上限（`MAX_TIMEOUT_MS = 120_000`）一致。
+ */
 const EXECUTION_TIMEOUT_MS = 120_000;
 
 /**
@@ -62,11 +65,9 @@ export async function safeExecuteCode(
         timedOut: true,
       };
     }
-    // 执行失败不抛异常，返回降级提示
     const message = err instanceof Error ? err.message : String(err);
     return { stdout: '', stderr: `执行失败：${message}`, exitCode: -1, timedOut: false };
   } finally {
-    // 正常完成或失败时清理兜底定时器，防 event loop 挂起（进程退出延迟）
     if (timer) clearTimeout(timer);
   }
 }

@@ -18,10 +18,6 @@ const MAX_RAW_CHARS = 50_000;
 /**
  * HTML → 正文纯文本：去 script/style/head + 去标签 + 解实体 + 去控制字符 + 压缩空白 + 截断。
  * 用正则而非 DOM 解析，避免引入 jsdom 依赖（对齐 fetchWebSearchProvider 的零依赖思路）。
- *
- * @param html 原始 HTML
- * @param maxChars 正文截断上限
- * @returns 清洗后的纯文本
  */
 function stripHtmlToText(html: string, maxChars: number): string {
   const text = html
@@ -29,9 +25,7 @@ function stripHtmlToText(html: string, maxChars: number): string {
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<head[\s\S]*?<\/head>/gi, ' ')
-    // 再剔除剩余标签
     .replace(/<[^>]+>/g, ' ')
-    // 解码常见 HTML 实体
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
     .replace(/&lt;/gi, '<')
@@ -40,16 +34,12 @@ function stripHtmlToText(html: string, maxChars: number): string {
     .replace(/&#39;/gi, "'")
     // 去控制字符（防转义/终端注入，对齐 toolExecutor.sanitizeExternalText 语义）
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
-    // 压缩空白：行内空格折叠 + 多空行归一
     .replace(/[ \t]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
 }
 
-/**
- * 从 <title> 提取页面标题（清洗后截断）
- */
 function extractTitle(html: string): string {
   const match = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
   return match ? stripHtmlToText(match[1]!, 200) : '';
@@ -57,9 +47,6 @@ function extractTitle(html: string): string {
 
 /** 默认网页抓取实现：Node 内置 fetch + 正文清洗 + 截断 */
 export class FetchWebFetchProvider implements IFetchProvider {
-  /**
-   * 抓取 URL：带超时控制（共享 fetchWithTimeout），返回清洗后的正文纯文本。
-   */
   async fetch(url: string, options?: FetchOptions): Promise<FetchedPage> {
     const maxChars = options?.maxChars ?? DEFAULT_MAX_CHARS;
     const response = await fetchWithTimeout(url, REQUEST_TIMEOUT_MS, BROWSER_UA);

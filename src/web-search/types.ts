@@ -43,6 +43,5 @@ export interface SearchEndpoint {
  * 未注入时 Agent 不会暴露 web_search 工具给 LLM。
  */
 export interface IWebSearchProvider {
-  /** 搜索互联网，返回结构化结果列表 */
   search(query: string, options?: WebSearchOptions): Promise<SearchResult[]>;
 }

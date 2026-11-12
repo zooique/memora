@@ -61,7 +61,7 @@ function parseDuckDuckGoHtml(html: string, limit: number): SearchResult[] {
   const titles: Array<{ url: string; title: string }> = [];
   let match: RegExpExecArray | null;
   while ((match = resultRegex.exec(html)) !== null && titles.length < limit) {
-    const url = match[1]!.replace(/\/\/duckduckgo\.com\/l\/\?uddg=/, ''); // 解码跳转链接（两条 URL 前缀指向同一处）
+    const url = match[1]!.replace(/\/\/duckduckgo\.com\/l\/\?uddg=/, ''); // 剥 DDG 跳转前缀（当前只处理协议相对形式）
     const title = match[2]!.replace(/<[^>]*>/g, '').trim();
     if (title && url) {
       titles.push({
@@ -160,7 +160,6 @@ const SEARCH_ENDPOINT_REGISTRY: Readonly<Record<SearchEngineName, SearchEndpoint
   },
 };
 
-/** 默认端点降级链：Bing（国内可达）→ DuckDuckGo（备用） */
 const DEFAULT_ENDPOINTS: readonly SearchEndpoint[] = [
   SEARCH_ENDPOINT_REGISTRY.bing,
   SEARCH_ENDPOINT_REGISTRY.duckduckgo,
@@ -183,7 +182,6 @@ export function buildSearchEndpoints(
   return picked.length > 0 ? picked : DEFAULT_ENDPOINTS;
 }
 
-/** 默认搜索实现：多后端降级链（Bing → DuckDuckGo），每端点独立超时。生产建议宿主自定义 IWebSearchProvider */
 export class FetchWebSearchProvider implements IWebSearchProvider {
   /** 端点降级链（可注入替换，测试与宿主定制用） */
   private readonly endpoints: readonly SearchEndpoint[];
@@ -218,7 +216,6 @@ export class FetchWebSearchProvider implements IWebSearchProvider {
         anyOk = true;
         const html = await response.text();
         const results = endpoint.parse(html, limit);
-        // 空结果（该端点无命中）继续尝试下一端点
         if (results.length > 0) {
           // 打标实际服务的后端名称，供降级透出：同批次结果来自同一端点
           return results.map((r) => ({ ...r, endpoint: endpoint.name }));
@@ -232,7 +229,6 @@ export class FetchWebSearchProvider implements IWebSearchProvider {
     if (anyOk) {
       return [];
     }
-    // 全部失败 → 抛聚合错误，由 safeSearch 降级为友好提示
     throw new Error(`所有搜索端点均失败：${errors.join('；')}`);
   }
 }

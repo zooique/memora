@@ -35,7 +35,10 @@ export interface CodeExecutionResult {
 
 /** 代码执行选项 */
 export interface CodeExecutionOptions {
-  /** 执行超时（毫秒，默认 30000，最大 120000） */
+  /**
+   * 执行超时（毫秒，可选）。
+   * 「默认值」由执行器决定：当前宿主实现默认 10s、上限 120s。
+   */
   timeoutMs?: number;
   /** 工作目录（可选，未传由执行器决定） */
   cwd?: string;
@@ -61,7 +64,6 @@ export interface ICodeExecutionProvider {
    * 支持列表真源在本字段（宿主执行器自知），内核与工具描述均从它派生，不双写。
    */
   readonly supportedLanguages?: readonly string[];
-  /** 执行代码字符串，返回 stdout/stderr/exitCode/timedOut */
   execute(
     code: string,
     language: string,

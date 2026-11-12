@@ -35,6 +35,5 @@ export interface FetchOptions {
  * 未注入时 Agent 不会暴露 web_fetch 工具给 LLM。
  */
 export interface IFetchProvider {
-  /** 抓取 URL 并返回清洗后的正文纯文本 */
   fetch(url: string, options?: FetchOptions): Promise<FetchedPage>;
 }
