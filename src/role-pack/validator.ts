@@ -4,10 +4,11 @@
  * 校验：必填字段（name）、键名合法性（未知键 warning+忽略）、版本语义（formatVersion 可选，缺省 1.0.0）、
  * 合规分档（interactionType/aiIdentityDisclosure/minorProtection）、策略键、内容路径、
  * skills/capabilities 格式。companion 内容红线由装载方在读取内容后调用 checkCompanionContentRedline。
- * 零依赖、纯函数。
+ * 纯函数、无 IO 依赖（能力「是否已登记」查 capabilityMap 的登记表，不复制名单）。
  */
 
 import { STRATEGY_KEY_RULES } from './strategyKeys.js';
+import { isRegisteredCapability } from './capabilityMap.js';
 
 /** 校验严重级别：error=拒绝加载 / warning=可装载但提示 */
 export type RolePackIssueSeverity = 'error' | 'warning';
@@ -440,6 +441,17 @@ function validateManifestCapabilities(
         code: 'INVALID_CAPABILITY',
         path: `${itemPath}.capability`,
         message: `capability 必须匹配中立能力名 "域:动作"（如 file:write / web:search），当前：${String(capability)}`,
+      });
+    } else if (!isRegisteredCapability(capability)) {
+      // 格式合法但内核未登记：不阻塞装载（现有角色包不能因这条检查装不上），但必须可见——
+      // 否则「白名单从全开收窄为仅常驻集」会静默发生，作者以为声明了什么、实际什么都没解锁。
+      issues.push({
+        severity: 'warning',
+        code: 'UNREGISTERED_CAPABILITY',
+        path: `${itemPath}.capability`,
+        message:
+          `能力名 "${capability}" 格式合法但内核未登记：它不会解锁任何工具；` +
+          `且该角色包一旦声明 capabilities，工具面就会从「全开（含特权工具）」收窄为「仅常驻集 + 已登记能力映射出的特权工具」`,
       });
     }
     const description = record['description'];

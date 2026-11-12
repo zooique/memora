@@ -11,7 +11,8 @@
  *
  * 映射规则：
  *   - 一个能力可映射到多个工具；一个工具可被多个能力映射；
- *   - 未知能力（不在本表）：装载方跳过，不阻塞；
+ *   - 未知能力（不在本表）：解析时跳过（不产出工具），由校验器在装载阶段给出 warning 诊断
+ *     （见 `isRegisteredCapability` 与 `validator.ts` 的 UNREGISTERED_CAPABILITY）；
  *   - 本表只控制**特权工具暴露面**（LLM 可见的工具列表），不改变 execute 路由——
  *     工具暴露 = 可被调用；工具未暴露 = LLM 无从发起调用。
  *     「换角色 → 特权工具集切换」是 mvp-scope 验收标准 7 的范式最小验证。
@@ -51,7 +52,20 @@ export function resolveCapabilityTools(
     if (mapped) {
       for (const tool of mapped) tools.add(tool);
     }
-    // 未知能力：跳过，不报错不阻塞
+    // 未知能力：解析层跳过（不产出工具）；可见性诊断由校验期负责，避免解析层产生副作用
   }
   return [...tools];
+}
+
+/**
+ * 判断能力名是否已在本表登记（「已登记」= 有映射条目，空数组条目也算登记）
+ *
+ * **为什么单独导出**：登记真相源只有本文件的 `CAPABILITY_TO_TOOLS` 一张表；
+ * 校验器需要判断「格式合法但未登记」时只来问这一个函数，不复制第二份能力名清单。
+ *
+ * @param capability 中立能力名（`域:动作`）
+ * @returns 是否已登记（`llm:summarize` 这类空映射条目返回 true）
+ */
+export function isRegisteredCapability(capability: string): boolean {
+  return Object.prototype.hasOwnProperty.call(CAPABILITY_TO_TOOLS, capability);
 }

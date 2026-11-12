@@ -53,7 +53,9 @@ describe('validateManifest：合法 manifest', () => {
   it('完整 manifest（元数据 + 策略 + 多技能注册）校验通过', () => {
     const result = validate();
     expect(result.valid).toBe(true);
-    expect(result.issues).toEqual([]);
+    // 基础样本含 file:write（中立字典名，memora 未登记映射）→ 仅 warning，不阻塞装载
+    expect(result.issues.filter((i) => i.severity === 'error')).toEqual([]);
+    expect(findByCode(result.issues, 'UNREGISTERED_CAPABILITY')).toHaveLength(1);
   });
 
   it('skills 未声明为合法（无内嵌技能）', () => {
@@ -343,6 +345,42 @@ describe('validateManifest：skills 注册（对象数组）', () => {
       capabilities: [{ capability: 'file:write' }, { capability: 'web:search' }],
     });
     expect(result.valid).toBe(true);
+  });
+});
+
+describe('validateManifest：未登记能力诊断（静默降级 → 可见 warning）', () => {
+  it('格式合法但未登记 → UNREGISTERED_CAPABILITY warning，且文案说清后果', () => {
+    const result = validate({ capabilities: [{ capability: 'file:read' }] });
+    const diags = findByCode(result.issues, 'UNREGISTERED_CAPABILITY');
+    expect(diags).toHaveLength(1);
+    expect(diags[0]!.severity).toBe('warning');
+    // 必须让作者看到两件事：这个能力不解锁工具；工具面会被收窄
+    expect(diags[0]!.message).toContain('不会解锁任何工具');
+    expect(diags[0]!.message).toContain('收窄');
+    // warning 不阻塞装载
+    expect(result.valid).toBe(true);
+  });
+
+  it('已登记能力（含空映射条目）→ 不产生未登记诊断', () => {
+    const result = validate({
+      capabilities: [{ capability: 'web:search' }, { capability: 'llm:summarize' }],
+    });
+    expect(findByCode(result.issues, 'UNREGISTERED_CAPABILITY')).toHaveLength(0);
+    expect(result.valid).toBe(true);
+  });
+
+  it('未声明 capabilities → 不产生未登记诊断，既有语义不变', () => {
+    const result = validate({ capabilities: undefined });
+    expect(findByCode(result.issues, 'UNREGISTERED_CAPABILITY')).toHaveLength(0);
+    expect(result.issues.filter((i) => i.severity === 'error')).toHaveLength(0);
+    expect(result.valid).toBe(true);
+  });
+
+  it('格式非法仍是 INVALID_CAPABILITY error（不进未登记 warning 分支）', () => {
+    const result = validate({ capabilities: [{ capability: 'writeFile' }] });
+    expect(findByCode(result.issues, 'INVALID_CAPABILITY')).toHaveLength(1);
+    expect(findByCode(result.issues, 'UNREGISTERED_CAPABILITY')).toHaveLength(0);
+    expect(result.valid).toBe(false);
   });
 });
 
