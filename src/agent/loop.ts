@@ -3997,8 +3997,10 @@ export class AgentLoop {
       let outcomeText = outcome.text;
       /** 与本轮已挂图 sha256 重复、被略过的张数 */
       let duplicateCount = 0;
-      /** 因本轮附图总数上限（12 张）而留待下一轮的张数 */
+      /** 因本轮附图总数上限而留待下一轮的张数 */
       let overflowCount = 0;
+      /** 被上限挡下的图片名（按到达顺序；写明名字，模型才知道下一轮该重读哪几张） */
+      const overflowNames: string[] = [];
       for (const ref of attachments) {
         // 目录里有重复图 / 反复读同一张：按 sha256 去重（含同批次内重复）
         if (this.pendingImageReads.some((r) => r.sha256 === ref.sha256)) {
@@ -4008,6 +4010,7 @@ export class AgentLoop {
         // 同一轮附图总数上限：超出**不静默丢弃**，在工具结果里写明剩余下轮再读
         if (this.pendingImageReads.length >= READ_IMAGE_MAX_PER_ROUND) {
           overflowCount++;
+          overflowNames.push(ref.name);
           continue;
         }
         this.pendingImageReads.push(ref);
@@ -4024,7 +4027,7 @@ export class AgentLoop {
         if (overflowCount > 0) {
           notes.push(
             `【本轮附图上限】本轮附图已达 ${READ_IMAGE_MAX_PER_ROUND} 张，剩余 ${overflowCount} 张未附：` +
-              '请下一轮再读（不要重复读取同一批；先基于已附图片作答）',
+              `${overflowNames.join('、')}。请下一轮再读（不要重复读取同一批；先基于已附图片作答）`,
           );
         }
         if (notes.length > 0) {

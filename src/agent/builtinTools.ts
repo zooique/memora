@@ -373,27 +373,36 @@ export const WEB_FETCH_CONTENT_DEFAULT_LEN = 8_000;
 export const READ_IMAGE_SUPPORTED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'] as const;
 
 /**
+ * 单张图片字节上限（沿用宿主既有校验，不改数值）
+ *
+ * 宿主侧的**唯一真源**是 `hosts/memora-vscode/src/shared/imageValidation.ts` 的 `MAX_IMAGE_BYTES`；
+ * 两个包没有共享编译单元（内核 rootDir=src，不能 import 宿主源码），只能靠
+ * `readImageTool.test.ts` 的契约测试对齐——任何一侧改了数值而另一侧没跟，那条测试会红。
+ */
+export const READ_IMAGE_MAX_BYTES_PER_FILE = 5 * 1024 * 1024;
+
+/**
  * 单次 `read_image` 最多附带的图片数
  *
- * 依据：1568px 长边一张约 1600 tokens；8 张约 13k tokens。再往上在长会话里会挤掉
+ * 依据：1568px 长边一张约 1600 tokens，满上本上限约 13k tokens；再往上在长会话里会挤掉
  * 别的上下文（工具结果 / 规则段 / 历史），收益（再多看几张图）不抵成本。
  */
 export const READ_IMAGE_MAX_PER_CALL = 8;
 
 /**
- * 单次 `read_image` 附图总字节上限（20 MiB，= 8 张满额 40 MiB 的一半）
+ * 单次 `read_image` 附图总字节上限
  *
- * 依据：8 张各 5 MiB 满额会把 base64（体积 ×4/3 ≈ 53 MiB）顶到 provider 请求体边界；
- * 取一半既容纳 8 张常规截图（每张 1–2 MiB），又不会因一张大图把整批顶爆。
+ * 依据：取「单次张数上限 × 单张字节上限」的一半——满额时 base64（体积 ×4/3）会顶到
+ * provider 请求体边界；取一半既容纳一批常规截图（每张 1–2 MiB），又不会因一张大图把整批顶爆。
  */
 export const READ_IMAGE_MAX_BYTES_PER_CALL = 20 * 1024 * 1024;
 
 /**
- * 同一轮附图总数上限（12 张，含此前工具调用已挂上的图）
+ * 同一轮附图总数上限（含此前工具调用已挂上的图）
  *
- * 依据：1568px 长边一张约 1600 tokens；12 张约 19k tokens，是长会话里图片预算的上界
+ * 依据：1568px 长边一张约 1600 tokens，约 19k tokens 是长会话里图片预算的上界
  * （再多会明显挤占工具结果与历史）。超出的图不静默丢弃——由 loop 在工具结果里写明
- * 「本轮已达上限，剩余下轮再读」。
+ * 「本轮已达上限，剩余下轮再读」并列出文件名。
  */
 export const READ_IMAGE_MAX_PER_ROUND = 12;
 
@@ -699,7 +708,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       '读取图片并查看内容。path 既可传「文件」，也可传「目录」：' +
       `传目录时读取该目录下（不递归子目录）所有受支持的图片，按文件名排序，一次返回多张；` +
       `支持 ${READ_IMAGE_SUPPORTED_EXTENSIONS.join(' / ')}；` +
-      `限额：单张 ≤ 5 MiB，单次 ≤ ${READ_IMAGE_MAX_PER_CALL} 张、合计 ≤ ${
+      `限额：单张 ≤ ${READ_IMAGE_MAX_BYTES_PER_FILE / 1024 / 1024} MiB，单次 ≤ ${READ_IMAGE_MAX_PER_CALL} 张、合计 ≤ ${
         READ_IMAGE_MAX_BYTES_PER_CALL / 1024 / 1024
       } MiB，同一轮附图最多 ${READ_IMAGE_MAX_PER_ROUND} 张。` +
       `超过单次张数或总量时不会只附前几张：直接报错并列出目录内候选（文件名 + 大小），` +

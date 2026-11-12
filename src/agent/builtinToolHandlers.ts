@@ -36,6 +36,7 @@ import {
   DEFAULT_WRITE_FILE_MODE,
   WRITE_FILE_MODES,
   READ_IMAGE_MAX_BYTES_PER_CALL,
+  READ_IMAGE_MAX_BYTES_PER_FILE,
   READ_IMAGE_MAX_PER_CALL,
   READ_IMAGE_SUPPORTED_EXTENSIONS,
   isWriteFileMode,
@@ -381,7 +382,7 @@ export class BuiltinToolHandlers {
    * - 文件：单张；目录：枚举该目录下受支持扩展名的普通文件，按文件名排序后**逐张**调用端口。
    * - 端口契约保持「读一张图」的原语（`ImageReadResult` 不变）：目录枚举属于策略层，
    *   放在 handler；逐张调用还能逐张报错——8 张里坏 1 张，其余照常给。
-   * - 字节**不经过本方法**：宿主端口负责读盘、校验（5 MiB / 4 格式）与字节入缓存，
+   * - 字节**不经过本方法**：宿主端口负责读盘、校验（单张字节 / 格式）与字节入缓存，
    *   返回 `ImageRef`；本方法只产出「工具结果文本 + refs」，图由 loop 在出站视图尾部合成
    *   user 消息送模型（tool 角色在 OpenAI 兼容协议下只能承载文本）。
    *
@@ -472,8 +473,9 @@ export class BuiltinToolHandlers {
         'read_image 不可用',
         result.text,
         [
-          `单张图片需 ≤ 5 MiB 且为 ${READ_IMAGE_SUPPORTED_EXTENSIONS.join(' / ')}：` +
-            '超限时先裁剪或压缩（降低分辨率，或转成 JPEG / WebP）再读',
+          `单张图片需 ≤ ${READ_IMAGE_MAX_BYTES_PER_FILE / 1024 / 1024} MiB 且为 ${READ_IMAGE_SUPPORTED_EXTENSIONS.join(
+            ' / ',
+          )}：超限时先裁剪或压缩（降低分辨率，或转成 JPEG / WebP）再读`,
           '若当前模型未声明支持图片输入（provider 配置项 supportsVision）：命令面板运行「Memora: 配置大模型」→ 编辑当前模型服务 → 勾选「支持图片输入」后重试；只需要文本内容时改用 read_file',
         ],
         undefined,
@@ -572,7 +574,7 @@ export class BuiltinToolHandlers {
       );
     }
 
-    // 上限②：单次总字节——按 stat 预筛，避免把 20+ MiB 读进内存再失败
+    // 上限②：单次总字节——按 stat 预筛，避免把整批读进内存再失败
     const totalBytes = candidates.reduce((sum, c) => sum + c.bytes, 0);
     if (totalBytes > READ_IMAGE_MAX_BYTES_PER_CALL) {
       throw toolError(
@@ -582,7 +584,7 @@ export class BuiltinToolHandlers {
         )}，超过单次 ${formatImageSize(READ_IMAGE_MAX_BYTES_PER_CALL)} 上限。`,
         [
           `分批读取（每次合计不超过 ${formatImageSize(READ_IMAGE_MAX_BYTES_PER_CALL)}）`,
-          '或先缩小/压缩图片（单张控制在 5 MiB 以内）后重试',
+          `或先缩小/压缩图片（单张控制在 ${READ_IMAGE_MAX_BYTES_PER_FILE / 1024 / 1024} MiB 以内）后重试`,
         ],
         undefined,
         ToolErrorCode.ARGUMENT_ERROR,

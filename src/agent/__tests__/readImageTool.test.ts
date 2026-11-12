@@ -11,6 +11,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { AgentLoop } from '@/agent/loop.js';
@@ -24,6 +25,7 @@ import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import {
   BUILTIN_TOOLS,
   READ_IMAGE_MAX_BYTES_PER_CALL,
+  READ_IMAGE_MAX_BYTES_PER_FILE,
   READ_IMAGE_MAX_PER_CALL,
   READ_IMAGE_MAX_PER_ROUND,
   READ_IMAGE_SUPPORTED_EXTENSIONS,
@@ -114,6 +116,7 @@ describe('read_image · 工具描述', () => {
     // 格式清单唯一真源：描述里的每个扩展名都来自 READ_IMAGE_SUPPORTED_EXTENSIONS
     for (const ext of READ_IMAGE_SUPPORTED_EXTENSIONS) expect(desc).toContain(ext);
     expect(desc).toContain(`单次 ≤ ${READ_IMAGE_MAX_PER_CALL} 张`);
+    expect(desc).toContain(`单张 ≤ ${READ_IMAGE_MAX_BYTES_PER_FILE / 1024 / 1024} MiB`);
     expect(desc).toContain(`同一轮附图最多 ${READ_IMAGE_MAX_PER_ROUND} 张`);
     expect(desc).toContain(`${READ_IMAGE_MAX_BYTES_PER_CALL / 1024 / 1024} MiB`);
     // 超限行为必须写明「不会只附前几张」
@@ -332,7 +335,7 @@ describe('read_image · handler 侧原因文案（绕过 loop 直调执行器时
     expect(read.text).not.toContain('d.png');
   });
 
-  it('目录超过单次 8 张 → 报错并列出候选，不静默只附前 8 张', async () => {
+  it(`目录超过单次 ${READ_IMAGE_MAX_PER_CALL} 张 → 报错并列出候选，不静默只附前几张`, async () => {
     const dir = join(projectPath, 'many');
     await mkdir(dir, { recursive: true });
     for (let i = 0; i < 10; i++) {
@@ -345,7 +348,7 @@ describe('read_image · handler 侧原因文案（绕过 loop 直调执行器时
     let err: MemoraError | undefined;
     try {
       await handlers.readImage('many');
-      expect.unreachable('超过 8 张必须报错');
+      expect.unreachable(`超过 ${READ_IMAGE_MAX_PER_CALL} 张必须报错`);
     } catch (e) {
       err = e as MemoraError;
     }
@@ -411,10 +414,10 @@ describe('read_image · handler 侧原因文案（绕过 loop 直调执行器时
     }
   });
 
-  it('单次图片总字节超过 20 MiB → 报错并写明当前总量，不读盘', async () => {
+  it(`单次图片总字节超过 ${READ_IMAGE_MAX_BYTES_PER_CALL / 1024 / 1024} MiB → 报错并写明当前总量，不读盘`, async () => {
     const dir = join(projectPath, 'big');
     await mkdir(dir, { recursive: true });
-    // 5 × (4 MiB + 1) ≈ 20 MiB + 5 字节：张数不超限（5 ≤ 8），只触发总量上限
+    // 5 个「4 MiB + 1」的文件：合计略超单次总量上限，张数仍在上限内
     const chunk = Buffer.alloc(4 * 1024 * 1024 + 1);
     for (let i = 0; i < 5; i++) await writeFile(join(dir, `big-${i}.png`), chunk);
     const port = vi.fn();
@@ -552,6 +555,59 @@ describe('read_image · 出站视图合成', () => {
       .filter((m) => m.role === 'tool')
       .at(-1);
     expect(toolMsg?.content).toContain(`本轮附图已达 ${READ_IMAGE_MAX_PER_ROUND} 张`);
-    expect(toolMsg?.content).toContain('剩余 1 张未附');
+    // 必须点名到具体文件：只说「剩余 1 张」模型不知道下一轮该重读哪张
+    expect(toolMsg?.content).toContain('剩余 1 张未附：img-12.png');
+  });
+});
+
+describe('read_image · 与宿主契约对齐（两个包没有共享编译单元，只能靠测试约束）', () => {
+  /**
+   * 读取宿主共享校验模块源码（上限与格式的第二份真源不在内核，
+   * 内核 rootDir=src 不能 import 宿主源码，故读源码文本做契约断言）
+   */
+  function readHostImageValidationSource(): string {
+    return readFileSync(
+      join(process.cwd(), 'hosts', 'memora-vscode', 'src', 'shared', 'imageValidation.ts'),
+      'utf8',
+    );
+  }
+
+  it('内核 READ_IMAGE_MAX_BYTES_PER_FILE === 宿主 MAX_IMAGE_BYTES', () => {
+    // 任一侧改了数值而另一侧没跟，这里会红（字面量表达式按乘法求值，不 eval）
+    const matched = /export const MAX_IMAGE_BYTES\s*=\s*([\d\s*_]+);/.exec(
+      readHostImageValidationSource(),
+    );
+    expect(matched).not.toBeNull();
+    /** 宿主字面量（形如 `5 * 1024 * 1024`）按乘法求值 */
+    const hostBytes = matched![1]!
+      .split('*')
+      .reduce((product, term) => product * Number(term.replace(/_/g, '').trim()), 1);
+
+    expect(hostBytes).toBeGreaterThan(0);
+    expect(READ_IMAGE_MAX_BYTES_PER_FILE).toBe(hostBytes);
+  });
+
+  it('内核扩展名清单与宿主 SUPPORTED_IMAGE_MIMES 覆盖同一批格式', () => {
+    const matched = /export const SUPPORTED_IMAGE_MIMES = \[([\s\S]*?)\];/.exec(
+      readHostImageValidationSource(),
+    );
+    expect(matched).not.toBeNull();
+    /** 宿主支持的 mime 清单（按源码里的声明顺序） */
+    const hostMimes = [...matched![1]!.matchAll(/'([^']+)'/g)].map((m) => m[1]!);
+    /** 内核扩展名 → 宿主 mime（同一格式的别名映射到同一 mime） */
+    const extensionMime: Record<string, string> = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.webp': 'image/webp',
+      '.gif': 'image/gif',
+    };
+    for (const ext of READ_IMAGE_SUPPORTED_EXTENSIONS) {
+      expect(extensionMime[ext]).toBeDefined();
+    }
+    /** 内核清单映射后的 mime 去重集合 */
+    const kernelMimes = new Set(READ_IMAGE_SUPPORTED_EXTENSIONS.map((ext) => extensionMime[ext]!));
+
+    expect(kernelMimes).toEqual(new Set(hostMimes));
   });
 });
