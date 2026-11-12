@@ -1279,7 +1279,7 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
       'setBudgetProvider',
       // 2026-11-11 新增（子 agent v1 第二刀 · delegate_task）：装配期注入子会话派发端口，
       // 与 setImageReadPort / setDenyTools 同形态（注入后不再变更）。
-      // 真消费者 = assembler.assembleComponents（runSubagent 闭包 + 并发信号量）。
+      // 真消费者 = assembler.assembleComponents（runSubagent 闭包 + 并发计数闸）。
       // 定性 = 真能力：不注入时 delegate_task 结构上不可见（深度 1 的实现方式）。
       'setDelegateTask',
       // 2026-11-11 新增（子 agent v1 第一刀 · deny 轴）：装配期注入工具 deny 集，
