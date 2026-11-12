@@ -488,9 +488,14 @@ describe('工具执行器（6 个工具）', () => {
           `内置写工具「${name}」（diskWrite 非 none）必须登记进 SUBAGENT_DENIED_TOOLS`,
         ).toContain(name);
       }
-      // 已知残余（**勿读成全覆盖**）：ask_user / remember_intel / task_table_write /
-      // task_table_update / run_team_meeting 的 diskWrite 均为 'none'（父状态 / 职责例外），
-      // 无法由元数据推出「必须禁」，仍需按职责人工复核；本守卫只覆盖元数据可判的写盘工具。
+      // 已知残余（**勿读成全覆盖**）：下面 6 项 diskWrite 均为 'none'，都推不出「必须禁」，
+      // 仍靠上方那条手写全集断言把它们锁在 deny 集里：
+      //   · 父状态 / 职责例外：ask_user / remember_intel / task_table_write /
+      //     task_table_update / run_team_meeting；
+      //   · 执行面副作用：kill_command（diskWrite:'none'，进集理由与 run_command 同一句，
+      //     见 toolExecutor.ts 拒绝集注释「执行：run_command / kill_command」）。
+      // 硬边界：本守卫只防**正向缺口**（元数据说写盘却没进 deny）；**反向缺口**
+      // （进了 deny 但元数据说 none）它防不住，那 6 项就是反向缺口，靠手写断言兜。
     });
 
     it('run_team_meeting 属职责例外：deny 生效后从可见面移除（不是靠白名单顺带隐藏）', () => {
