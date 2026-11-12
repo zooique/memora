@@ -106,7 +106,7 @@ export function createImageReadPort(deps: ImageReadPortDeps): ImageReadPort {
       bytes: bytes.length,
       name: checked.name,
     };
-    // 同一 sha 重复 ingest 由 `put` 的同键覆盖兜底（先扣旧长度再累加），不会重复计字节
+    // 同一 sha 重复 ingest 不会重复计字节
     deps.cache.ingestBytes(ref, bytes);
     return { ok: true, ref };
   };
