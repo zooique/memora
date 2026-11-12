@@ -39,6 +39,7 @@ description: 通用编码约束规则（TS/JS，兼顾 Electron / Node 本地项
 | DO | `try/catch` 仅包裹纯 IO 操作，不整函数包裹 |
 | DO | 捕获底层异常后补上下文日志，包装成业务异常向上抛 |
 | DO | 用统一的 `MemoraError` 体系（错误码 + 上下文），不用裸 `Error` |
+| DO | 解析期或装配期的「跳过」必须留可见诊断，禁止无诊断降级；已落地样板 = 角色包校验的 `UNREGISTERED_CAPABILITY` warning（`src/role-pack/validator.ts`） |
 | DON'T | 吞异常返回空对象 / 空数组——问题必须显性抛出 |
 | DON'T | 嵌套多层 `try/catch`——单一异常来源只配一层捕获 |
 

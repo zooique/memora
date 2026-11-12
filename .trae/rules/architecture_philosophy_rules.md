@@ -145,6 +145,7 @@ description: 架构哲学原则（12 条：摘要即记忆（memory-as-summary�
 "模型看到了什么"由 ITracer 承载指纹 hash，**不入记忆存储（sessionStore）**。内核提供机制（埋点接口），宿主负责策略。
 
 - `llm.call` span 记 `systemPromptHash`；`recall.recall` span 记 `attachedMemoryCount`/`fingerprint`。
+- 除 `systemPromptHash` 与记忆指纹外，**当轮实际暴露给模型的工具清单**也必须可追溯——否则「某工具到底能不能被看见」只能靠读码回答。
 - 仅宿主注入真实 Tracer 时计算指纹（NOOP 零开销）；指纹用 `sha256Fingerprint` 纯函数。
 
 **禁止**：❌ 在 sessionStore 存储完整上下文快照；❌ 未注入 Tracer 时执行指纹计算；❌ 指纹 hash 与记忆内容存储耦合。
