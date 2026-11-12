@@ -157,7 +157,7 @@
 1. `rolePack` 传了但包不存在 / 未装载 → 工具报错，不许静默退回空白。
 2. `toolWhitelist = []` 不是 `null`（空数组 = 仅常驻集；`null` = 全开）。
 3. 强制只读，且拒绝 `toolMode='block'` 的角色包（block 会把整个工具面关死，子递归连只读工具都用不了）。
-4. `userFollowup='ask'` 注入的「主动提问规则」（`src/role-pack/strategyResolver.ts:509-536`）要能按子会话开关抑制——否则 `ask_user` 被 deny 后，提示词仍引导模型去提问。
+4. `userFollowup='ask'` 注入的「主动提问规则」（`src/role-pack/strategyResolver.ts:511-538`）要能按子会话开关抑制——否则 `ask_user` 被 deny 后，提示词仍引导模型去提问。
 5. 子会话不注入 `delegate_task` 端口（深度 1 的结构性保证：孙派发工具根本不存在）；同一步并发由派发端口按角色包策略 `act.subagentConcurrency` 硬限（`0` = 不注入端口；缺省值与合法区间真源见 `src/role-pack/strategyResolver.ts` / `strategyKeys.ts`，本文不复述数字）。
 6. `capabilities` 入参必须按白名单校验：只接受 `web:search` / `web:fetch`；传 `code:execute` 或任何未知名字 → **工具直接报错**，不许过滤后静默放行。
 
