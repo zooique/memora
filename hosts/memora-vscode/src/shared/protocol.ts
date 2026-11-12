@@ -248,8 +248,9 @@ export type ActiveFileProjection =
  * 「提示模型去看」此路不通）⇒ 允许有界注入。四条硬约束（有界 / 计预算 / 明示 / 不泛化）
  * 的真源在台账 HOST-CTX-0「定案例外清单」，此处只登记枚举。
  *
- * ⚠️ **不预建未落地的源**：本枚举只登记已落地的源（当前含 `problems` 与 `git-changes`），
- * 新增源随其落地一并追加；把未来源写进来等于给「未拍板的语义」发身份证（D6：不预支）。
+ * ⚠️ **不预建未落地的源**：除既有的 `active-file` 外，本枚举当前另含 `problems` 与
+ * `git-changes`；新增源随其落地一并追加，把未来源写进来等于给「未拍板的语义」发身份证
+ * （D6：不预支）。
  * `active-file` 是既有的注入源（脏 / 未命名 / 工作区外时注入正文），随 CTX-4 ② 一起
  * 降为本枚举的一个分项（原先它的 token 数长在 `ActiveFileProjection` 私有字段上）。
  */
@@ -1674,7 +1675,7 @@ export type ExtensionToWebviewMessage =
     }
   /** 渐进披露：技能正文响应（对 skills_read_content 的应答） */
   | { type: 'skill_content'; skillName: string; content: string }
-  // ─── 输入框预填消息（角色 handoff） ───
+  // ─── 对话输入区消息（预填 / 引用 / 焦点 / 上下文注入 / 润色回执） ───
   /**
    * 预填输入框（角色 handoff 上下文传递）
    *
