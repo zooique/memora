@@ -154,16 +154,14 @@ export function isReservedTaskTableFile(absolutePath: string): boolean {
 /**
  * 二进制形态识别结果（只服务 read_file 错误文案的分流，不做安全裁决）
  *
- * `kind` 决定建议走哪条可执行路径；`imageExt` 的取值来自
- * `READ_IMAGE_SUPPORTED_EXTENSIONS`（图片格式唯一清单），建议文案里不再手写第二份后缀列表。
+ * `kind` 决定建议走哪条可执行路径。图片格式清单由建议文案直接引用
+ * `READ_IMAGE_SUPPORTED_EXTENSIONS`（唯一清单），本类型不重复携带扩展名。
  */
 interface BinaryProbe {
   /** 人读形态名（如「PNG 图片」「PDF 文档」「二进制文件」） */
   readonly label: string;
   /** 建议分流类别：图片 / PDF / ZIP 容器 / 无法识别 */
   readonly kind: 'image' | 'pdf' | 'zip' | 'unknown';
-  /** 命中的图片扩展名（仅 kind=image 时存在；取值 = 唯一清单里的成员） */
-  readonly imageExt?: (typeof READ_IMAGE_SUPPORTED_EXTENSIONS)[number];
 }
 
 /**
@@ -174,22 +172,22 @@ interface BinaryProbe {
  * 判据取文件头固定字节，识别不了就如实回「二进制文件」，不猜。
  *
  * @param buf 文件完整字节（只读前 12 字节）
- * @returns 形态名 + 建议分流类别（图片额外带命中扩展名）
+ * @returns 形态名 + 建议分流类别（图片 / PDF / ZIP / 未知）
  */
 function sniffBinary(buf: Uint8Array): BinaryProbe {
   // 越界读出 undefined 时统一给 -1，避免与任何真实字节值相等
   const at = (i: number): number => buf[i] ?? -1;
   // PNG：89 50 4E 47 0D 0A 1A 0A（只认前 4 字节签名即可判定）
   if (at(0) === 0x89 && at(1) === 0x50 && at(2) === 0x4e && at(3) === 0x47) {
-    return { kind: 'image', label: 'PNG 图片', imageExt: '.png' };
+    return { kind: 'image', label: 'PNG 图片' };
   }
   // JPEG：FF D8 FF（SOI + 首个标记前缀）
   if (at(0) === 0xff && at(1) === 0xd8 && at(2) === 0xff) {
-    return { kind: 'image', label: 'JPEG 图片', imageExt: '.jpg' };
+    return { kind: 'image', label: 'JPEG 图片' };
   }
   // GIF：GIF87a / GIF89a（前 4 字节 GIF8 已足够）
   if (at(0) === 0x47 && at(1) === 0x49 && at(2) === 0x46 && at(3) === 0x38) {
-    return { kind: 'image', label: 'GIF 图片', imageExt: '.gif' };
+    return { kind: 'image', label: 'GIF 图片' };
   }
   // WebP：RIFF....WEBP（0-3 为 RIFF，8-11 为 WEBP）
   if (
@@ -202,7 +200,7 @@ function sniffBinary(buf: Uint8Array): BinaryProbe {
     at(10) === 0x42 &&
     at(11) === 0x50
   ) {
-    return { kind: 'image', label: 'WebP 图片', imageExt: '.webp' };
+    return { kind: 'image', label: 'WebP 图片' };
   }
   // PDF：%PDF
   if (at(0) === 0x25 && at(1) === 0x50 && at(2) === 0x44 && at(3) === 0x46) {
