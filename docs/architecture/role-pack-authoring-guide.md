@@ -172,7 +172,7 @@
 | `webSearchLimit` | 整数                          | `1 ~ 20`             | `6`                                    | 每轮联网搜索次数上限（web_search 硬护栏，超限确定性拒绝 + 停搜；与 `askLimit` 同构） | `12`                        |
 | `errorHandling` | `retry` / `degrade` / `stop` | —                    | `retry`                               | 异常处理策略        | `"degrade"`                 |
 | `contextLimit`   | 整数                           | `0` 或 `120000 ~ 2000000` | 未声明→`0`（跟随 provider 窗口）                           | 角色包上下文上限（**推荐 0**）  | `0`                     |
-| `stepBudget`    | 整数                           | `0 ~ 500`（0=兜底，非不限）  | `50`                                  | 每轮工具步数上限（0=走内核 maxIterations 兜底，无「不限」路径） | `60`                        |
+| `stepBudget`    | 整数                           | `0 ~ 500`（0=兜底，非不限）  | `0`（兜底 → 有效 50）                     | 每轮工具步数上限（0=走内核 maxIterations 兜底，无「不限」路径） | `60`                        |
 
 > `askOn` 元素枚举：`ambiguity`（模糊）/ `decision`（需决策）/ `missing_info`（缺信息）/ `confirm`（需确认）。
 > `userFollowup` 须为 `ask` 时 `askOn`/`askLimit` 才生效。

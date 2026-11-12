@@ -81,7 +81,7 @@ export interface ActStrategy {
   readonly toolStepLimit?: number;
   /** 生成温度 0.0~2.0（默认 0.7） */
   readonly temperature?: number;
-  /** 单轮回答长度上限 token 数（默认 4096） */
+  /** 单轮回答长度上限 token 数（默认 0 = 不干预：听服务端 / per-LLM 配置；正数才设上限） */
   readonly outputLimit?: number;
   /** Provider 路由策略（默认 auto；内核已消费） */
   readonly providerRouting?: ProviderRouting;
