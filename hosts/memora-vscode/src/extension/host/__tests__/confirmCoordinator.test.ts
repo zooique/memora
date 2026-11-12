@@ -622,3 +622,146 @@ describe('ConfirmCoordinator · disposeSession 会话删除清理（E4 批 3）'
     expect(h.pendingChanges.length).toBe(before);
   });
 });
+
+/**
+ * 按会话应答入口 `answerFor`（R0-c · 远程控制前置）
+ *
+ * 钉住的不变量：
+ *   ① **对外行为不变**：`answer()` 委托 `answerFor(前台会话)`，同一场景下消息序列与裁决值逐条相同；
+ *   ② 远程可对**指定会话**的在途请求裁决（不要求该会话是屏幕焦点）；
+ *   ③ 受理判据与 `answer` 一致：只认该会话的**在途**请求，排队未上屏 / 未知 id / 迟到回执一律拒；
+ *   ④ 后台会话裁决**不写决策通知**（notice 无会话寻址能力，发了就是跨会话串台）。
+ */
+describe('ConfirmCoordinator · answerFor 按会话应答（R0-c）', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** 归一化 requestId（随机生成，逐条比较时必须抹掉） */
+  function normalize(posted: Posted[]): Posted[] {
+    return posted.map((m) => {
+      const next: Posted = { ...m };
+      if (typeof next.requestId === 'string' && next.requestId.startsWith('wc_')) {
+        next.requestId = '<id>';
+      }
+      return next;
+    });
+  }
+
+  it('answer() 与 answerFor(前台会话) 的消息序列、裁决值逐条相同（委托不改对外行为）', async () => {
+    /** 跑一遍完整场景：建会话 → 上屏 → 批准 */
+    async function run(viaAnswerFor: boolean) {
+      const posted: Posted[] = [];
+      const holder = { agent: undefined as Agent | undefined };
+      const coordinator = new ConfirmCoordinator({
+        getAgent: () => holder.agent,
+        post: (msg) => {
+          posted.push(msg as unknown as Posted);
+        },
+      });
+      const stub = agentStub();
+      holder.agent = stub.agent;
+      coordinator.bindWriteConfirmation(); // 前台 = 默认 ''
+
+      const settled = stub.trigger(confirmInfo());
+      const requestId = (
+        posted.find((m) => m.type === 'write_confirm_request') as { requestId: string }
+      ).requestId;
+      if (viaAnswerFor) {
+        expect(coordinator.answerFor('', requestId, true)).toBe(true);
+      } else {
+        coordinator.answer(requestId, true);
+      }
+      return { posted: normalize(posted), verdict: await settled };
+    }
+
+    const viaAnswer = await run(false);
+    const viaAnswerFor = await run(true);
+    expect(viaAnswerFor).toEqual(viaAnswer);
+    expect(viaAnswer.verdict).toBe(true);
+  });
+
+  it('对指定会话的在途请求裁决：resolve 生效、计数归零、收卡（与 answer 同一套副作用）', async () => {
+    const posted: Posted[] = [];
+    const coordinator = new ConfirmCoordinator({
+      getAgent: () => undefined,
+      post: (msg) => {
+        posted.push(msg as unknown as Posted);
+      },
+    });
+    const stub = agentStub();
+    coordinator.bindSession('s-a', stub.agent);
+    coordinator.setForeground('s-a');
+
+    const settled = stub.trigger(confirmInfo());
+    const requestId = (
+      posted.find((m) => m.type === 'write_confirm_request') as { requestId: string }
+    ).requestId;
+
+    expect(coordinator.answerFor('s-a', requestId, false)).toBe(true);
+    await expect(settled).resolves.toBe(false);
+    expect(coordinator.pendingCount('s-a')).toBe(0);
+    expect(posted.filter((m) => m.type === 'write_confirm_closed')).toHaveLength(1);
+  });
+
+  it('后台会话（卡已上屏后被切走）可远程裁决：resolve 生效，但不发决策通知、不驱动屏幕', async () => {
+    const posted: Posted[] = [];
+    const coordinator = new ConfirmCoordinator({
+      getAgent: () => undefined,
+      post: (msg) => {
+        posted.push(msg as unknown as Posted);
+      },
+    });
+    const stub = agentStub();
+    coordinator.bindSession('s-a', stub.agent);
+    coordinator.setForeground('s-a');
+    const settled = stub.trigger(confirmInfo());
+    const requestId = (
+      posted.find((m) => m.type === 'write_confirm_request') as { requestId: string }
+    ).requestId;
+
+    // 切走：卡收掉但不终结请求（既有语义），此时 s-a 是后台会话
+    coordinator.setForeground('s-b');
+    const decisionsBefore = posted.filter((m) => m.kind === 'decision').length;
+    const closedBefore = posted.filter((m) => m.type === 'write_confirm_closed').length;
+
+    expect(coordinator.answerFor('s-a', requestId, true)).toBe(true);
+    await expect(settled).resolves.toBe(true);
+    // ④ 决策通知是「屏幕时间线」载荷，后台会话不得写入（跨会话串台）
+    expect(posted.filter((m) => m.kind === 'decision')).toHaveLength(decisionsBefore);
+    // 后台会话裁决不驱动屏幕：不额外发 closed（卡在切走时已收）
+    expect(posted.filter((m) => m.type === 'write_confirm_closed')).toHaveLength(closedBefore);
+    expect(coordinator.pendingCount('s-a')).toBe(0);
+  });
+
+  it('排队未上屏 / 未知 id / 迟到旧回执 ⇒ 拒（false）且零副作用', async () => {
+    const posted: Posted[] = [];
+    const coordinator = new ConfirmCoordinator({
+      getAgent: () => undefined,
+      post: (msg) => {
+        posted.push(msg as unknown as Posted);
+      },
+    });
+    const stub = agentStub();
+    coordinator.bindSession('s-a', stub.agent); // 后台：请求只入队，不上屏
+
+    let settled = false;
+    void stub.trigger(confirmInfo()).then(() => {
+      settled = true;
+    });
+
+    // 排队中（无在途卡）⇒ 远程也不得越过 FIFO 提前裁决
+    expect(coordinator.answerFor('s-a', 'wc_unknown', true)).toBe(false);
+    expect(coordinator.pendingCount('s-a')).toBe(1);
+
+    // 上屏后正常裁决，再重放同一 id ⇒ 迟到回执被拒
+    coordinator.setForeground('s-a');
+    const requestId = (
+      posted.find((m) => m.type === 'write_confirm_request') as { requestId: string }
+    ).requestId;
+    expect(coordinator.answerFor('s-a', requestId, true)).toBe(true);
+    await Promise.resolve();
+    expect(settled).toBe(true);
+    expect(coordinator.answerFor('s-a', requestId, true)).toBe(false);
+  });
+});

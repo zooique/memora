@@ -385,6 +385,39 @@ export class ConfirmCoordinator {
   }
 
   /**
+   * 按会话应答入口（远程/桥用）：对**指定会话**的在途确认裁决
+   *
+   * 与 `answer` 的唯一差别是会话可寻址——`answer` 只服务「屏幕上那张卡」，
+   * 远程控制需要「任意 sid 的待决审批也能答」，故把寻址拆出来，`answer` 退化为
+   * 「对前台会话调用本方法」的 sugar（对外行为逐字不变）。
+   *
+   * 受理判据与 `answer` 完全一致：只认该会话的**在途**请求（`current`），
+   * 排队中（未上屏）的请求与未知 requestId 一律丢弃——排队请求尚未进入用户视野，
+   * 提前裁决会让「卡还没出现就被答了」，与 FIFO 串行语义冲突。
+   *
+   * ⚠️ 决策留痕（notice）**只在该会话正是显示会话时发**：notice 载荷没有会话寻址能力，
+   * 给后台会话发就会写进当前屏幕的时间线（跨会话串台）。这条门控不改变 `answer` 的
+   * 既有行为（`answer` 恒传前台会话），只约束新增的远程路径。
+   *
+   * @param sessionId 会话标识（确认请求所属会话）
+   * @param requestId 该会话在途请求的 id
+   * @param approved  true = 批准；false = 拒绝（fail-closed 语义不变：拒绝即不执行）
+   * @returns 是否受理（false = 会话无在途请求 / requestId 不匹配 / 迟到回执）
+   */
+  answerFor(sessionId: string, requestId: string, approved: boolean): boolean {
+    const state = this._sessions.get(sessionId);
+    const entry = state?.current;
+    if (!entry || entry.requestId !== requestId) return false;
+    // 顺序与 answer 原样一致：① resolve → ② 决策留痕（仅前台）→ ③ 终结 + 泵下一条
+    entry.resolve(approved);
+    if (sessionId === this._foreground) {
+      this._logDecision(entry, approved ? 'approved' : 'declined');
+    }
+    this._settle(entry);
+    return true;
+  }
+
+  /**
    * 应答入口（webview 回传 `write_confirm_answer` 的唯一处理点）
    *
    * 只接受**当前显示会话**的在途请求：切走后收卡，迟到回执（或别的会话的 id）一律丢弃，
@@ -397,11 +430,7 @@ export class ConfirmCoordinator {
    *      webview 侧不再自行假设「点了就算关」）
    */
   answer(requestId: string, approved: boolean): void {
-    const state = this._sessions.get(this._foreground);
-    const entry = state?.current;
-    if (!entry || entry.requestId !== requestId) return;
-    entry.resolve(approved);
-    this._logDecision(entry, approved ? 'approved' : 'declined');
-    this._settle(entry);
+    // 委托 answerFor：寻址规则只有一份（前台会话），此处不再重写判据
+    this.answerFor(this._foreground, requestId, approved);
   }
 }
