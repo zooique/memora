@@ -406,6 +406,39 @@ describe('AgentLoop · 任务表观测量', () => {
 
     const metrics = loop.getMetrics();
     expect(metrics.plan.taskTableWriteCount).toBe(1);
+    // 对偶断言：write 不计入 update（两个计数各自独立，否则「建表却不推进」判不出来）
+    expect(metrics.plan.taskTableUpdateCount).toBe(0);
+  });
+
+  it('调用 task_table_update 后 plan.taskTableUpdateCount 累加（ME-7-METRIC-1）', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              {
+                id: 'tc1',
+                type: 'function',
+                function: {
+                  name: 'task_table_update',
+                  arguments: '{"plan_item_id":"1","status":"done"}',
+                },
+              },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('[OK] 任务项已更新'),
+    });
+
+    await consumeGenerator(loop.processUserInput('推进任务表'));
+
+    const metrics = loop.getMetrics();
+    expect(metrics.plan.taskTableUpdateCount).toBe(1);
+    // 对偶断言：update 不计入 write（一次 update 不得让「建表次数」虚增）
+    expect(metrics.plan.taskTableWriteCount).toBe(0);
   });
 
   it('产生 active 任务项边界后 plan.planItemBoundaryCount 累加', async () => {
@@ -555,6 +588,7 @@ describe('AgentMetrics · 类型结构', () => {
 
     // 验证 plan 维度字段（任务表触发观测量）
     expect(metrics.plan).toHaveProperty('taskTableWriteCount');
+    expect(metrics.plan).toHaveProperty('taskTableUpdateCount');
     expect(metrics.plan).toHaveProperty('planItemBoundaryCount');
   });
 

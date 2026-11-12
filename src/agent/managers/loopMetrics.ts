@@ -56,6 +56,8 @@ export class LoopMetrics {
   // ─── 任务表触发观测量（先实证触发率，再决定修复是否起效）──
   /** 累计调用 task_table_write 次数（= 任务表建表/重建次数） */
   planTaskTableWriteCount = 0;
+  /** 累计调用 task_table_update 次数（= 任务项状态推进次数；与 write 配对可判「建了表却不推进」） */
+  planTaskTableUpdateCount = 0;
   /** 累计产出 plan_item_boundary 次数（= 思考折叠分块的边界数） */
   planItemBoundaryCount = 0;
 

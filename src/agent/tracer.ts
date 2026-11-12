@@ -199,6 +199,8 @@ export interface AgentMetrics {
   plan: {
     /** 累计调用 task_table_write 次数（= 建表/重建次数，0 = 从未触发） */
     taskTableWriteCount: number;
+    /** 累计调用 task_table_update 次数（= 任务项状态推进次数，0 = 建了表却从不推进） */
+    taskTableUpdateCount: number;
     /** 累计产出 plan_item_boundary 次数（= 思考折叠分块边界数，同 0 即布局骨血空转） */
     planItemBoundaryCount: number;
   };

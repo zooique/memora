@@ -2340,8 +2340,10 @@ export class AgentLoop {
     };
     for (const tc of toolCalls) {
       this.metrics.toolCallCount++;
-      // 底层观测：task_table_write 调用累计（实证任务表是否被触发）
+      // 底层观测：task_table_write / task_table_update 调用分别累计（实证任务表是否被触发、
+      // 以及建表后是否真被推进——只看 write 无法区分「表建了但从不更新」）
       if (tc.function.name === 'task_table_write') this.metrics.planTaskTableWriteCount++;
+      if (tc.function.name === 'task_table_update') this.metrics.planTaskTableUpdateCount++;
       const isSearch = tc.function.name === 'web_search';
       if (isSearch) this.searchCallCount++;
       // 写盘能力随事件上报：宿主文件改动追踪据此判定（与内核写序闸同一派生点，
@@ -3490,6 +3492,7 @@ export class AgentLoop {
       },
       plan: {
         taskTableWriteCount: this.metrics.planTaskTableWriteCount,
+        taskTableUpdateCount: this.metrics.planTaskTableUpdateCount,
         planItemBoundaryCount: this.metrics.planItemBoundaryCount,
       },
       tasks: {
