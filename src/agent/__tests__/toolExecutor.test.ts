@@ -225,6 +225,25 @@ describe('工具执行器（6 个工具）', () => {
       expect(names).toContain('task_table_write');
     });
 
+    it('delegate_task 在常驻集：端口注入后空白名单仍暴露（角色包声明不再决定可见性）', () => {
+      const exec = new ToolExecutor(tmpProject, security, index);
+      // 注入派发端口 = 装配层已完成接线；常驻集判定与端口注入是两条独立前提
+      exec.setDelegateTask(async () => ({
+        status: 'completed',
+        text: '[SUBAGENT:completed]\n正文',
+        durationMs: 0,
+      }));
+      exec.setToolWhitelist([]);
+      expect(exec.list.map((t) => t.name)).toContain('delegate_task');
+    });
+
+    it('delegate_task 的「可见」仍以端口注入为前提：未注入时不进 list（深度 1 的结构性保证）', () => {
+      const exec = new ToolExecutor(tmpProject, security, index);
+      exec.setToolWhitelist([]);
+      // 常驻集只回答「白名单是否豁免」，不负责把未装配的条件工具塞进 assembledTools
+      expect(exec.list.map((t) => t.name)).not.toContain('delegate_task');
+    });
+
     it('白名单收窄同步收口执行面（EXPOSURE-GATE-1）：未暴露工具硬点名 → blocked not_exposed', async () => {
       // 旧口径「暴露面控制 ≠ execute 拦截」已被本闸改写：收窄暴露面即收窄可执行面。
       // run_team_meeting 是已装配的特权工具（不在常驻豁免集），空白名单下未暴露。

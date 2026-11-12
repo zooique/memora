@@ -608,6 +608,12 @@ export const DEFAULT_EXPOSED_TOOLS: ReadonlySet<string> = new Set([
   // 危险度由裁决链（deny 黑名单恒拦 / alwaysAsk 恒确认 / guest 恒确认）承担，不由暴露面承担。
   'run_command',
   'kill_command',
+  // 子会话派发（判据 A：本工具 diskWrite='none'，子会话另有三重结构性只读——
+  // 强制 toolReadonly='readonly' + SUBAGENT_DENIED_TOOLS + 不注入代码执行 provider / 派发端口）。
+  // 常驻 = 所有角色包（含只读包）无条件可见，不再要求「未声明 capabilities」才可见；
+  // ⚠️ 暴露 ≠ 可调：装配层不注入端口时它根本不进 assembledTools——子会话的深度 1 靠这一点保证，
+  // 与「是否在常驻集」是两条独立判定，改动时不要合并。
+  'delegate_task',
 ]);
 
 /**

@@ -79,7 +79,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 
 #### capabilities（特权能力候选）
 
-> **模型（tool-exposure-model）**：`capabilities` = 角色声明的**超越默认边界的特权**。本地读写/记忆/技能等 16 个工具**默认常驻**（`DEFAULT_EXPOSED_TOOLS`），**无需声明即可用**（省略 capabilities 同理）。只有下面 4 类特权键声明后才进入工具白名单：
+> **模型（tool-exposure-model）**：`capabilities` = 角色声明的**超越默认边界的特权**。本地读写/记忆/技能/命令/子会话派发等工具**默认常驻**（条目以 `DEFAULT_EXPOSED_TOOLS` 为唯一真源，此处不落计数），**无需声明即可用**（省略 capabilities 同理）。只有下面几类特权键声明后才进入工具白名单：
 
 | capability | 对应工具 |
 |-----------|---------|

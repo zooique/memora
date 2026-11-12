@@ -30,6 +30,7 @@ LLM 现写、无轨迹的任意代码 → 特权（角色启动 + 需宿主注�
 | search_memories / trace_summary / list_sessions / compress_context / ask_user / register_work | 判据 A：内核自有数据 / 人机交互 / 上下文维护等基础设施 |
 | read_skill / read_resource / run_skill_script / list_resources / list_skills | 技能属能力面（既定案）；来源可信（判据 B） |
 | run_project_script | 判据 A+B：项目内既有脚本，仓库已沉淀 |
+| delegate_task | 判据 A：本工具 `diskWrite='none'`，子会话另有结构性只读（强制 `toolReadonly` + deny 集 + 不注入执行 provider / 派发端口）——派发权不突破只读边界。**暴露 ≠ 可调**：装配层不注入端口时它不进 `assembledTools`，子会话深度 1 靠这一点保证 |
 
 > search_project 不在豁免集内：宿主注入即暴露（注入例外，`list` 白名单过滤后追加），与 `file:read` 只读语义同档。
 
