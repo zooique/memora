@@ -46,9 +46,11 @@ export const MAX_OUTPUT_LIMIT = 65536;
 export const MAX_TOOL_STEP_LIMIT = 100;
 /**
  * 子会话并发额度的**声明上界**：16。
- * 上界只防「一笔 tool_call 批量派发把 provider 配额打爆」，不是真实瓶颈的建模——
- * 唯一真实瓶颈是 model provider 的配额，属 provider 层。缺省 4 不在此常量，
- * 见 DEFAULT_BEHAVIOR_STRATEGY.act.subagentConcurrency（缺省值唯一真源）。
+ *
+ * 它只是「一笔 tool_call 批量派发打爆 provider 配额」的**保险丝**，不是性能建模，
+ * 也不是资源上限（不探测 CPU / 内存）：唯一真实瓶颈是 model provider 的配额，属 provider 层，
+ * 不在此处解决。缺省 4 不在此常量，见 DEFAULT_BEHAVIOR_STRATEGY.act.subagentConcurrency
+ * （缺省值唯一真源）。显式声明越界 = 报错，不静默按缺省值运行。
  */
 export const MAX_SUBAGENT_CONCURRENCY = 16;
 /**

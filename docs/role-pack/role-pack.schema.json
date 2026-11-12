@@ -124,7 +124,7 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 16,
-              "description": "同一步可并行的子会话额度：0=关闭派发（delegate_task 不可见），省略=内核缺省 4。额度只约束同一批 tool_call 内最多并行几个，不会让模型自动并行"
+              "description": "同一步可并行的子会话额度：0=关闭派发（delegate_task 不可见），省略=内核缺省 4。额度只约束同一批 tool_call 内最多并行几个，不会让模型自动并行；越界由校验器报 error，不静默回退缺省值"
             }
           },
           "additionalProperties": false

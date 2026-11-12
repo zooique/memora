@@ -305,19 +305,46 @@ describe('resolve* 函数 — 数值解析', () => {
       ).toBe(MAX_SUBAGENT_CONCURRENCY);
     });
 
-    it('非法值回退缺省 4（负数 / 小数 / 非数 / 越上界）', () => {
-      expect(resolveSubagentConcurrency({ act: { subagentConcurrency: -1 } })).toBe(4);
-      expect(resolveSubagentConcurrency({ act: { subagentConcurrency: 1.5 } })).toBe(4);
-      expect(
-        resolveSubagentConcurrency({
-          act: { subagentConcurrency: '3' as unknown as number },
-        }),
-      ).toBe(4);
-      expect(
-        resolveSubagentConcurrency({
-          act: { subagentConcurrency: MAX_SUBAGENT_CONCURRENCY + 1 },
-        }),
-      ).toBe(4);
+    /**
+     * 捕获越界解析抛出的配置错误
+     *
+     * `MemoraError.message` 只有标题，合法区间与越界值在 `detail` / `suggestions`，
+     * 故这里按字段取——用例要证明「有可见提示」，不能只看 message。
+     */
+    function captureConcurrencyError(value: unknown): {
+      title: string;
+      detail: string | undefined;
+      suggestions: readonly string[];
+    } {
+      try {
+        resolveSubagentConcurrency({ act: { subagentConcurrency: value as number } });
+      } catch (error) {
+        return error as {
+          title: string;
+          detail: string | undefined;
+          suggestions: readonly string[];
+        };
+      }
+      throw new Error('预期抛错但未抛（静默回退缺省值即视为回归）');
+    }
+
+    it('非法值直接报错，绝不静默回退缺省 4（负数 / 小数 / 非数 / 越上界）', () => {
+      // 去掉「显式声明越界 → 报错」分支 → 这些断言转红（旧行为是静默按 4 跑）
+      for (const invalid of [-1, 1.5, '3', MAX_SUBAGENT_CONCURRENCY + 1]) {
+        const error = captureConcurrencyError(invalid);
+        expect(error.title).toContain('act.subagentConcurrency');
+        expect(error.detail).toContain(`0~${MAX_SUBAGENT_CONCURRENCY}`);
+        expect(error.detail).toContain(String(invalid));
+        expect(error.suggestions.join(' ')).toContain('act.subagentConcurrency');
+      }
+    });
+
+    it('填 20：拒绝并给出越界值与合法区间，而不是静默按 4 生效', () => {
+      // 用户场景复现：填 20 若被静默改成 4，用户会以为 20 生效 → 该用例锁死「必须报错」
+      const error = captureConcurrencyError(20);
+      expect(error.detail).toContain('20');
+      expect(error.detail).toContain('0~16');
+      expect(error.suggestions.join(' ')).toContain('0~16');
     });
 
     it('未声明回退缺省 4（不配置就走内核缺省，不是被改成别的数）', () => {

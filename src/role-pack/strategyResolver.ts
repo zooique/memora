@@ -40,6 +40,8 @@ import type {
 } from './types.js';
 // 类型级引用（type-only，运行时无环）：resolveActiveStrategy 需读取激活角色包策略
 import type { RolePackManager } from './rolePackManager.js';
+// 配置类错误：越界值必须拒绝并报错（不静默回退缺省值，R13）
+import { configError } from '@/utils/errors.js';
 
 // ════════════════════════════════════════════════════════════
 // 默认值常量
@@ -183,21 +185,39 @@ export function resolveToolStepLimit(strategy: BehaviorStrategy | undefined): nu
 }
 
 /**
- * 解析子会话并发额度（内核已消费）：整数且 ∈ [0, MAX_SUBAGENT_CONCURRENCY] 才采用，
- * 非法/越界回退缺省 4（SSOT = DEFAULT_BEHAVIOR_STRATEGY.act.subagentConcurrency）。
+ * 解析子会话并发额度（内核已消费）：整数且 ∈ [0, MAX_SUBAGENT_CONCURRENCY] 才采用。
  *
  * `0` = 关闭派发：装配期不注入派发端口，`delegate_task` 结构性不可见。
  * 额度只约束「同一批 tool_call 内最多几个子会话同时执行」，**不会让模型自动并行**
  * ——是否在一次回复里并行派发由模型自行决定。
+ *
+ * **越界/非法值直接报错，不静默回退缺省值**（R13：跳过却不留可见诊断即为缺陷）：
+ * 用户把额度填成 20 却实际按 4 跑，比不填更危险——人以为自己配好了。未声明（`undefined`）
+ * 才走内核缺省 4；显式声明就必须是合法值，否则由校验器/本解析器拒绝并给出合法区间。
  */
 export function resolveSubagentConcurrency(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.act?.subagentConcurrency;
+  // 唯一允许回退的分支：未声明 ⇒ 内核缺省（缺省值唯一真源 = DEFAULT_BEHAVIOR_STRATEGY）
+  if (candidate === undefined) {
+    return DEFAULT_BEHAVIOR_STRATEGY.act!.subagentConcurrency!;
+  }
+  // 显式声明但非法/越界：拒绝并报错（manifest 路径由 validator 先拦，此处兜住运行时覆盖）
   const valid =
     typeof candidate === 'number' &&
     Number.isInteger(candidate) &&
     candidate >= 0 &&
     candidate <= MAX_SUBAGENT_CONCURRENCY;
-  return valid ? candidate : DEFAULT_BEHAVIOR_STRATEGY.act!.subagentConcurrency!;
+  if (!valid) {
+    throw configError(
+      'act.subagentConcurrency 取值非法',
+      `当前值 ${String(candidate)} 不在合法范围 0~${MAX_SUBAGENT_CONCURRENCY}（0 = 关闭派发；省略 = 内核缺省 4）`,
+      [
+        `把角色包策略 act.subagentConcurrency 改为 0~${MAX_SUBAGENT_CONCURRENCY} 的整数`,
+        '不需要限制时删除该键，使用内核缺省 4',
+      ],
+    );
+  }
+  return candidate;
 }
 
 /** 解析错误处理策略（内核已消费）：非法值归位 'retry'（白名单引用 strategyKeys.ERROR_HANDLINGS）——retry=自动重试 / degrade=降级文本 / stop=终止抛出错误 */

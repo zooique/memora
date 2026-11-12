@@ -59,7 +59,7 @@ export const STRATEGY_KEY_META: Record<string, StrategyKeyMetaEntry> = {
   },
   subagentConcurrency: {
     label: 'Subagent concurrency',
-    tip: 'How many subagent tasks may run in parallel within one tool-call batch (0 = turn delegation off). Blank = kernel default 4. This quota never makes the model parallelize on its own.',
+    tip: 'Maximum subagents running in parallel within one tool-call batch (0-16; 0 = disable delegation; blank = kernel default 4). Out-of-range values are rejected, not silently clamped. This quota never makes the model parallelize on its own.',
   },
   providerRouting: {
     label: 'Model routing',
