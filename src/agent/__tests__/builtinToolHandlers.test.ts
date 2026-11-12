@@ -206,8 +206,12 @@ describe('BuiltinToolHandlers.readFile', () => {
     expect(err.errorCode).toBe(ToolErrorCode.ARGUMENT_ERROR);
     expect(visible).toContain('二进制文件');
     expect(visible).toContain('PNG 图片');
-    expect(visible).toContain('read_image');
+    // 图片建议是条件句：只在「本轮工具清单里有 read_image」时引导，不再无条件断言改道
+    expect(visible).toContain('若本轮工具清单里有 read_image');
+    expect(visible).toContain('未开启「支持图片输入」');
     expect(visible).toContain('path');
+    // 反例：旧的无条件谎报文案不得复活（当时 read_image 可能已被视觉位裁掉）
+    expect(visible).not.toContain('要看图片请调用 read_image');
     // 非文本文件必须拒绝（不能返回「成功 + 乱码」）
     expect(err.title).toContain('read_file');
   });
@@ -224,7 +228,10 @@ describe('BuiltinToolHandlers.readFile', () => {
     const visible = `${err.title} ${err.detail} ${err.suggestions.join(' ')}`;
     expect(visible).toContain('二进制文件');
     expect(visible).toContain('含 NUL 字节');
-    expect(visible).toContain('read_image');
+    // 非图片二进制不得再建议 read_image（旧断言正是把这条谎报钉住的）
+    expect(visible).not.toContain('read_image');
+    expect(visible).toContain('list_dir');
+    expect(visible).toContain('search_project');
   });
 
   it('非法 UTF-8 字节（无 BOM、无 NUL）→ 返回工具错误，文案含「不是有效的 UTF-8 文本」', async () => {
@@ -241,7 +248,48 @@ describe('BuiltinToolHandlers.readFile', () => {
     const visible = `${err.title} ${err.detail} ${err.suggestions.join(' ')}`;
     expect(visible).toContain('二进制文件');
     expect(visible).toContain('不是有效的 UTF-8 文本');
-    expect(visible).toContain('read_image');
+    // 非法 UTF-8 不是图片：不得建议 read_image，应给编码 / 路径类可执行建议
+    expect(visible).not.toContain('read_image');
+    expect(visible).toContain('list_dir');
+  });
+
+  it('PDF（%PDF 头 + NUL）→ 建议不提 read_image，明确不支持直接读并给替代路径', async () => {
+    await createBinaryFileInProject(
+      'manual.pdf',
+      Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.from([0x00, 0xff])]),
+    );
+    let err: MemoraError | undefined;
+    try {
+      await handlers.readFile('manual.pdf');
+      expect.unreachable('PDF 是二进制，不得按文本返回');
+    } catch (e) {
+      err = e as MemoraError;
+    }
+    const visible = `${err.title} ${err.detail} ${err.suggestions.join(' ')}`;
+    expect(visible).toContain('PDF 文档');
+    // PDF 不是图片：read_image 不适用，建议必须说明无内置解析能力并给转换路径
+    expect(visible).not.toContain('read_image');
+    expect(visible).toContain('不能直接读取 PDF');
+    expect(visible).toContain('转换为文本文件');
+  });
+
+  it('ZIP（PK 头 + NUL）→ 建议不提 read_image，说明是容器需先解压', async () => {
+    await createBinaryFileInProject(
+      'bundle.zip',
+      Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from([0x00, 0x41])]),
+    );
+    let err: MemoraError | undefined;
+    try {
+      await handlers.readFile('bundle.zip');
+      expect.unreachable('ZIP 是二进制容器，不得按文本返回');
+    } catch (e) {
+      err = e as MemoraError;
+    }
+    const visible = `${err.title} ${err.detail} ${err.suggestions.join(' ')}`;
+    expect(visible).toContain('ZIP 压缩包');
+    // 容器不是图片：read_image 不适用，建议必须指向「先解压」
+    expect(visible).not.toContain('read_image');
+    expect(visible).toContain('请先解压');
   });
 
   // ── UTF-16 BOM：Windows 导出的 CSV / Unicode 文本天然含 NUL，不得误判二进制 ──
