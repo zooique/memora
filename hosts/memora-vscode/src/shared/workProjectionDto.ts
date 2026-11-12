@@ -10,7 +10,7 @@
  * 与内核 Agent；webview 脚本一旦值导入它，就会把整个扩展宿主依赖树拖进 webview bundle。
  * 本文件只含类型、零运行时值，两侧一律 `import type`。
  *
- * 判据纪律：`resident` / `description` 等语义字段直接取内核已归一的结果；`hasFailure` 由宿主
+ * 判据纪律：`resident` 直接取内核已归一的结果，`description` 取内核清单原文；`hasFailure` 由宿主
  * 依据内核报告（`failures` ∪ `dropped`）派生；`statusText` 由宿主用 l10n 文案拼 `failureLabel`，
  * `tooltip` 则是源路径 + 内核 `failure.message`（不经 l10n）。
  * webview 不得据此复算
