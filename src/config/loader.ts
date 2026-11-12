@@ -307,8 +307,10 @@ function parseProviders(value: unknown): Record<string, ProviderEntryConfig> | u
     providers[key] = {
       provider: providerName,
       model: modelName,
-      // 空串归一化为 undefined（视为未配置）：内核没有默认端点/密钥——
-      // baseUrl / model 缺失会在 llm/factory.ts 直接抛 configError，apiKey 缺失回落空串（apiKey ?? ''）
+      // 空串归一化为 undefined（视为未配置），只作用于下面的 baseUrl / apiKey；model 不经过这里：
+      // 内核没有默认端点与默认密钥——baseUrl 缺失到 llm/factory.ts 抛 configError，
+      // apiKey 缺失回落空串（apiKey ?? ''）；model 缺失或非字符串在 loader 的 assertString 就抛，
+      // 仅当 model 为空串（assertString 放行）时才走到 factory 的「LLM model 未配置」。
       baseUrl: typeof p.baseUrl === 'string' && p.baseUrl ? p.baseUrl : undefined,
       apiKey: typeof p.apiKey === 'string' && p.apiKey ? p.apiKey : undefined,
       temperature: p.temperature !== undefined ? validateTemperature(p.temperature, 0) : undefined,

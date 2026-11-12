@@ -20,10 +20,13 @@ import type { ProviderEntryConfig } from '@/llm/types.js';
  * 变量未设置时**保留 `${NAME}` 原样**，既不置空串也不抛 configError：
  *   - 不抛错：一个占位符没设就让整份配置加载失败，属行为回退
  *     （用 A 家 provider 却留着 B 家 key 的占位符，是常见配置）。
- *   - 不置空串：空串不报错且 `??` 兜不住（只认 null/undefined），
- *     失败推迟到运行期，还看不出是哪个变量没设。
- *   - 代价：apiKey 会带着字面量 `${NAME}` 发出（401），baseUrl 会让 `new URL()` 抛错，
- *     即失败可见，但位置在运行期。
+ *   - 不置空串：对 apiKey 而言空串不报错且 `??` 兜不住（只认 null/undefined），
+ *     失败推迟到请求期（401），还看不出是哪个变量没设；
+ *     对 baseUrl 则不是推迟——空串会在 provider 装配期被 llm/factory.ts 直接抛
+ *     configError('LLM baseUrl 未配置')。
+ *   - 代价：apiKey 会带着字面量 `${NAME}` 发出（401）；baseUrl 带着占位符拼成请求地址后
+ *     fetch 失败，被 openaiCompatible.ts 包装成 networkError('LLM 服务连接失败')——
+ *     失败可见，但位置在运行期。
  */
 export function expandEnvVars(config: Config): Config {
   /**
