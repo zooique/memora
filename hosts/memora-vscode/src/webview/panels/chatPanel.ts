@@ -379,8 +379,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 本面板已绑定的会话实例（sessionId → Agent）
    *
-   * ⚠️ 这是**登记表的本地投影**，不是第二个真源：写入点只有「取/建入口 `agentForSession`」
-   * 与「注入、分叉改键两路（`setAgent` / navOps）」，本表只用于「按会话同步取已绑定实例」
+   * ⚠️ 这是**登记表的本地投影**，不是第二个真源：唯一取/建入口是 `agentForSession`，另有
+   * `setAgent` 注入与 navOps 分叉改键等写入点，本表只用于「按会话同步取已绑定实例」
    * （ask 超时回执、后台流控制面）。复用/在途/装配仍全归登记表；实例被回收时必须同步删除本表项。
    */
   private readonly _sessionAgents = new Map<string, Agent>();
@@ -1299,7 +1299,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     });
 
     // 消息分发入口（HOST-CTX-12）：整条 if-else 链已摘为 private handleWebviewMessage，此处只
-    // 转调。链上 28 个 msg.type 分支原先挤在匿名回调里、零可测入口（「判据对、接线没接上」同族：
+    // 转调。链上几十个 msg.type 分支原先挤在匿名回调里、零可测入口（「判据对、接线没接上」同族：
     // 新消息类型与兜底分支都无从单测）——摘出后与 handleInput 等同构、可单测。
     webviewView.webview.onDidReceiveMessage((msg: WebviewToExtensionMessage) => {
       this.handleWebviewMessage(msg);
@@ -1727,7 +1727,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 取（或建）指定会话的 Agent 实例，并把结果记入本地投影表
    *
-   * **取/建入口**（本表另有 `setAgent` 注入与 navOps 分叉改键两处写入，见 `_sessionAgents`
+   * **取/建入口**（本表另有 `setAgent` 注入、navOps 分叉改键等写入点，见 `_sessionAgents`
    * 字段注释）：先查本地投影表（同步可复用），未命中则经 extension 的 `AgentRegistry`
    * 取/建（复用、在途去重、装配都在那里）。本方法**不绑定显示源**——是否绑定由调用方决定
    * （后台会话也要能取到实例，但不能抢走显示）。
