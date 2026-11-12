@@ -566,13 +566,13 @@ export const DELEGATE_TASK_TOOL: ToolDefinition = {
   // （`confirmEntry` 派生集），而它没有确认入口，运行到确认点即 fail-closed 抛错。
   diskWrite: 'none',
   description:
-    '把一段边界清晰的独立任务派给一个空白上下文的子会话去完成，等它把最终回答交回来。' +
+    '把一段边界清晰的独立任务派给一个空白上下文的子 agent 去完成，等它把最终回答交回来。' +
     '适合「读多写少」的调查/汇总：查代码、读文档、检索资料后归纳。' +
-    '子会话看不到当前对话历史，必须把必要背景完整写进 task；它同步执行，一次只做一件事。' +
-    '可选 rolePack 指定子会话采用的角色包（只取 persona 与规则，不继承父角色包）；' +
+    '子 agent 看不到当前对话历史，必须把必要背景完整写进 task；它同步执行，一次只做一件事。' +
+    '可选 rolePack 指定子 agent 采用的角色包（只取 persona 与规则，不继承父角色包）；' +
     '可选 capabilities 授予联网能力（只接受 web:search / web:fetch）。' +
-    '子会话只读：不能写盘、执行命令、登记情报/任务，也不能向你提问。' +
-    '工具结果第一行是内核生成的 [SUBAGENT:completed|incomplete|interrupted|failed] 终态标识，正文是子会话的最终回答；' +
+    '子 agent 只读：不能写盘、执行命令、登记情报/任务，也不能向你提问。' +
+    '工具结果第一行是内核生成的 [SUBAGENT:completed|incomplete|interrupted|failed] 终态标识，正文是子 agent 的最终回答；' +
     'incomplete 表示它撞了步数上限、内容可用但不完整，可据此决定是否拆小任务重派；' +
     '参数校验失败时返回标准工具错误（不存在终态标识）。',
   // 只读闸：子会话自身只读；父会话在 readonly 模式下仍可派活（不改变项目磁盘）
@@ -582,15 +582,15 @@ export const DELEGATE_TASK_TOOL: ToolDefinition = {
     properties: {
       task: {
         type: 'string',
-        description: '交给子会话的完整任务描述（它看不到父对话，必要背景与验收标准要写全）',
+        description: '交给子 agent 的完整任务描述（它看不到父对话，必要背景与验收标准要写全）',
       },
       rolePack: {
         type: 'string',
-        description: '可选：子会话采用的角色包名（只取 persona 与规则，不会继承父角色包）',
+        description: '可选：子 agent 采用的角色包名（只取 persona 与规则，不会继承父角色包）',
       },
       capabilities: {
         type: 'array',
-        description: '可选：授予子会话的联网能力，只接受 web:search / web:fetch；其余值会被拒绝',
+        description: '可选：授予子 agent 的联网能力，只接受 web:search / web:fetch；其余值会被拒绝',
         items: { type: 'string', properties: {}, required: [] },
       },
     },

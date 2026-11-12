@@ -640,7 +640,7 @@ describe('上下文压缩事实说明行（不判态）', () => {
         // （不能把窗口设成 1——system prompt 自身超窗时 truncateMessages 明确不截断）
         const result = await runSubagent(params, { task: 'x'.repeat(400_000) });
         expect(result.split('\n')[0]).toBe('[SUBAGENT:completed]');
-        expect(result).toContain('本次子会话中途经历过上下文压缩/截断');
+        expect(result).toContain('本次子 agent 中途经历过上下文压缩/截断');
       },
       // 先走一次工具调用把消息撑到 >3 条，再触发截断
       { provider: createToolThenTextProvider(), maxContextTokens: 50_000 },
@@ -663,7 +663,7 @@ describe('delegate 回执：结论摘录（excerpt）产地规则', () => {
       extractDelegateExcerpt('[SUBAGENT:failed]\n（说明：本轮正文中的同名标签已降级）\n真实结论'),
     ).toBe('真实结论');
     // interrupted 常无正文：只剩给模型读的说明行 ⇒ 摘录为空（宿主据此不留空段）
-    expect(extractDelegateExcerpt('[SUBAGENT:interrupted]\n（子会话未返回正文）')).toBe('');
+    expect(extractDelegateExcerpt('[SUBAGENT:interrupted]\n（子 agent 未返回正文）')).toBe('');
   });
 
   it('超过 800 字定长截断，且不自补省略号（截断标注由宿主做）', () => {
@@ -803,9 +803,9 @@ describe('派发端口变异锚点（P1-3）', () => {
       // 去掉并发额度闸 → 此断言转红
       await expect(overflow).rejects.toMatchObject({
         title: 'delegate_task 并发超限',
-        detail: `同一步最多 ${TEST_SUBAGENT_QUOTA} 个子会话同时执行，当前已有 ${TEST_SUBAGENT_QUOTA} 个在跑`,
+        detail: `同一步最多 ${TEST_SUBAGENT_QUOTA} 个子 agent 同时执行，当前已有 ${TEST_SUBAGENT_QUOTA} 个在跑`,
         suggestions: [
-          '等已派发的子会话返回后再派发新的任务',
+          '等已派发的子 agent 返回后再派发新的任务',
           '如需调整额度：修改角色包策略 act.subagentConcurrency（0 = 关闭派发）',
         ],
       });

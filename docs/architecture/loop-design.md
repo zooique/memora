@@ -135,9 +135,9 @@
 ### 5.2 生长路径（未来可执行，非本期）
 
 1. **目标模式**（哲学「目标模式」，远期）：在 orchestrator 收尾（turn 结束即 done）后插入"对齐检查"环节——对齐未达则生成新 Trigger 继续，达成则 done。**无需新引擎**，只增加编排层一个节奏分支，仍复用 `processUserInput` 的 turn。
-2. **子 Agent 套娃**（哲学「子 Agent 递归」）：子 Agent = 另一个 `AgentLoop` 实例，主 turn 通过工具调用它。**无需改造 turn**，工具层新增一个"子 Agent 工具"即可。v1 已于 2026-11-11 定案为「父 turn 内的同步递归」，形态见 §5.3；「另一个 AgentLoop 实例」只指运行时实例，**不是会话实体**。
+2. **子 agent 套娃**（哲学「子 Agent 递归」）：子 agent = 另一个 `AgentLoop` 实例，主 turn 通过工具调用它。**无需改造 turn**，工具层新增一个"子 agent 工具"即可。v1 已于 2026-11-11 定案为「父 turn 内的同步递归」，形态见 §5.3；「另一个 AgentLoop 实例」只指运行时实例，**不是会话实体**。
 
-### 5.3 子 Agent v1 形态：父 turn 内的同步递归（2026-11-11 定案）
+### 5.3 子 agent v1 形态：父 turn 内的同步递归（2026-11-11 定案）
 
 > **一句话**：子 agent 是父那一 turn 内的一次同步递归调用，不是会话实体——不落 Round、不进会话列表、内存 messages 用完即弃。
 > **分工**：本节是形态与夹紧规则的落地口径；裁决理由见 [评估-子会话与目标模式路线-20261108.md](../评估-子会话与目标模式路线-20261108.md) §0.4 / §7.4，本节不重复论证。
@@ -148,8 +148,8 @@
 
 - system prompt 仍只由 `buildSystemPromptPrefix`（`src/agent/assembler.ts:184-223`）拼；角色包在其中只是第一段字符串参数 `rolePackPrompt`。
 - 按名字取角色包 prompt 的唯一入口是 `rolePackManager.buildSystemPrompt(name)`（`src/role-pack/rolePackManager.ts:1047-1094`）：它产出 L1（persona + rules），并把该包的内嵌技能清单追加进 prompt——后者是 v1 要抑制的路径（见「已知限制」）。
-- **角色包只取 L1，不取权限**：`capabilities` **不继承**——默认空数组；队长可在 `delegate_task` 显式点名只读档 `web:search` / `web:fetch`（只把这两档映射出的工具放进子会话 `toolWhitelist`），`code:execute` 一律拒绝。**这不是继承**：继承是默认给，这里是队长点名才给，且只开只读档——写盘闸一道没松、deny 轴不变。
-- 子会话 `toolWhitelist` 默认为 `[]`（不是 `null`——`null` 等于特权全开，见 `src/agent/agent.ts:1872-1878`）；点名只读档后也只含这两档映射出的工具。强制 `toolReadonly = 'readonly'`、`toolMode = 'allow'`；角色包自身声明 `toolMode = 'block'` 的直接拒绝。
+- **角色包只取 L1，不取权限**：`capabilities` **不继承**——默认空数组；队长可在 `delegate_task` 显式点名只读档 `web:search` / `web:fetch`（只把这两档映射出的工具放进子 agent `toolWhitelist`），`code:execute` 一律拒绝。**这不是继承**：继承是默认给，这里是队长点名才给，且只开只读档——写盘闸一道没松、deny 轴不变。
+- 子 agent `toolWhitelist` 默认为 `[]`（不是 `null`——`null` 等于特权全开，见 `src/agent/agent.ts:1872-1878`）；点名只读档后也只含这两档映射出的工具。强制 `toolReadonly = 'readonly'`、`toolMode = 'allow'`；角色包自身声明 `toolMode = 'block'` 的直接拒绝。
 - **空白默认 ≠ 裸模型**：`rolePackPrompt = ''` 时，项目规则、全局技能清单、作品投影、环境、时间戳照旧注入（`buildSystemPromptPrefix` 的其余参数不变）。
 
 **六条夹紧规则**
@@ -157,34 +157,34 @@
 1. `rolePack` 传了但包不存在 / 未装载 → 工具报错，不许静默退回空白。
 2. `toolWhitelist = []` 不是 `null`（空数组 = 仅常驻集；`null` = 全开）。
 3. 强制只读，且拒绝 `toolMode='block'` 的角色包（block 会把整个工具面关死，子递归连只读工具都用不了）。
-4. `userFollowup='ask'` 注入的「主动提问规则」（`src/role-pack/strategyResolver.ts:511-538`）要能按子会话开关抑制——否则 `ask_user` 被 deny 后，提示词仍引导模型去提问。
-5. 子会话不注入 `delegate_task` 端口（深度 1 的结构性保证：孙派发工具根本不存在）；同一步并发由派发端口按角色包策略 `act.subagentConcurrency` 硬限（`0` = 不注入端口；缺省值与合法区间真源见 `src/role-pack/strategyResolver.ts` / `strategyKeys.ts`，本文不复述数字）。
+4. `userFollowup='ask'` 注入的「主动提问规则」（`src/role-pack/strategyResolver.ts:511-538`）要能按子 agent 开关抑制——否则 `ask_user` 被 deny 后，提示词仍引导模型去提问。
+5. 子 agent 不注入 `delegate_task` 端口（深度 1 的结构性保证：孙派发工具根本不存在）；同一步并发由派发端口按角色包策略 `act.subagentConcurrency` 硬限（`0` = 不注入端口；缺省值与合法区间真源见 `src/role-pack/strategyResolver.ts` / `strategyKeys.ts`，本文不复述数字）。
 6. `capabilities` 入参必须按白名单校验：只接受 `web:search` / `web:fetch`；传 `code:execute` 或任何未知名字 → **工具直接报错**，不许过滤后静默放行。
 
 **deny 轴（工具面第二根轴）**
 
 - 判据必须放在 `isToolExposed` 第一行、**在 `customTools.has(name)` 之前**（`src/agent/toolExecutor.ts:1204-1215`，`customTools` 分支在 `:1208`），否则 MCP / 自定义工具会先命中「恒暴露」而绕过 deny。
-- 按「副作用」枚举，不按工具名直觉：写盘 / 删文件 / 跑命令 / 杀命令 / 跑项目脚本 / 跑技能脚本 / `run_code` / `ask_user`，再加 `remember_intel` / `task_table_write` / `task_table_update` / `register_work`。`run_code` 不是与白名单重复的冗余：`code:execute` 属特权，空白名单只是「今天看不见」而非「结构上看不见」，它是第六条夹紧规则在工具层的兜底。**唯一按职责而非按副作用禁的例外是 `run_team_meeting`**（队长对外的评审端口，子会话单角色调用等于花一个 step 买一次无意义的多人自评，且成本不受派发端口并发额度 `act.subagentConcurrency` 约束）——新增工具时按副作用核一遍会漏掉它，必须单独按职责再核一遍。工具名全集真源 = `ALL_BUILTIN_TOOL_DEFS`（`src/agent/builtinTools.ts:1110-1118`；`DEFAULT_EXPOSED_TOOLS` 只是「常驻暴露集」，既不含 `run_code` 也不含 `run_team_meeting`，当不了全集）。**代价**：子会话不能贡献情报和任务项，由队长汇总——有意选择，不是遗漏。
+- 按「副作用」枚举，不按工具名直觉：写盘 / 删文件 / 跑命令 / 杀命令 / 跑项目脚本 / 跑技能脚本 / `run_code` / `ask_user`，再加 `remember_intel` / `task_table_write` / `task_table_update` / `register_work`。`run_code` 不是与白名单重复的冗余：`code:execute` 属特权，空白名单只是「今天看不见」而非「结构上看不见」，它是第六条夹紧规则在工具层的兜底。**唯一按职责而非按副作用禁的例外是 `run_team_meeting`**（队长对外的评审端口，子 agent 单角色调用等于花一个 step 买一次无意义的多人自评，且成本不受派发端口并发额度 `act.subagentConcurrency` 约束）——新增工具时按副作用核一遍会漏掉它，必须单独按职责再核一遍。工具名全集真源 = `ALL_BUILTIN_TOOL_DEFS`（`src/agent/builtinTools.ts:1110-1118`；`DEFAULT_EXPOSED_TOOLS` 只是「常驻暴露集」，既不含 `run_code` 也不含 `run_team_meeting`，当不了全集）。**代价**：子 agent 不能贡献情报和任务项，由队长汇总——有意选择，不是遗漏。
 - deny **不能替代** `toolReadonly` 的理由只有三条（详见评估 §7.4 依据一的重写）：从模型可见面隐藏、`ask_user` 在 loop 层挂起、有副作用但不写盘的常驻工具。
 
 **状态回传（不建假 Round）**
 
 - 结果从递归返回值取，不构造 `RoundStatus`（子递归里不存在轮次状态）。
 - 子工具结果首行由内核按**流终态标志**生成确定性头部，**四态**：`[SUBAGENT:completed]` / `[SUBAGENT:incomplete]` / `[SUBAGENT:interrupted]` / `[SUBAGENT:failed]`——不是子模型自己写的，父据此判收口。判据全部来自**结构化标志**（provider 的 `finish_reason` / 丢弃计数、loop 的 `limitReached` 与 `done.incomplete|failed`），**不匹配正文文案、不靠正文长度猜**。
-  - `completed`：子会话自己收场，且没撞步数上限、没输出截断、没被兜底；
+  - `completed`：子 agent 自己收场，且没撞步数上限、没输出截断、没被兜底；
   - `incomplete`：内容可用但不完整。三个来源：① 撞最大迭代 / 步数预算（`text` chunk 的 `limitReached` 标志）；② 输出预算截断（provider `finish_reason='length'`，经 `done.incomplete` 搬运）；③ 正文工具意图骨架被剔除后为空（模型写了骨架却没走原生协议——空正文不是结论，是没干成）。**它不是失败**——父可据此决定是否拆小任务重派；
   - `interrupted`：父 / 用户中止；
   - `failed`：① 异常、子递归里不应出现的 `paused`，以及其它未归类失败；② 内核自己写的兜底文案（空响应重试耗尽——「AI 服务暂时不可用 / 请调大输出上限」不是子模型的结论）；③ 流提前结束时丢弃了半截 `tool_calls`（provider 在 `finish_reason='length'` 或 EOF 时清空累积器并上报 `droppedToolCalls`——模型本想调用的动作没有交付）。
   - `failed` **优先于** `incomplete`：同一收尾同时具备两个事实时按「不可交付」收口（半截调用被丢弃比「话说了一半」更重）。
   - **EOF 证据与窄修边界**：适配层只在 `[DONE]` 或 `finish_reason='tool_calls'` 时 flush 累积器，`if (done) break` 之后无任何完成性校验；现有测试只覆盖带 `[DONE]` 的流 ⇒ **证明不了**「正常完成必带完成标志」（部分兼容网关本就不发 `[DONE]`）。故只修窄的一种：EOF 时累积器非空 ⇒ `failed`；**静默 EOF 且无半截调用登记为已知风险，不判失败**（一刀切会把正常回答打成失败，比漏判更糟）。
-- **上下文压缩 / 截断不判态，只加一行事实说明**：子 loop 真发生过 ContextManager 截断 / 压缩链实际改动 / `compress_context` 成功替换时（粘性事实位 `AgentLoop.hasContextCompaction()`），结果正文末尾追加「（说明：本次子会话中途经历过上下文压缩/截断，结论基于摘要，细节可能缺失）」；**没发生的会话不出现这一行**。不新增状态位，四态语义不变。
-- 参数校验失败（角色包不存在 / `toolMode='block'` / 非法 `capabilities`）返回**标准工具错误** `[ERR:TOOL:ARGUMENT_ERROR]`，不存在终态——子会话根本没起来；「首行恒为 `[SUBAGENT:…]`」的契约只覆盖「已经开始执行」之后。
+- **上下文压缩 / 截断不判态，只加一行事实说明**：子 loop 真发生过 ContextManager 截断 / 压缩链实际改动 / `compress_context` 成功替换时（粘性事实位 `AgentLoop.hasContextCompaction()`），结果正文末尾追加「（说明：本次子 agent 中途经历过上下文压缩/截断，结论基于摘要，细节可能缺失）」；**没发生的会话不出现这一行**。不新增状态位，四态语义不变。
+- 参数校验失败（角色包不存在 / `toolMode='block'` / 非法 `capabilities`）返回**标准工具错误** `[ERR:TOOL:ARGUMENT_ERROR]`，不存在终态——子 agent 根本没起来；「首行恒为 `[SUBAGENT:…]`」的契约只覆盖「已经开始执行」之后。
 - 派发端口返回**结构化结果**（`{ status, text, durationMs }`），执行器据此定 `ToolOutcome`：**只有 `completed` 记 ok**，其余三态一律非 ok（否则检查点 / metrics / 宿主「失败」展示会把半截回答记成成功）。
 - 正文里**行首**出现的同名标签降级为小写 `[subagent:` 并追加一行说明（只处理行首，不做全局转义，正文里的普通代码内容不动），防父 LLM 与人扫到「第二个终态」。
 - `paused` 在子递归里应不可达（无用户应答、无父确认队列）；真出现按 `failed` 收口并记日志，不伪装成完成。
-- 父 abort **直接透传同一个 signal**（`loop.processUserInput(task, signal)`，`src/agent/assembler.ts` 的 `startSubagent`），保证父收场后子递归不再继续执行。父侧 `raceToolWithSignal` 只给 1.8s 宽限、先到先赢，所以派发端口在 abort 一到就**立即**用已累积正文返回 `interrupted`，后台子 loop 继续收同一 signal 自己收场（异常在内部吞掉，不会成为 unhandled rejection）；并发名额在端口 promise 返回时释放，不等子 loop settle。**不用 `mergeAbortSignals`**：它的签名强制带超时（`(optsSignal, timeoutMs, name)`），而子会话没有也不该有独立超时策略——硬套等于凭空发明一个 deadline。
+- 父 abort **直接透传同一个 signal**（`loop.processUserInput(task, signal)`，`src/agent/assembler.ts` 的 `startSubagent`），保证父收场后子递归不再继续执行。父侧 `raceToolWithSignal` 只给 1.8s 宽限、先到先赢，所以派发端口在 abort 一到就**立即**用已累积正文返回 `interrupted`，后台子 loop 继续收同一 signal 自己收场（异常在内部吞掉，不会成为 unhandled rejection）；并发名额在端口 promise 返回时释放，不等子 loop settle。**不用 `mergeAbortSignals`**：它的签名强制带超时（`(optsSignal, timeoutMs, name)`），而子 agent 没有也不该有独立超时策略——硬套等于凭空发明一个 deadline。
 
-**私有约束（子会话不得写父状态）**
+**私有约束（子 agent 不得写父状态）**
 
 - 不复用父 loop 的两个回调：`onToolExecuted`（会写父检查点）、`onPendingQuestion`（会挂起父）。
 - 子 loop 用独立的 `ToolExecutor`，不复用父实例——父的 whitelist 是可变状态，共用会让子派发反过来改父的工具面。
@@ -192,9 +192,9 @@
 
 **技能面（v1 定案：只留全局技能）**
 
-- 子会话 prompt 不注入角色包内嵌技能清单：`buildSystemPrompt(name, { includeSkills: false, suppressFollowupAsk: true })`。
+- 子 agent prompt 不注入角色包内嵌技能清单：`buildSystemPrompt(name, { includeSkills: false, suppressFollowupAsk: true })`。
 - 子执行器（`createSubagentToolExecutor`）的 `readSkill` / `readResource` / `listResources` / `listSkills` 四个回调**全部绕开 `rolePackManager`**，只走全局 `skillManager`。因此同名技能只会读到全局那份，结构上不存在「读成父当前角色包同名技能」的路径（`subagent.test.ts` 用同名冲突样本断言，并钉住 `readSkillContent` 零调用）。
-- 代价（如实登记）：子会话以 `rolePack` 派发时，该包自身的内嵌技能在读面上同样不可见——与 prompt 不注入一致，不存在「prompt 里有、读不到」的错位。
+- 代价（如实登记）：子 agent 以 `rolePack` 派发时，该包自身的内嵌技能在读面上同样不可见——与 prompt 不注入一致，不存在「prompt 里有、读不到」的错位。
 - 父会话不受影响：父的 `readSkill` 仍是「激活角色包 → 全局池」两级解析（`assembler.ts` 的装配点）；`rolePackManager.readSkillContent` 的 `packName ?? roundAssemblyRole ?? activePackName` 解析只在父侧生效。
 
 **v1 明确不含**：不落 Round、不进列表、不做会话派发、不继承父角色包（`capabilities` 默认空，只能由队长显式点名只读档 `web:search` / `web:fetch`；`code:execute` 拒绝）、不做异步 / 事件回流 / 进度查询、递归 >1、结果摘要器、第二套 loop。

@@ -62,6 +62,8 @@ description: 领域术语唯一定义处（turn / loop / step / planItem / round
 | **thought** | 模型思考流（CoT，不进正文），按 **step** 归属（`thought.stepIndex`） |
 | **PlanItem（任务项）** | 任务表一行；UI 显示「任务项 N」。**不属 step 阵营** |
 | **目标模式（G-Mode，远期）** | 对多个 turn 的编排：只给目标文档、全自动至达成（未实现） |
+| **子 agent** | 会话内 `delegate_task` 派出的执行体：父 turn 内同步递归，不落 Round、不进会话列表、无 session id，results 用完即弃；代码标识符保持 `subagent`（`subagentConcurrency` / `SUBAGENT_DENIED_TOOLS` / `[SUBAGENT:*]`）；历史与引用写法 `子 Agent` 视为同一术语 |
+| **子会话** | 由路由 agent 管理的独立会话：有 session id、可单独停止与读取、落 Round、进会话列表（**设计中·未实现**） |
 | **角色包（Role Pack）** | 角色为单位的固定范式：L1 内容 + L2 行为策略（+远期 L3），可插拔整体 |
 | **角色池（Role Pool）** | 角色包集合：可下载、可共享，手动装载 |
 | **插卡式** | 内核提供固定卡槽，角色包自含内容，换卡即变 |

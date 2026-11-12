@@ -2335,7 +2335,7 @@ export class ToolExecutor {
         if (!this.delegateTask) {
           const naOutcome = failedOutcomeWithCode(
             'NOT_AVAILABLE',
-            'delegate_task 不可用：未装配子会话派发端口',
+            'delegate_task 不可用：未装配子 agent 派发端口',
           );
           emitOutcome?.(naOutcome);
           return naOutcome.text;
@@ -2344,8 +2344,8 @@ export class ToolExecutor {
         if (!task) {
           throw toolError(
             'delegate_task 缺少 task 参数',
-            '未传要交给子会话的任务描述',
-            ['把任务与必要背景写进 task（子会话看不到父对话）'],
+            '未传要交给子 agent 的任务描述',
+            ['把任务与必要背景写进 task（子 agent 看不到父对话）'],
             undefined,
             ToolErrorCode.ARGUMENT_ERROR,
           );
@@ -2355,7 +2355,7 @@ export class ToolExecutor {
           throw toolError(
             'delegate_task 的 rolePack 参数类型错误',
             `期望字符串，实际 ${typeof rolePackRaw}`,
-            ['省略 rolePack（空白子会话）或传角色包名字符串'],
+            ['省略 rolePack（空白子 agent）或传角色包名字符串'],
             undefined,
             ToolErrorCode.ARGUMENT_ERROR,
           );

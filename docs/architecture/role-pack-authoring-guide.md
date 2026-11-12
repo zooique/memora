@@ -146,12 +146,12 @@
 | `providerRouting`    | `auto` / `fixed`              | —                  | `auto`      | Provider 路由策略 | `"fixed"`         |
 | `multiStepReasoning` | `auto` / `manual`             | —                  | `auto`      | 多步推理模式        | `"manual"`        |
 | `toolReadonly`       | `full` / `readonly`           | —                  | `full`      | 工具操作范围        | `"readonly"`      |
-| `subagentConcurrency` | 整数                         | `0 ~ 16`（0=关闭派发） | `4`         | 同一步可并行的子会话额度 | `2`               |
+| `subagentConcurrency` | 整数                         | `0 ~ 16`（0=关闭派发） | `4`         | 同一步可并行的子 agent 额度 | `2`               |
 
 > **`subagentConcurrency` 语义（2026-11-12 增键）**：
 > - `0` = **关闭派发**：装配期不注入派发端口，`delegate_task` 结构性不可见（不是运行时再判断）；
 > - 省略 = **内核缺省 4**（运行期**计数闸**硬限——快速失败，每父会话独立计数，同批超出直接报错、不排队）；显式声明必须是 **0~16 的整数**，负数 / 小数 / 非数字 / 超过 16 一律直接报错，**不回退缺省值**（避免「填 20 却按 4 跑」的静默出错）；
-> - 额度**只管「同一批 tool_call 内最多几个子会话同时执行」**——它**不会让模型自动并行**，
+> - 额度**只管「同一批 tool_call 内最多几个子 agent 同时执行」**——它**不会让模型自动并行**，
 >   是否在一次回复里并行派发由模型自行决定；
 > - 唯一真实瓶颈是 model provider 的配额（属 provider 层），本键只做同一批派发的上限保护。
 

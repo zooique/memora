@@ -379,10 +379,10 @@ export function createSubagentToolExecutor(
 
 /** 无正文时按终态给一行说明（避免父模型把空正文误读成「完成但无内容」） */
 const SUBAGENT_EMPTY_BODY_NOTE: Record<DelegateTaskStatus, string> = {
-  completed: '（子会话未返回正文）',
-  incomplete: '（子会话未完成，未产出正文）',
-  interrupted: '（子会话被中止，未产出正文）',
-  failed: '（子会话执行失败，未产出正文）',
+  completed: '（子 agent 未返回正文）',
+  incomplete: '（子 agent 未完成，未产出正文）',
+  interrupted: '（子 agent 被中止，未产出正文）',
+  failed: '（子 agent 执行失败，未产出正文）',
 };
 
 /** 正文行首伪标签被降级时追加的说明行（只在真的降级过时出现） */
@@ -396,7 +396,7 @@ const SUBAGENT_TAG_DOWNGRADE_NOTICE =
  * 触发条件由子 loop 的粘性事实位 `hasContextCompaction()` 决定；没发生的会话一个字都不加。
  */
 const SUBAGENT_CONTEXT_COMPACTED_NOTE =
-  '（说明：本次子会话中途经历过上下文压缩/截断，结论基于摘要，细节可能缺失）';
+  '（说明：本次子 agent 中途经历过上下文压缩/截断，结论基于摘要，细节可能缺失）';
 
 /**
  * 按子会话执行流的终态生成工具结果文本
@@ -469,7 +469,7 @@ export function createSubagentLoop(
       throw toolError(
         `delegate_task 指定的角色包不存在：「${request.rolePack}」`,
         '角色包名拼写错误或该包未装载',
-        ['检查角色包名，或省略 rolePack 使用空白子会话'],
+        ['检查角色包名，或省略 rolePack 使用空白子 agent'],
         undefined,
         ToolErrorCode.ARGUMENT_ERROR,
       );
@@ -479,7 +479,7 @@ export function createSubagentLoop(
     if (assembly?.strategy?.act?.toolMode === 'block') {
       throw toolError(
         `delegate_task 不能使用禁止工具的角色包：「${request.rolePack}」`,
-        '该角色包的策略 toolMode=block，子会话无法执行任何工具',
+        '该角色包的策略 toolMode=block，子 agent 无法执行任何工具',
         ['换一个允许工具的角色包，或省略 rolePack'],
         undefined,
         ToolErrorCode.ARGUMENT_ERROR,
@@ -683,9 +683,9 @@ export function createDelegateTaskPort(
       // 父模型读到后才知道该等前面完成再派，而不是盲目重试或直接放弃。
       throw toolError(
         'delegate_task 并发超限',
-        `同一步最多 ${maxConcurrent} 个子会话同时执行，当前已有 ${inFlight} 个在跑`,
+        `同一步最多 ${maxConcurrent} 个子 agent 同时执行，当前已有 ${inFlight} 个在跑`,
         [
-          '等已派发的子会话返回后再派发新的任务',
+          '等已派发的子 agent 返回后再派发新的任务',
           '如需调整额度：修改角色包策略 act.subagentConcurrency（0 = 关闭派发）',
         ],
         undefined,
