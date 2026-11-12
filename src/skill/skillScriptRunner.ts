@@ -508,7 +508,19 @@ function attachGovernance(
     void killProcessTree(child).then((r) => {
       if (!r.ok) {
         terminationError = r.error ?? '进程树终止未确认';
-        logger.warn({ logLabel: opts.logLabel, error: terminationError }, '中断时进程树终止失败');
+        // 分档由 alreadyExited 决定（Windows taskkill 128 / POSIX kill ESRCH 同源语义）：
+        // 这两个分支表示「根进程在终止指令到达前已自行退出」——属正常竞态，不是终止失败，
+        // 故只记 info，不打 warn。此前一律打 warn 是在报假失败（同一个竞态两平台都中）。
+        // ⚠️ error 仍如实写入 terminationError：alreadyExited **不蕴含**「树已清空」
+        // （根先退出时孙进程可能已成孤儿），消费端需要原因句，不能因降级日志而丢掉它。
+        if (r.alreadyExited) {
+          logger.info(
+            { logLabel: opts.logLabel, reason: terminationError },
+            '中断时根进程已先行退出，进程树提前收场（非终止失败）',
+          );
+        } else {
+          logger.warn({ logLabel: opts.logLabel, error: terminationError }, '中断时进程树终止失败');
+        }
       }
       if (settled) return;
       settled = true;

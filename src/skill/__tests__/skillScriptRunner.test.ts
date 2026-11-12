@@ -250,6 +250,38 @@ describe('skillScriptRunner — formatExecutionResult（CODE 变体）', () => {
     expect(viaWrapper).toBe('[SCRIPT_TIMEOUT] 脚本执行超时（超过 60s）\nstdout: x\nstderr: ');
     expect(viaShared).toBe(viaWrapper);
   });
+
+  it('中断分支：原因句原样带出且只出现一次（锁死「未确认：未确认」复读病句）', () => {
+    // 来源：KILLTREE-ESRCH-1 复核——ESRCH 补原因句后，若模板再兜底一次「未确认」，
+    // 输出会变成「进程树终止未确认：进程树终止未确认；可能仍有残留进程」。
+    // 本用例锁两件事：原因句在输出里、且不出现重复拼接。
+    const reason = '根进程已先行退出（kill ESRCH），无法确认进程树已清空';
+    const formatted = formatExecutionResult(
+      {
+        stdout: 'partial',
+        stderr: '',
+        exitCode: -1,
+        timedOut: false,
+        aborted: true,
+        terminationError: reason,
+      },
+      codeLabels,
+    );
+    expect(formatted).toContain('[CODE_ABORTED]');
+    // 原因句出现且只出现一次（split 后应恰好两段）
+    expect(formatted.split(reason)).toHaveLength(2);
+    // 「进程树终止未确认」这个兜底前缀只出现一次——重复即病句回归
+    expect(formatted.split('进程树终止未确认')).toHaveLength(2);
+  });
+
+  it('中断分支：无 terminationError 时明说「进程树已终止」（不得报未确认）', () => {
+    const formatted = formatExecutionResult(
+      { stdout: '', stderr: '', exitCode: -1, timedOut: false, aborted: true },
+      codeLabels,
+    );
+    expect(formatted).toContain('进程树已终止');
+    expect(formatted).not.toContain('进程树终止未确认');
+  });
 });
 
 // ══════════════════════════════════════════════════════════════
