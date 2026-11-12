@@ -85,7 +85,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 |-----------|---------|
 | `web:search` / `web:fetch` | `web_search` / `web_fetch`（外部网络特权） |
 | `code:execute` | `run_code`（LLM 现写代码执行特权；需宿主注入执行器） |
-> 注：`task:plan` 不映射——任务表（`task_table_write` / `task_table_update`）是内核**常驻必要基建**，任何角色无论是否声明 `task:plan` 都可使用；声明与否行为一致，故不作为特权能力映射（见 tool-exposure-model.md）。
+> 注：`task:plan` 不映射——任务表（`task_table_write` / `task_table_update`）是内核**常驻必要基建**，任何角色都可使用。但它**不是特权键**：写进 `capabilities` 不会解锁任何工具，反而会把白名单从「省略 = 全开」收窄为「仅常驻集」，连带丢掉其他已声明特权，并产生 `UNREGISTERED_CAPABILITY` warning。`file:*` / `memory:*` 同理（见 tool-exposure-model.md）。
 
 > ⚠️ **语义红线（已对齐特权模型）**：`capabilities: []`（空数组）= **仅默认常驻工具**（本地读写/记忆/技能/项目脚本全可用，不开放任何特权）——纯本地型角色应写 `[]` 而非省略；**省略** capabilities = 全部暴露（含特权工具）；声明特权键 = 常驻 + 白名单内的特权工具。「换角色 = 特权工具集切换」。详见 [tool-exposure-model.md](../../../../../../docs/architecture/tool-exposure-model.md)。
 
@@ -160,7 +160,7 @@ node scripts/verify-pack.mjs <角色名> [--kernel-root <内核仓库根>]
 - 先采集四要素需求再跑脚本，不凭空假设角色定位。
 - 用 `node scripts/skaffold.mjs` 初始化骨架（模板 = 结构唯一真相源，不手写 JSON 结构）。
 - 精修只在产出文件内进行，产出后跑 `scripts/verify-pack.mjs`，不手工逐项核对。
-- `capabilities` 写数组前确认每个键都是特权键（web/code/task）；纯本地角色写 `[]`（仅常驻工具）；需要全部暴露才省略字段。
+- `capabilities` 写数组前确认每个键都是**特权键**（只有 `web` / `code`）；不要写 `file:*` / `memory:*` / `task:plan`——它们不映射任何工具，会触发 `UNREGISTERED_CAPABILITY` warning，并把工具面收窄到常驻集。纯本地角色写 `[]`（仅常驻工具）；需要全部暴露才省略字段。
 - `skills/*.md` 一律带 frontmatter `name` + `description`，且 description 按[四问规范](#四问规范软自查)写清 做什么/何时用/输入/返回。
 - 每个内置 skill 都在 persona.md/rules.md **至少一处**高亮"何时用"，且**引用一律用反引号包裹技能名**（如 `foreshadow`）；交付前双向核对：无僵尸技能（每个技能被引用）+ 无悬空引用（每条引用都存在），见[技能使用引导](#技能使用引导personarules高亮何时用)。
 
