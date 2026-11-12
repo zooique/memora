@@ -13,6 +13,7 @@
 import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
+import * as vscode from 'vscode';
 import type { ImageReadPort, ImageRef } from '@zooique/memora';
 import { MAX_IMAGE_BYTES, validateImageCandidate } from '../../shared/imageValidation.js';
 import { formatMiB } from '../../shared/imageTurnLimits.js';
@@ -87,9 +88,13 @@ export function createImageReadPort(deps: ImageReadPortDeps): ImageReadPort {
     // 第 4 参刻意缺省：扩展名不可信 ⇒ 「与声明一致」环整环跳过，嗅探说了算
     const checked = validateImageCandidate(bytes, sha256, undefined, basename(absolutePath));
     if (!checked.ok) {
+      // `messageKey` 是 l10n 键面（英文源键 + `{n}` 插值实参），按 imageValidation 的契约
+      // 由消费侧解析：直接把键拼进中文句子会印出中英混排与未替换的 `{0}`，
+      // 而这段文本会进过程块展开体与模型上下文。
+      const reason = vscode.l10n.t(checked.messageKey, ...checked.messageArgs);
       return {
         ok: false,
-        text: `读图失败：不是可用图片（校验第 ${checked.stage} 步未通过，${checked.messageKey}）。`,
+        text: `读图失败：不是可用图片（校验第 ${checked.stage} 步未通过：${reason}）。`,
       };
     }
 
@@ -101,7 +106,7 @@ export function createImageReadPort(deps: ImageReadPortDeps): ImageReadPort {
       bytes: bytes.length,
       name: checked.name,
     };
-    // 同一 sha 已在缓存时 ingestBytes 只刷新 LRU（内部先查后 put，不重复累加字节数）
+    // 同一 sha 重复 ingest 由 `put` 的同键覆盖兜底（先扣旧长度再累加），不会重复计字节
     deps.cache.ingestBytes(ref, bytes);
     return { ok: true, ref };
   };

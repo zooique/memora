@@ -16,6 +16,24 @@ import { makeTempDir } from '../../../__tests__/helpers/tmpDir.js';
 import { ImageCache } from '../imageCache.js';
 import { createImageReadPort } from '../imageReadPort.js';
 
+/**
+ * `vscode` 替身：端口只用到 `l10n.t`（把校验链的英文源键解析成当前语言）。
+ *
+ * 替身保留 `{n}` 插值语义并打 `⟦l10n⟧` 前缀——前缀用于断言「确实走了 l10n 解析」，
+ * 而不是把键原样拼进中文句子里。这是补桩，不是放宽断言。
+ */
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: Array<string | number>) => {
+      const resolved = args.reduce<string>(
+        (acc, arg, i) => acc.replace(`{${i}}`, String(arg)),
+        message,
+      );
+      return `⟦l10n⟧${resolved}`;
+    },
+  },
+}));
+
 /** 1×1 PNG（合法魔数 + IHDR 尺寸），供校验链整链通过 */
 const PNG_1X1 = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -72,7 +90,14 @@ describe('createImageReadPort — 失败不抛异常', () => {
     const result = await port(file);
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.text).toContain('读图失败');
+    if (!result.ok) {
+      // 校验失败原因必须经 l10n 解析后上屏：不得印英文源键、更不得留下未替换的 `{0}`
+      expect(result.text).toContain(
+        '⟦l10n⟧Unsupported image format (PNG / JPEG / WebP / GIF only)',
+      );
+      expect(result.text).not.toContain('{0}');
+      expect(result.text).toContain('读图失败');
+    }
   });
 
   it('文件不存在 ⇒ 结构化失败（不把 IO 故障抛给工具执行面）', async () => {
