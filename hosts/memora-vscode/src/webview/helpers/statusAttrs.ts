@@ -41,9 +41,10 @@ const CURSOR_STATUS_LABEL: Record<CursorStatus, string> = {
  * 渲染位点（TERMINUS-SSOT-1，2026-10-31 收口）：三档终态均由 round-group 底栏 :has 消费
  * （已完成=淡勾 / 用户中断=中性文字 / 异常中断=红字）；无容器兜底轮由载体尾自足承接
  * （见 chatStyles 载体尾规则）。写入时机 = 收场消息与重放：`done` 按盘面 `roundStatus`
- * 定格（complete → 已完成，其余 → 异常中断）；中断轮与重放中断轮由 `appendInterruptedRow`
- * 调 `decideTerminus` 定格。中断档位依据 = 该轮 processEvents：有 `error` 事件优先判
- * `error-interrupted`，无则看 `aborted`（`stopReason === 'user'` → 用户中断，其余 → 异常中断）。
+ * 定格（complete → 已完成；显式非 complete 且已定义 → 异常中断；缺省按已完成处理，兼容回放）；
+ * 中断轮与重放中断轮由 `appendInterruptedRow` 调 `decideTerminus` 定格。中断档位依据 =
+ * 该轮 processEvents：有 `error` 事件优先判 `error-interrupted`，无则看 `aborted`
+ * （`stopReason === 'user'` → 用户中断，其余 → 异常中断）。
  * `error` **协议消息**分支本身不写终态：原因句走平铺错误行，终态归随后的 `done`。
  *
  * 语义极限（如实登记，非缺陷）：盘面 `RoundStatus.interrupted` 合并了「用户停」与「内核失败」
@@ -115,9 +116,9 @@ export function setTerminus(el: HTMLElement | null | undefined, kind: TerminusKi
   const label = l10n.t(TERMINUS_LABEL[kind]);
   // 成对写入可见文案（同 setCursorStatus：键给选择器，label 给 content）
   el.dataset.terminusLabel = label;
-  // 加引号的原因：CSS 侧消费的是 `content: var(--terminus-label)`（chatStyles 底栏 ::after），
-  // 而 `content` 只收字符串/图像等取值——裸写的多词文案（如 `Stopped by user`）不是合法取值，
-  // 整条规则会被丢弃；`JSON.stringify` 序列化成带引号的字符串才是一个整体 token。
+  // 加引号的原因：`content` 的取值语法只接受字符串等取值，裸标识符（即使是单个单词）也不是
+  // 合法取值；不合法时该声明在计算值阶段失效、属性回退 initial，故把文案序列化成带引号的
+  // 字符串。CSS 侧消费的是 `content: var(--terminus-label)`（chatStyles 底栏 ::after）。
   // 底栏标签的文案通道：`round-group__footer::after` 与载体**不是同一元素**，CSS attr()
   // 跨不过去；容器级自定义属性可被 footer（后代）继承，故把同一文案写进容器。
   // 等价性：容器此刻不存在 ⇒ 载体不可能落在任何容器内 ⇒ `:has(...)` 底栏规则永不匹配，

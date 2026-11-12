@@ -252,7 +252,7 @@ export class PanelSnapshots {
    * 与 postMetrics 不同：本推送**脱离 memora.showMetrics 开关**，每轮流式结束必推，
    * 供输入区常驻渲染「上下文占用比例条 + hover 明细」。数据主体来自内核
    * AgentMetrics.context.occupancy（prepare 期真实用量），稳态下宿主直接透传；仅当
-   * `ctx.rolePackBaseTokens` 与快照不一致（角色包刚切换、早于下一轮 prepare）时，
+   * `ctx.rolePackBaseTokens` 已定义且与快照不一致（角色包刚切换、早于下一轮 prepare）时，
    * 用内核 `estimateOccupancy` 按新底盘重算——仍是同一 SSOT，宿主不复制公式。
    */
   postOccupancy(): void {

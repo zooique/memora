@@ -3580,8 +3580,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     input.style.overflowY = input.scrollHeight > inputMaxHeight ? 'auto' : 'hidden';
   }
   function sendMessage(): void {
-    // ask 等待期：composer 不承担答题——内核 answerQuestion 按序一对一，单条文本只能配
-    // 第 1 题、其余题落 [ASK_ABORTED] 占位（多题必错），单题时又与内联卡完全重复。
+    // ask 等待期：composer 不承担答题——若不拦截会直接开新轮，内核在下一迭代把在途提问
+    // 整批作废（每题回填 [ASK_ABORTED] 占位），单题时又与内联卡完全重复。
     // 故提交一律拒收并指引内联卡（文本保留在框内，不清空 = 不背刺）。
     // 判据只读骨架相位、不含题数：webview 是第一道呈现拦截，宿主 sendInput 同判据兜底
     //（旧 bundle / 竞态漏网）。停止能力不受影响——■ 仍走 stop 分支（内核收场本轮）。

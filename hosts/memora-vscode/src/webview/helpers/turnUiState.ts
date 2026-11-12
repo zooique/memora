@@ -129,8 +129,8 @@ export interface ButtonSemantics {
  * 续跑键宣告纪律：**按钮只宣告路由真实收下的意图**——`resume` 路由只收 pause，故
  * `waiting(ask)` 的续跑键**恒不渲染**：空输入无纯续跑能力（不回答的兜底 = ask 超时自动
  * 续跑，产品定案无「跳过提问」按钮）；有输入也无「发送补充并继续」能力——若不拦截，
- * ask 期 send 会落到 `AgentLoop.answerQuestion`，单条文本按序只配第 1 题、其余题落
- * `[ASK_ABORTED]` 占位（一条文本无法定位到 N 题，且单题时与内联卡完全重复）。
+ * 会直接开新轮，内核在下一迭代把在途提问整批作废（每题回填 `[ASK_ABORTED]` 占位），
+ * 用户输入也就答非所问（一条文本无法定位到 N 题，且单题时与内联卡完全重复）。
  * 故提交当前由 webview `sendMessage` 与宿主 `sendInput` 双层拒收，答题唯一入口 = 内联提问卡。
  *
  * `disabled` 判据：**只有 `done` + 空输入**才禁用——运行中（thinking/paused）无论有无输入
