@@ -37,6 +37,7 @@ import {
   MAX_SUMMARY_FOCUS_LENGTH,
   MIN_STEP_BUDGET,
   STRATEGY_KEY_RULES,
+  SUBAGENT_CONCURRENCY_RULE,
 } from '@/role-pack/strategyKeys.js';
 import type { BehaviorStrategy, RolePack, RolePackCapability } from '@/role-pack/types.js';
 
@@ -347,17 +348,19 @@ describe('resolve* 函数 — 数值解析', () => {
     it('填 20：拒绝并给出越界值与合法区间，而不是静默按 4 生效', () => {
       // 用户场景复现：填 20 若被静默改成 4，用户会以为 20 生效 → 该用例锁死「必须报错」
       const error = captureConcurrencyError(20);
+      // 区间（含下限）与缺省值都取自 resolver 使用的同源常量，测试不另写数字
+      const range = SUBAGENT_CONCURRENCY_RULE.range!;
+      const expectedRange = `${range.min}~${range.max}`;
+      const defaultValue = DEFAULT_BEHAVIOR_STRATEGY.act!.subagentConcurrency!;
       expect(error.detail).toContain('20');
-      expect(error.detail).toContain('0~16');
+      expect(error.detail).toContain(expectedRange);
       // 键名必须在内核键面登记表里真实存在，防止文案指向拼错/已删的键
       expect(STRATEGY_KEY_RULES.act?.subagentConcurrency).toBeDefined();
       // 整组建议**精确比对**：多点一条 / 少点一条 / 换个说法（如再写回「运行时覆盖」）都必须转红。
-      // 唯一真实可写路径 = manifest（装配期 assembler 直读 rolePackManager.getActive().strategy），
-      // 动态值从内核常量派生，避免把 0~16 / 4 写死成第二份真源。
-      const defaultValue = DEFAULT_BEHAVIOR_STRATEGY.act!.subagentConcurrency!;
+      // 唯一真实可写路径 = manifest（装配期 assembler 直读 rolePackManager.getActive().strategy）。
       expect(error.suggestions).toEqual([
         '角色包场景：改 <configDir>/role-packs/<包名>/manifest.json 里的 ' +
-          `strategy.act.subagentConcurrency，取值 0~${MAX_SUBAGENT_CONCURRENCY} 的整数`,
+          `strategy.act.subagentConcurrency，取值 ${expectedRange} 的整数`,
         `不需要限制时删除该键，使用内核缺省 ${defaultValue}`,
       ]);
     });
