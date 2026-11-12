@@ -146,8 +146,8 @@
 
 **装配（复用，不另起一套）**
 
-- system prompt 仍只由 `buildSystemPromptPrefix`（`src/agent/assembler.ts:159-198`）拼；角色包在其中只是第一段字符串参数 `rolePackPrompt`。
-- 按名字取角色包 prompt 的唯一入口是 `rolePackManager.buildSystemPrompt(name)`（`src/role-pack/rolePackManager.ts:1038-1077`）：它产出 L1（persona + rules），并把该包的内嵌技能清单追加进 prompt——后者是 v1 要抑制的路径（见「已知限制」）。
+- system prompt 仍只由 `buildSystemPromptPrefix`（`src/agent/assembler.ts:184-223`）拼；角色包在其中只是第一段字符串参数 `rolePackPrompt`。
+- 按名字取角色包 prompt 的唯一入口是 `rolePackManager.buildSystemPrompt(name)`（`src/role-pack/rolePackManager.ts:1047-1094`）：它产出 L1（persona + rules），并把该包的内嵌技能清单追加进 prompt——后者是 v1 要抑制的路径（见「已知限制」）。
 - **角色包只取 L1，不取权限**：`capabilities` **不继承**——默认空数组；队长可在 `delegate_task` 显式点名只读档 `web:search` / `web:fetch`（只把这两档映射出的工具放进子会话 `toolWhitelist`），`code:execute` 一律拒绝。**这不是继承**：继承是默认给，这里是队长点名才给，且只开只读档——写盘闸一道没松、deny 轴不变。
 - 子会话 `toolWhitelist` 默认为 `[]`（不是 `null`——`null` 等于特权全开，见 `src/agent/agent.ts:1872-1878`）；点名只读档后也只含这两档映射出的工具。强制 `toolReadonly = 'readonly'`、`toolMode = 'allow'`；角色包自身声明 `toolMode = 'block'` 的直接拒绝。
 - **空白默认 ≠ 裸模型**：`rolePackPrompt = ''` 时，项目规则、全局技能清单、作品投影、环境、时间戳照旧注入（`buildSystemPromptPrefix` 的其余参数不变）。
@@ -164,7 +164,7 @@
 **deny 轴（工具面第二根轴）**
 
 - 判据必须放在 `isToolExposed` 第一行、**在 `customTools.has(name)` 之前**（`src/agent/toolExecutor.ts:1204-1215`，`customTools` 分支在 `:1208`），否则 MCP / 自定义工具会先命中「恒暴露」而绕过 deny。
-- 按「副作用」枚举，不按工具名直觉：写盘 / 删文件 / 跑命令 / 杀命令 / 跑项目脚本 / 跑技能脚本 / `run_code` / `ask_user`，再加 `remember_intel` / `task_table_write` / `task_table_update` / `register_work`。`run_code` 不是与白名单重复的冗余：`code:execute` 属特权，空白名单只是「今天看不见」而非「结构上看不见」，它是第六条夹紧规则在工具层的兜底。**唯一按职责而非按副作用禁的例外是 `run_team_meeting`**（队长对外的评审端口，子会话单角色调用等于花一个 step 买一次无意义的多人自评，且成本不受派发端口并发额度 `act.subagentConcurrency` 约束）——新增工具时按副作用核一遍会漏掉它，必须单独按职责再核一遍。工具名真源 = `DEFAULT_EXPOSED_TOOLS`（`src/agent/toolExecutor.ts:577-617`）。**代价**：子会话不能贡献情报和任务项，由队长汇总——有意选择，不是遗漏。
+- 按「副作用」枚举，不按工具名直觉：写盘 / 删文件 / 跑命令 / 杀命令 / 跑项目脚本 / 跑技能脚本 / `run_code` / `ask_user`，再加 `remember_intel` / `task_table_write` / `task_table_update` / `register_work`。`run_code` 不是与白名单重复的冗余：`code:execute` 属特权，空白名单只是「今天看不见」而非「结构上看不见」，它是第六条夹紧规则在工具层的兜底。**唯一按职责而非按副作用禁的例外是 `run_team_meeting`**（队长对外的评审端口，子会话单角色调用等于花一个 step 买一次无意义的多人自评，且成本不受派发端口并发额度 `act.subagentConcurrency` 约束）——新增工具时按副作用核一遍会漏掉它，必须单独按职责再核一遍。工具名全集真源 = `ALL_BUILTIN_TOOL_DEFS`（`src/agent/builtinTools.ts:1110-1118`；`DEFAULT_EXPOSED_TOOLS` 只是「常驻暴露集」，既不含 `run_code` 也不含 `run_team_meeting`，当不了全集）。**代价**：子会话不能贡献情报和任务项，由队长汇总——有意选择，不是遗漏。
 - deny **不能替代** `toolReadonly` 的理由只有三条（详见评估 §7.4 依据一的重写）：从模型可见面隐藏、`ask_user` 在 loop 层挂起、有副作用但不写盘的常驻工具。
 
 **状态回传（不建假 Round）**
