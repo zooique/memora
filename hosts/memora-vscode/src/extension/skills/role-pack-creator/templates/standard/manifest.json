@@ -32,7 +32,7 @@
       "webSearchLimit": 6,
       "errorHandling": "retry",
       "contextLimit": 0,
-      "stepBudget": 50
+      "stepBudget": 0
     }
   }
 }
