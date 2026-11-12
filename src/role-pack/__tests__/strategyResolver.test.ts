@@ -36,6 +36,7 @@ import {
   MAX_SUBAGENT_CONCURRENCY,
   MAX_SUMMARY_FOCUS_LENGTH,
   MIN_STEP_BUDGET,
+  STRATEGY_KEY_RULES,
 } from '@/role-pack/strategyKeys.js';
 import type { BehaviorStrategy, RolePack, RolePackCapability } from '@/role-pack/types.js';
 
@@ -350,9 +351,14 @@ describe('resolve* 函数 — 数值解析', () => {
       expect(error.detail).toContain('0~16');
       const suggestions = error.suggestions.join(' ');
       expect(suggestions).toContain('0~16');
-      // 建议必须指名两条真实修改路径，不能只说「去改配置」
+      // 建议点名的键必须是**真实可写路径**上的键：manifest 里的 strategy.act.subagentConcurrency
+      // （装配期 assembler 直读 rolePackManager.getActive().strategy，不经 resolveActiveStrategy）
       expect(suggestions).toContain('manifest.json');
-      expect(suggestions).toContain('strategyOverride');
+      expect(suggestions).toContain('strategy.act.subagentConcurrency');
+      // 键名必须在内核键面登记表里真实存在，防止文案指向拼错/已删的键
+      expect(STRATEGY_KEY_RULES.act?.subagentConcurrency).toBeDefined();
+      // 反锁：AgentOptions.strategyOverride 对该键不生效，建议不得再指向这条死路
+      expect(suggestions).not.toContain('strategyOverride');
     });
 
     it('未声明回退缺省 4（不配置就走内核缺省，不是被改成别的数）', () => {

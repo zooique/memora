@@ -213,9 +213,10 @@ export function resolveSubagentConcurrency(strategy: BehaviorStrategy | undefine
       'act.subagentConcurrency 取值非法',
       `当前值 ${String(candidate)} 不在合法范围 ${range.min}~${range.max}（0 = 关闭派发；省略 = 内核缺省 ${defaultValue}）`,
       [
+        // 唯一真实可写路径：装配期只在 assembler 里读 rolePackManager.getActive().strategy，
+        // 该读取不经 resolveActiveStrategy，故 AgentOptions.strategyOverride 对本键不生效
         '角色包场景：改 <configDir>/role-packs/<包名>/manifest.json 里的 ' +
           `strategy.act.subagentConcurrency，取值 ${range.min}~${range.max} 的整数`,
-        '运行时覆盖场景：改 AgentOptions.strategyOverride.act.subagentConcurrency（同一范围）',
         `不需要限制时删除该键，使用内核缺省 ${defaultValue}`,
       ],
     );
