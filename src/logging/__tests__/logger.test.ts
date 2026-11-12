@@ -143,6 +143,34 @@ describe('Logging · 内置 console fallback 输出与脱敏', () => {
     logger.debug('不应输出');
     expect(spy).not.toHaveBeenCalled();
   });
+
+  it('数组入参：数组元素中的敏感键同样脱敏，且数组形态保持', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    logger.info({ args: [{ apiKey: 'sk-xxx', normal: 'visible' }] });
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    const output = spy.mock.calls.map((call) => call.join(' ')).join(' ');
+    // 敏感值不泄漏、非敏感字段保留
+    expect(output).not.toContain('sk-xxx');
+    expect(output).toContain('[REDACTED]');
+    expect(output).toContain('visible');
+    // 数组形态保持（不能被重建为 {"0":...} 的对象）
+    expect(output).toContain('"args":[{"apiKey":"[REDACTED]"');
+  });
+
+  it('嵌套数组：数组内再嵌数组/对象时继续递归', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    logger.info({ batch: [[{ token: 'bearer-nested' }], 'plain', 42] });
+
+    const output = spy.mock.calls.map((call) => call.join(' ')).join(' ');
+    expect(output).not.toContain('bearer-nested');
+    expect(output).toContain('"batch":[[{"token":"[REDACTED]"}]');
+    // 非敏感标量原样保留
+    expect(output).toContain('"plain"');
+    expect(output).toContain('42');
+  });
 });
 
 describe('Logging · 多次 setLogger 覆盖警告', () => {

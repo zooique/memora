@@ -14,6 +14,18 @@ const level = process.env['MEMORA_LOG_LEVEL'] ?? 'info';
 const SENSITIVE_KEY_PATTERN = /api[_-]?key|token|password|secret|authorization|credential/i;
 
 /**
+ * 数组脱敏：逐个元素递归，保持数组形态（不重建为普通对象，否则 ['a'] 会变成 {0:'a'}）
+ */
+function redactArrayItems(arr: unknown[]): unknown[] {
+  return arr.map((item) => {
+    if (Array.isArray(item)) return redactArrayItems(item);
+    if (item && typeof item === 'object')
+      return redactSensitiveKeys(item as Record<string, unknown>);
+    return item;
+  });
+}
+
+/**
  * 对象脱敏：深拷贝并将敏感键值替换为 [REDACTED]
  * 单一脱敏实现：console fallback 输出对象前统一经此脱敏（任意嵌套层级 + 变体 + 大小写不敏感）。
  */
@@ -22,7 +34,10 @@ function redactSensitiveKeys(obj: Record<string, unknown>): Record<string, unkno
   for (const [key, value] of Object.entries(obj)) {
     if (SENSITIVE_KEY_PATTERN.test(key)) {
       redacted[key] = '[REDACTED]';
-    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+    } else if (Array.isArray(value)) {
+      // 数组同样向下递归：数组元素里的敏感键不能被原样透传
+      redacted[key] = redactArrayItems(value);
+    } else if (value && typeof value === 'object') {
       redacted[key] = redactSensitiveKeys(value as Record<string, unknown>);
     } else {
       redacted[key] = value;
