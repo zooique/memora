@@ -152,24 +152,45 @@ export function isReservedTaskTableFile(absolutePath: string): boolean {
 }
 
 /**
+ * 二进制形态识别结果（只服务 read_file 错误文案的分流，不做安全裁决）
+ *
+ * `kind` 决定建议走哪条可执行路径；`imageExt` 的取值来自
+ * `READ_IMAGE_SUPPORTED_EXTENSIONS`（图片格式唯一清单），建议文案里不再手写第二份后缀列表。
+ */
+interface BinaryProbe {
+  /** 人读形态名（如「PNG 图片」「PDF 文档」「二进制文件」） */
+  readonly label: string;
+  /** 建议分流类别：图片 / PDF / ZIP 容器 / 无法识别 */
+  readonly kind: 'image' | 'pdf' | 'zip' | 'unknown';
+  /** 命中的图片扩展名（仅 kind=image 时存在；取值 = 唯一清单里的成员） */
+  readonly imageExt?: (typeof READ_IMAGE_SUPPORTED_EXTENSIONS)[number];
+}
+
+/**
  * 按魔数粗识别二进制形态（**只服务 read_file 的错误文案**，不做安全裁决、不替代宿主读图校验）
  *
  * 为什么需要：只说「二进制文件」时，模型仍可能换个路径继续用 read_file 试（把图片当文本读）；
- * 明确指出「这是 JPEG/PNG 图片」才能把改道方向（read_image）变得显而易见。
+ * 明确指出「这是 JPEG/PNG 图片」才能把改道方向变得显而易见。
  * 判据取文件头固定字节，识别不了就如实回「二进制文件」，不猜。
  *
  * @param buf 文件完整字节（只读前 12 字节）
- * @returns 人读形态名（如「PNG 图片」「PDF 文档」「二进制文件」）
+ * @returns 形态名 + 建议分流类别（图片额外带命中扩展名）
  */
-function sniffBinaryLabel(buf: Uint8Array): string {
+function sniffBinary(buf: Uint8Array): BinaryProbe {
   // 越界读出 undefined 时统一给 -1，避免与任何真实字节值相等
   const at = (i: number): number => buf[i] ?? -1;
   // PNG：89 50 4E 47 0D 0A 1A 0A（只认前 4 字节签名即可判定）
-  if (at(0) === 0x89 && at(1) === 0x50 && at(2) === 0x4e && at(3) === 0x47) return ' PNG 图片';
+  if (at(0) === 0x89 && at(1) === 0x50 && at(2) === 0x4e && at(3) === 0x47) {
+    return { kind: 'image', label: 'PNG 图片', imageExt: '.png' };
+  }
   // JPEG：FF D8 FF（SOI + 首个标记前缀）
-  if (at(0) === 0xff && at(1) === 0xd8 && at(2) === 0xff) return ' JPEG 图片';
+  if (at(0) === 0xff && at(1) === 0xd8 && at(2) === 0xff) {
+    return { kind: 'image', label: 'JPEG 图片', imageExt: '.jpg' };
+  }
   // GIF：GIF87a / GIF89a（前 4 字节 GIF8 已足够）
-  if (at(0) === 0x47 && at(1) === 0x49 && at(2) === 0x46 && at(3) === 0x38) return ' GIF 图片';
+  if (at(0) === 0x47 && at(1) === 0x49 && at(2) === 0x46 && at(3) === 0x38) {
+    return { kind: 'image', label: 'GIF 图片', imageExt: '.gif' };
+  }
   // WebP：RIFF....WEBP（0-3 为 RIFF，8-11 为 WEBP）
   if (
     at(0) === 0x52 &&
@@ -181,15 +202,49 @@ function sniffBinaryLabel(buf: Uint8Array): string {
     at(10) === 0x42 &&
     at(11) === 0x50
   ) {
-    return ' WebP 图片';
+    return { kind: 'image', label: 'WebP 图片', imageExt: '.webp' };
   }
   // PDF：%PDF
-  if (at(0) === 0x25 && at(1) === 0x50 && at(2) === 0x44 && at(3) === 0x46) return ' PDF 文档';
+  if (at(0) === 0x25 && at(1) === 0x50 && at(2) === 0x44 && at(3) === 0x46) {
+    return { kind: 'pdf', label: 'PDF 文档' };
+  }
   // ZIP（含 docx/xlsx 等容器）：PK + 0x03/0x05/0x07
   if (at(0) === 0x50 && at(1) === 0x4b && (at(2) === 0x03 || at(2) === 0x05 || at(2) === 0x07)) {
-    return ' ZIP 压缩包';
+    return { kind: 'zip', label: 'ZIP 压缩包' };
   }
-  return '二进制文件';
+  return { kind: 'unknown', label: '二进制文件' };
+}
+
+/**
+ * 按二进制形态生成 read_file 的可执行建议（**不判断 read_image 是否真的可用**）
+ *
+ * 图片这条必须是条件句：handler 看不到「本轮工具清单」（暴露面在 loop 里逐 step 按 provider
+ * 视觉位裁剪——`resolveActiveTools`），所以只在文案里指向模型自己能看到的清单，不在这里
+ * 另算一份可用性判据（否则就是第二份真源）。其余形态按类别给出真正可执行的下一步。
+ *
+ * @param probe 魔数识别结果
+ * @param relativePath 目标文件相对项目根的路径（图片建议里作为 path 示例）
+ */
+function binaryReadSuggestions(probe: BinaryProbe, relativePath: string): string[] {
+  switch (probe.kind) {
+    case 'image':
+      return [
+        `若本轮工具清单里有 read_image，用它并让 path 填相对项目根的路径（例如 {"path":"${relativePath}"}；支持 ${READ_IMAGE_SUPPORTED_EXTENSIONS.join(' / ')}）；` +
+          '若清单里没有，说明当前模型未开启「支持图片输入」，需要看图请让用户在「Memora: 配置大模型」里勾选「支持图片输入」后重试',
+      ];
+    case 'pdf':
+      return [
+        'read_file 不能直接读取 PDF 内容；当前没有内置 PDF 解析工具，需要文本时请让用户先转换为文本文件（如 TXT / Markdown）后再读',
+      ];
+    case 'zip':
+      return [
+        'ZIP 是容器格式（也可能内嵌 docx / xlsx），read_file 只能读文本；请先解压（或让用户解压）出具体文件后再读',
+      ];
+    default:
+      return [
+        '用 list_dir / search_project 确认路径是否写错；若确认是文本文件，检查其编码（如 GBK 请先转 UTF-8）',
+      ];
+  }
 }
 
 /**
@@ -702,10 +757,10 @@ export class BuiltinToolHandlers {
     // 二进制嗅探（判据唯一真理源 = decodeTextBuffer）：必须在按文本解码**之前**拦下——
     // JPEG/PNG 等按 utf-8 解码不会报错，只会得到一屏 U+FFFD + 可打印垃圾，模型会误判
     // 「自己没有视觉能力」而不是「用错了工具」。这里返回**工具错误**（不是成功带警告），
-    // 文案写死改道工具名与参数形式，不给「请使用合适的工具」这类无行动价值的废话。
+    // 建议按形态分流（图片走条件句，PDF / ZIP / 未知各有可执行的下一步），不写死改道工具名。
     const decoded = decodeTextBuffer(buf);
     if (decoded.kind === 'binary') {
-      const kind = sniffBinaryLabel(buf);
+      const probe = sniffBinary(buf);
       // 原因码 → 用户可读的判据说明（BOM 已排除，故 NUL 只在无 BOM 时才成立）
       const why =
         decoded.reason === 'nul-byte'
@@ -715,11 +770,8 @@ export class BuiltinToolHandlers {
             : '不是有效的 UTF-8 文本';
       throw toolError(
         'read_file 目标是二进制文件',
-        `${relativePath}：这是${kind}，不是文本文件（${why}；按文本读只会得到乱码）。`,
-        [
-          `要看图片请调用 read_image，参数 path 填相对项目根的路径，例如 {"path":"${relativePath}"}`,
-          '需要文本内容时用 list_dir / search_project 确认路径是否写错',
-        ],
+        `${relativePath}：这是 ${probe.label}，不是文本文件（${why}；按文本读只会得到乱码）。`,
+        binaryReadSuggestions(probe, relativePath),
         undefined,
         ToolErrorCode.ARGUMENT_ERROR,
       );
