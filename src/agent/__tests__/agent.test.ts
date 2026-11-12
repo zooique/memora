@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Agent } from '@/agent/agent.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
-import type { AgentChunk, ImageReadPort } from '@/agent/types.js';
+import type { AgentChunk, ImageReadPort, AgentOptions } from '@/agent/types.js';
 import { LlmProvider } from '@/llm/provider.js';
 import type { Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
@@ -117,6 +117,8 @@ function makeAgent(
   archiveMode?: 'full' | 'manual',
   /** 可选注入 RoundStore：需要验证「落盘面」行为的用例（如插话缺轮）用它造真实 store */
   roundStore?: IRoundStore,
+  /** 可选：构造期额外覆写（少数需要启动参数注入的用例，如 builtinFallbackRole） */
+  overrides?: Partial<AgentOptions>,
 ): Agent {
   return new Agent({
     projectPath,
@@ -134,6 +136,7 @@ function makeAgent(
       userLabel: '用户',
       assistantLabel: '助手',
     },
+    ...overrides,
   });
 }
 
@@ -662,6 +665,28 @@ describe('Agent · Manager 委托模式', () => {
 
     expect(Array.isArray(agent.rolePack!.list)).toBe(true);
     expect(typeof agent.rolePack!.activeName).toBe('string');
+  });
+
+  it('builtinFallbackRole 经门面转发 → rolePackManager 兜底角色为注入值（非内核常量）', async () => {
+    // seedProject 只造了「默认助手」/「memora助手」；额外造「翻译助手」，
+    // 才能把「门面漏转发 → 落 memora助手」与「转发成功 → 落翻译助手」区分开。
+    const packDir = join(tmpConfig, 'role-packs', '翻译助手');
+    mkdirSync(packDir, { recursive: true });
+    writeFileSync(
+      join(packDir, 'manifest.json'),
+      JSON.stringify({ name: '翻译助手', formatVersion: '1.0.0' }),
+      'utf-8',
+    );
+    writeFileSync(join(packDir, 'persona.md'), '你是翻译。', 'utf-8');
+
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, undefined, {
+      builtinFallbackRole: '翻译助手',
+    });
+    await agent.init();
+
+    // 无 activeRolePack 注入 ⇒ 走 §4.1 兜底链，兜底值应为注入值
+    //（门面漏转发时恒为 BUILTIN_FALLBACK_PACK = memora助手，本断言即红）
+    expect(agent.rolePackManager!.activeName).toBe('翻译助手');
   });
 
   it('tools 管理器：list 应包含内置工具', async () => {

@@ -18,7 +18,7 @@
  */
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -646,6 +646,34 @@ describe('assembleComponents', () => {
       expect(prompt).not.toContain('write_file');
       expect(prompt).not.toContain('ask_user');
       expect(prompt).toContain('read_file');
+    });
+
+    it('imageReadPort 透传执行面：toolExec.execute(read_image) 真实调用宿主端口（区别于只看暴露面）', async () => {
+      // 装配链路：AssembleInput.imageReadPort → toolExec.setImageReadPort → BuiltinToolHandlers.readImage。
+      // 只断言 toolExec.list / loop 暴露面拦不住这类漏注入（暴露面还可能受视觉位裁剪影响），
+      // 因此这里经 execute 走完整执行面：端口被真实调到，才算「执行面拿到了端口」。
+      await writeFile(join(projectPath, 'pic.png'), 'not-a-real-png');
+      const port = vi.fn(async (_abs: string) => ({
+        ok: true as const,
+        // 最小合法 ImageRef：只给 handler 拼结果文案用，不代表真实图片校验
+        ref: {
+          sha256: 'sha-test',
+          mime: 'image/png',
+          bytes: 68,
+          width: 1,
+          height: 1,
+          name: 'pic.png',
+        },
+      }));
+
+      const output = await assembleComponents(createPctx(), createInput({ imageReadPort: port }));
+      const text = await output.toolExec.execute('read_image', JSON.stringify({ path: 'pic.png' }));
+
+      // 端口收到的是解析后的绝对路径，且只调用一次
+      expect(port).toHaveBeenCalledTimes(1);
+      expect(port).toHaveBeenCalledWith(join(projectPath, 'pic.png'));
+      // 结果文本来自端口返回的 ref，证明执行链真的走到了宿主实现而非本地降级
+      expect(text).toContain('已读取图片 pic.png');
     });
   });
 

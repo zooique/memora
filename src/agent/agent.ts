@@ -1330,6 +1330,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       activeRolePack: this.#config.activeRolePack,
       // 组数据（宿主装配级）：组长角色包 + 组员名单（会议名单容器）
       rolePackTeams: this.#config.rolePackTeams,
+      // 兜底角色覆盖：漏转发 ⇒ 装配端恒落内核常量 BUILTIN_FALLBACK_PACK，
+      // 宿主设置的兜底角色静默失效（可选字段，类型系统不报错；只有宿主 UI 表现为「设置没生效」）。
+      builtinFallbackRole: this.#config.builtinFallbackRole,
       maxContextTokens: this.#config.maxContextTokens,
       // per-LLM 输出预算默认值：透传组装器 → AgentLoop.defaultMaxTokens（buildChatOptions 填底座）
       maxTokens: this.#config.maxTokens,
@@ -1347,6 +1350,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 工具 deny 集（工具面第二根轴 · 减法）：透传装配 → toolExec.setDenyTools。
       // 默认 undefined ⇒ 不注入，父会话行为零变化；子会话 v1 只传 SUBAGENT_DENIED_TOOLS。
       denyTools: this.#config.denyTools,
+      // 运行环境提供者：漏转发 ⇒ 装配期初始前缀缺「## 运行环境」段（rolePackBaseTokens 也随之偏小）；
+      // 每轮 prepare 刷新会按 #config 重建前缀自愈，故只在首轮前可见，但装配期快照应与运行期同源。
+      environmentProvider: this.#config.environmentProvider,
       // 脚本执行 node 路径（可选）：透传装配 → toolExecutor/assembler 脚本执行回调
       scriptNodePath: this.#config.scriptNodePath,
       // 禁用技能清单：透传装配 → SkillManager.setDisabledSkills
