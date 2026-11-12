@@ -379,9 +379,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 本面板已绑定的会话实例（sessionId → Agent）
    *
-   * ⚠️ 这是**登记表的本地投影**，不是第二个真源：写入点只有 `agentForSession`（一律先经
-   * extension 的 `AgentRegistry`），本表只用于「按会话同步取已绑定实例」（ask 超时回执、
-   * 后台流控制面）。复用/在途/装配仍全归登记表；实例被回收时必须同步删除本表项。
+   * ⚠️ 这是**登记表的本地投影**，不是第二个真源：写入点只有「取/建入口 `agentForSession`」
+   * 与「注入、分叉改键两路（`setAgent` / navOps）」，本表只用于「按会话同步取已绑定实例」
+   * （ask 超时回执、后台流控制面）。复用/在途/装配仍全归登记表；实例被回收时必须同步删除本表项。
    */
   private readonly _sessionAgents = new Map<string, Agent>();
   /** 配置热刷新未生效标记（IMG-5 顺延槽）：真源已变但换实例失败（唯一预期 = `assertNotBusy`）；消费点 = `handleInput` 的 `send` 前置补做。 */
@@ -1145,7 +1145,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 历史浮层垃圾桶删除 → host 确认不可恢复后删除会话记录
       void this.handleDeleteSession(msg.sessionId);
     } else if (msg.type === 'archive_session') {
-      // 历史浮层「移入留存」→ 仅改显示分组，不动数据（与删除是两种不同强度的动作）
+      // 历史浮层「移入留存」→ full 模式只改显示分组、不动数据；manual 模式顺带触发会话归档
+      // （写摘要、调 LLM），与删除仍是两种不同强度的动作
       void this.handleArchiveSession(msg.sessionId);
     } else if (msg.type === 'restore_session') {
       // 留存区条目「移回」→ 同上的逆操作
@@ -1298,8 +1299,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     });
 
     // 消息分发入口（HOST-CTX-12）：整条 if-else 链已摘为 private handleWebviewMessage，此处只
-    // 转调。链上 120+ 分支原先挤在匿名回调里、零可测入口（「判据对、接线没接上」同族：新消息
-    // 类型与兜底分支都无从单测）——摘出后与 handleInput 等同构、可单测。
+    // 转调。链上 28 个 msg.type 分支原先挤在匿名回调里、零可测入口（「判据对、接线没接上」同族：
+    // 新消息类型与兜底分支都无从单测）——摘出后与 handleInput 等同构、可单测。
     webviewView.webview.onDidReceiveMessage((msg: WebviewToExtensionMessage) => {
       this.handleWebviewMessage(msg);
     });
@@ -1317,7 +1318,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private async ensureAgent(): Promise<void> {
     // 草稿态不装配 Agent（红线）：草稿没有会话 id，装配只能绑到错误的会话上
     if (this.isDraft) return;
-    // Agent 已注入（open 命令路径先装配）：仍兜底首次无会话自动创建（幂等，仅面板打开触发）
+    // Agent 已注入（open 命令路径先装配）：仍兜底首次无会话进入草稿态（幂等，仅面板打开触发）
     if (this._agent) {
       this._agentReady ??= Promise.resolve();
       void this.ensureInitialSession();
@@ -1726,7 +1727,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 取（或建）指定会话的 Agent 实例，并把结果记入本地投影表
    *
-   * **唯一写入点**：先查本地投影表（同步可复用），未命中则经 extension 的 `AgentRegistry`
+   * **取/建入口**（本表另有 `setAgent` 注入与 navOps 分叉改键两处写入，见 `_sessionAgents`
+   * 字段注释）：先查本地投影表（同步可复用），未命中则经 extension 的 `AgentRegistry`
    * 取/建（复用、在途去重、装配都在那里）。本方法**不绑定显示源**——是否绑定由调用方决定
    * （后台会话也要能取到实例，但不能抢走显示）。
    *
@@ -1955,7 +1957,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private async claimInitialSessionOwnership(): Promise<void> {
     const preferred = this._currentSessionId;
-    // 空态（从未有过会话）：交给 ensureInitialSession 新建，createSession 内含拿锁
+    // 空态（从未有过会话）：交给 ensureInitialSession 进入草稿态，首次发送才建会话拿锁（createSession）
     if (!preferred) return;
     const claim = await claimStartupSession(preferred, {
       acquire: (id) => this._lockFinalizer.acquire(id),
@@ -2145,7 +2147,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       if (result.changed && result.polished) {
         this.post({ type: 'polish_input_result', ok: true, text: result.polished });
       } else {
-        // 文本未变化，直接返回原文
         this.post({ type: 'polish_input_result', ok: true, text });
       }
     } catch (err) {
@@ -2644,8 +2645,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 排队，内核在下一 step 边界并入为 user 消息继续执行；UI 即时上屏，webview 据此开新助手块。
    * 流式插话分支以 `runtime.streaming && runtime.abortController` 为判据——pausePending 窗口（相位已转
    * waiting 但 step 未结束、流未复位）与纯运行中同走此分支，行为不变；暂停态带文本续跑分支
-   * 判据为 `isPauseWaiting() || isAskWaiting()`（相位蕴含
-   * status，且区分 ask/pause 两形态由 handleInput 的 kind 分流，此处仅需「暂停可续」为真）。
+   * 判据只取 `isPauseWaiting()`——ask 等待期在下方被拒收（composer 单条文本不是合法答题载荷，
+   * 唯一入口是内联提问卡），绝不走续跑。
    */
   private async sendInput(
     input: string,
@@ -3682,7 +3683,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 未解析工具意图：累计数与内核口径一致，供诊断面板观察
         unparsedToolIntentCount: m.tools.unparsedToolIntentCount,
         truncationCount: m.context.truncationCount,
-        // token 用量
+        // token 用量：内核按调用累计的估算值（estimateTokens 口径，非 provider 计费值）
         llmTokenIn: m.llm.totalInputTokens,
         llmTokenOut: m.llm.totalOutputTokens,
         // 透出最近一次装配的上下文预算构成（prepare 计算，指标快照携带）
