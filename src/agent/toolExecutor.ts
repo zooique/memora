@@ -164,7 +164,7 @@ export interface DelegateTaskPortResult extends DelegateTaskResult {
   readonly durationMs: number;
 }
 
-/** delegate_task 结论摘录硬上限（字符）：超限定长截断，**不补省略号**（截断标注由宿主做） */
+/** delegate_task 结论摘录硬上限（字符）：超限定长截断，**不补省略号**；是否截断由 `extractDelegateExcerpt` 同次比较给出 */
 export const DELEGATE_EXCERPT_MAX_CHARS = 800;
 
 /**
@@ -177,14 +177,26 @@ export const DELEGATE_EXCERPT_MAX_CHARS = 800;
  *   - 首行 `[SUBAGENT:<status>]` 是内核写给模型读的终态标志，不进用户面；
  *   - 紧随其后的中文括号说明（「未返回正文」/「标签已降级」等）也只给模型读，一并去掉；
  *   - 余下正文去空白后定长截断（800 字），不追加省略号。
+ *
+ * 返回值同时给出 `truncated`：**截断判定与截断动作是同一次比较**，宿主不再自行持有一份上限
+ * 常量去猜（否则内核改上限时宿主会静默失准）。`excerptTruncated` 只从这里生产。
  */
-export function extractDelegateExcerpt(text: string): string {
+export function extractDelegateExcerpt(text: string): {
+  /** 剥标志、去空白并截断后的正文 */
+  excerpt: string;
+  /** 是否真的发生了截断（`> 上限` 才算；恰好等于上限不算） */
+  truncated: boolean;
+} {
   const lines = text.split('\n');
   // 首行标记：形如 `[SUBAGENT:completed]`（独占一行才剥；正文里提及不动）
   let start = /^\[SUBAGENT:[a-z]+\]\s*$/.test(lines[0] ?? '') ? 1 : 0;
   // 紧随标记的中文括号说明行：整行被全角括号包住才剥（避免误伤正文）
   while (start < lines.length && /^\s*（.*）\s*$/.test(lines[start] ?? '')) start += 1;
-  return lines.slice(start).join('\n').trim().slice(0, DELEGATE_EXCERPT_MAX_CHARS);
+  const body = lines.slice(start).join('\n').trim();
+  return {
+    excerpt: body.slice(0, DELEGATE_EXCERPT_MAX_CHARS),
+    truncated: body.length > DELEGATE_EXCERPT_MAX_CHARS,
+  };
 }
 
 // ─── web_fetch / run_code 注入防御常量 ─────────────────
@@ -2386,9 +2398,12 @@ export class ToolExecutor {
         const result = await this.delegateTask({ task, rolePack, capabilities }, signal);
         // 回执组装点（唯一产地）：excerpt 从 result.text 取（剥首行标志后定长截断），
         // 与 loop 通用 summary 同源不同粒度——两者都来自同一份 result.text，不得各自维护。
+        // 截断与否由 extractDelegateExcerpt 同一次比较给出，宿主不再持第二份上限常量。
+        const { excerpt, truncated } = extractDelegateExcerpt(result.text);
         const delegate: DelegateTaskReceipt = {
           terminal: result.status,
-          excerpt: extractDelegateExcerpt(result.text),
+          excerpt,
+          excerptTruncated: truncated,
           durationMs: result.durationMs,
         };
         emitOutcome?.({

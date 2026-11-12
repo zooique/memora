@@ -31,9 +31,17 @@ export interface DelegateTaskReceipt {
   terminal: DelegateTaskStatus;
   /**
    * 结论摘录（已去掉首行 `[SUBAGENT:*]` 与紧随其后的中文括号说明；硬上限 800 字）。
-   * 截断处**不补省略号**——「已截断」标注由宿主按长度是否达到上限决定。
+   * 截断处**不补省略号**——是否被截断由 `excerptTruncated` 明确告知，宿主不再按长度猜。
    */
   excerpt: string;
+  /**
+   * 摘录是否因超过 `DELEGATE_EXCERPT_MAX_CHARS` 被截断。
+   *
+   * **唯一产地**：`extractDelegateExcerpt`（截断判定与截断动作在同一处，宿主不存在第二份上限常量）。
+   * 声明为可选而不是必填：本字段之前落盘的老轮次没有它——那些记录永远补不回来。
+   * 宿主按 `=== true` 判定；`undefined` 走历史轮次兼容（按长度反推，常驻、不随内核升级删除）。
+   */
+  excerptTruncated?: boolean;
   /** 子会话执行耗时（毫秒） */
   durationMs: number;
 }

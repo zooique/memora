@@ -658,18 +658,31 @@ describe('上下文压缩事实说明行（不判态）', () => {
 
 describe('delegate 回执：结论摘录（excerpt）产地规则', () => {
   it('剥掉首行 [SUBAGENT:*] 标志与紧随其后的中文括号说明', () => {
-    expect(extractDelegateExcerpt('[SUBAGENT:completed]\n结论正文')).toBe('结论正文');
+    expect(extractDelegateExcerpt('[SUBAGENT:completed]\n结论正文').excerpt).toBe('结论正文');
     expect(
-      extractDelegateExcerpt('[SUBAGENT:failed]\n（说明：本轮正文中的同名标签已降级）\n真实结论'),
+      extractDelegateExcerpt('[SUBAGENT:failed]\n（说明：本轮正文中的同名标签已降级）\n真实结论')
+        .excerpt,
     ).toBe('真实结论');
     // interrupted 常无正文：只剩给模型读的说明行 ⇒ 摘录为空（宿主据此不留空段）
-    expect(extractDelegateExcerpt('[SUBAGENT:interrupted]\n（子 agent 未返回正文）')).toBe('');
+    expect(extractDelegateExcerpt('[SUBAGENT:interrupted]\n（子 agent 未返回正文）').excerpt).toBe(
+      '',
+    );
   });
 
-  it('超过 800 字定长截断，且不自补省略号（截断标注由宿主做）', () => {
-    const excerpt = extractDelegateExcerpt(`[SUBAGENT:completed]\n${'字'.repeat(900)}`);
-    expect(excerpt).toHaveLength(DELEGATE_EXCERPT_MAX_CHARS);
-    expect(excerpt.endsWith('…')).toBe(false);
+  it('超过上限才标记截断：恰好 800 不截断、801 截断，且不自补省略号', () => {
+    // 边界必须是「恰好 800」与「801」两条：`>=` 会把恰好 800 误标成截断，`>` 才是真截断
+    const atLimit = extractDelegateExcerpt(
+      `[SUBAGENT:completed]\n${'字'.repeat(DELEGATE_EXCERPT_MAX_CHARS)}`,
+    );
+    expect(atLimit.excerpt).toHaveLength(DELEGATE_EXCERPT_MAX_CHARS);
+    expect(atLimit.truncated).toBe(false);
+
+    const overLimit = extractDelegateExcerpt(
+      `[SUBAGENT:completed]\n${'字'.repeat(DELEGATE_EXCERPT_MAX_CHARS + 1)}`,
+    );
+    expect(overLimit.excerpt).toHaveLength(DELEGATE_EXCERPT_MAX_CHARS);
+    expect(overLimit.truncated).toBe(true);
+    expect(overLimit.excerpt.endsWith('…')).toBe(false);
   });
 });
 
@@ -699,6 +712,7 @@ describe('派发端口：终态映射与 abort 立即收口（P0-2 / P0-3）', (
         expect(outcomes[0]!.delegate).toEqual({
           terminal: status,
           excerpt: '正文',
+          excerptTruncated: false,
           durationMs: 47_000,
         });
         observed.push({ status, ok: outcomes[0]!.status === 'ok' });
