@@ -489,9 +489,10 @@ describe('工具执行器（6 个工具）', () => {
         ).toContain(name);
       }
       // 已知残余（**勿读成全覆盖**）：下面 6 项 diskWrite 均为 'none'，都推不出「必须禁」，
-      // 仍靠上方那条手写全集断言把它们锁在 deny 集里：
-      //   · 父状态 / 职责例外：ask_user / remember_intel / task_table_write /
-      //     task_table_update / run_team_meeting；
+      // 仍靠上方那条手写全集断言（:456）把它们锁在 deny 集里，按进集理由分四类：
+      //   · 父状态：remember_intel / task_table_write / task_table_update（改父会话情报区 / 任务表）；
+      //   · 交互：ask_user（在 loop 层挂起父会话，子会话没有应答通道）；
+      //   · 职责例外：run_team_meeting（唯一按职责而非副作用禁的）；
       //   · 执行面副作用：kill_command（diskWrite:'none'，进集理由与 run_command 同一句，
       //     见 toolExecutor.ts 拒绝集注释「执行：run_command / kill_command」）。
       // 硬边界：本守卫只防**正向缺口**（元数据说写盘却没进 deny）；**反向缺口**
