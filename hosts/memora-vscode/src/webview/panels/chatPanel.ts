@@ -111,11 +111,9 @@ import type {
   LlmProviderConfig,
 } from '../../shared/protocol.js';
 // 错误文案映射单一真理源（与 webview 重放渲染共用，防文案双源漂移）
-import {
-  deriveTurnState,
-  mergeLiveRound,
-  type PendingLiveRound,
-} from '../../shared/turnProjection.js';
+import { type PendingLiveRound } from '../../shared/turnProjection.js';
+// 会话投影（合并 live 轮 + 折叠 TurnState）单一入口：本面板与远程/桥共用同一判据，防两套投影
+import { deriveSessionProjection } from '../../shared/sessionProjection.js';
 import { dedupeRefs } from '../../shared/refKey.js'; // 引用去重判据单点（与 webview 的 addRefs 共用，勿各自实现）
 // 插话受理三态的可见文案（INPUT-LIMIT-1 / INTERJECT-PERSIST-1）统一由 windowNotices 提供，
 // 面板内不嵌字面量：那里是窗口提示的单一真源（常量形态会在模块求值时定稿语言，故用函数）。
@@ -2425,22 +2423,26 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const history = this._viewLoader
       ? loadRoundBasedHistory(this._viewLoader, this.sessionStore, this._currentSessionId)
       : [];
-    const merged = mergeLiveRound(history, live);
-    // 附件预览 URL 盖在**合并之后**：live 轮的 userMessage 来自上行 seed（只有 ref，没有 URL）
-    const rounds = stampRoundAttachmentUris(merged, this.workspacePath, this.toWebviewUri);
-    const last = rounds[rounds.length - 1];
     const questions = this.askFor().pendingQuestions();
-    // 派生结果写回宿主唯一状态——handleInput 的 ask 相位路由读它；
-    // ask 域超时的提问原文**不读这里**（去相位化，ADR-044 决策 4：域内 `_pending` 才是真源，
-    // 本投影由它派生）。
-    this._turnState = deriveTurnState({
+    // 投影两步（合并 live 轮 + 折叠 TurnState）收口到 shared 纯函数，与远程/桥共用同一判据
+    const projection = deriveSessionProjection({
+      history,
+      live,
       streaming: this.runtimeFor().streaming,
       paused: this._agent?.sessionManager?.status === 'paused',
       pausePending: this._agent?.isPausePending() ?? false,
-      pendingQuestions: questions.length > 0 ? questions : undefined,
-      liveRoundId: live?.roundId,
-      lastRound: last ? { id: last.id, status: last.status } : undefined,
+      pendingQuestions: questions,
     });
+    // 附件预览 URL 盖在**合并之后**：live 轮的 userMessage 来自上行 seed（只有 ref，没有 URL）
+    const rounds = stampRoundAttachmentUris(
+      projection.rounds,
+      this.workspacePath,
+      this.toWebviewUri,
+    );
+    // 派生结果写回宿主唯一状态——handleInput 的 ask 相位路由读它；
+    // ask 域超时的提问原文**不读这里**（去相位化，ADR-044 决策 4：域内 `_pending` 才是真源，
+    // 本投影由它派生）。
+    this._turnState = projection.state;
     this.post({
       type: 'turn_update',
       rounds,
