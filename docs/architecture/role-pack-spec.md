@@ -70,8 +70,8 @@
     { "file": "skills/search.md", "name": "search" }
   ],
   "capabilities": [
-    { "capability": "file:write", "description": "写入文件" },
-    { "capability": "web:search", "description": "联网搜索" }
+    { "capability": "web:search", "description": "联网搜索" },
+    { "capability": "web:fetch", "description": "抓取网页正文" }
   ]
 }
 ```
@@ -210,8 +210,8 @@ frontmatter 声明 `name`/`description`。**新增技能只写文件，无需改
   { "file": "skills/my-skill/SKILL.md" }
 ],
 "capabilities": [
-  { "capability": "file:write", "description": "写入文件" },
   { "capability": "web:search", "description": "写作查资料" },
+  { "capability": "web:fetch", "description": "抓取参考资料正文" },
   { "capability": "llm:summarize" }
 ]
 ```
@@ -234,7 +234,7 @@ description: 把成稿写入本地文件
 
 * **`skills`（目录扫描，内容面）**：`skills/` 下**两种形式**动态扫描——单文件 `skills/*.md` 和文件夹 `skills/<名>/SKILL.md`（Claude Code 标准）。frontmatter 的 `name`（缺省取文件名/目录名）/`description` 暴露给 LLM（L1 清单），正文经渐进披露 L2（read\_skill）按需装载；纯能力声明不放 skills（放顶层 capabilities）；
 
-* **实现映射**：memora 把 `file:write` 映射到内置 `write_file` 工具；其他实现映射到自有工具；
+* **实现映射**：memora **不在 capabilityMap 中映射 `file:write`**——本地读写工具（`read_file` / `write_file` 等）属 `DEFAULT_EXPOSED_TOOLS` 常驻集，无需声明即可用；其他实现可自行把 `file:write` 映射到自有工具；
 
 * **未知能力**：装载方跳过该能力（不产出工具），不阻塞装载；参考实现须在装载/校验阶段给出 **warning** 诊断（memora：`UNREGISTERED_CAPABILITY`），说明该能力不解锁任何工具、且声明 capabilities 会把工具面收窄到常驻集——不许静默降级；
 
@@ -283,13 +283,13 @@ description: 把成稿写入本地文件
 | `llm:summarize`   | 调用 LLM 做文本摘要       | 内核内部能力，无需独立工具映射（memora 映射为空）                                            | 冻结     |
 | `llm:code-review` | 调用 LLM 做代码安全与质量审查  | 可选，需 LLM 支持代码分析                                                         | `[草案]` |
 
-> **memora 消费口径（2026-09-08 定，2026-09-16 扩充）**：上表中 `file:read` / `file:write` / `file:list` / `memory:recall` / **`task:plan`(对应任务表)** 在 memora 属**默认常驻工具**——声明与否都不影响可见性（`DEFAULT_EXPOSED_TOOLS` 恒暴露），这些键在 memora 侧已丧失白名单映射能力（保留于中立字典供其他实现消费，memora 不再映射）。任务表移入常驻属**用户拍板**（2026-09-16）：它是内核多步任务必要基建，非角色包可选的领域深度能力——否则无 `task:plan` 能力的角色被引导语叫去"用任务表"却找不到工具（死胡同，实测 thought 铁证）。`web:search` / `web:fetch` / `code:execute` 为**特权键**，声明才进入工具白名单。
+> **memora 消费口径（2026-09-08 定，2026-09-16 扩充）**：上表中 `file:read` / `file:write` / `file:list` / `memory:recall` / **`task:plan`(对应任务表)** 在 memora 属**默认常驻工具**——声明与否都不影响可见性（`DEFAULT_EXPOSED_TOOLS` 恒暴露），这些键在 memora 侧已丧失白名单映射能力（保留于中立字典供其他实现消费，memora 不再映射）。任务表移入常驻属**用户拍板**（2026-09-16）：它是内核多步任务必要基建，非角色包可选的领域深度能力——否则无 `task:plan` 能力的角色被引导语叫去"用任务表"却找不到工具（死胡同，实测 thought 铁证）。`web:search` / `web:fetch` / `code:execute` 为**特权键**，声明才进入工具白名单。⚠️ 上述五键对 memora 而言是「格式合法但未登记」——声明它们会产生 `UNREGISTERED_CAPABILITY` **warning** 诊断（不静默，见下条 3），写给 memora 用的角色包请只声明已登记键。
 
 **能力确定原则**（对齐 §五 双闸门演进）：
 
 1. **验证门**：新能力名必须有参考实现真实消费方可进入标准（冻结状态）；未验证的能力标 `[草案]` 保留在字典中征集验证；
 2. **中立门**：冻结后的能力名不可重命名，语义不可变更——实现向标准看齐，而非标准向实现看齐；
-3. 已知能力名（不在本表内）按「未知能力跳过」装载（§四），不阻塞，但须产生 warning 诊断（不静默）。
+3. 格式合法但未登记的能力名（不在本表内）按「未知能力跳过」装载（§四），不阻塞，但须产生 warning 诊断（不静默）。
 
 ### 四·二 MCP 集成设计（⛔ 已撤销 · 仅历史记录，不属现行标准）
 
