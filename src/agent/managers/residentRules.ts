@@ -159,7 +159,7 @@ function renderResidentBlock(source: string, text: string): string {
  * 判据顺序（每一步失败都**不读正文**，避免把不该给模型的内容先读进内存）：
  * ① 绝对路径 / `..` 逃逸 ⇒ 拒绝；② realpath 复核（防符号链接指向工作区外）；
  * ③ 凭据 / 系统敏感路径黑名单；④ 读盘（区分「不存在」与「读取失败」）；
- * ⑤ 二进制嗅探（NUL 字节）+ fatal UTF-8 解码复核。
+ * ⑤ BOM 优先（UTF-8 / UTF-16LE / UTF-16BE）→ 无 BOM 且含 NUL 判二进制 → 严格解码。
  *
  * @param projectDir 主根绝对路径（清单 `source` 一律相对它）
  * @param source 清单里的相对路径
@@ -245,7 +245,13 @@ export async function readResidentSource(
     };
   }
 
-  return { ok: true, text: decoded.text, block: renderResidentBlock(source, decoded.text) };
+  // BOM 口径**刻意与 read_file 不同**：项目规则正文会注入模型可见的规则段，旧实现
+  // （TextDecoder 默认 ignoreBOM=false）会剥掉 UTF-8 BOM；共享解码器为对齐 read_file 的
+  // 「与 Buffer#toString 逐字一致」而保留 U+FEFF，故在这里显式剥掉开头 BOM，恢复旧行为。
+  // （两处口径差异是有意的：read_file 返回的是文件原貌，规则段要的是可读正文。）
+  const text = decoded.text.charCodeAt(0) === 0xfeff ? decoded.text.slice(1) : decoded.text;
+
+  return { ok: true, text, block: renderResidentBlock(source, text) };
 }
 
 /**

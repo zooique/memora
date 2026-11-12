@@ -2284,9 +2284,9 @@ describe('工具执行器（6 个工具）', () => {
       expect(result).toContain('[read_file 分段]');
     });
 
-    it('含控制字符的文件内容应被净化（去控制字符）', async () => {
+    it('含 ANSI 控制字符（ESC）的文件内容应被净化（去控制字符）', async () => {
       // 注：fixture 曾含 \u0000，但 read_file 现按「无 BOM 含 NUL ⇒ 二进制」拒绝
-      // （NUL 归二进制嗅探，见 builtinToolHandlers.test.ts）；本用例只锁控制字符净化
+      // （NUL 归二进制嗅探，见 builtinToolHandlers.test.ts）；本用例只锁 ANSI/ESC 净化
       const messyContent = 'line1control\u001bEscape\nline2';
       const messyFile = 'src/messy-file.txt';
       await executor.execute(

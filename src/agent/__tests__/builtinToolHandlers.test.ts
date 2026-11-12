@@ -274,6 +274,14 @@ describe('BuiltinToolHandlers.readFile', () => {
     await expect(handlers.readFile('bom.txt')).resolves.toBe('\uFEFF中文');
   });
 
+  it('UTF-8 BOM + NUL → 走文本分支：BOM 保留、NUL 由净化移除（锁定该路径）', async () => {
+    // 设计口径：BOM 声明了编码，NUL 视为正文里的控制字符而非「二进制信号」；
+    // 这里显式锁住「BOM 优先于 NUL 判据」的后果，避免日后误改判定顺序
+    const bytes = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('a\u0000b', 'utf8')]);
+    await createBinaryFileInProject('bom-nul.txt', bytes);
+    await expect(handlers.readFile('bom-nul.txt')).resolves.toBe('\uFEFFab');
+  });
+
   it('正常 UTF-8 中文 + 制表符 → 行为不变（逐字返回，零提示）', async () => {
     const text = '第一列\t第二列\n第二行：中文与 English 混排\n';
     await createFileInProject('plain.txt', text);

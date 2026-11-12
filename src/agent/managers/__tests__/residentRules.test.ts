@@ -152,12 +152,40 @@ describe('residentRules', () => {
       expect(read.message).toContain('不是文本文件');
     });
 
-    it('非 UTF-8 字节 ⇒ not-textual（fatal 解码，不用替换字符吞掉）', async () => {
-      await writeFile(join(projectDir, 'gbk.txt'), Buffer.from([0xff, 0xfe, 0x41]));
+    it('无 BOM 的非法 UTF-8 字节 ⇒ not-textual（fatal 解码，不用替换字符吞掉）', async () => {
+      // 首字节刻意不是 FF FE / FE FF（那是 UTF-16 BOM，会走 BOM 分支）——
+      // 本用例锁的是 invalid-utf8 这一条原因码
+      await writeFile(join(projectDir, 'gbk.txt'), Buffer.from([0x41, 0xff, 0x42]));
       const read = await readResidentSource(projectDir, 'gbk.txt');
       expect(read.ok).toBe(false);
       if (read.ok) return;
       expect(read.failure).toBe('not-textual');
+      expect(read.message).toContain('非 UTF-8 编码');
+    });
+
+    it('UTF-16 BOM 但内容损坏（奇数长度）⇒ not-textual 且原因是 UTF-16 编码损坏', async () => {
+      // FF FE 是 UTF-16LE BOM；后面只剩 1 字节，fatal 解码必失败 ⇒ invalid-utf16
+      await writeFile(join(projectDir, 'broken16.txt'), Buffer.from([0xff, 0xfe, 0x41]));
+      const read = await readResidentSource(projectDir, 'broken16.txt');
+      expect(read.ok).toBe(false);
+      if (read.ok) return;
+      expect(read.failure).toBe('not-textual');
+      expect(read.message).toContain('UTF-16 编码损坏');
+    });
+
+    it('UTF-8 BOM 的项目规则文件 ⇒ 正文不含 U+FEFF（恢复旧行为：规则段不注入 BOM）', async () => {
+      const bytes = Buffer.concat([
+        Buffer.from([0xef, 0xbb, 0xbf]),
+        Buffer.from('规则正文', 'utf8'),
+      ]);
+      await writeFile(join(projectDir, 'bom.md'), bytes);
+      const read = await readResidentSource(projectDir, 'bom.md');
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      // 正文与渲染块都不应带 BOM（否则 U+FEFF 会随规则段进入模型上下文）
+      expect(read.text).toBe('规则正文');
+      expect(read.text).not.toContain('\uFEFF');
+      expect(read.block).toBe('### 来源文件：bom.md\n规则正文');
     });
 
     it('目录 / 权限类读盘异常 ⇒ read-error（可重试，文案与判据拒绝可区分）', async () => {
