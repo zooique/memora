@@ -307,7 +307,8 @@ function parseProviders(value: unknown): Record<string, ProviderEntryConfig> | u
     providers[key] = {
       provider: providerName,
       model: modelName,
-      // 空串按未配置处理：下游以 ?? 兜底默认端点/密钥，'' 会顶掉默认值
+      // 空串归一化为 undefined（视为未配置）：内核没有默认端点/密钥——
+      // baseUrl / model 缺失会在 llm/factory.ts 直接抛 configError，apiKey 缺失回落空串（apiKey ?? ''）
       baseUrl: typeof p.baseUrl === 'string' && p.baseUrl ? p.baseUrl : undefined,
       apiKey: typeof p.apiKey === 'string' && p.apiKey ? p.apiKey : undefined,
       temperature: p.temperature !== undefined ? validateTemperature(p.temperature, 0) : undefined,
