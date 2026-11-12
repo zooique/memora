@@ -617,3 +617,62 @@ describe('ProviderStore · 读侧 contextWindow 归一', () => {
     warn.mockRestore();
   });
 });
+
+// ══════════════════════════════════════════════════════════════
+// 写入面只改目标条：别条的非法 contextWindow 必须原样留在磁盘
+// ══════════════════════════════════════════════════════════════
+
+describe('ProviderStore · 写入面不清洗别条', () => {
+  let store: ProviderStore;
+
+  /** 磁盘上的 Provider 原始表（保留非法 contextWindow，模拟手改 settings.json） */
+  const rawProviders = () => h.store['providers'] as Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    h.store['providers'] = [];
+    delete h.store['maxContextTokens'];
+    for (const k of Object.keys(secretsStore)) delete secretsStore[k];
+    secretsStore['memora.provider.a.apiKey'] = 'sk-a';
+    store = new ProviderStore(secrets as unknown as import('vscode').SecretStorage);
+  });
+
+  it('保存 A 后，B 的非法 contextWindow 仍在磁盘上（读面仍归一到 undefined）', async () => {
+    h.store['providers'] = [
+      { name: 'b', displayName: 'B', model: 'm', baseUrl: 'http://b/v1', contextWindow: 0 },
+    ];
+    h.store['activeProvider'] = '';
+    const res = await store.save(
+      { name: 'a', displayName: 'A', model: 'm', baseUrl: 'http://a/v1', apiKey: 'sk-a' },
+      false,
+    );
+    expect(res.ok).toBe(true);
+    // 磁盘原值：B 的 0 没被写侧清洗掉
+    expect(rawProviders().find((p) => p.name === 'b')!.contextWindow).toBe(0);
+    // 读面：仍按未配置处理
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const list = await store.list();
+    expect(list.find((p) => p.name === 'b')!.contextWindow).toBeUndefined();
+    warn.mockRestore();
+  });
+
+  it('删除 A 后，B 的非法 contextWindow 仍在磁盘上', async () => {
+    h.store['providers'] = [
+      { name: 'a', displayName: 'A', model: 'm', baseUrl: 'http://a/v1' },
+      { name: 'b', displayName: 'B', model: 'm', baseUrl: 'http://b/v1', contextWindow: -5 },
+    ];
+    h.store['activeProvider'] = 'b';
+    const res = await store.remove('a');
+    expect(res.ok).toBe(true);
+    expect(rawProviders()).toHaveLength(1);
+    expect(rawProviders()[0]!.contextWindow).toBe(-5);
+  });
+
+  it('迁移 maxContextTokens 时跳过原始 0（不当成「未配置」灌旧值）', async () => {
+    h.store['providers'] = [
+      { name: 'b', displayName: 'B', model: 'm', baseUrl: 'http://b/v1', contextWindow: 0 },
+    ];
+    h.store['maxContextTokens'] = 64000;
+    await store.migrateMaxContextTokens();
+    expect(rawProviders()[0]!.contextWindow).toBe(0);
+  });
+});

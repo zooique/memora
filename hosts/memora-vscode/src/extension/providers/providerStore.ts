@@ -391,7 +391,9 @@ export class ProviderStore {
       return { ok: false, message: vscode.l10n.t('Please fill in the API Key') };
     }
 
-    const providers = this.readConfig();
+    // 写前按磁盘原样取表：本方法只改目标条，其余条目必须原样写回——
+    // 读侧归一后的 undefined 若写回，会把别条手改的非法 contextWindow 静默抹掉
+    const providers = this.readRawProviders();
 
     // 新增模式：检查 name 重复
     if (!isEditing && providers.some((p) => p.name === trimmed.name)) {
@@ -461,7 +463,8 @@ export class ProviderStore {
         ),
       };
     }
-    const providers = this.readConfig().filter((p) => p.name !== name);
+    // 同上：删除只过滤目标条，别条的非法 contextWindow 必须原样留在磁盘上
+    const providers = this.readRawProviders().filter((p) => p.name !== name);
     // 配置没删掉就不能删 apiKey：否则配置里还留着服务商、密钥却没了（下次激活必然失败）
     const written = await this.writeConfig(providers);
     if (!written.ok)
