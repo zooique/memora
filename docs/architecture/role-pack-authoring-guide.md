@@ -35,8 +35,8 @@
     "global": { "contextLimit": 0, "stepBudget": 60 }
   },
   "capabilities": [
-    { "capability": "file:write", "description": "写文件" },
-    { "capability": "web:search", "description": "搜索" }
+    { "capability": "web:search", "description": "搜索" },
+    { "capability": "llm:summarize", "description": "提炼资料" }
   ],
   "handoffPrompt": "你好，我是白话方案设计师，请告诉我你想解决什么模糊想法或痛点。"
 }
@@ -230,7 +230,7 @@
 | `"outputLimit": 999999`                             | `"outputLimit": 8192`                            | 越上界 `65536`，防输出失控     |
 | `"contextLimit": -100`                               | `"contextLimit": 0`                               | 负值非法，应为 `0 ~ 1000000`；推荐 `0`（不限制） |
 | `"selfReview": 999`                                 | `"selfReview": 1`                                | 越上界 `10` 非法；布尔数字语义下任意正整数只表示"自审查一次"，写 `1` 最清晰 |
-| `"capabilities": [{"capability": "WriteFile"}]`     | `"capabilities": [{"capability": "file:write"}]` | 能力名必须 `域:动作` 小写格式     |
+| `"capabilities": [{"capability": "WriteFile"}]`     | `"capabilities": [{"capability": "web:fetch"}]` | 能力名必须 `域:动作` 小写格式（示例用 memora 已登记键；`file:write` 未登记，声明会产生 warning）     |
 | `"strategy": { "prepare": { "unknownKey": true } }` | 去掉该键                                             | 未知键 warning + 忽略，不生效  |
 
 ***
