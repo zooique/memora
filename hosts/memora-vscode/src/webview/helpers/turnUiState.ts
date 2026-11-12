@@ -24,7 +24,7 @@ import * as l10n from '@vscode/l10n';
  *
  * 与 `TurnState` 的关系 = 结构兼容投影（同 `RoundView` 对 `Round` 的 `Pick<>` 手法）：
  * `TurnState` 的每个分支都能赋值给这里的对应分支，故换源时**直接赋值即可**；
- * 该投影兼容性由 `turnUiState.test.ts` 的「契约守卫」用例逐分支赋值锁定（编译期 + 运行期双查）。
+ * 该投影兼容性由 `webview/helpers/__tests__/turnUiState.test.ts` 的「契约守卫」用例逐分支赋值锁定（编译期 + 运行期双查）。
  */
 export type SkeletonState =
   | { phase: 'idle' }
@@ -37,7 +37,7 @@ export type SkeletonState =
  *
  * 剥掉骨架用不到的 `roundId` / `RoundStatus` / `questions`——`TurnState.running.roundId`
  * 可选（宿主流起始投影时未知）也不影响投影：骨架输出根本不消费它。
- * 本函数是**转移函数**而非纯映射（`turn_update.state` 本身就是完整状态快照，无需结合前值推演）。
+ * 本函数是**纯投影**：`turn_update.state` 本身就是完整状态快照，无前值、无副作用。
  */
 export function skeletonFromTurnState(state: TurnState): SkeletonState {
   switch (state.phase) {
@@ -71,7 +71,7 @@ export type SessionUiState = 'thinking' | 'done' | 'paused';
  * 发送按钮文案会在申请在途窗口被改成挂起态文案（坑）。
  *
  * ask 也映射 `paused`：宿主对 ask 与 pause **同走** `pausedOnPurpose` 分支并同样发
- * `status:'paused'`（ask 走 `turn_update.state.waiting.ask` 渲染内联提问）。三值态只收
+ * `{ type: 'status', state: 'paused' }`（ask 走 `turn_update.state.waiting.ask` 渲染内联提问）。三值态只收
  * 「运行/挂起/收场」共性；ask 与 pause 的差异（续跑键职责）由 `deriveButtonSemantics`
  * 按 `waiting.reason` 分叉消费——内联提问块由 renderAskPhase 渲染，不属骨架矩阵。
  */
@@ -128,10 +128,10 @@ export interface ButtonSemantics {
  *
  * 续跑键宣告纪律：**按钮只宣告路由真实收下的意图**——`resume` 路由只收 pause，故
  * `waiting(ask)` 的续跑键**恒不渲染**：空输入无纯续跑能力（不回答的兜底 = ask 超时自动
- * 续跑，产品定案无「跳过提问」按钮）；有输入也无「发送补充并继续」能力——ask 期的 send
- * 路由实际落到 `AgentLoop.answerQuestion`，单条文本按序只配第 1 题、其余题落
+ * 续跑，产品定案无「跳过提问」按钮）；有输入也无「发送补充并继续」能力——若不拦截，
+ * ask 期 send 会落到 `AgentLoop.answerQuestion`，单条文本按序只配第 1 题、其余题落
  * `[ASK_ABORTED]` 占位（一条文本无法定位到 N 题，且单题时与内联卡完全重复）。
- * 该提交由 webview `sendMessage` 与宿主 `sendInput` 双层拒收，答题唯一入口 = 内联提问卡。
+ * 故提交当前由 webview `sendMessage` 与宿主 `sendInput` 双层拒收，答题唯一入口 = 内联提问卡。
  *
  * `disabled` 判据：**只有 `done` + 空输入**才禁用——运行中（thinking/paused）无论有无输入
  * 都可用（有输入 = interject 排队 / 带补充续跑；ask 期有输入虽 enabled，但提交被上述
