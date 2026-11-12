@@ -395,10 +395,15 @@ export class BuiltinToolHandlers {
 
     const port = this.imageReadPort;
     if (!port) {
+      // 原因①（宿主侧）：宿主没注入读图端口（例如 MCP 宿主）——必须与「模型无视觉」分开说，
+      // 且明确「不是文件问题」，否则模型会反复换路径重试，把能力缺失误诊成文件缺失
       throw toolError(
-        'read_image 不可用',
-        '当前会话未注入图片摄取端口',
-        ['不要调用 read_image；需要文本内容时改用 read_file'],
+        'read_image 不可用（当前宿主不支持读图）',
+        '当前宿主没有注入读图端口（例如 MCP 宿主不支持读图）。这不是文件问题——文件本身可能完全正常。',
+        [
+          '需要文本内容时改用 read_file',
+          '不要在支持读图的宿主之外反复重试 read_image；需要看图请让用户在支持读图的宿主中操作',
+        ],
         undefined,
         ToolErrorCode.NOT_AVAILABLE,
       );
@@ -418,11 +423,17 @@ export class BuiltinToolHandlers {
       );
     }
     if (!result.ok) {
-      // 执行面第二层拒绝：宿主读同一份 provider 配置判定视觉位（防模型幻觉调用）
+      // 端口自述的拒绝原因（原样透传，通常是视觉位第二层拒绝 / 文件超限 / 不是图片）：
+      // 「当前模型未声明视觉」的**主路径**已在 loop 派发前按精确原因拦下（见 loop 的同源判据），
+      // 走到这里时原因可能是文件本身（超限 / 格式不符）或宿主配置位与内核路由位不一致——
+      // 故文案不擅自归因，给出两条可区分的排查方向
       throw toolError(
         'read_image 不可用',
         result.text,
-        ['当前模型未声明支持视觉时不要调用本工具'],
+        [
+          '确认文件是受支持的图片格式（png/jpeg/webp/gif）且不超过 5 MiB',
+          '若当前模型未声明支持图片输入（provider 配置项 supportsVision），需在配置中开启视觉后重试；只需要文本内容时改用 read_file',
+        ],
         undefined,
         ToolErrorCode.NOT_AVAILABLE,
       );

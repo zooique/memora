@@ -323,6 +323,20 @@ const INTEL_INTRO =
   '当你从大文本/工具结果获取到新的关键信息时，可用一句简短状态反馈用户进展（如：原来是这样… / 掌握了关键信息 / ' +
   '有一个问题… / 基本收集完毕），但不要在反馈中复述笔记/原文细节。';
 
+/**
+ * `read_image` 两种「不可用」原因的回喂文案（cause 片段；前缀与收尾由 `notExposedOutcome` 统一产出）
+ *
+ * 为什么必须分两段：两种原因对模型的可行动作不同——「模型无视觉」要去查 provider 配置，
+ * 「宿主不支持读图」要换宿主或改用文本工具。混成一句「不可用」会让模型误以为**文件**有问题，
+ * 于是换路径反复重试（正是本改动要消灭的误诊）。
+ */
+const READ_IMAGE_UNAVAILABLE_CAUSES = {
+  'host-no-port':
+    '当前宿主不支持读图——宿主没有注入读图端口，例如 MCP 宿主。这不是文件问题，文件本身可能完全正常',
+  'model-blind':
+    '当前模型未声明支持图片输入——这是 provider 的 supportsVision 配置项未开启，不是文件问题，文件本身可能完全正常',
+} as const;
+
 export class AgentLoop {
   private messages: Message[] = [];
   private readonly maxIterations: number;
@@ -2339,6 +2353,22 @@ export class AgentLoop {
         ...(diskWrite === 'none' ? {} : { diskWrite }),
       };
 
+      // read_image「执行前原因回喂」：暴露面已按视觉位/宿主端口裁掉，模型仍硬点名（幻觉调用，
+      // 或被读到的项目文件内容诱导）。在执行前按**精确原因**拦下并回喂，而不是下沉到宿主端口
+      // 拿一句笼统的「不可用」——那会让模型误判文件有问题、换路径反复重试。
+      // 判据与 resolveActiveTools 同源（readImageUnavailableReason），不另立第二套。
+      if (tc.function.name === 'read_image') {
+        const unavailable = this.readImageUnavailableReason();
+        if (unavailable !== null) {
+          toolExecs.push({
+            promise: Promise.resolve(
+              notExposedOutcome('read_image', READ_IMAGE_UNAVAILABLE_CAUSES[unavailable]),
+            ),
+          });
+          continue;
+        }
+      }
+
       // ===== 统一护栏判定（GuardRail SSOT）=====
       // 判定逻辑 / 命中文案（衔接提示词）/ 阈值收敛到 guardRail.ts（createDefaultGuards；
       // 护栏在链路中的位置与职责见 docs/architecture/loop-design.md 的「运行时护栏」一节）。
@@ -3108,17 +3138,33 @@ export class AgentLoop {
   private resolveActiveTools(): readonly ToolDefinition[] {
     const all = this.opts.toolDefinitions ?? [];
     // 读图能力位：端口已注入 且 **路由后** provider 声明视觉（与 callWithRetry 入口门禁同源）。
-    // 必须每 step 现算：toolDefinitions 是装配期快照，setProvider 热切换后按快照裁剪会立即过期。
-    const readImageEnabled =
-      this.opts.imageReadPort !== undefined &&
-      this.llmCaller.resolveProvider(this.messages).supportsVision === true;
+    // 判据收口到 readImageUnavailableReason（暴露面裁剪与「被裁掉后仍点名调用」的回喂同源）。
+    const readImageDisabled = this.readImageUnavailableReason() !== null;
     return all.filter((t) => {
       // 搜索硬上限命中后：从工具集剔除 web_search（确定性停搜，与 system 提示双闸）
       if (t.name === 'web_search') return !this.searchDisabled;
       // 视觉能力不足 / 摄取端口未注入：剔除 read_image（不摆一个必失败的工具）
-      if (t.name === 'read_image') return readImageEnabled;
+      if (t.name === 'read_image') return !readImageDisabled;
       return true;
     });
+  }
+
+  /**
+   * `read_image` 当前不可用的原因（可用 = null）——视觉能力位事实的**单一真源**
+   *
+   * 两条事实各自对应一种可辨原因（文案见 `READ_IMAGE_UNAVAILABLE_CAUSES`）：
+   * - 宿主未注入读图端口（非 VS Code 宿主，如 MCP 宿主）⇒ `'host-no-port'`；
+   * - 路由后 provider 未声明 `supportsVision === true` ⇒ `'model-blind'`。
+   *
+   * 为什么收成一个方法：暴露面裁剪（`resolveActiveTools`）与「被裁掉后模型仍硬点名」的
+   * 执行前回喂（`executeToolCalls`）必须用**同一判据**——两处各判一次，热切换 provider 后
+   * 必然出现「这边说没裁、那边说裁了」的分歧。必须每 step 现算：`toolDefinitions` 是装配期
+   * 快照，`setProvider` 热切换后按快照判定会立即过期。
+   */
+  private readImageUnavailableReason(): 'host-no-port' | 'model-blind' | null {
+    if (this.opts.imageReadPort === undefined) return 'host-no-port';
+    if (this.llmCaller.resolveProvider(this.messages).supportsVision !== true) return 'model-blind';
+    return null;
   }
 
   /**

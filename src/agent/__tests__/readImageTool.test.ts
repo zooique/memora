@@ -9,8 +9,16 @@
  * 另钉暴露面（`resolveActiveTools` 按路由后 provider 的视觉位逐 step 裁剪）与
  * 路由隔离（`determineTaskType` 跳过合成消息）。
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { AgentLoop } from '@/agent/loop.js';
+import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
+import { SecurityGuard } from '@/security/pathGuard.js';
+import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
+import { ToolErrorCode } from '@/utils/errors.js';
+import type { MemoraError } from '@/utils/errors.js';
 import { determineTaskType } from '@/agent/managers/llmCaller.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { BUILTIN_TOOLS } from '@/agent/builtinTools.js';
@@ -30,6 +38,13 @@ interface LoopInternals {
   pendingImageReads: ImageRef[];
   /** 按能力位裁剪后的暴露面 */
   resolveActiveTools(): readonly ToolDefinition[];
+  /** 工具派发的私有生成器（本组用例经它验证「裁掉后仍点名调用」的回喂文案） */
+  executeToolCalls(
+    toolCalls: NonNullable<Message['toolCalls']>,
+    fullContent: string,
+    signal: AbortSignal | undefined,
+    stepIndex: number,
+  ): AsyncGenerator<unknown, { aborted: boolean; outcomes: ToolOutcome[] }, unknown>;
   /** 出站视图装配（返回值即送信面；内部必须只读 this.messages） */
   _prepareContext(
     signal: AbortSignal | undefined,
@@ -152,6 +167,122 @@ describe('read_image · 暴露面', () => {
     expect(sentAfter).not.toContain('read_image');
     expect(listedInPrompt()).not.toContain('read_image');
     expect(new Set(sentAfter)).toEqual(new Set(listedInPrompt()));
+  });
+});
+
+describe('read_image · 两种「不可用」原因分开说', () => {
+  /**
+   * 驱动一次工具派发并取回结构化 outcomes（私有生成器的测试薄壳）
+   *
+   * 为什么直接驱动私有生成器：本组要验证的正是「暴露面裁掉后模型仍点名调用」时的
+   * **执行前回喂**，而不是 handler 内部文案——绕开 loop 就测不到那条守卫。
+   */
+  async function runToolDispatch(loop: AgentLoop, name: string): Promise<ToolOutcome[]> {
+    const gen = internals(loop).executeToolCalls([toolCall('call-img', name)], '', undefined, 1);
+    let step: IteratorResult<unknown, { aborted: boolean; outcomes: ToolOutcome[] }>;
+    do {
+      step = await gen.next();
+    } while (!step.done);
+    return step.value.outcomes;
+  }
+
+  it('宿主未注入读图端口 → 指明「当前宿主不支持读图」（MCP 宿主），且不是文件问题', async () => {
+    const loop = new AgentLoop({
+      provider: makeProvider(true),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      toolDefinitions: [READ_IMAGE_DEF],
+      // 刻意不传 imageReadPort（= 非 VS Code 宿主，如 MCP 宿主）
+    });
+
+    const outcomes = await runToolDispatch(loop, 'read_image');
+
+    expect(outcomes).toHaveLength(1);
+    // 主动挡下（能力缺失不是「执行了一次没成功」）
+    expect(outcomes[0]!.status).toBe('blocked');
+    expect(outcomes[0]!.blockedReason).toBe('not_exposed');
+    expect(outcomes[0]!.text).toContain('当前宿主不支持读图');
+    expect(outcomes[0]!.text).toContain('MCP');
+    expect(outcomes[0]!.text).toContain('不是文件问题');
+    // 两种原因不得互相污染
+    expect(outcomes[0]!.text).not.toContain('当前模型未声明支持图片输入');
+  });
+
+  it('provider 未声明视觉 → 指明「当前模型未声明支持图片输入」+ provider 配置项，且不是文件问题', async () => {
+    const executor = vi.fn(async () => '不该被调用');
+    const port = vi.fn(async () => ({ ok: false as const, text: '不该被调用' }));
+    const loop = new AgentLoop({
+      provider: makeProvider(false),
+      bootstrapMemories: [],
+      toolExecutor: executor,
+      toolDefinitions: [READ_IMAGE_DEF],
+      imageReadPort: port,
+    });
+
+    const outcomes = await runToolDispatch(loop, 'read_image');
+
+    expect(outcomes[0]!.status).toBe('blocked');
+    expect(outcomes[0]!.text).toContain('当前模型未声明支持图片输入');
+    expect(outcomes[0]!.text).toContain('supportsVision');
+    expect(outcomes[0]!.text).toContain('不是文件问题');
+    expect(outcomes[0]!.text).not.toContain('当前宿主不支持读图');
+    // 执行前拦截：宿主端口与 executor 都未被触碰（不制造「读了文件才发现不行」的假象）
+    expect(port).not.toHaveBeenCalled();
+    expect(executor).not.toHaveBeenCalled();
+  });
+});
+
+describe('read_image · handler 侧原因文案（绕过 loop 直调执行器时）', () => {
+  /** 临时项目根（每个 it 重建：handler 需要真实路径通过 guard 与目录预检） */
+  let projectPath: string;
+  /** 被测 handler（未注入端口 / 注入替身由各用例决定） */
+  let handlers: BuiltinToolHandlers;
+
+  beforeEach(async () => {
+    projectPath = await mkdtemp(join(tmpdir(), 'memora-read-image-'));
+    handlers = new BuiltinToolHandlers(
+      projectPath,
+      new SecurityGuard(projectPath, projectPath),
+      new InMemoryStorage(),
+    );
+  });
+
+  afterEach(async () => {
+    await rm(projectPath, { recursive: true, force: true });
+  });
+
+  it('宿主未注入读图端口 → 明确「当前宿主不支持读图」（MCP 宿主举例）+「不是文件问题」', async () => {
+    // 先让目标路径通过「存在且不是目录」预检（端口检查在其后）
+    await writeFile(join(projectPath, 'pic.png'), 'not-a-real-png');
+    let err: MemoraError | undefined;
+    try {
+      await handlers.readImage('pic.png');
+      expect.unreachable('未注入端口时必须抛 NOT_AVAILABLE');
+    } catch (e) {
+      err = e as MemoraError;
+    }
+    const visible = `${err.title} ${err.detail} ${err.suggestions.join(' ')}`;
+    expect(err.errorCode).toBe(ToolErrorCode.NOT_AVAILABLE);
+    expect(visible).toContain('宿主不支持读图');
+    expect(visible).toContain('MCP');
+    expect(visible).toContain('不是文件问题');
+  });
+
+  it('端口回绝（如视觉位第二层拒绝）→ 原样透传宿主原因，不擅自归因成文件问题', async () => {
+    await writeFile(join(projectPath, 'pic2.png'), 'not-a-real-png');
+    const hostReason = 'read_image 已取消：当前模型未声明支持视觉输入（supportsVision=false）。';
+    handlers.setImageReadPort(async () => ({ ok: false, text: hostReason }));
+    let err: MemoraError | undefined;
+    try {
+      await handlers.readImage('pic2.png');
+      expect.unreachable('端口回绝时必须抛 NOT_AVAILABLE');
+    } catch (e) {
+      err = e as MemoraError;
+    }
+    // detail 原样携带宿主自述原因（含 provider 配置项名），供模型/用户自行分辨
+    expect(err.detail).toBe(hostReason);
+    expect(err.suggestions.join(' ')).toContain('supportsVision');
+    expect(err.errorCode).toBe(ToolErrorCode.NOT_AVAILABLE);
   });
 });
 
