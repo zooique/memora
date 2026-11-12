@@ -4,14 +4,15 @@
 
 //  role-pack 与 memory 层均不持有召回保底（记忆纯工具化召回，无自动注入通道）。
 
-// 数值键上下限常量（SSOT）：validator 与 resolver 共用同一区间来源，越界值回退内核默认
+// 数值键上下限常量（SSOT）：validator 与 resolver 共用同一区间来源；除 subagentConcurrency
+// （显式声明越界即报错）外，其余数值键越界回退内核默认
 import {
   DEFAULT_MAX_ITERATIONS,
   ERROR_HANDLINGS,
   MAX_ASK_LIMIT,
   MAX_SELF_REVIEW_ROUNDS,
   MAX_STEP_BUDGET,
-  MAX_SUBAGENT_CONCURRENCY,
+  SUBAGENT_CONCURRENCY_RULE,
   MAX_SUMMARY_FOCUS_LENGTH,
   MAX_CONTEXT_LIMIT,
   MIN_CONTEXT_LIMIT,
@@ -80,7 +81,7 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     providerRouting: 'auto',
     multiStepReasoning: 'auto',
     // 同一步可并行的子会话额度（0=关闭派发）。缺省 4 的唯一真源 = 本键：
-    // 角色包/宿主不写就用它，resolveSubagentConcurrency 对非法值也回退它。
+    // 角色包/宿主不写就用它；显式写的非法/越界值由 resolveSubagentConcurrency 直接报错，不回退本值。
     subagentConcurrency: 4,
   },
   reflect: {
@@ -192,28 +193,30 @@ export function resolveToolStepLimit(strategy: BehaviorStrategy | undefined): nu
  * ——是否在一次回复里并行派发由模型自行决定。
  *
  * **越界/非法值直接报错，不静默回退缺省值**（R13：跳过却不留可见诊断即为缺陷）：
- * 用户把额度填成 20 却实际按 4 跑，比不填更危险——人以为自己配好了。未声明（`undefined`）
- * 才走内核缺省 4；显式声明就必须是合法值，否则由校验器/本解析器拒绝并给出合法区间。
+ * 用户把额度填成 20 却实际按缺省值跑，比不填更危险——人以为自己配好了。未声明（`undefined`）
+ * 才走内核缺省；显式声明就必须是合法值，否则由校验器/本解析器拒绝并给出合法区间。
  */
 export function resolveSubagentConcurrency(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.act?.subagentConcurrency;
-  // 唯一允许回退的分支：未声明 ⇒ 内核缺省（缺省值唯一真源 = DEFAULT_BEHAVIOR_STRATEGY）
+  // 缺省值唯一真源：读 DEFAULT_BEHAVIOR_STRATEGY，不在本函数另写数字
+  const defaultValue = DEFAULT_BEHAVIOR_STRATEGY.act!.subagentConcurrency!;
+  // 校验与区间唯一真源：复用键规则对象（intRange 构造，range 恒定存在），不二次手写判断
+  const rule = SUBAGENT_CONCURRENCY_RULE;
+  const range = rule.range!;
+  // 唯一允许回退的分支：未声明 ⇒ 内核缺省
   if (candidate === undefined) {
-    return DEFAULT_BEHAVIOR_STRATEGY.act!.subagentConcurrency!;
+    return defaultValue;
   }
   // 显式声明但非法/越界：拒绝并报错（manifest 路径由 validator 先拦，此处兜住运行时覆盖）
-  const valid =
-    typeof candidate === 'number' &&
-    Number.isInteger(candidate) &&
-    candidate >= 0 &&
-    candidate <= MAX_SUBAGENT_CONCURRENCY;
-  if (!valid) {
+  if (!rule.check(candidate)) {
     throw configError(
       'act.subagentConcurrency 取值非法',
-      `当前值 ${String(candidate)} 不在合法范围 0~${MAX_SUBAGENT_CONCURRENCY}（0 = 关闭派发；省略 = 内核缺省 4）`,
+      `当前值 ${String(candidate)} 不在合法范围 ${range.min}~${range.max}（0 = 关闭派发；省略 = 内核缺省 ${defaultValue}）`,
       [
-        `把角色包策略 act.subagentConcurrency 改为 0~${MAX_SUBAGENT_CONCURRENCY} 的整数`,
-        '不需要限制时删除该键，使用内核缺省 4',
+        '角色包场景：改 <configDir>/role-packs/<包名>/manifest.json 里的 ' +
+          `strategy.act.subagentConcurrency，取值 ${range.min}~${range.max} 的整数`,
+        '运行时覆盖场景：改 AgentOptions.strategyOverride.act.subagentConcurrency（同一范围）',
+        `不需要限制时删除该键，使用内核缺省 ${defaultValue}`,
       ],
     );
   }

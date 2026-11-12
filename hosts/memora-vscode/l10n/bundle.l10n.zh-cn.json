@@ -384,7 +384,7 @@
   "Tool step limit": "工具步数上限",
   "Maximum tool steps per turn (0 = unlimited). Leave blank for the default.": "单轮最多执行多少步工具（0 = 不限制）；留空用默认",
   "Subagent concurrency": "子会话并发额度",
-  "Maximum subagents running in parallel within one tool-call batch (0-16; 0 = disable delegation; blank = kernel default 4). Out-of-range values are rejected, not silently clamped. This quota never makes the model parallelize on its own.": "同一批 tool_call 内最多几个子会话并行（0-16；0 = 关闭派发；留空 = 内核缺省 4）。超出范围会直接报错，不会静默按默认值运行；该额度只限制并行数，不会让模型自动并行",
+  "Maximum subagents running in parallel within one tool-call batch (0 = disable delegation; blank = kernel default). Out-of-range values are rejected, not silently clamped. This quota never makes the model parallelize on its own.": "同一批 tool_call 内最多几个子会话并行（0 = 关闭派发；留空 = 内核缺省）。超出范围会直接报错，不会静默按默认值运行；该额度只限制并行数，不会让模型自动并行",
   "Model routing": "模型路由",
   "auto = choose a model by task; fixed = pin the current model": "auto = 按任务自动选模型；fixed = 固定当前模型",
   "Automatic routing": "自动路由",

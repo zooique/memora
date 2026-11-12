@@ -315,6 +315,7 @@ describe('resolve* 函数 — 数值解析', () => {
       title: string;
       detail: string | undefined;
       suggestions: readonly string[];
+      category: string;
     } {
       try {
         resolveSubagentConcurrency({ act: { subagentConcurrency: value as number } });
@@ -323,6 +324,7 @@ describe('resolve* 函数 — 数值解析', () => {
           title: string;
           detail: string | undefined;
           suggestions: readonly string[];
+          category: string;
         };
       }
       throw new Error('预期抛错但未抛（静默回退缺省值即视为回归）');
@@ -336,6 +338,8 @@ describe('resolve* 函数 — 数值解析', () => {
         expect(error.detail).toContain(`0~${MAX_SUBAGENT_CONCURRENCY}`);
         expect(error.detail).toContain(String(invalid));
         expect(error.suggestions.join(' ')).toContain('act.subagentConcurrency');
+        // 必须是 config 类错误：宿主按类别呈现为配置问题，换错误类型即回归
+        expect(error.category).toBe('config');
       }
     });
 
@@ -344,7 +348,11 @@ describe('resolve* 函数 — 数值解析', () => {
       const error = captureConcurrencyError(20);
       expect(error.detail).toContain('20');
       expect(error.detail).toContain('0~16');
-      expect(error.suggestions.join(' ')).toContain('0~16');
+      const suggestions = error.suggestions.join(' ');
+      expect(suggestions).toContain('0~16');
+      // 建议必须指名两条真实修改路径，不能只说「去改配置」
+      expect(suggestions).toContain('manifest.json');
+      expect(suggestions).toContain('strategyOverride');
     });
 
     it('未声明回退缺省 4（不配置就走内核缺省，不是被改成别的数）', () => {

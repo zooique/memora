@@ -3,7 +3,8 @@
  *
  * 区间纪律：所有"开放给角色包填写的数值键"都必须有上下限（防呆防滥用），由内核统一控制——
  * 下限防负值/零值语义错误，上限防资源失控（token/步数/轮数）或业务荒谬值。
- * 区间常量在此集中定义（SSOT），validator（校验报错）与 resolver（越界回退默认）共用同一来源。
+ * 区间常量在此集中定义（SSOT），validator（校验报错）与 resolver（解析）共用同一来源；
+ * 多数数值键越界由 resolver 回退默认，subagentConcurrency 是例外——显式声明越界即报错。
  */
 
 /**
@@ -49,10 +50,18 @@ export const MAX_TOOL_STEP_LIMIT = 100;
  *
  * 它只是「一笔 tool_call 批量派发打爆 provider 配额」的**保险丝**，不是性能建模，
  * 也不是资源上限（不探测 CPU / 内存）：唯一真实瓶颈是 model provider 的配额，属 provider 层，
- * 不在此处解决。缺省 4 不在此常量，见 DEFAULT_BEHAVIOR_STRATEGY.act.subagentConcurrency
+ * 不在此处解决。缺省值不在此常量，见 DEFAULT_BEHAVIOR_STRATEGY.act.subagentConcurrency
  * （缺省值唯一真源）。显式声明越界 = 报错，不静默按缺省值运行。
  */
 export const MAX_SUBAGENT_CONCURRENCY = 16;
+
+/**
+ * 子会话并发额度的键规则（校验 + 区间的单一来源）
+ *
+ * 导出同一对象供 `resolveSubagentConcurrency` 复用：validator 与本解析器不再各写一份
+ * 「整数 + 区间」判断，避免两处校验随上界调整而漂移。
+ */
+export const SUBAGENT_CONCURRENCY_RULE = intRange(0, MAX_SUBAGENT_CONCURRENCY);
 /**
  * selfReview 的**输入校验上界**，非运行时上限（勿据常量名推导运行时行为）。
  * 布尔数字语义下任意正整数都在解析层归一为 1=终审一次，故本值仅作 schema / validator 的防御上界，
@@ -260,9 +269,10 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
     providerRouting: { kind: 'enum', values: PROVIDER_ROUTINGS },
     multiStepReasoning: { kind: 'enum', values: MULTI_STEP_REASONINGS },
     toolReadonly: { kind: 'enum', values: TOOL_READONLY_MODES },
-    // 子会话并发额度（0~MAX_SUBAGENT_CONCURRENCY，0=关闭派发；缺省 4 唯一真源 =
+    // 子会话并发额度（0~MAX_SUBAGENT_CONCURRENCY，0=关闭派发；缺省值唯一真源 =
     // DEFAULT_BEHAVIOR_STRATEGY.act.subagentConcurrency）。0 是合法哨兵，UI 下限自动折算为 0。
-    subagentConcurrency: intRange(0, MAX_SUBAGENT_CONCURRENCY),
+    // 校验/区间复用命名规则常量（resolver 也读它），不在此再写一份。
+    subagentConcurrency: SUBAGENT_CONCURRENCY_RULE,
   },
   reflect: {
     summary: { kind: 'enum', values: SUMMARY_MODES },

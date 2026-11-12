@@ -59,7 +59,8 @@ export const STRATEGY_KEY_META: Record<string, StrategyKeyMetaEntry> = {
   },
   subagentConcurrency: {
     label: 'Subagent concurrency',
-    tip: 'Maximum subagents running in parallel within one tool-call batch (0-16; 0 = disable delegation; blank = kernel default 4). Out-of-range values are rejected, not silently clamped. This quota never makes the model parallelize on its own.',
+    // 刻意不写数字：合法区间由 rolesView 追加键面 range（内核同源），缺省语义用「blank = kernel default」
+    tip: 'Maximum subagents running in parallel within one tool-call batch (0 = disable delegation; blank = kernel default). Out-of-range values are rejected, not silently clamped. This quota never makes the model parallelize on its own.',
   },
   providerRouting: {
     label: 'Model routing',

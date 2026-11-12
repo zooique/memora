@@ -384,7 +384,7 @@
   "Tool step limit": "",
   "Maximum tool steps per turn (0 = unlimited). Leave blank for the default.": "",
   "Subagent concurrency": "",
-  "Maximum subagents running in parallel within one tool-call batch (0-16; 0 = disable delegation; blank = kernel default 4). Out-of-range values are rejected, not silently clamped. This quota never makes the model parallelize on its own.": "",
+  "Maximum subagents running in parallel within one tool-call batch (0 = disable delegation; blank = kernel default). Out-of-range values are rejected, not silently clamped. This quota never makes the model parallelize on its own.": "",
   "Model routing": "",
   "auto = choose a model by task; fixed = pin the current model": "",
   "Automatic routing": "",

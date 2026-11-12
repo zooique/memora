@@ -74,7 +74,8 @@ import { AGENT_EVENTS, type AgentEventName } from '@/utils/eventEmitter.js';
 import { configError, toolError, ToolErrorCode } from '@/utils/errors.js';
 // 角色包管理器（唯一角色真理源）
 import { RolePackManager } from '@/role-pack/rolePackManager.js';
-// 子会话并发额度解析（SSOT：act.subagentConcurrency，缺省值与非法值回退都在解析层）
+// 子会话并发额度解析（SSOT：act.subagentConcurrency；仅「未声明」回退缺省值在解析层，
+// 显式声明的非法/越界值由解析层直接报错，不回退）
 import { resolveSubagentConcurrency } from '@/role-pack/strategyResolver.js';
 // run_team_meeting 会议实现（工具内嵌 LLM 调用；装配层持 provider + rolePackManager 闭包注入）
 import { runTeamMeetingAssessment } from '@/agent/builtinToolHandlers.js';
