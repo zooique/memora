@@ -119,7 +119,7 @@ describe('config/loader · loadConfig', () => {
     await expect(loadConfig(join(tmpHome, 'nonexistent.json'))).rejects.toThrow();
   });
 
-  it('${ENV_VAR} 环境变量不存在时应替换为空字符串', async () => {
+  it('${ENV_VAR} 环境变量不存在时应保留原占位符', async () => {
     const configPath = writeConfig(tmpHome, {
       llm: {
         providers: {
@@ -135,7 +135,7 @@ describe('config/loader · loadConfig', () => {
     // 确保环境变量不存在
     delete process.env.NONEXISTENT_ENV_VAR_12345;
     const config = await loadConfig(configPath);
-    expect(config.llm.providers!.deepseek!.apiKey).toBe('');
+    expect(config.llm.providers!.deepseek!.apiKey).toBe('${NONEXISTENT_ENV_VAR_12345}');
   });
 });
 

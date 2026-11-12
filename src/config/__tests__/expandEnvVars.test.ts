@@ -132,7 +132,7 @@ describe('expandEnvVars — Providers 映射表', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('expandEnvVars — 边界场景', () => {
-  it('providers 中环境变量不存在时替换为空字符串', () => {
+  it('providers 中环境变量不存在时保留原占位符', () => {
     delete process.env.NONEXISTENT_VAR_XYZ;
     const config: Config = {
       ...createConfigWithPlaceholders(),
@@ -149,7 +149,30 @@ describe('expandEnvVars — 边界场景', () => {
       },
     };
     const result = expandEnvVars(config);
-    expect(result.llm.providers!.only!.apiKey).toBe('');
+    expect(result.llm.providers!.only!.apiKey).toBe('${NONEXISTENT_VAR_XYZ}');
+  });
+
+  it('同一字符串中已设与未设的占位符：已设展开、未设原样保留', () => {
+    process.env.VAR_PRESENT = 'present';
+    delete process.env.VAR_ABSENT_ZZZ;
+    const config: Config = {
+      ...createConfigWithPlaceholders(),
+      llm: {
+        ...createConfigWithPlaceholders().llm,
+        providers: {
+          only: {
+            provider: 'deepseek',
+            model: 'test-model',
+            apiKey: '${VAR_PRESENT}:${VAR_ABSENT_ZZZ}',
+            baseUrl: 'https://x/${VAR_ABSENT_ZZZ}',
+          },
+        },
+      },
+    };
+    const result = expandEnvVars(config);
+    expect(result.llm.providers!.only!.apiKey).toBe('present:${VAR_ABSENT_ZZZ}');
+    expect(result.llm.providers!.only!.baseUrl).toBe('https://x/${VAR_ABSENT_ZZZ}');
+    delete process.env.VAR_PRESENT;
   });
 
   it('providers 中 apiKey 为 undefined 时保留 undefined', () => {
