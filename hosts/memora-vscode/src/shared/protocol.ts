@@ -248,8 +248,8 @@ export type ActiveFileProjection =
  * 「提示模型去看」此路不通）⇒ 允许有界注入。四条硬约束（有界 / 计预算 / 明示 / 不泛化）
  * 的真源在台账 HOST-CTX-0「定案例外清单」，此处只登记枚举。
  *
- * ⚠️ **不预建未落地的源**：本枚举随落地逐笔追加（第一笔 = `problems`）。把未来源写进来
- * 等于给「未拍板的语义」发身份证（D6：不预支）。
+ * ⚠️ **不预建未落地的源**：本枚举只登记已落地的源（当前含 `problems` 与 `git-changes`），
+ * 新增源随其落地一并追加；把未来源写进来等于给「未拍板的语义」发身份证（D6：不预支）。
  * `active-file` 是既有的注入源（脏 / 未命名 / 工作区外时注入正文），随 CTX-4 ② 一起
  * 降为本枚举的一个分项（原先它的 token 数长在 `ActiveFileProjection` 私有字段上）。
  */
@@ -289,7 +289,7 @@ export type InjectionSummary = {
  * 引用的身份键与去重规则见 `shared/refKey.ts`（**独立小模块**，非本文件）。
  *
  * 不放本文件的理由：webview 需**值导入**这两个函数（不是 type），若放本协议文件
- * 会把 1500+ 行协议的运行时常量一并打进 webview bundle；独立模块零依赖、体积可控。
+ * 会把千行级协议文件的运行时常量一并打进 webview bundle；独立模块零依赖、体积可控。
  */
 
 export type WebviewToExtensionMessage =
@@ -444,8 +444,9 @@ export type WebviewToExtensionMessage =
    * ⚠️ 本消息**只负责导航**：切换执行仍走各视图既有单路径（如角色视图「设为当前」→
    * roles_set_active → agent.switchRolePack），对话侧不新增切换逻辑（零并行推送路径）。
    * **tab 取全集 `SettingsTab`**（2026-10-26 放宽，原为 `Extract<…,'config'|'roles'>`）：
-   * 收窄的前提是「其余选项卡无导航入口」，而 `memora.openSettings(tab)` 已使六页皆可达 ⇒
-   * 收窄反而把「加一页要改三处（本行 / chatPanel 映射表 / 新命令）」的债固化进协议。
+   * 收窄的前提是「其余选项卡无导航入口」，而 `memora.openSettings(tab)` 已使所有选项卡皆可达
+   * （集合真源 = `SettingsTab`，见 `shared/settingsTabs.ts`）⇒ 收窄反而要求每加一页就新增
+   * 一条命令与映射，把这份债固化进协议。
    * 放宽不新增消息类型（protocolGuard 计数不变），只放宽字面量取值面。
    * 2026-10-24 协议治理：原 open_config / open_roles 两条同构通道合并为一条。
    */
@@ -624,8 +625,10 @@ export type WebviewToExtensionMessage =
   /**
    * 删除单条 interject（待发送区每条的独立删除按钮）
    *
-   * 由 webview 待发送区某条补充的 × 按钮触发，宿主调 agent.removePendingInterject(index) 从内核队列删除，
-   * 经 syncPendingQueue → postTurnUpdate() 投影更新后的 pendingQueue。
+   * 由 webview 待发送区某条补充的 × 按钮触发：宿主先用 getPendingInterjections() 取被删条目
+   * （丢弃信号需要它的文本），再调 agent.removePendingInterject(index) 从内核队列删除
+   * （越界 / 负数由内核静默 no-op 并返回 false），成功后发丢弃信号，最后经 syncPendingQueue
+   * → postTurnUpdate() 投影更新后的 pendingQueue。
    */
   | { type: 'remove_pending_item'; index: number }
   // ─── 大模型配置面板消息 ───
@@ -1671,7 +1674,7 @@ export type ExtensionToWebviewMessage =
     }
   /** 渐进披露：技能正文响应（对 skills_read_content 的应答） */
   | { type: 'skill_content'; skillName: string; content: string }
-  // ─── Follow-up 建议消息 ───
+  // ─── 输入框预填消息（角色 handoff） ───
   /**
    * 预填输入框（角色 handoff 上下文传递）
    *
@@ -2087,7 +2090,7 @@ export interface MemoryItemDto {
   supersededBy?: string;
 }
 
-/** 全局技能条目（技能视图列表） */
+/** 技能校验问题项（技能视图逐条展示的不可生效 / 变弱原因，不是技能条目本身——条目见 `SkillDto`） */
 export interface SkillIssueDto {
   /** 级别：error=不可生效 / warning=可加载但变弱 */
   level: 'error' | 'warning';
