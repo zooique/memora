@@ -2399,7 +2399,8 @@ export class ToolExecutor {
         const result = await this.delegateTask({ task, rolePack, capabilities }, signal);
         // 回执组装点（唯一产地）：excerpt 从 result.text 取（剥首行标志后定长截断），
         // 与 loop 通用 summary 同源不同粒度——两者都来自同一份 result.text，不得各自维护。
-        // 截断与否由 extractDelegateExcerpt 同一次比较给出，宿主不再持第二份上限常量。
+        // 截断与否由 extractDelegateExcerpt 同一次比较给出：新记录不再依赖长度去猜；
+        // 宿主只对字段缺失的历史轮次保留一个刻意冻结的 800，该值不跟随本上限。
         const { excerpt, truncated } = extractDelegateExcerpt(result.text);
         const delegate: DelegateTaskReceipt = {
           terminal: result.status,
