@@ -14,8 +14,10 @@ import type { ProviderEntryConfig } from '@/llm/types.js';
 import { expandEnvVars } from '@/config/expandEnvVars.js';
 
 /**
- * 默认上下文 token 数（120K）。与 agent/constants.ts 的 DEFAULT_MAX_CONTEXT_TOKENS 保持一致，
- * 但不跨层引用（config/ 不能反向依赖 agent/），修改需同步两处。
+ * 默认上下文 token 数（120K）。三处同值：本文件、agent/constants.ts 的
+ * DEFAULT_MAX_CONTEXT_TOKENS（真源）、role-pack/strategyKeys.ts 的 MIN_CONTEXT_LIMIT
+ * （语义是角色包 contextLimit 的声明下限，不是同义镜像，但取值同源且 constants.test.ts 有同值护栏）。
+ * 不跨层引用（config/ 不能反向依赖 agent/ 与 role-pack/），改任一处都要看另两处。
  */
 const DEFAULT_MAX_CONTEXT_TOKENS = 120_000;
 
@@ -178,7 +180,7 @@ function assertString(value: unknown, field: string): string {
       `当前类型: ${typeof value}，当前值: ${JSON.stringify(value)}`,
       [
         `检查配置文件中 ${field} 字段是否被引号包裹`,
-        '参考 README 或 default-config.json 中的字段类型约定',
+        '参考 docs/memora-api-reference.md 中的 config.json 字段说明',
       ],
     );
   }
@@ -206,7 +208,6 @@ function validateTemperature(value: unknown, defaultValue: number): number {
  * 上下限防配置成 0/负数（上下文预算异常）或超大值（资源失控）。
  */
 function validateMaxContextTokens(value: unknown, defaultValue: number): number {
-  // Number.isFinite 同时排除 NaN/Infinity
   if (typeof value === 'number' && Number.isFinite(value)) {
     if (value < MIN_MAX_CONTEXT_TOKENS || value > MAX_MAX_CONTEXT_TOKENS) {
       throw configError(
@@ -242,9 +243,6 @@ function validateContextWindow(value: unknown): number | undefined {
   return value;
 }
 
-/**
- * 验证 permission（仅 owner/guest），空值取默认，非法抛错
- */
 function validatePermission(value: unknown): 'owner' | 'guest' {
   if (value === undefined || value === null) {
     return DEFAULT_CONFIG.security.permission;
@@ -284,9 +282,6 @@ function validateAllowedPaths(value: unknown): string[] {
   return value as string[];
 }
 
-/**
- * 解析 Provider 配置映射表
- */
 function parseProviders(value: unknown): Record<string, ProviderEntryConfig> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return undefined;
@@ -312,7 +307,7 @@ function parseProviders(value: unknown): Record<string, ProviderEntryConfig> | u
     providers[key] = {
       provider: providerName,
       model: modelName,
-      // 过滤空字符串：与 parseConfig 顶层逻辑保持一致
+      // 空串按未配置处理：下游以 ?? 兜底默认端点/密钥，'' 会顶掉默认值
       baseUrl: typeof p.baseUrl === 'string' && p.baseUrl ? p.baseUrl : undefined,
       apiKey: typeof p.apiKey === 'string' && p.apiKey ? p.apiKey : undefined,
       temperature: p.temperature !== undefined ? validateTemperature(p.temperature, 0) : undefined,
@@ -332,15 +327,14 @@ function parseProviders(value: unknown): Record<string, ProviderEntryConfig> | u
  * 单一真理源：所有默认值由 DEFAULT_CONFIG 声明，不维护独立 schema。
  * 查找顺序：显式 configPath → 项目级 .memora/config.json → 内置默认值（apply env 展开）。
  * 默认值合并走 parseConfig（不 spread DEFAULT_CONFIG，避免覆盖 schema 默认）。
+ * 显式 configPath 读取/解析失败即抛错终止，不静默回退到项目级或内置默认。
  */
 export async function loadConfig(configPath?: string): Promise<Config> {
-  // 1. 显式指定
   if (configPath) {
     const config = await readJsonFile(configPath);
     return expandEnvVars(parseConfig(config));
   }
 
-  // 2. 项目级
   const projectPath = resolve(process.cwd(), '.memora/config.json');
   try {
     const config = await readJsonFile(projectPath);
@@ -352,7 +346,6 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     }
   }
 
-  // 3. 内置默认：parseConfig({}) 让默认值生效
   return expandEnvVars(parseConfig({}));
 }
 

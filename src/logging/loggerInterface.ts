@@ -19,11 +19,6 @@ export type LogFn = (objOrMsg: Record<string, unknown> | string, msg?: string) =
 /**
  * 日志接口
  *
- * 接口只约定「首参对象 + 可选消息」的双形态签名，实现者可以是：
- *   - 宿主日志框架实例（经适配器包装）
- *   - console 包装
- *   - 测试 mock
- *
  * 默认实现为内核内置 console fallback（写 stderr）；内核不加载任何第三方日志库。
  */
 export interface ILogger {

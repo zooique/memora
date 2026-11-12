@@ -57,7 +57,6 @@ const LEVEL_PRIORITY: Record<string, number> = {
   silent: 6,
 };
 
-/** 判断目标级别是否满足最低级别要求 */
 function shouldLog(targetLevel: string): boolean {
   return (LEVEL_PRIORITY[targetLevel] ?? 2) >= (LEVEL_PRIORITY[level] ?? 2);
 }
@@ -135,7 +134,6 @@ export function setLogger(newLogger: ILogger | undefined): void {
     // 注入即唯一出口：同步桥接 utils 层，否则 utils 侧仍持有旧 console fallback
     setUtilsLogger(_logger);
   } else {
-    // 恢复默认：回到内置 console fallback，并重新桥接 utils 层
     _loggerInjected = false;
     _logger = createConsoleLogger();
     setUtilsLogger(_logger);
