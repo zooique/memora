@@ -32,9 +32,14 @@ import {
   type SubagentRuntimeParams,
 } from '@/agent/assembler.js';
 import type { LlmProvider } from '@/llm/provider.js';
-import type { RolePackManager } from '@/role-pack/rolePackManager.js';
+import { RolePackManager } from '@/role-pack/rolePackManager.js';
+import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
+import { resolveL2Strategy } from '@/role-pack/strategyResolver.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { ToolOutcome } from '@/agent/managers/toolCallHelpers.js';
+import { ToolRunner, type ToolCall } from '@/agent/toolRunner.js';
+import { NOOP_TRACER } from '@/agent/tracer.js';
+import type { AgentLoop } from '@/agent/loop.js';
 
 /**
  * 全局技能正文表：子会话只应看到「全局」这一层。
@@ -233,6 +238,114 @@ describe('子会话工具暴露面', () => {
       },
       { rolePackManager: stub.manager },
     );
+  });
+});
+
+/** 仓库内置角色包目录（真实包唯一内容源） */
+const ROLE_PACKS_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  'role-packs',
+);
+
+/** 内置只读角色包名（manifest 的 name 是展示名，不是目录名） */
+const READONLY_PACK_NAME = '只读项目顾问';
+
+/**
+ * 加载真实内置只读角色包（未激活即抛错，防「空装配 → 断言假绿」）
+ *
+ * @returns 已装载并激活只读包的 manager
+ */
+async function createReadonlyPackManager(): Promise<RolePackManager> {
+  const rpm = new RolePackManager(join(ROLE_PACKS_DIR, '..'));
+  await rpm.load(READONLY_PACK_NAME);
+  if (!rpm.getActive()) {
+    throw new Error(`角色包「${READONLY_PACK_NAME}」未激活，只读边界用例无法继续`);
+  }
+  return rpm;
+}
+
+/**
+ * 读取子 loop 的只读策略（AgentLoop 未公开 strategy getter，此处只做只读断言用类型收窄）
+ *
+ * @param loop 子会话 loop
+ * @returns 当前 toolReadonly 取值
+ */
+function readToolReadonly(loop: AgentLoop): string {
+  return (loop as unknown as { strategy: { toolReadonly: string } }).strategy.toolReadonly;
+}
+
+describe('子会话只读边界（安全核心）', () => {
+  it('上游策略为 full 时子 loop 仍是 readonly（硬编码，不继承父）', async () => {
+    // 上游（父侧）策略是可写形态——子装配没有任何通道把它传下去
+    const parentStrategy = resolveL2Strategy({ act: { toolReadonly: 'full' } });
+    expect(parentStrategy.toolReadonly).toBe('full');
+    await withRuntimeParams((params) => {
+      const runtime = createSubagentLoop(params, { task: '调查' });
+      expect(readToolReadonly(runtime.loop)).toBe('readonly');
+    });
+  });
+
+  it('装配源码守卫：createSubagentLoop 的 setStrategy 恒为 readonly 字面量', () => {
+    const file = join(dirname(fileURLToPath(import.meta.url)), '..', 'assembler.ts');
+    const src = readFileSync(file, 'utf8');
+    const start = src.indexOf('export function createSubagentLoop(');
+    const end = src.indexOf('/** 子会话一次派发的运行句柄 */');
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const body = src.slice(start, end);
+    // 有人改成「跟随父策略」（如 toolReadonly: parentStrategy.toolReadonly）时此断言转红
+    expect(body).toContain("loop.setStrategy({ toolReadonly: 'readonly' });");
+    expect(body.match(/setStrategy\(/g) ?? []).toHaveLength(1);
+  });
+
+  it('真实只读角色包派子会话：子 loop readonly 且清单不含写盘/执行工具', async () => {
+    const rpm = await createReadonlyPackManager();
+    await withRuntimeParams((params) => {
+      const runtime = createSubagentLoop(
+        { ...params, rolePackManager: rpm },
+        { task: '评审项目设计', rolePack: READONLY_PACK_NAME },
+      );
+      expect(readToolReadonly(runtime.loop)).toBe('readonly');
+      const names = runtime.toolExec.list.map((t) => t.name);
+      for (const denied of ['write_file', 'delete_file', 'run_command', 'run_code']) {
+        expect(names, `${denied} 不应出现在子会话工具清单`).not.toContain(denied);
+      }
+    });
+  });
+
+  it('只读角色包清单含 delegate_task，真实只读闸放行且派发成功', async () => {
+    const rpm = await createReadonlyPackManager();
+    const active = rpm.getActive()!;
+    await withRuntimeParams(async (params) => {
+      const exec = new ToolExecutor(params.projectPath, params.security, params.memoryIndex);
+      // 与父装配同口径：角色包能力 → 特权工具白名单
+      exec.setToolWhitelist(resolveCapabilityTools(active.capabilities));
+      exec.setDelegateTask(
+        createDelegateTaskPort({ ...params, rolePackManager: rpm }, TEST_SUBAGENT_QUOTA).port,
+      );
+
+      // A 的目的：只读包也能看到并调用派发工具
+      expect(exec.list.map((t) => t.name)).toContain('delegate_task');
+
+      // 真实只读闸（toolReadonly=readonly）+ 真实派发端口：工具级 readonly:true 应放行
+      const runner = new ToolRunner({
+        execute: (name, args) => exec.execute(name, args),
+        allTools: () => exec.allToolDefinitions,
+        getStrategy: () => resolveL2Strategy(active.strategy),
+        tracer: NOOP_TRACER,
+      });
+      const call: ToolCall = {
+        id: 't-delegate',
+        type: 'function',
+        function: { name: 'delegate_task', arguments: JSON.stringify({ task: '调查' }) },
+      };
+      const result = await runner.runOne(call);
+      expect(result.status).toBe('ok');
+      expect(result.text).toContain('[SUBAGENT:completed]');
+    });
   });
 });
 
