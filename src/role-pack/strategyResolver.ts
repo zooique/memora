@@ -280,8 +280,8 @@ export function resolveContextLimit(strategy: BehaviorStrategy | undefined): num
   return valid ? candidate : 0;
 }
 
-/** 解析步数预算：0 或未声明 → DEFAULT_MAX_ITERATIONS 兜底；stepBudget ∈ {0} ∪ [MIN_STEP_BUDGET, MAX_STEP_BUDGET]
- * 按声明采用（与 validator 区间同一来源，防双轨镜像）。不存在「不限步数」路径——0 在 loop 侧等同未声明（effectiveMax 取 maxIterations 兜底）。 */
+/** 解析步数预算（返回**解析结果**，不是最终生效值）：显式 0 原样返回 0（兜底由消费点决定——loop 的 effectiveMax 取 maxIterations）；
+ * 未声明 / 非法（负数、小数、1~9、>500）返回 DEFAULT_MAX_ITERATIONS。合法区间 {0} ∪ [MIN_STEP_BUDGET, MAX_STEP_BUDGET]，与 validator 同一来源；不存在「不限步数」路径。 */
 export function resolveStepBudget(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.global?.stepBudget;
   const valid =
