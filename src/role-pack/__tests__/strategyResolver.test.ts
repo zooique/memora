@@ -349,16 +349,17 @@ describe('resolve* 函数 — 数值解析', () => {
       const error = captureConcurrencyError(20);
       expect(error.detail).toContain('20');
       expect(error.detail).toContain('0~16');
-      const suggestions = error.suggestions.join(' ');
-      expect(suggestions).toContain('0~16');
-      // 建议点名的键必须是**真实可写路径**上的键：manifest 里的 strategy.act.subagentConcurrency
-      // （装配期 assembler 直读 rolePackManager.getActive().strategy，不经 resolveActiveStrategy）
-      expect(suggestions).toContain('manifest.json');
-      expect(suggestions).toContain('strategy.act.subagentConcurrency');
       // 键名必须在内核键面登记表里真实存在，防止文案指向拼错/已删的键
       expect(STRATEGY_KEY_RULES.act?.subagentConcurrency).toBeDefined();
-      // 反锁：AgentOptions.strategyOverride 对该键不生效，建议不得再指向这条死路
-      expect(suggestions).not.toContain('strategyOverride');
+      // 整组建议**精确比对**：多点一条 / 少点一条 / 换个说法（如再写回「运行时覆盖」）都必须转红。
+      // 唯一真实可写路径 = manifest（装配期 assembler 直读 rolePackManager.getActive().strategy），
+      // 动态值从内核常量派生，避免把 0~16 / 4 写死成第二份真源。
+      const defaultValue = DEFAULT_BEHAVIOR_STRATEGY.act!.subagentConcurrency!;
+      expect(error.suggestions).toEqual([
+        '角色包场景：改 <configDir>/role-packs/<包名>/manifest.json 里的 ' +
+          `strategy.act.subagentConcurrency，取值 0~${MAX_SUBAGENT_CONCURRENCY} 的整数`,
+        `不需要限制时删除该键，使用内核缺省 ${defaultValue}`,
+      ]);
     });
 
     it('未声明回退缺省 4（不配置就走内核缺省，不是被改成别的数）', () => {

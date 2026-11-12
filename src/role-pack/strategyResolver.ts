@@ -207,7 +207,8 @@ export function resolveSubagentConcurrency(strategy: BehaviorStrategy | undefine
   if (candidate === undefined) {
     return defaultValue;
   }
-  // 显式声明但非法/越界：拒绝并报错（manifest 路径由 validator 先拦，此处兜住运行时覆盖）
+  // 显式声明但非法/越界：拒绝并报错（manifest 路径由 validator 先拦；本函数不假设调用方已校验，
+  // 未过校验的值同样必须报错，不静默回退）
   if (!rule.check(candidate)) {
     throw configError(
       'act.subagentConcurrency 取值非法',
