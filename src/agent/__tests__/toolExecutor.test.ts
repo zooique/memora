@@ -17,6 +17,7 @@ import {
   ToolExecutor,
   sanitizeExternalText,
   BUILTIN_TOOLS,
+  DEFAULT_EXPOSED_TOOLS,
   SUBAGENT_DENIED_TOOLS,
   SWITCH_OWNED_TOOL_NAMES,
 } from '@/agent/toolExecutor.js';
@@ -200,6 +201,17 @@ describe('工具执行器（6 个工具）', () => {
       const names = executor.list.map((t) => t.name);
       expect(names).toContain('read_file');
       expect(names).toContain('task_table_write');
+    });
+
+    it('DEFAULT_EXPOSED_TOOLS 必须含 read_image（暴露条件化的前提是先在常驻集里有资格）', () => {
+      // 防空转守卫：集合被整体清空时，下面的 has() 断言会静默全绿——先钉住集合非空与几个已知成员
+      expect(DEFAULT_EXPOSED_TOOLS.size).toBeGreaterThan(0);
+      expect(DEFAULT_EXPOSED_TOOLS.has('read_file')).toBe(true);
+      expect(DEFAULT_EXPOSED_TOOLS.has('write_file')).toBe(true);
+      // read_image 的「常驻」只回答角色包白名单是否豁免；真正暴露由 loop.resolveActiveTools
+      // 逐 step 按 provider 视觉位（imageReadPort / supportsVision）条件化裁剪。
+      // 若常驻集里删掉它，条件化逻辑永远无从生效——这条断言就是防那个静默失效。
+      expect(DEFAULT_EXPOSED_TOOLS.has('read_image')).toBe(true);
     });
 
     it('空白名单（[]）时：常驻工具仍暴露（含任务表——内核必要基建，非特权）', () => {
