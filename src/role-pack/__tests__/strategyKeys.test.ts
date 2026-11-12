@@ -626,6 +626,19 @@ describe('strategyKeys — schema.json 与常量一致性', () => {
     expect(isTemperature(2)).toBe(true);
     expect(isTemperature(2.1)).toBe(false);
   });
+
+  /**
+   * 子会话并发额度的**字面契约**（全仓唯一把该数字钉死的地方）
+   *
+   * 其余位置（resolver 用例、BOUND_CASES / MIN_CASES、schema 守卫）全部从
+   * `MAX_SUBAGENT_CONCURRENCY` 派生：常量改掉后两边一起漂移、断言照样绿——
+   * 那条链只证明「代码与 schema 一致」，不证明「对外契约值没被悄悄改」。
+   * 改上界 = 改契约：必须同步本断言、`role-pack.schema.json` 与文档，缺一即破坏对外承诺。
+   * （下限 0 与缺省 4 已由 resolver 用例以字面值锁住，此处不重复。）
+   */
+  it('subagentConcurrency 上界字面契约 = 16（改值必须同时改本用例、schema 与文档）', () => {
+    expect(MAX_SUBAGENT_CONCURRENCY).toBe(16);
+  });
 });
 
 // ══════════════════════════════════════════════════════════════
