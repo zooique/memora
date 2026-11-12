@@ -231,7 +231,7 @@
           "capability": {
             "type": "string",
             "pattern": "^[a-z]+:[a-zA-Z0-9._-]+$",
-            "description": "中立能力名（`域:动作` 格式，如 `file:read`、`web:search`；声明则映射到实现工具白名单）"
+            "description": "中立能力名（`域:动作` 格式，如 `web:search`、`web:fetch`；声明则映射到实现工具白名单。memora 已登记键：web:search / web:fetch / code:execute / llm:summarize，未登记键声明会产生 warning）"
           },
           "description": {
             "type": "string",
