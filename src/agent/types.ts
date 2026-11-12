@@ -37,7 +37,8 @@ export interface DelegateTaskReceipt {
   /**
    * 摘录是否因超过 `DELEGATE_EXCERPT_MAX_CHARS` 被截断。
    *
-   * **唯一产地**：`extractDelegateExcerpt`（截断判定与截断动作在同一处，宿主不存在第二份上限常量）。
+   * **唯一产地**：`extractDelegateExcerpt`（截断判定与截断动作在同一处）。新记录不再依赖长度；
+   * 宿主只对字段缺失的历史数据保留一个**刻意冻结**的 800，该值不跟随本上限改动。
    * 声明为可选而不是必填：本字段之前落盘的老轮次没有它——那些记录永远补不回来。
    * 宿主按 `=== true` 判定；`undefined` 走历史轮次兼容（按长度反推，常驻、不随内核升级删除）。
    */
