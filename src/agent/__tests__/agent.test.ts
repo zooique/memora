@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Agent } from '@/agent/agent.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
-import type { AgentChunk } from '@/agent/types.js';
+import type { AgentChunk, ImageReadPort } from '@/agent/types.js';
 import { LlmProvider } from '@/llm/provider.js';
 import type { Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
@@ -3439,5 +3439,95 @@ describe('Agent · abandonTurn() · 停止即收场', () => {
     expect(second.status).toBe('interrupted');
     expect(second.interactiveInputs).toHaveLength(first.interactiveInputs?.length ?? 0);
     expect(second.interactiveInputs).toHaveLength(2);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：imageReadPort · Agent 门面转发（read_image 暴露链）
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 声明了视觉能力的 Mock Provider。
+ *
+ * read_image 的暴露需要两条同时成立：宿主注入了读图端口 + 路由后 provider 声明视觉；
+ * 基类 MockProvider 的 supportsVision 为 false，本类只覆盖这一能力位。
+ */
+class VisionMockProvider extends MockProvider {
+  override readonly supportsVision = true;
+}
+
+/**
+ * 本组只消费的 loop 私有面（零 any，沿用 readImageTool.test.ts 的 internals 先例）。
+ *
+ * 为什么不直接查 toolExec：暴露面的唯一真源是 `resolveActiveTools`，
+ * 它同时受「端口是否存在」与「provider 视觉位」裁剪——只查 toolExec.list 拦不住端口没转发。
+ */
+interface LoopReadImageSurface {
+  /** 按能力位裁剪后的暴露面 */
+  resolveActiveTools(): readonly { name: string }[];
+  /** read_image 不可用原因（可用 = null） */
+  readImageUnavailableReason(): 'host-no-port' | 'model-blind' | null;
+}
+
+/**
+ * Agent 门面必须把 `imageReadPort` 逐层转发到 loop。
+ *
+ * 缺陷形态：构造器 `#config` 与 `assembleComponents` 入参任一处漏掉该字段，
+ * `read_image` 会被永久裁成 `host-no-port`（工具面静默消失）；它是可选字段，
+ * `AgentConfig` 类型系统不会报错。`readImageTool.test.ts` 直接 `new AgentLoop(...)`
+ * 绕过了门面，拦不住这类断点——本组用例必须走完整 `Agent.init()`。
+ */
+describe('Agent · imageReadPort 转发（read_image 暴露面）', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-imgport-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-imgport-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-imgport-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  /** 走完整门面装配（构造 → init），返回 loop 的读图暴露面 */
+  async function initAndReadSurface(imageReadPort?: ImageReadPort): Promise<LoopReadImageSurface> {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new VisionMockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      imageReadPort,
+    });
+    await agent.init();
+    const loop = agent.agentLoop;
+    expect(loop).not.toBeNull();
+    return loop as unknown as LoopReadImageSurface;
+  }
+
+  it('注入端口 + 视觉 provider → read_image 出现在暴露面（门面漏转发则本例必红）', async () => {
+    const surface = await initAndReadSurface(async () => ({ ok: false, text: 'stub' }));
+
+    expect(surface.resolveActiveTools().map((t) => t.name)).toContain('read_image');
+    expect(surface.readImageUnavailableReason()).toBeNull();
+  });
+
+  it('不注入端口 → read_image 不在暴露面，原因是 host-no-port', async () => {
+    const surface = await initAndReadSurface();
+
+    expect(surface.resolveActiveTools().map((t) => t.name)).not.toContain('read_image');
+    expect(surface.readImageUnavailableReason()).toBe('host-no-port');
   });
 });

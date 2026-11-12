@@ -239,6 +239,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       fetchProvider: opts.fetchProvider,
       codeExecutionProvider: opts.codeExecutionProvider,
       projectSearchProvider: opts.projectSearchProvider,
+      // 图片摄取端口（宿主注入）：必须在此转发——漏了会让 read_image 被 loop 永久裁成
+      // `host-no-port`（工具面静默消失），而它是可选字段，AgentConfig 类型系统不会报错。
+      imageReadPort: opts.imageReadPort,
       // 工具 deny 集（工具面第二根轴 · 减法）：透传装配 → toolExec.setDenyTools。
       // 默认 undefined ⇒ 装配期不调用，父会话行为零变化；子会话 v1 只传 SUBAGENT_DENIED_TOOLS。
       denyTools: opts.denyTools,
@@ -1339,6 +1342,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       fetchProvider: this.#config.fetchProvider,
       codeExecutionProvider: this.#config.codeExecutionProvider,
       projectSearchProvider: this.#config.projectSearchProvider,
+      // 图片摄取端口：透传装配 → toolExec 与 loop（read_image 暴露面按此 + 视觉位逐 step 裁剪）
+      imageReadPort: this.#config.imageReadPort,
       // 工具 deny 集（工具面第二根轴 · 减法）：透传装配 → toolExec.setDenyTools。
       // 默认 undefined ⇒ 不注入，父会话行为零变化；子会话 v1 只传 SUBAGENT_DENIED_TOOLS。
       denyTools: this.#config.denyTools,
