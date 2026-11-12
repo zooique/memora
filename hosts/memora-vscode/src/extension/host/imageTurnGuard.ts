@@ -19,7 +19,8 @@ import { checkImageTurnLimits, formatMiB } from '../../shared/imageTurnLimits.js
  *
  * @param attachments 本轮随消息发出的真值 `ref` 列表（调用方已保证非空才调）
  * @param limitTokens 激活 Provider 的窗口上限（宿主经 `resolveContextWindow` 解析；
- *   `undefined` = 未配置 ⇒ token 维跳过，与内核 tokenBudget 口径一致）
+ *   `0 / undefined` = token 维跳过——这是宿主侧本维约定，不是内核口径：
+ *   内核把 0 当真窗口（`??` 不兜 0），0 绝不能传进内核）
  * @returns 放行返回 `undefined`；拒收返回**已本地化**的可见原因（带该维具体数字）
  */
 export function imageTurnRejection(

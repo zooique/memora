@@ -742,7 +742,8 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
    *
    * token 维跨版本兼容：任一候选缺 `tokens`（旧回执未带字段）⇒ 该维**整体跳过**，
    * 宁跳过不拿部分求和假算（低估 = 静默放行超限）。窗口取 `chat_providers.limitTokens`
-   * 投影（SSOT：与占用条同一来源），`0 / undefined` = 不限，与内核 tokenBudget 口径一致。
+   * 投影（SSOT：与占用条同一来源），`0 / undefined` = 不限——仅宿主侧本维约定，
+   * 不是内核口径（内核把 0 当真窗口），0 不得传进内核。
    *
    * @param limitTokens 当前激活 Provider 的上下文窗口上限（未配置 / 未到货传 undefined）
    * @returns 放行与否；超限时 message 带该维具体数字（已用 / 上限 / 超出），调用方

@@ -55,8 +55,10 @@ export interface ImageTokenBudgetResult {
  * 的原因。换算必须走**内核单点** `imageTokens`，不得在此重写公式。
  *
  * `contextWindow` 为 0 / undefined 时不做限制——「不限」只作用于本维（宿主侧约定），
- * 与内核口径相反：内核把 0 当真窗口（每轮判输入过大），0 不得传进内核；
- * `providerStore` 读侧已把非法值归一成 `undefined`，正常不会收到 0。
+ * 与内核口径相反：内核把 0 当真窗口（每轮判输入过大），0 不得传进内核。
+ * 本函数当前**零生产调用方**（仅测试引用），所以不存在「0 已被挡住」这回事；
+ * 将来接入时调用方必须先把窗口经 `providerStore` 归一（或自行判 `window > 0`），
+ * 不能把 0 直接喂进来。
  *
  * @param input 候选图尺寸列表 + 该模型的上下文窗口
  * @returns 放行与否 + 合计 token + 上限 + 超限文案
