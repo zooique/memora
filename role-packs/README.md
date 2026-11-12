@@ -40,4 +40,4 @@
 > 推理深度（`multiStepReasoning: auto`）与单步输出（`outputLimit: 0` 不干预）两包同为默认、听服务端——2026-09-30 已对齐（manual 原动机随 outputLimit 放开弱化），**不再是差异点**（旧版本文档曾写 manual / 大单步输出，已订正）。
 > 二者是同一哲学在两类任务上的不同落点，参数不可互抄。
 
-> **各示例包共同覆盖**当前角色包设计：**内容文件零声明**（persona.md / rules.md 约定名 + skills/ 目录扫描，manifest 不含任何内容路径注册）、顶层 capabilities（能力面）、strategy 策略（其中 **`act.toolReadonly` 只读维度由只读项目顾问示范**）、handoffPrompt 衔接提示词。开放键使用与消费方说明见 [role-pack-开放键指南](../docs/role-pack-开放键指南.md)；完整中立规范见 [role-pack-spec.md](../docs/architecture/role-pack-spec.md)（仓库内文档）。
+> **各示例包按自身定位示范差异化维度，并非逐键罗列**当前角色包设计：**内容文件零声明**（persona.md / rules.md 约定名 + skills/ 目录扫描，manifest 不含任何内容路径注册）、顶层 capabilities（能力面）、strategy 策略（其中 **`act.toolReadonly` 只读维度由只读项目顾问示范**）、handoffPrompt 衔接提示词。**未示范的键不等于未落地**：如 `act.subagentConcurrency` 由各包统一按内核缺省（4）运行、不写进 manifest——它只限制同一批 tool_call 内能并行几个，**不会让模型自动并行**，示例里塞个数字反而会让人误以为「用了这个包就会自动并跑」。开放键使用与消费方说明见 [role-pack-开放键指南](../docs/role-pack-开放键指南.md)；完整中立规范见 [role-pack-spec.md](../docs/architecture/role-pack-spec.md)（仓库内文档）。
