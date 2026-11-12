@@ -1912,8 +1912,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // ④ 文件改动常驻条补推：该条只在「改动集变化」时推送，面板重开/回放时必须补一次——
     //    否则关掉面板再打开，常驻条凭空消失（项目里踩过四次的「时间面」漏面）。
     this.pushFileChanges();
-    // ⑤ 后台任务条补推：与 ④ 同型的时间面漏面——本条平时只由推送事件点驱动（五个点的
-    //    枚举见 postBackgroundTasks 注释，唯一真源不在此复制），面板重开时新 webview 从未
+    // ⑤ 后台任务条补推：与 ④ 同型的时间面漏面——本条平时只由推送事件点驱动（枚举见
+    //    postBackgroundTasks 注释，唯一真源不在此复制），面板重开时新 webview 从未
     //    收到过该消息 ⇒ 条凭空消失，而进程还在跑、用户看不到也砍不掉。
     //    **必须走 'force' 绕签名去重**（签名跨重建残留）。
     this.postBackgroundTasks('force');
