@@ -65,6 +65,17 @@ const MOCK_DDG_REDIRECT_HTML = `<!DOCTYPE html>
 </body>
 </html>`;
 
+/** 模拟 DuckDuckGo 跳转链接的绝对地址形式（DDG 可能返回 https:// 前缀而非协议相对） */
+const MOCK_DDG_ABSOLUTE_REDIRECT_HTML = `<!DOCTYPE html>
+<html>
+<body>
+  <div class="result">
+    <a class="result__a" href="https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fabsolute">绝对地址标题</a>
+    <a class="result__snippet">绝对地址摘要</a>
+  </div>
+</body>
+</html>`;
+
 /** 按 URL 分发的 fetch mock：Bing 返回 bingResponse，DuckDuckGo 返回 ddgResponse */
 function createUrlDispatchFetch(
   bingResponse: () => Promise<{
@@ -219,6 +230,20 @@ describe('FetchWebSearchProvider', () => {
 
       expect(results).toHaveLength(1);
       expect(results[0]!.url).toBe('https://example.com/redirected');
+    });
+
+    it('绝对地址形式的 DDG 跳转链接应剥净前缀（不产生 https:https:// 畸形 URL）', async () => {
+      globalThis.fetch = asFetch(
+        createUrlDispatchFetch(
+          () => htmlResponse(MOCK_EMPTY_HTML),
+          () => htmlResponse(MOCK_DDG_ABSOLUTE_REDIRECT_HTML),
+        ),
+      );
+
+      const results = await provider.search('测试');
+
+      expect(results).toHaveLength(1);
+      expect(results[0]!.url).toBe('https://example.com/absolute');
     });
   });
 

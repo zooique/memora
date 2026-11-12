@@ -61,7 +61,8 @@ function parseDuckDuckGoHtml(html: string, limit: number): SearchResult[] {
   const titles: Array<{ url: string; title: string }> = [];
   let match: RegExpExecArray | null;
   while ((match = resultRegex.exec(html)) !== null && titles.length < limit) {
-    const url = match[1]!.replace(/\/\/duckduckgo\.com\/l\/\?uddg=/, ''); // 剥 DDG 跳转前缀（当前只处理协议相对形式）
+    // 剥 DDG 跳转前缀（协议相对 / https:// / http:// 三种形式），否则绝对地址会残留 scheme
+    const url = match[1]!.replace(/^(?:https?:)?\/\/duckduckgo\.com\/l\/\?uddg=/, '');
     const title = match[2]!.replace(/<[^>]*>/g, '').trim();
     if (title && url) {
       titles.push({
