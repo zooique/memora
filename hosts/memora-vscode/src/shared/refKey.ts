@@ -2,15 +2,16 @@
  * refKey — 对话引用的身份键与去重规则（宿主与 webview 共用，零依赖）
  *
  * **为什么独立成文件**：宿主（缓冲合并）与 webview（chip 合并）都要**值导入**它，
- * 而它零依赖、`@zooique/memora` 也不需要 ⇒ 放进 `shared/protocol.ts` 会把 1500+ 行
- * 协议的运行时常量一并打进 webview bundle，放这里则体积可控。
+ * 而它零依赖、`@zooique/memora` 也不需要 ⇒ 放进 `shared/protocol.ts` 会把协议文件的
+ * 运行时常量一并打进 webview bundle，放这里则体积可控。
  *
  * **为什么要有单点**：该规则曾两处并列复制（`chatPanel.pushRefs` 的缓冲去重 +
  * `chatView.addRefs` 的 seen 去重），改判据时极易只改一处 ⇒ 下沉到这里单点定义。
  */
 import type { ChatRef } from './protocol.js';
 
-/** 行区间（1-based 闭区间）。与协议 `ChatRef.range` **同形**——刻意不另造类型名。 */
+/** 行区间（1-based 闭区间）。结构等价于协议 `ChatRef.range`；刻意保留本地别名——
+ *  这两个工具只依赖 `start` / `end` 两字段，别名把契约钉在结构上，不跟随 `ChatRef` 其余字段演进。 */
 type Range = { start: number; end: number };
 
 /**
@@ -51,7 +52,8 @@ export function formatRefRange(range: Range | undefined | null): string {
  * 同文件不同行区间是**两条**引用：先加整个文件再加选区，若按 path 合并则用户第二次
  * 操作静默失效（「加了等于没加」）。故键含行区间，且区间部分与显示共用 `formatRefRange`
  * （键不落盘、只在内存比较，折叠单行不会与整文件键冲突：整文件键 = 裸 path）。
- * 键内不含 pinned：钉住态是纯 UI 态，不参与身份判定。
+ * 键内不含 pinned：钉住是会话级持久态（锁即持久、跨轮跨重启保留，宿主写入会话元数据），
+ * 但那是会话状态、不参与引用身份判定——所以不进键。
  */
 export function refKeyOf(ref: ChatRef): string {
   return `${ref.path}${formatRefRange(ref.range)}`;

@@ -7,7 +7,8 @@
  *   - `toRoundView`：把运行时累积的「当前轮」投影为 `RoundView`（与落盘 Round 同形状）。
  *   - `deriveTurnState`：把宿主侧散落的状态信号（会话级 `streaming` / paused / pausePending /
  *     pendingQuestions / 最近轮）**折叠为单一 `TurnState` 枚举**——这是「五条状态消息」的收口点。
- * 本文件不含任何 postMessage / DOM / 内核调用，纯函数便于单测与变异验证。
+ * 边界：无 postMessage / DOM / 宿主编排；唯一运行期依赖是内核纯函数 `isRoundSettled`
+ * （纯函数、无 I/O），对外仍是纯函数，便于单测与变异验证。
  */
 
 import { isRoundSettled, type RoundStatus } from '@zooique/memora';
@@ -16,7 +17,9 @@ import type { PendingQuestionDto, RoundView, TurnState } from './protocol.js';
 /**
  * 运行时「当前轮」累积态（宿主侧持有；对应内核一轮问答闭环的生长中状态）
  *
- * 与落盘 `Round` 的差别只有 `streamingText`（流式正文尚未落盘为 assistantMessage）。
+ * 它是 `toRoundView` 的**输入**，不是落盘 `Round` 的近似副本：投影时由 `toRoundView` 把
+ * `roundId` 改名成 `id`，补齐 `assistantLog` / `status` / `createdAt` / `completedAt` /
+ * `assistantMessage` / `live`，并把 `streamingText` 折成末段 `assistantMessage`。
  */
 export interface LiveRoundState {
   /** 本轮 roundId（内核 chunk 携带，与落盘 Round.id 同源） */
