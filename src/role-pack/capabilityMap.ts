@@ -34,10 +34,13 @@ const CAPABILITY_TO_TOOLS: Readonly<Record<string, readonly string[]>> = {
   // （三态判定见 `agent.applyRolePackToolExposure`；未登记的 `task:plan` 另由 validator 报
   // UNREGISTERED_CAPABILITY warning）。
   // ⚠️ 本表**不保留** `task:plan` 条目（连空数组都不写）：在本函数内「键不存在」与「空数组」
-  // 产出工具完全等价（均不产出工具），差异只在诊断与上述白名单收窄，故不为它占位。能力名合法性由 validator 的 CAPABILITY_PATTERN
+  // 产出的是同一个 whitelist（均不产出工具），二者之间**只有诊断不同**（未登记键会多一条
+  // UNREGISTERED_CAPABILITY warning）——白名单收窄发生在「声明 capabilities」与「不声明」之间，
+  // 与这两种写法的区别无关。能力名合法性由 validator 的 CAPABILITY_PATTERN
   // （开放正则 `域:动作`）单点校验——内核**没有**集中式「中立能力字典」表。
-  // 内核内部能力（无工具映射，仅声明存在；实现按自身能力实现）：已登记、声明后不解锁任何工具，
-  // 但同属「声明即收窄白名单」——已登记只免掉 warning，不免掉收窄副作用。
+  // 内核内部能力（无工具映射，仅声明存在；实现按自身能力实现）：当前全表唯一空映射键即
+  // `llm:summarize`，已登记、声明后不解锁任何工具，但同属「声明即收窄白名单」——
+  // 已登记只免掉 warning，不免掉收窄副作用。
   'llm:summarize': [],
 };
 
