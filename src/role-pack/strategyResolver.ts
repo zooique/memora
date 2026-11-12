@@ -11,6 +11,7 @@ import {
   MAX_ASK_LIMIT,
   MAX_SELF_REVIEW_ROUNDS,
   MAX_STEP_BUDGET,
+  MAX_SUBAGENT_CONCURRENCY,
   MAX_SUMMARY_FOCUS_LENGTH,
   MAX_CONTEXT_LIMIT,
   MIN_CONTEXT_LIMIT,
@@ -76,6 +77,9 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     outputLimit: 0,
     providerRouting: 'auto',
     multiStepReasoning: 'auto',
+    // 同一步可并行的子会话额度（0=关闭派发）。缺省 4 的唯一真源 = 本键：
+    // 角色包/宿主不写就用它，resolveSubagentConcurrency 对非法值也回退它。
+    subagentConcurrency: 4,
   },
   reflect: {
     selfReview: 0,
@@ -176,6 +180,24 @@ export function resolveToolStepLimit(strategy: BehaviorStrategy | undefined): nu
     candidate >= 0 &&
     candidate <= MAX_TOOL_STEP_LIMIT;
   return valid ? candidate : 0;
+}
+
+/**
+ * 解析子会话并发额度（内核已消费）：整数且 ∈ [0, MAX_SUBAGENT_CONCURRENCY] 才采用，
+ * 非法/越界回退缺省 4（SSOT = DEFAULT_BEHAVIOR_STRATEGY.act.subagentConcurrency）。
+ *
+ * `0` = 关闭派发：装配期不注入派发端口，`delegate_task` 结构性不可见。
+ * 额度只约束「同一批 tool_call 内最多几个子会话同时执行」，**不会让模型自动并行**
+ * ——是否在一次回复里并行派发由模型自行决定。
+ */
+export function resolveSubagentConcurrency(strategy: BehaviorStrategy | undefined): number {
+  const candidate = strategy?.act?.subagentConcurrency;
+  const valid =
+    typeof candidate === 'number' &&
+    Number.isInteger(candidate) &&
+    candidate >= 0 &&
+    candidate <= MAX_SUBAGENT_CONCURRENCY;
+  return valid ? candidate : DEFAULT_BEHAVIOR_STRATEGY.act!.subagentConcurrency!;
 }
 
 /** 解析错误处理策略（内核已消费）：非法值归位 'retry'（白名单引用 strategyKeys.ERROR_HANDLINGS）——retry=自动重试 / degrade=降级文本 / stop=终止抛出错误 */

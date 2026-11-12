@@ -638,7 +638,7 @@ export const DEFAULT_EXPOSED_TOOLS: ReadonlySet<string> = new Set([
  * **唯一按职责而非按副作用禁的例外：`run_team_meeting`**。它无外部写副作用，但它是
  * **队长对外的评审端口**（一次 `provider.chat()` 拉 N 个 persona）：子会话只有一个角色，
  * 调它等于花一个完整 step 买一次无意义的多人自评，且这条成本路径不受派发端口
- * `SUBAGENT_MAX_CONCURRENT` 信号量约束。注意：新增工具时按副作用核一遍会漏掉这条，
+ * 并发额度（角色包策略 `act.subagentConcurrency`）约束。注意：新增工具时按副作用核一遍会漏掉这条，
  * 必须单独按「职责」再核一遍。
  *
  * **留 / 禁的界线（必须按内容判，不按 readonly 标记判）**：

@@ -146,6 +146,14 @@
 | `providerRouting`    | `auto` / `fixed`              | —                  | `auto`      | Provider 路由策略 | `"fixed"`         |
 | `multiStepReasoning` | `auto` / `manual`             | —                  | `auto`      | 多步推理模式        | `"manual"`        |
 | `toolReadonly`       | `full` / `readonly`           | —                  | `full`      | 工具操作范围        | `"readonly"`      |
+| `subagentConcurrency` | 整数                         | `0 ~ 16`（0=关闭派发） | `4`         | 同一步可并行的子会话额度 | `2`               |
+
+> **`subagentConcurrency` 语义（2026-11-12 增键）**：
+> - `0` = **关闭派发**：装配期不注入派发端口，`delegate_task` 结构性不可见（不是运行时再判断）；
+> - 省略 = **内核缺省 4**（信号量硬限，超出直接报错不排队）；非法值/越界同样回退 4；
+> - 额度**只管「同一批 tool_call 内最多几个子会话同时执行」**——它**不会让模型自动并行**，
+>   是否在一次回复里并行派发由模型自行决定；
+> - 唯一真实瓶颈是 model provider 的配额（属 provider 层），本键只做同一批派发的上限保护。
 
 ### 3.3 reflect 组（回答后·沉淀）
 
@@ -186,6 +194,7 @@
 | `temperature`         | 0    | 2       | error           | 忽略不注入              |
 | `outputLimit`         | 0    | 65536   | error           | 忽略不注入              |
 | `toolStepLimit`       | 0    | 100     | error           | 回退默认 `0`（无限制）      |
+| `subagentConcurrency` | 0    | 16      | error           | 回退默认 `4`（0 合法 = 关闭派发） |
 | `selfReview`          | 0    | 10      | error           | 回退 `0`（关闭）       |
 | `askLimit`            | 1    | 10      | error           | 回退默认 `10`          |
 | `webSearchLimit`      | 1    | 20      | error           | 回退默认 `6`           |
@@ -217,7 +226,7 @@
 
 | 状态          | 含义          | 键             |
 | ----------- | ----------- | ------------- |
-| **已消费（冻结）** | 内核真实读取并影响行为 | 上述 §三 全部 17 键（prepare 1 / act 7 / reflect 3 / global 6） |
+| **已消费（冻结）** | 内核真实读取并影响行为 | 上述 §三 全部 18 键（prepare 1 / act 8 / reflect 3 / global 6） |
 
 > 全部策略键现均已落地，无纯预留死键。`understandingConfirm` 已回收（2026-09-13，turn-intent-reasoning-design Part 3）：confirm 并入 `askOn['confirm']`/ask_user 工具通道，echo 由内核 Turn 起始策略指令覆盖——确认场景统一走 ask_user 单一通道，不再作为开放键。已撤键先例：`costBudget`（2026-08-28，内核无定价能力、宿主无执行者）、`taskLoopLimit`（2026-09-06，多 turn 编排删除 + 会议确定性预置退役后无常量消费方）、prepare 召回策略键族 6 键（2026-09-09 阶段2，记忆纯工具化召回后无自动注入消费端）、`toolApproval`（2026-09-11，审批链无执行方的展示性假承诺）、`streaming`（2026-09-11，写而不读的假旋钮——内核 provider 恒 `stream:true`）、`loopContinue`（2026-09-11，v0.13- 别名；安装基数 0 → 兼容防的是从未发生的场景，按版本契约分面「作者输入面可不兼容」删除）——**无消费者 / 无真实兼容对象的策略键不保留**。诚实化声明见 `src/role-pack/types.ts` `BehaviorStrategy` 注释。
 

@@ -23,7 +23,6 @@ import {
 import { SecurityGuard } from '@/security/pathGuard.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import {
-  SUBAGENT_MAX_CONCURRENT,
   createDelegateTaskPort,
   createSubagentLoop,
   createSubagentToolExecutor,
@@ -47,6 +46,14 @@ const GLOBAL_SKILL_BODIES: Readonly<Record<string, string>> = {
   'global-one': 'GLOBAL-BODY',
   shared: 'GLOBAL-SHARED',
 };
+
+/**
+ * 派发端口测试额度
+ *
+ * 刻意与内核缺省值（4）解耦：额度由装配层解析后作为参数传入，
+ * 用例用非缺省值才能证明「限额真的来自配置参数」而不是残留在端口里的硬编码。
+ */
+const TEST_SUBAGENT_QUOTA = 3;
 
 /** 全局技能桩：子会话只应看到「全局」这一层 */
 const skillManagerStub = {
@@ -590,7 +597,7 @@ describe('派发端口：终态映射与 abort 立即收口（P0-2 / P0-3）', (
 
   it('端口产出执行耗时：只量执行一段，不挂恒为 0 的排队字段', async () => {
     await withRuntimeParams(async (params) => {
-      const { port } = createDelegateTaskPort(params);
+      const { port } = createDelegateTaskPort(params, TEST_SUBAGENT_QUOTA);
       const result = await port({ task: '普通任务' });
       // 字段集合即契约：只有 durationMs，没有 queuedMs / totalMs
       expect(Object.keys(result).sort()).toEqual(['durationMs', 'status', 'text']);
@@ -601,7 +608,10 @@ describe('派发端口：终态映射与 abort 立即收口（P0-2 / P0-3）', (
   it('abort 发生在子会话执行期间：父立即拿到 [SUBAGENT:interrupted]，在途计数归零', async () => {
     const hang = createHangingProvider();
     await withRuntimeParams(async (params) => {
-      const { port, inFlight } = createDelegateTaskPort({ ...params, provider: hang.provider });
+      const { port, inFlight } = createDelegateTaskPort(
+        { ...params, provider: hang.provider },
+        TEST_SUBAGENT_QUOTA,
+      );
       const exec = new ToolExecutor(params.projectPath, params.security, params.memoryIndex);
       exec.setDelegateTask(port);
 
@@ -651,7 +661,10 @@ describe('派发端口变异锚点（P1-3）', () => {
     const hang = createHangingProvider();
     await withRuntimeParams(async (params) => {
       const controller = new AbortController();
-      const { port } = createDelegateTaskPort({ ...params, provider: hang.provider });
+      const { port } = createDelegateTaskPort(
+        { ...params, provider: hang.provider },
+        TEST_SUBAGENT_QUOTA,
+      );
       const pending = port({ task: '调查' }, controller.signal);
 
       await hang.started;
@@ -664,21 +677,24 @@ describe('派发端口变异锚点（P1-3）', () => {
     });
   });
 
-  it('同一步并发上限：超出名额的派发快速失败并说明原因', async () => {
+  it('同一步并发额度：第 N+1 个在飞时快速失败，文案含额度值与配置位置', async () => {
     await withRuntimeParams(async (params) => {
-      const { port, inFlight } = createDelegateTaskPort(params);
+      const { port, inFlight } = createDelegateTaskPort(params, TEST_SUBAGENT_QUOTA);
       // 同步发起 N+1 次：计数自增在第一个 await 之前，最后一个必然看到满额
-      const accepted = Array.from({ length: SUBAGENT_MAX_CONCURRENT }, (_, i) =>
+      const accepted = Array.from({ length: TEST_SUBAGENT_QUOTA }, (_, i) =>
         port({ task: `任务-${i}` }),
       );
       const overflow = port({ task: '超额任务' });
 
-      // 文案自解释：上限 / 当前在跑数 / 该怎么办（父模型读到才知道该等而非重试）
-      // 去掉并发信号量 → 此断言转红
+      // 文案自解释：额度 / 当前在跑数 / 该去改哪个配置（父模型读到才知道该等而非重试）
+      // 去掉并发额度闸 → 此断言转红
       await expect(overflow).rejects.toMatchObject({
         title: 'delegate_task 并发超限',
-        detail: `同一步最多 ${SUBAGENT_MAX_CONCURRENT} 个子会话同时执行，当前已有 ${SUBAGENT_MAX_CONCURRENT} 个在跑`,
-        suggestions: ['等已派发的子会话返回后再派发新的任务'],
+        detail: `同一步最多 ${TEST_SUBAGENT_QUOTA} 个子会话同时执行，当前已有 ${TEST_SUBAGENT_QUOTA} 个在跑`,
+        suggestions: [
+          '等已派发的子会话返回后再派发新的任务',
+          '如需调整额度：修改角色包策略 act.subagentConcurrency（0 = 关闭派发）',
+        ],
       });
       const settled = await Promise.all(accepted);
       expect(settled.every((r) => r.status === 'completed')).toBe(true);

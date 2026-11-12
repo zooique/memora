@@ -45,6 +45,13 @@ export const MAX_OUTPUT_LIMIT = 65536;
 /** 单轮工具调用步数上限：100 步足够复杂任务单轮调用 */
 export const MAX_TOOL_STEP_LIMIT = 100;
 /**
+ * 子会话并发额度的**声明上界**：16。
+ * 上界只防「一笔 tool_call 批量派发把 provider 配额打爆」，不是真实瓶颈的建模——
+ * 唯一真实瓶颈是 model provider 的配额，属 provider 层。缺省 4 不在此常量，
+ * 见 DEFAULT_BEHAVIOR_STRATEGY.act.subagentConcurrency（缺省值唯一真源）。
+ */
+export const MAX_SUBAGENT_CONCURRENCY = 16;
+/**
  * selfReview 的**输入校验上界**，非运行时上限（勿据常量名推导运行时行为）。
  * 布尔数字语义下任意正整数都在解析层归一为 1=终审一次，故本值仅作 schema / validator 的防御上界，
  * 不代表「可自审查 10 轮」。
@@ -251,6 +258,9 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
     providerRouting: { kind: 'enum', values: PROVIDER_ROUTINGS },
     multiStepReasoning: { kind: 'enum', values: MULTI_STEP_REASONINGS },
     toolReadonly: { kind: 'enum', values: TOOL_READONLY_MODES },
+    // 子会话并发额度（0~MAX_SUBAGENT_CONCURRENCY，0=关闭派发；缺省 4 唯一真源 =
+    // DEFAULT_BEHAVIOR_STRATEGY.act.subagentConcurrency）。0 是合法哨兵，UI 下限自动折算为 0。
+    subagentConcurrency: intRange(0, MAX_SUBAGENT_CONCURRENCY),
   },
   reflect: {
     summary: { kind: 'enum', values: SUMMARY_MODES },

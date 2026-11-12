@@ -87,6 +87,14 @@ export interface ActStrategy {
   readonly providerRouting?: ProviderRouting;
   /** 多步推理模式（默认 auto；内核已消费） */
   readonly multiStepReasoning?: MultiStepReasoning;
+  /**
+   * 同一步可并行的子会话额度（默认 4；内核已消费）。
+   *
+   * `0` = 关闭派发（装配期不注入派发端口，`delegate_task` 结构性不可见）。
+   * 额度只约束「同一批 tool_call 内最多几个子会话同时执行」，**不会让模型自动并行**
+   * ——是否并行仍由模型在一次回复里自行决定。
+   */
+  readonly subagentConcurrency?: number;
 }
 
 /** 回答后（Reflect）沉淀策略集合 */
@@ -120,7 +128,7 @@ export interface GlobalStrategy {
  * 角色包经此集合声明行为偏好，未配置维度用全局默认值；所有维度为预定义可选值，角色只做"选择"。
  * 诚实化声明：本集合是"设计空间"非"承诺面"——被实际消费的字段为
  * prepare 的 summaryFocus（round-summary 提炼视角）；
- * act 的 toolMode/temperature/outputLimit/toolStepLimit/providerRouting/multiStepReasoning/toolReadonly；
+ * act 的 toolMode/temperature/outputLimit/toolStepLimit/providerRouting/multiStepReasoning/toolReadonly/subagentConcurrency；
  * reflect 的 summary/selfReview/userFollowup；global 的 askOn/askLimit/webSearchLimit/errorHandling/contextLimit/stepBudget。
  * 边界纪律：无 understandingConfirm 开放键（并入 askOn['confirm']/ask_user，见文件头注）；无 costBudget 键（内核无定价能力、宿主无执行者，无消费者的策略键不保留，遵循"预留键非承诺"纪律）。
  */

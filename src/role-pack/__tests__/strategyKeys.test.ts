@@ -28,6 +28,7 @@ import {
   isAskOn,
   MAX_OUTPUT_LIMIT,
   MAX_TOOL_STEP_LIMIT,
+  MAX_SUBAGENT_CONCURRENCY,
   MAX_SELF_REVIEW_ROUNDS,
   MAX_ASK_LIMIT,
   MAX_WEB_SEARCH_LIMIT,
@@ -149,6 +150,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       'providerRouting',
       'multiStepReasoning',
       'toolReadonly',
+      'subagentConcurrency',
     ],
     reflect: ['summary', 'selfReview', 'userFollowup'],
     global: ['askOn', 'askLimit', 'webSearchLimit', 'errorHandling', 'contextLimit', 'stepBudget'],
@@ -371,6 +373,13 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
         probe: MAX_TOOL_STEP_LIMIT + 1,
       },
       {
+        key: 'act.subagentConcurrency',
+        rule: STRATEGY_KEY_RULES.act!.subagentConcurrency!,
+        min: 0,
+        max: MAX_SUBAGENT_CONCURRENCY,
+        probe: MAX_SUBAGENT_CONCURRENCY + 1,
+      },
+      {
         key: 'reflect.selfReview',
         rule: STRATEGY_KEY_RULES.reflect!.selfReview!,
         min: 0,
@@ -552,6 +561,7 @@ describe('strategyKeys — schema.json 与常量一致性', () => {
   }> = [
     { phase: 'act', key: 'outputLimit', expectedMax: MAX_OUTPUT_LIMIT },
     { phase: 'act', key: 'toolStepLimit', expectedMax: MAX_TOOL_STEP_LIMIT },
+    { phase: 'act', key: 'subagentConcurrency', expectedMax: MAX_SUBAGENT_CONCURRENCY },
     { phase: 'reflect', key: 'selfReview', expectedMax: MAX_SELF_REVIEW_ROUNDS },
     { phase: 'global', key: 'askLimit', expectedMax: MAX_ASK_LIMIT },
     { phase: 'global', key: 'webSearchLimit', expectedMax: MAX_WEB_SEARCH_LIMIT },
@@ -593,6 +603,7 @@ describe('strategyKeys — schema.json 与常量一致性', () => {
     // 已在文件头与常量注释说明，不在此强比对）
     const MIN_CASES = [
       { phase: 'act', key: 'toolStepLimit' },
+      { phase: 'act', key: 'subagentConcurrency' },
       { phase: 'reflect', key: 'selfReview' },
       { phase: 'global', key: 'askLimit' },
       { phase: 'global', key: 'webSearchLimit' },

@@ -22,6 +22,7 @@ import {
   resolveStepBudget,
   resolveMultiStepReasoning,
   resolveToolReadonly,
+  resolveSubagentConcurrency,
   mergeStrategy,
   assembleRolePack,
   resolveL2Strategy,
@@ -32,6 +33,7 @@ import {
   MAX_SELF_REVIEW_ROUNDS,
   MAX_CONTEXT_LIMIT,
   MAX_STEP_BUDGET,
+  MAX_SUBAGENT_CONCURRENCY,
   MAX_SUMMARY_FOCUS_LENGTH,
   MIN_STEP_BUDGET,
 } from '@/role-pack/strategyKeys.js';
@@ -92,6 +94,8 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
     expect(a.outputLimit).toBe(0);
     expect(a.providerRouting).toBe('auto');
     expect(a.multiStepReasoning).toBe('auto');
+    // 子会话并发额度缺省 4（缺省值唯一真源 = 本对象：宿主/角色包不写时都落这里）
+    expect(a.subagentConcurrency).toBe(4);
   });
 
   it('reflect 维度包含全部必需字段', () => {
@@ -288,6 +292,37 @@ describe('resolve* 函数 — 数值解析', () => {
 
     it('缺失回退默认 0', () => {
       expect(resolveToolStepLimit(undefined)).toBe(0);
+    });
+  });
+
+  // ── resolveSubagentConcurrency ──
+  describe('resolveSubagentConcurrency', () => {
+    it('合法额度采用（0=关闭派发 / 正数=同批并行上限）', () => {
+      expect(resolveSubagentConcurrency({ act: { subagentConcurrency: 0 } })).toBe(0);
+      expect(resolveSubagentConcurrency({ act: { subagentConcurrency: 1 } })).toBe(1);
+      expect(
+        resolveSubagentConcurrency({ act: { subagentConcurrency: MAX_SUBAGENT_CONCURRENCY } }),
+      ).toBe(MAX_SUBAGENT_CONCURRENCY);
+    });
+
+    it('非法值回退缺省 4（负数 / 小数 / 非数 / 越上界）', () => {
+      expect(resolveSubagentConcurrency({ act: { subagentConcurrency: -1 } })).toBe(4);
+      expect(resolveSubagentConcurrency({ act: { subagentConcurrency: 1.5 } })).toBe(4);
+      expect(
+        resolveSubagentConcurrency({
+          act: { subagentConcurrency: '3' as unknown as number },
+        }),
+      ).toBe(4);
+      expect(
+        resolveSubagentConcurrency({
+          act: { subagentConcurrency: MAX_SUBAGENT_CONCURRENCY + 1 },
+        }),
+      ).toBe(4);
+    });
+
+    it('未声明回退缺省 4（不配置就走内核缺省，不是被改成别的数）', () => {
+      expect(resolveSubagentConcurrency(undefined)).toBe(4);
+      expect(resolveSubagentConcurrency({})).toBe(4);
     });
   });
 

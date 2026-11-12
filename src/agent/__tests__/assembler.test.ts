@@ -996,6 +996,67 @@ describe('assembleComponents', () => {
   });
 });
 
+// ─── 子会话并发额度接线（act.subagentConcurrency）─────────────
+
+describe('assembler · 子会话并发额度接线', () => {
+  /**
+   * 造一个只带 strategy 的角色包并完成装配
+   *
+   * persona/rules 可缺省（内容文件可选），manifest.name 与 activeRolePack 对齐；
+   * 装配后先断言包确实激活——否则后面的工具清单断言可能因「包没加载」而测错对象。
+   *
+   * @param strategy manifest 的 strategy 段（undefined = 不声明，验证内核缺省）
+   */
+  async function assembleWithPackStrategy(
+    strategy: Record<string, unknown> | undefined,
+  ): Promise<Awaited<ReturnType<typeof assembleComponents>>> {
+    const root = await mkdtemp(join(tmpdir(), 'memora-assembler-quota-'));
+    const configDir = join(root, 'cfg');
+    const packDir = join(configDir, 'role-packs', 'quota-pack');
+    mkdirSync(packDir, { recursive: true });
+    writeFileSync(
+      join(packDir, 'manifest.json'),
+      JSON.stringify({
+        name: 'quota-pack',
+        formatVersion: '1.0.0',
+        ...(strategy ? { strategy } : {}),
+      }),
+      'utf-8',
+    );
+    try {
+      const output = await assembleComponents(
+        createPctx(),
+        createInput({ configDir, activeRolePack: 'quota-pack' }),
+      );
+      expect(output.rolePackManager.activeName).toBe('quota-pack');
+      return output;
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+
+  it('额度 0：装配期不注入派发端口 → 工具清单没有 delegate_task', async () => {
+    const output = await assembleWithPackStrategy({ act: { subagentConcurrency: 0 } });
+    expect(output.toolExec.list.map((t) => t.name)).not.toContain('delegate_task');
+    // 复用 ToolExecutor 既有「端口不存在」路径：手工调用得到 NOT_AVAILABLE，不新增错误码
+    const result = await output.toolExec.execute(
+      'delegate_task',
+      JSON.stringify({ task: '不该被派发的任务' }),
+    );
+    expect(result).toContain('NOT_AVAILABLE');
+  });
+
+  it('未声明额度：走内核缺省（delegate_task 保持可用）', async () => {
+    const output = await assembleWithPackStrategy(undefined);
+    expect(output.toolExec.list.map((t) => t.name)).toContain('delegate_task');
+  });
+
+  it('额度 >0：注入派发端口 → 工具清单含 delegate_task', async () => {
+    const output = await assembleWithPackStrategy({ act: { subagentConcurrency: 2 } });
+    expect(output.toolExec.list.map((t) => t.name)).toContain('delegate_task');
+  });
+});
+
 // ─── wireRuntimeCallbacks 运行时回调分支 ─────────────────────
 
 describe('assembler · wireRuntimeCallbacks 运行时回调', () => {

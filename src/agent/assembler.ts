@@ -74,6 +74,8 @@ import { AGENT_EVENTS, type AgentEventName } from '@/utils/eventEmitter.js';
 import { configError, toolError, ToolErrorCode } from '@/utils/errors.js';
 // 角色包管理器（唯一角色真理源）
 import { RolePackManager } from '@/role-pack/rolePackManager.js';
+// 子会话并发额度解析（SSOT：act.subagentConcurrency，缺省值与非法值回退都在解析层）
+import { resolveSubagentConcurrency } from '@/role-pack/strategyResolver.js';
 // run_team_meeting 会议实现（工具内嵌 LLM 调用；装配层持 provider + rolePackManager 闭包注入）
 import { runTeamMeetingAssessment } from '@/agent/builtinToolHandlers.js';
 // L3 脚本执行器（静态导入，避免每次调用动态加载）
@@ -234,13 +236,6 @@ const SUBAGENT_GRANTABLE_CAPABILITIES: ReadonlyMap<string, string> = new Map([
 
 /** 子会话结果正文截断上限（字符）：防止一次派发把父上下文撑爆（评估文档定案 20,000） */
 const SUBAGENT_RESULT_MAX_CHARS = 20_000;
-
-/**
- * 同一步并发子会话上限（派发端口信号量硬限，超出直接报错而非排队）
- *
- * 导出仅供测试与调用方文档引用，避免上限值在注释 / 用例里各写一遍。
- */
-export const SUBAGENT_MAX_CONCURRENT = 2;
 
 /**
  * 子会话装配参数（父装配期捕获的快照，逐次派发复用）
@@ -651,18 +646,26 @@ export async function runSubagent(
  * 创建 delegate_task 派发端口（并发闸 + abort 立即收口）
  *
  * 两条硬约束都在这里，不散落到装配回调里：
- *   - **并发硬限**：同一步最多 `SUBAGENT_MAX_CONCURRENT` 个。判据在端口入口**同步**执行
- *     （计数自增发生在第一个 await 之前），故同一批并发的第三个调用必然看到满额后报错。
+ *   - **并发额度**：同一步最多 `maxConcurrent` 个（额度真源 = 角色包策略
+ *     `act.subagentConcurrency`，装配期解析一次传入）。判据在端口入口**同步**执行
+ *     （计数自增发生在第一个 await 之前），故同一批并发的第 N+1 个调用必然看到满额后报错。
  *     **超出直接快速失败、不排队**：父 turn 是同步递归等待子会话的，排队会让父无限等；
  *     而父没有取消单个子任务的能力，等不到也断不掉，只能把整轮拖死。快速失败把选择权
  *     交回父模型（等前面的完成后重派）。
  *   - **abort 立即返回真终态**：父 turn 中止时立刻用已累积正文返回 `interrupted`，
  *     后台子 loop 继续收同一 signal 自己收场；名额在端口 promise 返回时释放，不等子 loop settle。
  *
+ * 刻意**不做**进程级并发池 / 单例 gate：主会话自身没有进程级并发限制，子会话不该更严；
+ * 唯一真实瓶颈是 model provider 的配额，属 provider 层，不在此处解决。
+ *
  * @param params 子会话装配参数
+ * @param maxConcurrent 同一步并发额度（装配期由 `act.subagentConcurrency` 解析；调用方保证 > 0）
  * @returns 端口实现 + 在途计数读取器（诊断/测试用；**不参与深度判定**）
  */
-export function createDelegateTaskPort(params: SubagentRuntimeParams): {
+export function createDelegateTaskPort(
+  params: SubagentRuntimeParams,
+  maxConcurrent: number,
+): {
   port: (request: DelegateTaskRequest, signal?: AbortSignal) => Promise<DelegateTaskPortResult>;
   /** 当前在途子会话数（并发闸内部状态） */
   inFlight: () => number;
@@ -674,13 +677,16 @@ export function createDelegateTaskPort(params: SubagentRuntimeParams): {
     request: DelegateTaskRequest,
     signal?: AbortSignal,
   ): Promise<DelegateTaskPortResult> => {
-    if (inFlight >= SUBAGENT_MAX_CONCURRENT) {
-      // 文案自解释：上限 / 当前在跑数 / 该怎么办。这句会进 tool_result，
+    if (inFlight >= maxConcurrent) {
+      // 文案自解释：额度 / 当前在跑数 / 该去改哪个配置。这句会进 tool_result，
       // 父模型读到后才知道该等前面完成再派，而不是盲目重试或直接放弃。
       throw toolError(
         'delegate_task 并发超限',
-        `同一步最多 ${SUBAGENT_MAX_CONCURRENT} 个子会话同时执行，当前已有 ${inFlight} 个在跑`,
-        ['等已派发的子会话返回后再派发新的任务'],
+        `同一步最多 ${maxConcurrent} 个子会话同时执行，当前已有 ${inFlight} 个在跑`,
+        [
+          '等已派发的子会话返回后再派发新的任务',
+          '如需调整额度：修改角色包策略 act.subagentConcurrency（0 = 关闭派发）',
+        ],
         undefined,
         ToolErrorCode.ARGUMENT_ERROR,
       );
@@ -1644,8 +1650,12 @@ export async function assembleComponents(
 
   // ── delegate_task 派发端口（子会话 v1）──
   // 子装配与本模块 createAgentLoopAndDeps 同源：父侧新增安全选项时同文件可见、不会漏配。
-  // 并发硬限：同一步最多 SUBAGENT_MAX_CONCURRENT 个（信号量；超出直接报错，不排队——
-  // 排队会把父 step 拖成长尾，父又无法取消单个子任务）。
+  // 额度来自角色包策略 act.subagentConcurrency（装配期解析一次，派发时复用；切换角色包不会
+  // 重建本端口）。额度 = 0 ⇒ 不注入端口 ⇒ delegate_task 经 ToolExecutor 既有「端口不存在」
+  // 路径自然不进工具清单，不新增分支或错误码。
+  // 刻意不做进程级并发池 / 单例 gate：主会话自身没有进程级并发限制，子会话不该更严；
+  // 唯一真实瓶颈是 model provider 的配额，属 provider 层，不在此处解决。
+  const subagentConcurrency = resolveSubagentConcurrency(rolePackManager.getActive()?.strategy);
   const subagentParams: SubagentRuntimeParams = {
     provider,
     projectPath,
@@ -1667,7 +1677,9 @@ export async function assembleComponents(
     locale,
   };
   // 在途子会话计数：只用于并发闸，不参与深度判定（深度由「子装配不注入端口」结构性保证）
-  toolExec.setDelegateTask(createDelegateTaskPort(subagentParams).port);
+  if (subagentConcurrency > 0) {
+    toolExec.setDelegateTask(createDelegateTaskPort(subagentParams, subagentConcurrency).port);
+  }
 
   // 装配 loop 运行时回调 + 任务表管理（onPendingQuestion/onPlanItemBoundary/getTaskTable/planManager）
   wireRuntimeCallbacks(loop, toolExec, sessionManager, hooks, history);

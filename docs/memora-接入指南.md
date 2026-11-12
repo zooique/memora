@@ -788,15 +788,16 @@ const getAgent = (sessionId: string) => agentRegistry.createAgentForSession(sess
 
 > 本约束原仅存于宿主实现注释（`extension.ts` 的"杜绝双实例覆盖写"；仓库内参考实现，**非随包产物**），现提升为宿主接入契约基线，避免新宿主对接踩坑。原子写实锤已具备（`atomicWriteFileSync`），单例 + 原子写已对齐主流硬化做法（grida / Chatbox 同款 tmp+rename）；唯一真实残留为跨进程锁，已列入检查清单第 4 项。
 
-## 十.7、策略键消费矩阵（17 键 SSOT 落点）📌 参考
+## 十.7、策略键消费矩阵（18 键 SSOT 落点）📌 参考
 
-> 逐键矩阵（17 键 × 内核消费位置 × UI 侧消费）为仓库内开发文档（SSOT：`src/role-pack/strategyKeys.ts`），**不随包发布**；宿主对接所需的键语义见 [role-pack-authoring-guide.md](./architecture/role-pack-authoring-guide.md) §三。此处只给新宿主对接必知的结论与边界。
+> 逐键矩阵（18 键 × 内核消费位置 × UI 侧消费）为仓库内开发文档（SSOT：`src/role-pack/strategyKeys.ts`），**不随包发布**；宿主对接所需的键语义见 [role-pack-authoring-guide.md](./architecture/role-pack-authoring-guide.md) §三。此处只给新宿主对接必知的结论与边界。
 
-- **17 键全部被内核真实消费、零 `[草案]`**（prepare 1 / act 7 / reflect 3 / global 6）。解析层 `rolePackManager` + `strategyResolver` 测试守护，消费层跨 `contextPreparer` / `loop` / `agent` / `managers/llmCaller` / `toolRunner` / `orchestrator` / `prepare` 多文件覆盖。
+- **18 键全部被内核真实消费、零 `[草案]`**（prepare 1 / act 8 / reflect 3 / global 6）。解析层 `rolePackManager` + `strategyResolver` 测试守护，消费层跨 `contextPreparer` / `loop` / `agent` / `managers/llmCaller` / `toolRunner` / `orchestrator` / `prepare` / `assembler` 多文件覆盖。
 - **三类流向，单一收口无镜像**：
   1. act 5 键（`toolMode`/`toolStepLimit`/`providerRouting`/`multiStepReasoning`/`toolReadonly`）+ `selfReview` + **global 键中经聚合的 5 键**（`errorHandling`/`contextLimit`/`stepBudget`/`askLimit`/`webSearchLimit`）——此「5 键」是「**经 `resolveL2Strategy()` 聚合这一层**」的子集，global 第 6 键 `askOn` 不走聚合（归第 3 类）；上列各键统一经 `resolveL2Strategy()` 聚合注入 `L2RuntimeStrategy`，loop 经 `this.strategy.<field>` 读取；`act.temperature`/`outputLimit` 由 `agent.ts` 直映射 `ChatOptions`（不经聚合）；
   2. prepare 键经 `resolveActiveStrategy()` 单一真理源流入 `contextPreparer` / `roundSummaryGenerator`；
   3. persona 指令类（`userFollowup`/`askOn`/`askLimit`）由 `assembleRolePack()` 单收口注入——**`askLimit` 是双面键**：既在第 1 类经聚合进 `L2RuntimeStrategy` 供 loop 硬护栏消费，又在此处随 persona prompt 注入，两处各占一面、**非重复计数**。
+- **`act.subagentConcurrency` 不走上述三类**：由 `assembler.ts` 装配期经 `resolveSubagentConcurrency()` 直接消费（装配一次、派发复用；`0` = 不注入派发端口 ⇒ `delegate_task` 结构性不可见；省略 = 内核缺省 4）。该额度只限同一批 tool_call 内并行数，**不会让模型自动并行**。
 - **⚠️ 边界纠正：`toolReadonly` 内核已执行，非「无宿主执行方」**。`toolRunner.ts` 只剩两层闸：闸①（只读闸 `toolReadonly==='readonly'`）**由内核执行**；闸③（宿主 `preExecutionCheck` 注入点）当前 VS Code 宿主恒放行（`assemble.ts` 恒返回 `() => ({ skip: false })`）只是单用户信任模型下的显式让行（关联 十.5 / 设计纪律 D5），未来多用户/服务端须替换真实审批。原闸② `toolApproval` 审批链已随 3.0.0 删键（2026-09-11，故代码注释 ①/③ 编号保留）：单用户本地无真实审批场景，原"通知宿主 + UI 需审批 chip"是展示性假承诺——整键删除，新宿主切勿再期待 `onToolApproval` 回调或 `toolApproval==='confirm'` 语义，审批须自行在 `preExecutionCheck` 实现。
 - **UI 侧 6 键有呈现**：宿主角色列表视图渲染策略 chip 5 键（`toolReadonly` / `summaryFocus` / `outputLimit` / `temperature` / `multiStepReasoning`）+ `toolMode` 经对话视图 capability badge 渲染（'纯 LLM' / '全部工具'）。能力名映射与策略键无关，**勿混淆**。（上述 UI 实现均为仓库内宿主参考实现，**非随包产物**。）
 

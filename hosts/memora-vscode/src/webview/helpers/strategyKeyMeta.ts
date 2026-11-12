@@ -57,6 +57,10 @@ export const STRATEGY_KEY_META: Record<string, StrategyKeyMetaEntry> = {
     label: 'Tool step limit',
     tip: 'Maximum tool steps per turn (0 = unlimited). Leave blank for the default.',
   },
+  subagentConcurrency: {
+    label: 'Subagent concurrency',
+    tip: 'How many subagent tasks may run in parallel within one tool-call batch (0 = turn delegation off). Blank = kernel default 4. This quota never makes the model parallelize on its own.',
+  },
   providerRouting: {
     label: 'Model routing',
     tip: 'auto = choose a model by task; fixed = pin the current model',

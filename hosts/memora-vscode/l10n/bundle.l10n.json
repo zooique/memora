@@ -383,6 +383,8 @@
   "Maximum tokens for a single-turn answer; 0 or blank = no intervention (use the model or provider default)": "",
   "Tool step limit": "",
   "Maximum tool steps per turn (0 = unlimited). Leave blank for the default.": "",
+  "Subagent concurrency": "",
+  "How many subagent tasks may run in parallel within one tool-call batch (0 = turn delegation off). Blank = kernel default 4. This quota never makes the model parallelize on its own.": "",
   "Model routing": "",
   "auto = choose a model by task; fixed = pin the current model": "",
   "Automatic routing": "",
