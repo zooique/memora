@@ -111,7 +111,7 @@ export interface ReflectStrategy {
 export interface GlobalStrategy {
   /** 角色包上下文上限（0=不设额外上限，跟随 provider 窗口；与 provider 窗口取小值后成为有效窗口） */
   readonly contextLimit?: number;
-  /** 每轮工具步数上限（默认 50；内核已消费） */
+  /** 每轮工具步数上限（解析层缺省 0；运行期 0 兜底 loop.maxIterations，其缺省 DEFAULT_MAX_ITERATIONS=50；内核已消费） */
   readonly stepBudget?: number;
   /** 异常时的处理策略（默认 retry） */
   readonly errorHandling?: ErrorHandling;
