@@ -12194,6 +12194,59 @@ describe('块类型标与折叠箭头（批次三）', () => {
     expect(row().querySelector('.round-block__tool-summary')).toBeNull();
   });
 
+  it('delegate 截断标注三态：字段 true/false 为权威，字段缺失退回旧长度兜底', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '派子任务' });
+    // 三条并排对照：字段 true（摘录很短）/ 字段 false（摘录恰好 800）/ 字段缺失（摘录恰好 800）
+    const atLimitExcerpt = '字'.repeat(800);
+    const cases: Array<{ id: string; excerpt: string; excerptTruncated?: boolean }> = [
+      { id: 'tr-true', excerpt: '短摘录', excerptTruncated: true },
+      { id: 'tr-false', excerpt: atLimitExcerpt, excerptTruncated: false },
+      { id: 'tr-legacy', excerpt: atLimitExcerpt },
+    ];
+    cases.forEach((c, i) => {
+      dispatchEv({
+        type: 'tool_start',
+        seq: 2 + i * 2,
+        ts: 'T1',
+        payload: {
+          toolCallId: c.id,
+          name: 'delegate_task',
+          args: JSON.stringify({ task: '任务' }),
+          stepIndex: i + 1,
+        },
+      });
+      dispatchEv({
+        type: 'tool_result',
+        seq: 3 + i * 2,
+        ts: 'T2',
+        payload: {
+          toolCallId: c.id,
+          name: 'delegate_task',
+          ok: true,
+          summary: '通用摘要',
+          delegate: {
+            terminal: 'completed',
+            excerpt: c.excerpt,
+            // 字段缺失态必须真的不带键，才能覆盖旧内核兜底分支
+            ...(c.excerptTruncated === undefined ? {} : { excerptTruncated: c.excerptTruncated }),
+            durationMs: 1_000,
+          },
+        },
+      });
+    });
+    const marker = (id: string) =>
+      document.querySelector(
+        `.round-block__tool[data-tool-call-id="${id}"] .round-block__delegate-truncated`,
+      );
+    // 字段权威：短摘录但字段说 true 也要标
+    expect(marker('tr-true')?.textContent).toBe(' · Truncated');
+    // 字段权威：摘录恰好 800 但字段明确 false ⇒ 不标（旧 `>=` 会误标，正是本次堵的洞）
+    expect(marker('tr-false')).toBeNull();
+    // 字段缺失（旧内核/旧轮次）⇒ 退回旧口径 >= 800，避免真截断静默丢失
+    expect(marker('tr-legacy')?.textContent).toBe(' · Truncated');
+  });
+
   it('delegate_task 老数据（无 delegate 字段）：诚实回退 Succeeded / Failed 两态', () => {
     mountChatView();
     dispatchReplay(

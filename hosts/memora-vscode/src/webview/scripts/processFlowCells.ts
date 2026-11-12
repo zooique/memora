@@ -210,8 +210,28 @@ function delegateBadgeText(label: string): string {
   return ` ${l10n.t('[{0}]', label)}`;
 }
 
-/** 结论摘录硬上限（镜像内核 `DELEGATE_EXCERPT_MAX_CHARS`）：达到即由宿主补「已截断」标注 */
-const DELEGATE_EXCERPT_MAX_CHARS = 800;
+/**
+ * **历史轮次兼容层（不可删）**：老轮次落盘时内核还没有 `excerptTruncated` 字段——那些记录
+ * 永远不会有该字段，内核以后发多少版都补不回来。字段缺失时只能按长度反推，这不是
+ * 「等字段到位就删」的临时补丁。
+ *
+ * 新记录一律读字段；本常量只服务于字段缺失的老数据。
+ */
+const LEGACY_DELEGATE_EXCERPT_MAX_CHARS = 800;
+
+/**
+ * 摘录是否被截断：字段优先，字段缺失才回退长度判据（历史轮次兼容）。
+ *
+ * 三态语义（与内核 `DelegateTaskReceipt.excerptTruncated` 对齐）：
+ *   - `true`  → 已截断；
+ *   - `false` → 未截断（**不再看长度**，字段是权威）；
+ *   - `undefined` → 老轮次（该字段当时不存在）⇒ 退回 `>= 800`（宁可多标不可漏标，
+ *     避免历史会话的真截断静默丢失）。这一支是常驻兼容，不随内核版本升级删除。
+ */
+function isDelegateExcerptTruncated(delegate: DelegateReceipt): boolean {
+  if (delegate.excerptTruncated !== undefined) return delegate.excerptTruncated === true;
+  return delegate.excerpt.length >= LEGACY_DELEGATE_EXCERPT_MAX_CHARS;
+}
 
 /** delegate_task 回执数据面（从 ProcessEvent 派生，内核未把该类型加入公共导出） */
 type DelegateReceipt = NonNullable<
@@ -290,7 +310,7 @@ function buildDelegateReceipt(
   const meta = doc.createElement('div');
   meta.className = 'round-block__delegate-meta';
   meta.textContent = l10n.t('Executed {0}', fmtDuration(delegate.durationMs));
-  if (delegate.excerpt.length >= DELEGATE_EXCERPT_MAX_CHARS) {
+  if (isDelegateExcerptTruncated(delegate)) {
     const truncated = doc.createElement('span');
     truncated.className = 'round-block__delegate-truncated';
     truncated.textContent = ` · ${l10n.t('Truncated')}`;
