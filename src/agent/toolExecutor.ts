@@ -1363,9 +1363,11 @@ export class ToolExecutor {
         );
       case 'read_image': {
         // 图片不进 tool 消息（协议下 tool content 只能文本）：经结构化 outcome 的 attachments
-        // 交给 loop，在出站视图尾部合成 user 消息；本分支只返回文字说明
-        const { text, ref } = await this.builtinHandlers.readImage(strArg('path'));
-        emitOutcome?.(okOutcome(text, [ref]));
+        // 交给 loop，在出站视图尾部合成 user 消息；本分支只返回文字说明。
+        // 目录模式会一次返回多张（handler 逐张调端口），故这里必须整组透传 refs；
+        // 去重与单轮总数上限在 loop 侧统一裁决（那里才看得见本轮已挂的图）
+        const { text, refs } = await this.builtinHandlers.readImage(strArg('path'));
+        emitOutcome?.(okOutcome(text, refs));
         return text;
       }
       case 'write_file':

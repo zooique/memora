@@ -10,9 +10,9 @@
  * 路由隔离（`determineTaskType` 跳过合成消息）。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { AgentLoop } from '@/agent/loop.js';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
@@ -21,7 +21,13 @@ import { ToolErrorCode } from '@/utils/errors.js';
 import type { MemoraError } from '@/utils/errors.js';
 import { determineTaskType } from '@/agent/managers/llmCaller.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
-import { BUILTIN_TOOLS } from '@/agent/builtinTools.js';
+import {
+  BUILTIN_TOOLS,
+  READ_IMAGE_MAX_BYTES_PER_CALL,
+  READ_IMAGE_MAX_PER_CALL,
+  READ_IMAGE_MAX_PER_ROUND,
+  READ_IMAGE_SUPPORTED_EXTENSIONS,
+} from '@/agent/builtinTools.js';
 import type { ToolDefinition } from '@/agent/builtinTools.js';
 import { okOutcome } from '@/agent/managers/toolCallHelpers.js';
 import type { ToolOutcome } from '@/agent/managers/toolCallHelpers.js';
@@ -98,6 +104,20 @@ describe('read_image · 路由隔离', () => {
     // 对照（证明断言有判据）：同一条消息去掉 synthetic 即 reasoning
     const withoutTag: Message[] = [{ role: 'user', content: longContent }];
     expect(determineTaskType(withoutTag)).toBe('reasoning');
+  });
+});
+
+describe('read_image · 工具描述', () => {
+  it('描述写明目录模式与全部限额，格式清单与实现同源（模型据此决定调不调）', () => {
+    const desc = READ_IMAGE_DEF.description;
+    expect(desc).toContain('目录');
+    // 格式清单唯一真源：描述里的每个扩展名都来自 READ_IMAGE_SUPPORTED_EXTENSIONS
+    for (const ext of READ_IMAGE_SUPPORTED_EXTENSIONS) expect(desc).toContain(ext);
+    expect(desc).toContain(`单次 ≤ ${READ_IMAGE_MAX_PER_CALL} 张`);
+    expect(desc).toContain(`同一轮附图最多 ${READ_IMAGE_MAX_PER_ROUND} 张`);
+    expect(desc).toContain(`${READ_IMAGE_MAX_BYTES_PER_CALL / 1024 / 1024} MiB`);
+    // 超限行为必须写明「不会只附前几张」
+    expect(desc).toContain('不会只附前几张');
   });
 });
 
@@ -225,6 +245,9 @@ describe('read_image · 两种「不可用」原因分开说', () => {
     expect(outcomes[0]!.text).toContain('当前模型未声明支持图片输入');
     expect(outcomes[0]!.text).toContain('supportsVision');
     expect(outcomes[0]!.text).toContain('不是文件问题');
+    // 指到具体设置位置（不只说「未开启」）：命令 + 勾选项，用户知道去哪开
+    expect(outcomes[0]!.text).toContain('Memora: 配置大模型');
+    expect(outcomes[0]!.text).toContain('支持图片输入');
     expect(outcomes[0]!.text).not.toContain('当前宿主不支持读图');
     // 执行前拦截：宿主端口与 executor 都未被触碰（不制造「读了文件才发现不行」的假象）
     expect(port).not.toHaveBeenCalled();
@@ -283,6 +306,152 @@ describe('read_image · handler 侧原因文案（绕过 loop 直调执行器时
     expect(err.detail).toBe(hostReason);
     expect(err.suggestions.join(' ')).toContain('supportsVision');
     expect(err.errorCode).toBe(ToolErrorCode.NOT_AVAILABLE);
+  });
+
+  // ── 目录模式（端口契约保持单张，目录枚举在 handler 内逐张调端口） ──
+
+  it('目录模式：多图按文件名排序返回，不递归子目录、不误读非图片', async () => {
+    const dir = join(projectPath, 'shots');
+    await mkdir(join(dir, 'nested'), { recursive: true });
+    await writeFile(join(dir, 'b.png'), 'b');
+    await writeFile(join(dir, 'a.jpg'), 'a');
+    await writeFile(join(dir, 'c.webp'), 'c');
+    await writeFile(join(dir, 'notes.txt'), 'skip');
+    await writeFile(join(dir, 'nested', 'd.png'), 'nested');
+    handlers.setImageReadPort(async (abs) => ({
+      ok: true,
+      ref: makeRef(`sha-${basename(abs)}`, basename(abs)),
+    }));
+
+    const read = await handlers.readImage('shots');
+
+    // 排序 = 文件名（a < b < c）；非图片与子目录内容都不进结果
+    expect(read.refs.map((r) => r.name)).toEqual(['a.jpg', 'b.png', 'c.webp']);
+    expect(read.text).toContain('已读取目录 shots 下的 3 张图片（按文件名排序）');
+    expect(read.text).not.toContain('notes.txt');
+    expect(read.text).not.toContain('d.png');
+  });
+
+  it('目录超过单次 8 张 → 报错并列出候选，不静默只附前 8 张', async () => {
+    const dir = join(projectPath, 'many');
+    await mkdir(dir, { recursive: true });
+    for (let i = 0; i < 10; i++) {
+      await writeFile(join(dir, `img-${String(i).padStart(2, '0')}.png`), 'x');
+    }
+    /** 端口替身：本用例必须零调用（证明没有「先附前 8 张」的行为） */
+    const port = vi.fn();
+    handlers.setImageReadPort(port);
+
+    let err: MemoraError | undefined;
+    try {
+      await handlers.readImage('many');
+      expect.unreachable('超过 8 张必须报错');
+    } catch (e) {
+      err = e as MemoraError;
+    }
+    expect(err.errorCode).toBe(ToolErrorCode.ARGUMENT_ERROR);
+    expect(err.detail).toContain('共 10 张受支持的图片');
+    expect(err.detail).toContain(`超过单次 ${READ_IMAGE_MAX_PER_CALL} 张上限`);
+    // 候选清单齐全（首个与末个都在），不是只给前 8 个
+    expect(err.detail).toContain('img-00.png');
+    expect(err.detail).toContain('img-09.png');
+    expect(port).not.toHaveBeenCalled();
+  });
+
+  it('目录内没有受支持的图片 / 空目录 → 报错且不调用端口', async () => {
+    await mkdir(join(projectPath, 'only-text'), { recursive: true });
+    await mkdir(join(projectPath, 'empty'), { recursive: true });
+    await writeFile(join(projectPath, 'only-text', 'readme.md'), '# hi');
+    const port = vi.fn();
+    handlers.setImageReadPort(port);
+
+    for (const dirName of ['only-text', 'empty']) {
+      let err: MemoraError | undefined;
+      try {
+        await handlers.readImage(dirName);
+        expect.unreachable('目录内没有图片必须报错');
+      } catch (e) {
+        err = e as MemoraError;
+      }
+      expect(err.title).toContain('目录内没有图片');
+      expect(err.errorCode).toBe(ToolErrorCode.FILE_NOT_FOUND);
+    }
+    expect(port).not.toHaveBeenCalled();
+  });
+
+  it('目录不存在 → FILE_NOT_FOUND「路径不存在」，不误报成读图不可用', async () => {
+    handlers.setImageReadPort(async () => ({ ok: false, text: 'stub' }));
+    let err: MemoraError | undefined;
+    try {
+      await handlers.readImage('no-such-dir');
+      expect.unreachable('路径不存在必须报错');
+    } catch (e) {
+      err = e as MemoraError;
+    }
+    expect(err.errorCode).toBe(ToolErrorCode.FILE_NOT_FOUND);
+    expect(err.detail).toContain('不存在');
+  });
+
+  it('目录越界 → PATH_NOT_ALLOWED（目录模式不绕过路径校验）', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'memora-outside-'));
+    try {
+      await writeFile(join(outside, 'x.png'), 'x');
+      handlers.setImageReadPort(async () => ({ ok: true, ref: makeRef('sha-x', 'x.png') }));
+      let err: MemoraError | undefined;
+      try {
+        // 绝对路径且在项目根之外：守卫必须硬拒
+        await handlers.readImage(outside);
+        expect.unreachable('越界路径必须拒绝');
+      } catch (e) {
+        err = e as MemoraError;
+      }
+      expect(err.errorCode).toBe(ToolErrorCode.PATH_NOT_ALLOWED);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('单次图片总字节超过 20 MiB → 报错并写明当前总量，不读盘', async () => {
+    const dir = join(projectPath, 'big');
+    await mkdir(dir, { recursive: true });
+    // 5 × (4 MiB + 1) ≈ 20 MiB + 5 字节：张数不超限（5 ≤ 8），只触发总量上限
+    const chunk = Buffer.alloc(4 * 1024 * 1024 + 1);
+    for (let i = 0; i < 5; i++) await writeFile(join(dir, `big-${i}.png`), chunk);
+    const port = vi.fn();
+    handlers.setImageReadPort(port);
+
+    let err: MemoraError | undefined;
+    try {
+      await handlers.readImage('big');
+      expect.unreachable('总量超限必须报错');
+    } catch (e) {
+      err = e as MemoraError;
+    }
+    expect(err.errorCode).toBe(ToolErrorCode.ARGUMENT_ERROR);
+    expect(err.detail).toContain('合计 20.0 MiB');
+    expect(err.detail).toContain(
+      `超过单次 ${(READ_IMAGE_MAX_BYTES_PER_CALL / 1024 / 1024).toFixed(1)} MiB 上限`,
+    );
+    // stat 预筛：超限时一张都不读进内存
+    expect(port).not.toHaveBeenCalled();
+  });
+
+  it('目录里坏 1 张不影响其余：成功附上的图与失败原因都写明', async () => {
+    const dir = join(projectPath, 'mixed');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'bad.png'), 'bad');
+    await writeFile(join(dir, 'good.png'), 'good');
+    handlers.setImageReadPort(async (abs) =>
+      basename(abs) === 'bad.png'
+        ? { ok: false, text: '不是有效图片' }
+        : { ok: true, ref: makeRef(`sha-${basename(abs)}`, basename(abs)) },
+    );
+
+    const read = await handlers.readImage('mixed');
+
+    expect(read.refs.map((r) => r.name)).toEqual(['good.png']);
+    expect(read.text).toContain('未附上的 1 张');
+    expect(read.text).toContain('bad.png：不是有效图片');
   });
 });
 
@@ -356,5 +525,33 @@ describe('read_image · 出站视图合成', () => {
     // 去重：两次同 sha 只累积一张
     expect(priv.pendingImageReads).toHaveLength(1);
     expect(priv.pendingImageReads[0]?.sha256).toBe('sha-dup');
+
+    // 去重结论必须写进 tool 结果文本：否则用户/模型数不明白「为什么只看到 1 张」
+    const toolTexts = persisted.filter((m) => m.role === 'tool').map((m) => m.content as string);
+    expect(toolTexts[0]).not.toContain('【附件去重】');
+    expect(toolTexts[1]).toContain('本次 1 张中有 1 张与已有图重复，已略过');
+  });
+
+  it('同一轮附图总数上限 12：超出的图明确告知留待下一轮（不静默丢弃）', () => {
+    const loop = makeLoop();
+    const priv = internals(loop);
+    /** 比上限多 1 张 */
+    const refs = Array.from({ length: READ_IMAGE_MAX_PER_ROUND + 1 }, (_, i) =>
+      makeRef(`sha-cap-${i}`, `img-${i}.png`),
+    );
+
+    priv._processToolResults(
+      [toolCall('call-cap', 'read_image')],
+      [okOutcome(`已读取 ${refs.length} 张图片`, refs)],
+    );
+
+    // 队列只收上限内数量；工具结果文字明确「剩余 N 张未附」
+    expect(priv.pendingImageReads).toHaveLength(READ_IMAGE_MAX_PER_ROUND);
+    const toolMsg = loop
+      .getMessages()
+      .filter((m) => m.role === 'tool')
+      .at(-1);
+    expect(toolMsg?.content).toContain(`本轮附图已达 ${READ_IMAGE_MAX_PER_ROUND} 张`);
+    expect(toolMsg?.content).toContain('剩余 1 张未附');
   });
 });

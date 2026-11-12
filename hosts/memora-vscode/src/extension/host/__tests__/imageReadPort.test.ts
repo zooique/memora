@@ -85,4 +85,23 @@ describe('createImageReadPort — 失败不抛异常', () => {
 
     expect(result.ok).toBe(false);
   });
+
+  it('超过单张 5 MiB ⇒ 拒绝文案可操作（实际大小 + 超出量 + 怎么缩）', async () => {
+    const dir = makeTempDir('memora-readimg-');
+    const file = join(dir, 'huge.png');
+    // 只造大小、不造合法图片：尺寸预筛在 readFile 之前就应拦下（证明没读进内存）
+    writeFileSync(file, Buffer.alloc(5 * 1024 * 1024 + 1024 * 1024));
+    const port = createImageReadPort({
+      cache: new ImageCache(),
+      getActiveVision: () => true,
+    });
+
+    const result = await port(file);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.text).toContain('文件 6.0 MiB');
+    expect(result.text).toContain('超过单张 5 MiB 上限 1.0 MiB');
+    expect(result.text).toContain('裁剪或压缩');
+  });
 });

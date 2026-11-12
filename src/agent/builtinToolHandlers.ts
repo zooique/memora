@@ -14,8 +14,8 @@
  * 所有方法接收参数，是无状态的纯计算 + I/O 操作。
  */
 import { readFile, writeFile, mkdir, readdir, stat, access, unlink } from 'node:fs/promises';
-import { constants } from 'node:fs';
-import { resolve, isAbsolute, join, relative, dirname, basename } from 'node:path';
+import { constants, type Dirent } from 'node:fs';
+import { resolve, isAbsolute, join, relative, dirname, basename, extname } from 'node:path';
 import { NO_OVERWRITE_HINTS, type SecurityGuard } from '@/security/pathGuard.js';
 import { toolError, MemoraError, ToolErrorCode } from '@/utils/errors.js';
 import { toError, isNodeErrorCode } from '@/utils/toError.js';
@@ -35,6 +35,9 @@ import { formatSegmentationFooter, READ_FILE_NOTICE_PREFIX } from '@/agent/toolL
 import {
   DEFAULT_WRITE_FILE_MODE,
   WRITE_FILE_MODES,
+  READ_IMAGE_MAX_BYTES_PER_CALL,
+  READ_IMAGE_MAX_PER_CALL,
+  READ_IMAGE_SUPPORTED_EXTENSIONS,
   isWriteFileMode,
   type WriteFileMode,
 } from '@/agent/builtinTools.js';
@@ -186,6 +189,17 @@ function sniffBinaryLabel(buf: Uint8Array): string {
     return ' ZIP 压缩包';
   }
   return '二进制文件';
+}
+
+/**
+ * 字节数 → 人读大小（目录候选清单与限额文案共用）
+ *
+ * @param bytes 字节数
+ * @returns 如 `820 KB` / `3.4 MiB`（KB 至少显示 1，避免小文件显示 0）
+ */
+function formatImageSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
 /**
@@ -363,14 +377,25 @@ export class BuiltinToolHandlers {
   /**
    * 读取图片（`read_image`）：路径守卫与 `read_file` 同源（黑名单优先、硬拒、先拒后读盘）。
    *
-   * 字节**不经过本方法**：宿主端口负责读盘、校验（5 MiB / 4 格式）与字节入缓存，
-   * 返回 `ImageRef`；本方法只产出「工具结果文本 + ref」，图由 loop 在出站视图尾部合成
-   * user 消息送模型（tool 角色在 OpenAI 兼容协议下只能承载文本）。
+   * `path` 支持**文件**与**目录**（不递归）：
+   * - 文件：单张；目录：枚举该目录下受支持扩展名的普通文件，按文件名排序后**逐张**调用端口。
+   * - 端口契约保持「读一张图」的原语（`ImageReadResult` 不变）：目录枚举属于策略层，
+   *   放在 handler；逐张调用还能逐张报错——8 张里坏 1 张，其余照常给。
+   * - 字节**不经过本方法**：宿主端口负责读盘、校验（5 MiB / 4 格式）与字节入缓存，
+   *   返回 `ImageRef`；本方法只产出「工具结果文本 + refs」，图由 loop 在出站视图尾部合成
+   *   user 消息送模型（tool 角色在 OpenAI 兼容协议下只能承载文本）。
+   *
+   * **明确不做**（后人勿再提）：
+   * - 不做本地缩放/重编码：extension host 无 canvas，Node 侧要 `sharp`（原生二进制、
+   *   按平台打包）或纯 JS 解码器（慢、内存高），为一个超大图引入原生图像库交换不成立；
+   *   超大图走「明确拒绝 + 可操作文案」；
+   * - 不做从用户自然语言里正则抓路径自动附图：路径形态靠猜，且大图进历史后整段会话持续报错；
+   * - 不做自动切视觉模型转述、不做 OCR 兜底（主流实现都没有）。
    *
    * @param relativePath 相对项目根的路径（也接受绝对路径；白名单判定由 guardPathOrThrow）
-   * @returns 工具结果文本 + 图片引用（供 `ToolOutcome.attachments` 结构化通道）
+   * @returns 工具结果文本 + 图片引用数组（供 `ToolOutcome.attachments` 结构化通道）
    */
-  async readImage(relativePath: string): Promise<{ text: string; ref: ImageRef }> {
+  async readImage(relativePath: string): Promise<{ text: string; refs: readonly ImageRef[] }> {
     if (!relativePath) {
       throw toolError(
         'read_image 工具调用缺少 path 参数',
@@ -384,14 +409,6 @@ export class BuiltinToolHandlers {
     // 路径守卫：与 read_file 同一套（先拒后读盘，绝不在校验前 stat/read）
     const absolutePath = this.resolveSafePath(relativePath);
     this.guardPathOrThrow(absolutePath, 'read_image');
-
-    // 读前预检：目标是目录时直接给出改用 list_dir 的指引（与 read_file 同款文案策略）
-    await this.assertFileNotDir(
-      absolutePath,
-      relativePath,
-      'read_image',
-      '改用 list_dir 列出该目录下的内容',
-    );
 
     const port = this.imageReadPort;
     if (!port) {
@@ -409,6 +426,27 @@ export class BuiltinToolHandlers {
       );
     }
 
+    // 目标类型判定：stat 失败且是 ENOENT 时直接给「路径不存在」，不让端口把它报成「读图不可用」
+    let stats: Awaited<ReturnType<typeof stat>> | undefined;
+    try {
+      stats = await stat(absolutePath);
+    } catch (err) {
+      if (isNodeErrorCode(err, 'ENOENT')) {
+        throw toolError(
+          'read_image 路径不存在',
+          `${relativePath}：文件或目录不存在`,
+          ['确认路径正确（相对项目根）', '用 list_dir 确认目录结构'],
+          toError(err),
+          ToolErrorCode.FILE_NOT_FOUND,
+        );
+      }
+      // 其他 stat 故障（权限等）交给端口统一报错（不把 IO 故障伪装成「不是图片」）
+      stats = undefined;
+    }
+    if (stats?.isDirectory() === true) {
+      return this.readImageDirectory(relativePath, absolutePath, port);
+    }
+
     let result: Awaited<ReturnType<ImageReadPort>>;
     try {
       result = await port(absolutePath);
@@ -417,7 +455,10 @@ export class BuiltinToolHandlers {
       throw toolError(
         '读取图片失败',
         e.message,
-        ['确认文件存在且可读', '确认文件是受支持的图片格式（png/jpeg/webp/gif）'],
+        [
+          `确认文件存在且可读`,
+          `确认文件是受支持的图片格式（${READ_IMAGE_SUPPORTED_EXTENSIONS.join(' / ')}）`,
+        ],
         e,
         ToolErrorCode.UNKNOWN,
       );
@@ -431,8 +472,9 @@ export class BuiltinToolHandlers {
         'read_image 不可用',
         result.text,
         [
-          '确认文件是受支持的图片格式（png/jpeg/webp/gif）且不超过 5 MiB',
-          '若当前模型未声明支持图片输入（provider 配置项 supportsVision），需在配置中开启视觉后重试；只需要文本内容时改用 read_file',
+          `单张图片需 ≤ 5 MiB 且为 ${READ_IMAGE_SUPPORTED_EXTENSIONS.join(' / ')}：` +
+            '超限时先裁剪或压缩（降分辨率 / 转 JPEG 或 WebP）再读，内核不做本地缩放',
+          '若当前模型未声明支持图片输入（provider 配置项 supportsVision）：命令面板运行「Memora: 配置大模型」→ 编辑当前模型服务 → 勾选「支持图片输入」后重试；只需要文本内容时改用 read_file',
         ],
         undefined,
         ToolErrorCode.NOT_AVAILABLE,
@@ -443,7 +485,146 @@ export class BuiltinToolHandlers {
     const kb = Math.max(1, Math.round(ref.bytes / 1024));
     return {
       text: `已读取图片 ${ref.name}（${ref.mime}，${ref.width}x${ref.height}，${kb} KB），图像已附在本轮消息末尾供查看。`,
-      ref,
+      refs: [ref],
+    };
+  }
+
+  /**
+   * 目录模式的图片读取：枚举 → 按文件名排序 → 限额校验 → 逐张调端口
+   *
+   * 超限**不静默截断**：超过单次张数/总量直接报错并列出候选（文件名 + 大小），
+   * 让模型缩小范围或分批读；坏图逐张隔离（1 张校验失败不影响其余）。
+   *
+   * @param relativePath 展示用路径（模型传入原样）
+   * @param absolutePath 已过守卫的绝对路径（目录）
+   * @param port 宿主读图端口（单张原语）
+   */
+  private async readImageDirectory(
+    relativePath: string,
+    absolutePath: string,
+    port: ImageReadPort,
+  ): Promise<{ text: string; refs: readonly ImageRef[] }> {
+    /** 受支持扩展名集合（唯一清单在 builtinTools） */
+    const supported = new Set<string>(READ_IMAGE_SUPPORTED_EXTENSIONS);
+    /** 目录项（显式标注 string 版重载，避免被推断成 Buffer 版） */
+    let entries: Dirent[];
+    try {
+      entries = await readdir(absolutePath, { withFileTypes: true });
+    } catch (err) {
+      const e = toError(err);
+      throw toolError(
+        'read_image 目录读取失败',
+        `${relativePath}：${e.message}`,
+        ['确认目录存在且可读'],
+        e,
+        ToolErrorCode.UNKNOWN,
+      );
+    }
+
+    /** 候选图片（普通文件 + 受支持扩展名；大小用于限额与清单展示） */
+    const candidates: Array<{ name: string; absolutePath: string; bytes: number }> = [];
+    for (const entry of entries) {
+      // 不递归子目录；符号链接不跟（dirent.isFile() 对符号链接为 false，防指到项目外）
+      if (!entry.isFile()) continue;
+      if (!supported.has(extname(entry.name).toLowerCase())) continue;
+      const candidatePath = join(absolutePath, entry.name);
+      // 黑名单优先：逐文件复核，不因「目录本身合法」而豁免
+      this.guardPathOrThrow(candidatePath, 'read_image');
+      const info = await stat(candidatePath);
+      if (!info.isFile()) continue;
+      candidates.push({ name: entry.name, absolutePath: candidatePath, bytes: info.size });
+    }
+    // 按文件名排序（localeCompare：不同系统同一目录得到同一顺序，便于分批时模型可预期）
+    candidates.sort((a, b) => a.name.localeCompare(b.name));
+
+    if (candidates.length === 0) {
+      throw toolError(
+        'read_image 目录内没有图片',
+        `${relativePath}：目录下没有受支持的图片（支持 ${READ_IMAGE_SUPPORTED_EXTENSIONS.join(
+          ' / ',
+        )}，不递归子目录）。`,
+        ['确认路径是否指到了正确的目录', '用 list_dir 查看目录里有什么文件'],
+        undefined,
+        ToolErrorCode.FILE_NOT_FOUND,
+      );
+    }
+
+    // 上限①：单次张数——超了不截断，列出候选（最多 20 个）让模型自己缩范围
+    if (candidates.length > READ_IMAGE_MAX_PER_CALL) {
+      const listed = candidates
+        .slice(0, 20)
+        .map((c) => `- ${c.name}（${formatImageSize(c.bytes)}）`)
+        .join('\n');
+      const rest =
+        candidates.length > 20
+          ? `\n…还有 ${candidates.length - 20} 张未列出（共 ${candidates.length} 张）`
+          : '';
+      throw toolError(
+        'read_image 目录图片超过单次上限',
+        `${relativePath}：共 ${candidates.length} 张受支持的图片，超过单次 ${READ_IMAGE_MAX_PER_CALL} 张上限。\n` +
+          `候选（按文件名排序）：\n${listed}${rest}`,
+        [
+          `一次最多读 ${READ_IMAGE_MAX_PER_CALL} 张：把目录拆小，或分多次调用`,
+          '只需要看其中几张时，直接传具体文件路径',
+        ],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
+    }
+
+    // 上限②：单次总字节——按 stat 预筛，避免把 20+ MiB 读进内存再失败
+    const totalBytes = candidates.reduce((sum, c) => sum + c.bytes, 0);
+    if (totalBytes > READ_IMAGE_MAX_BYTES_PER_CALL) {
+      throw toolError(
+        'read_image 单次图片总量超限',
+        `${relativePath}：${candidates.length} 张图片合计 ${formatImageSize(
+          totalBytes,
+        )}，超过单次 ${formatImageSize(READ_IMAGE_MAX_BYTES_PER_CALL)} 上限。`,
+        [
+          `分批读取（每次合计不超过 ${formatImageSize(READ_IMAGE_MAX_BYTES_PER_CALL)}）`,
+          '或先裁剪/压缩图片再重试（内核不做本地缩放）',
+        ],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
+    }
+
+    /** 成功读取的图片引用（顺序 = 文件名排序） */
+    const refs: ImageRef[] = [];
+    /** 单张失败原因（坏 1 张不影响其余，但必须在文本里如实列出） */
+    const failures: string[] = [];
+    for (const candidate of candidates) {
+      try {
+        const result = await port(candidate.absolutePath);
+        if (result.ok) refs.push(result.ref);
+        else failures.push(`${candidate.name}：${result.text}`);
+      } catch (err) {
+        failures.push(`${candidate.name}：${toError(err).message}`);
+      }
+    }
+
+    if (refs.length === 0) {
+      throw toolError(
+        'read_image 目录内图片均读取失败',
+        `${relativePath}：${failures.length} 张候选图片均未通过校验。\n${failures.join('\n')}`,
+        ['确认图片格式与大小是否符合要求', '改用具体文件路径逐个排查'],
+        undefined,
+        ToolErrorCode.UNKNOWN,
+      );
+    }
+
+    const listedRefs = refs
+      .map((r) => `- ${r.name}（${r.mime}，${r.width}x${r.height}，${formatImageSize(r.bytes)}）`)
+      .join('\n');
+    const failureNote =
+      failures.length > 0
+        ? `\n未附上的 ${failures.length} 张（校验未通过）：\n${failures.join('\n')}`
+        : '';
+    return {
+      text:
+        `已读取目录 ${relativePath} 下的 ${refs.length} 张图片（按文件名排序）：\n${listedRefs}` +
+        `${failureNote}\n图像已附在本轮消息末尾供查看。`,
+      refs,
     };
   }
 

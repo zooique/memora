@@ -17,6 +17,7 @@ import type { ToolDefinition, WebSearchExecInfo } from '@/agent/toolExecutor.js'
 import {
   ASK_USER_TOOL,
   COMPRESS_CONTEXT_TOOL,
+  READ_IMAGE_MAX_PER_ROUND,
   REMEMBER_INTEL_TOOL,
   resolveWriteCapability,
   type WriteCapability,
@@ -334,7 +335,10 @@ const READ_IMAGE_UNAVAILABLE_CAUSES = {
   'host-no-port':
     '当前宿主不支持读图——宿主没有注入读图端口，例如 MCP 宿主。这不是文件问题，文件本身可能完全正常',
   'model-blind':
-    '当前模型未声明支持图片输入——这是 provider 的 supportsVision 配置项未开启，不是文件问题，文件本身可能完全正常',
+    '当前模型未声明支持图片输入——这是 provider 的 supportsVision 配置项未开启，不是文件问题，文件本身可能完全正常。' +
+    '开启方式：命令面板运行「Memora: 配置大模型」→ 编辑当前模型服务 → 勾选「支持图片输入」' +
+    '（或把 VS Code 设置 memora.providers[].supportsVision 置为 true）；' +
+    '输入框的图片按钮置灰时点击也会直接跳转到该设置',
 } as const;
 
 export class AgentLoop {
@@ -3985,19 +3989,54 @@ export class AgentLoop {
     for (let i = 0; i < toolCalls.length; i++) {
       const tc = toolCalls[i]!;
       const outcome = results[i]!;
+      // 图片附件：只累积到「出站视图待挂队列」（按 sha256 去重），**绝不写进 tool 消息**
+      // （协议下 tool content 只能文本）。挂载时机 = 下一次 _prepareContext 的返回值副本。
+      // 去重/上限的结论必须回写进这条 tool 结果：否则用户和模型会数不明白「为什么只看到 M 张」。
+      const attachments = outcome.attachments ?? [];
+      /** 实际写进 tool 消息的文本（可能追加去重/上限说明；不污染 metrics 与 outcome 本体） */
+      let outcomeText = outcome.text;
+      /** 与本轮已挂图 sha256 重复、被略过的张数 */
+      let duplicateCount = 0;
+      /** 因本轮附图总数上限（12 张）而留待下一轮的张数 */
+      let overflowCount = 0;
+      for (const ref of attachments) {
+        // 目录里有重复图 / 反复读同一张：按 sha256 去重（含同批次内重复）
+        if (this.pendingImageReads.some((r) => r.sha256 === ref.sha256)) {
+          duplicateCount++;
+          continue;
+        }
+        // 同一轮附图总数上限：超出**不静默丢弃**，在工具结果里写明剩余下轮再读
+        if (this.pendingImageReads.length >= READ_IMAGE_MAX_PER_ROUND) {
+          overflowCount++;
+          continue;
+        }
+        this.pendingImageReads.push(ref);
+      }
+      if (attachments.length > 0) {
+        /** 追加到工具结果末尾的诚实化说明（模型与用户都能看到） */
+        const notes: string[] = [];
+        if (duplicateCount > 0) {
+          // 用「】」而非方括号开头：工具结果首标签文法只认 `[TAG]`，这里只是说明文字
+          notes.push(
+            `【附件去重】本次 ${attachments.length} 张中有 ${duplicateCount} 张与已有图重复，已略过（按 sha256）`,
+          );
+        }
+        if (overflowCount > 0) {
+          notes.push(
+            `【本轮附图上限】本轮附图已达 ${READ_IMAGE_MAX_PER_ROUND} 张，剩余 ${overflowCount} 张未附：` +
+              '请下一轮再读（不要重复读取同一批；先基于已附图片作答）',
+          );
+        }
+        if (notes.length > 0) {
+          // 在包裹前拼进工具结果文本：`wrapToolResult` 内的文本才是模型实际看到的内容
+          outcomeText = `${outcomeText}\n\n${notes.join('\n')}`;
+        }
+      }
       // 工具结果隔离：用 <tool_result> 包裹 + 指令前缀，防外部工具返回承载间接注入；
       // 重试分类主判据是 outcome.errorCode（结构化契约，toolCallHelpers），
       // ERR 前缀仅兜底 errorCode 缺失的旧形态文本（该正则不锚定行首，包裹内仍可识别）
-      const wrapped = wrapToolResult(tc.function.name, outcome.text);
+      const wrapped = wrapToolResult(tc.function.name, outcomeText);
       this.appendToolMessage(wrapped, tc.id);
-
-      // 图片附件：只累积到「出站视图待挂队列」（按 sha256 去重），**绝不写进 tool 消息**
-      // （协议下 tool content 只能文本）。挂载时机 = 下一次 _prepareContext 的返回值副本
-      for (const ref of outcome.attachments ?? []) {
-        if (!this.pendingImageReads.some((r) => r.sha256 === ref.sha256)) {
-          this.pendingImageReads.push(ref);
-        }
-      }
 
       // 计数读 status（禁另立文本判据——判据面与渲染面分离是 SCRIPT-2 的核心契约）
       if (outcome.status === 'blocked') {

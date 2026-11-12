@@ -15,6 +15,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 import type { ImageReadPort, ImageRef } from '@zooique/memora';
 import { MAX_IMAGE_BYTES, validateImageCandidate } from '../../shared/imageValidation.js';
+import { formatMiB } from '../../shared/imageTurnLimits.js';
 import type { ImageCache } from './imageCache.js';
 
 /** 端口构造依赖（最小化：只取真正需要的能力，便于单测给替身） */
@@ -43,7 +44,10 @@ export function createImageReadPort(deps: ImageReadPortDeps): ImageReadPort {
     if (!deps.getActiveVision()) {
       return {
         ok: false,
-        text: 'read_image 已取消：当前模型未声明支持视觉输入（supportsVision=false）。请改用文字描述或让用户直接附图。',
+        text:
+          'read_image 已取消：当前模型未声明支持视觉输入（supportsVision=false）。' +
+          '开启方式：命令面板运行「Memora: 配置大模型」→ 编辑当前模型服务 → 勾选「支持图片输入」。' +
+          '请改用文字描述或让用户直接附图。',
       };
     }
 
@@ -58,7 +62,14 @@ export function createImageReadPort(deps: ImageReadPortDeps): ImageReadPort {
     }
     const maxMiB = Math.floor(MAX_IMAGE_BYTES / 1024 / 1024);
     if (sizeHint !== undefined && sizeHint > MAX_IMAGE_BYTES) {
-      return { ok: false, text: `读图失败：文件超过 ${maxMiB} MiB 上限，未读取。` };
+      // 拒绝文案必须可操作：说清超了多少、怎么缩（内核不做本地缩放，见 read_image 决策注释）
+      return {
+        ok: false,
+        text:
+          `读图失败：文件 ${formatMiB(sizeHint)} MiB，超过单张 ${maxMiB} MiB 上限 ` +
+          `${formatMiB(sizeHint - MAX_IMAGE_BYTES)} MiB，未读取。` +
+          `请先裁剪或压缩到 ${maxMiB} MiB 以内（降低分辨率，或转成 JPEG / WebP）后重试。`,
+      };
     }
 
     let bytes: Buffer;

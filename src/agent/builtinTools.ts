@@ -365,6 +365,39 @@ export const WEB_FETCH_CONTENT_MAX_LEN = 50_000;
 export const WEB_FETCH_CONTENT_DEFAULT_LEN = 8_000;
 
 /**
+ * `read_image` 支持的图片扩展名（**唯一清单**：工具 description 与目录扫描共用，禁第二份）
+ *
+ * 扩展名只用于「目录里哪些文件值得交给端口校验」的初筛；是否真是图片由宿主端口嗅探
+ * 文件头决定（扩展名不可信，这是既有安全/正确性纪律）。
+ */
+export const READ_IMAGE_SUPPORTED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'] as const;
+
+/**
+ * 单次 `read_image` 最多附带的图片数
+ *
+ * 依据：1568px 长边一张约 1600 tokens；8 张约 13k tokens。再往上在长会话里会挤掉
+ * 别的上下文（工具结果 / 规则段 / 历史），收益（再多看几张图）不抵成本。
+ */
+export const READ_IMAGE_MAX_PER_CALL = 8;
+
+/**
+ * 单次 `read_image` 附图总字节上限（20 MiB，= 8 张满额 40 MiB 的一半）
+ *
+ * 依据：8 张各 5 MiB 满额会把 base64（体积 ×4/3 ≈ 53 MiB）顶到 provider 请求体边界；
+ * 取一半既容纳 8 张常规截图（每张 1–2 MiB），又不会因一张大图把整批顶爆。
+ */
+export const READ_IMAGE_MAX_BYTES_PER_CALL = 20 * 1024 * 1024;
+
+/**
+ * 同一轮附图总数上限（12 张，含此前工具调用已挂上的图）
+ *
+ * 依据：1568px 长边一张约 1600 tokens；12 张约 19k tokens，是长会话里图片预算的上界
+ * （再多会明显挤占工具结果与历史）。超出的图不静默丢弃——由 loop 在工具结果里写明
+ * 「本轮已达上限，剩余下轮再读」。
+ */
+export const READ_IMAGE_MAX_PER_ROUND = 12;
+
+/**
  * web_fetch 工具定义（独立导出，条件性包含）
  *
  * 与 web_search 成对构成「搜索→抓取」闭环：web_search 返回候选链接，web_fetch 读取正文。
@@ -663,16 +696,26 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     name: 'read_image',
     diskWrite: 'none',
     description:
-      '读取项目内的图片文件并查看其内容（png / jpeg / webp / gif，单张 ≤ 5 MiB）。' +
+      '读取图片并查看内容。path 既可传「文件」，也可传「目录」：' +
+      `传目录时读取该目录下（不递归子目录）所有受支持的图片，按文件名排序，一次返回多张；` +
+      `支持 ${READ_IMAGE_SUPPORTED_EXTENSIONS.join(' / ')}；` +
+      `限额：单张 ≤ 5 MiB，单次 ≤ ${READ_IMAGE_MAX_PER_CALL} 张、合计 ≤ ${
+        READ_IMAGE_MAX_BYTES_PER_CALL / 1024 / 1024
+      } MiB，同一轮附图最多 ${READ_IMAGE_MAX_PER_ROUND} 张。` +
+      `超过单次张数或总量时不会只附前几张：直接报错并列出目录内候选（文件名 + 大小），` +
+      `请缩小目录范围或分批读取；同一轮超过 ${READ_IMAGE_MAX_PER_ROUND} 张时剩余图片会明确告知留待下一轮。` +
       '路径必须相对项目根目录；路径限制与 read_file 相同（黑名单优先、越界直接拒绝）。' +
-      '图片会附在本轮消息末尾供你查看，工具结果本身只有文字说明。' +
-      '同一张图重复读取不会重复附图（按 sha256 去重）。' +
-      '不要用它读文本文件（文本用 read_file）；仅在当前模型支持视觉时可用。',
+      '图片会附在本轮消息末尾供你查看，工具结果本身只有文字说明（含与已有图重复被略过的张数）。' +
+      '不要用它读文本文件（文本用 read_file）；不要用它列目录（列目录用 list_dir）；仅在当前模型支持视觉时可用。',
     readonly: true,
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: '相对项目根目录的图片路径' },
+        path: {
+          type: 'string',
+          description:
+            '相对项目根目录的图片文件路径，或图片所在目录（目录不递归，按文件名排序返回）',
+        },
       },
       required: ['path'],
     },
