@@ -150,7 +150,7 @@
 
 > **`subagentConcurrency` 语义（2026-11-12 增键）**：
 > - `0` = **关闭派发**：装配期不注入派发端口，`delegate_task` 结构性不可见（不是运行时再判断）；
-> - 省略 = **内核缺省 4**（运行期信号量硬限，同批超出直接报错不排队）；显式声明必须是 **0~16 的整数**，负数 / 小数 / 非数字 / 超过 16 一律直接报错，**不回退缺省值**（避免「填 20 却按 4 跑」的静默出错）；
+> - 省略 = **内核缺省 4**（运行期**计数闸**硬限——快速失败，每父会话独立计数，同批超出直接报错、不排队）；显式声明必须是 **0~16 的整数**，负数 / 小数 / 非数字 / 超过 16 一律直接报错，**不回退缺省值**（避免「填 20 却按 4 跑」的静默出错）；
 > - 额度**只管「同一批 tool_call 内最多几个子会话同时执行」**——它**不会让模型自动并行**，
 >   是否在一次回复里并行派发由模型自行决定；
 > - 唯一真实瓶颈是 model provider 的配额（属 provider 层），本键只做同一批派发的上限保护。
@@ -172,7 +172,7 @@
 | `webSearchLimit` | 整数                          | `1 ~ 20`             | `6`                                    | 每轮联网搜索次数上限（web_search 硬护栏，超限确定性拒绝 + 停搜；与 `askLimit` 同构） | `12`                        |
 | `errorHandling` | `retry` / `degrade` / `stop` | —                    | `retry`                               | 异常处理策略        | `"degrade"`                 |
 | `contextLimit`   | 整数                           | `0` 或 `120000 ~ 2000000` | 未声明→`0`（跟随 provider 窗口）                           | 角色包上下文上限（**推荐 0**）  | `0`                     |
-| `stepBudget`    | 整数                           | `0 ~ 500`（0=兜底，非不限）  | `0`（兜底 → 有效 50）                     | 每轮工具步数上限（0=走内核 maxIterations 兜底，无「不限」路径） | `60`                        |
+| `stepBudget`    | 整数                           | `0` 或 `10 ~ 500`（0=兜底，非不限；`1~9` 非法）  | `0`（兜底 → 有效 50）                     | 每轮工具步数上限（0=走内核 maxIterations 兜底，无「不限」路径） | `60`                        |
 
 > `askOn` 元素枚举：`ambiguity`（模糊）/ `decision`（需决策）/ `missing_info`（缺信息）/ `confirm`（需确认）。
 > `userFollowup` 须为 `ask` 时 `askOn`/`askLimit` 才生效。
@@ -216,6 +216,8 @@
 | `capabilities` 格式非法（非 `域:动作`）         | error   | 校验不通过                  |
 | companion 缺 AI 身份/未声明 minorProtection | error   | 校验不通过                  |
 | companion 正文含虚拟亲属/伴侣红线词               | error   | 拒绝装载                   |
+
+> ⚠️ **数值键越界的唯一例外：`strategy.act.subagentConcurrency`**——本键越界即报错，**不静默回退**：validator 直接报 `INVALID_STRATEGY_VALUE`（error），解析器 `resolveSubagentConcurrency` 直接抛 `configError`；只有「未声明」才走内核缺省 `4`（其余数值键越界时运行时回退内核默认/忽略）。
 
 > 数值键越界报错信息会带合法区间提示，如：
 > `strategy.global.contextLimit 取值 50000 不符合约束，合法区间 0 或 [120000, 2000000]`
