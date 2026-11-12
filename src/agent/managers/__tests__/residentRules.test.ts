@@ -188,6 +188,25 @@ describe('residentRules', () => {
       expect(read.block).toBe('### 来源文件：bom.md\n规则正文');
     });
 
+    it('UTF-8 BOM + NUL 的规则文件 ⇒ 走文本分支，控制字符被净化（无 \\u0000 / \\uFEFF）', async () => {
+      // BOM 优先于 NUL 是刻意选择（与 read_file 同一判据）；代价是 NUL 会随正文进来，
+      // 规则段又要原样拼进 system prompt，故必须在读盘层净化掉不可见控制字符
+      const bytes = Buffer.concat([
+        Buffer.from([0xef, 0xbb, 0xbf]),
+        Buffer.from('规则\u0000正文', 'utf8'),
+      ]);
+      await writeFile(join(projectDir, 'bom-nul.md'), bytes);
+      const read = await readResidentSource(projectDir, 'bom-nul.md');
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      // 正文与渲染块都不含 NUL / BOM，可打印内容保留
+      expect(read.text).toBe('规则正文');
+      expect(read.text).not.toContain('\u0000');
+      expect(read.text).not.toContain('\uFEFF');
+      expect(read.block).toBe('### 来源文件：bom-nul.md\n规则正文');
+      expect(read.block).not.toContain('\u0000');
+    });
+
     it('目录 / 权限类读盘异常 ⇒ read-error（可重试，文案与判据拒绝可区分）', async () => {
       await mkdir(join(projectDir, 'adir'));
       const read = await readResidentSource(projectDir, 'adir');

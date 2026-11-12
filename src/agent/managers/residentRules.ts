@@ -19,7 +19,7 @@ import { logger } from '@/logging/logger.js';
 import { isBlockedPath, resolveRealpath } from '@/security/pathGuard.js';
 import { resolveSafePath } from '@/utils/scanner.js';
 // 二进制嗅探唯一真理源（NUL 字节 + 严格 UTF-8 解码）：read_file 与本模块读盘共用同一判据
-import { decodeTextBuffer } from '@/agent/textSanitize.js';
+import { decodeTextBuffer, stripControlChars } from '@/agent/textSanitize.js';
 import type { WorkProjectionEntry } from './workProjection.js';
 
 /**
@@ -249,7 +249,15 @@ export async function readResidentSource(
   // （TextDecoder 默认 ignoreBOM=false）会剥掉 UTF-8 BOM；共享解码器为对齐 read_file 的
   // 「与 Buffer#toString 逐字一致」而保留 U+FEFF，故在这里显式剥掉开头 BOM，恢复旧行为。
   // （两处口径差异是有意的：read_file 返回的是文件原貌，规则段要的是可读正文。）
-  const text = decoded.text.charCodeAt(0) === 0xfeff ? decoded.text.slice(1) : decoded.text;
+  const withoutBom = decoded.text.charCodeAt(0) === 0xfeff ? decoded.text.slice(1) : decoded.text;
+
+  // 控制字符净化（复用 read_file 同款 stripControlChars，不另写一份）：
+  // 规则段会被 renderResidentSegment 原样拼进 system prompt，而 renderResidentBlock /
+  // contextBlock 全程没有第二道净化——「BOM 优先于 NUL」是刻意选择（与 read_file 同一判据），
+  // 其代价是 BOM+NUL 文本里的 NUL 会随正文进来；不可见控制字符绝不能注入模型上下文，
+  // 故在此统一净化。read_file 之所以保留原貌，是因为它返回「文件内容」且已按二进制拒绝兜底；
+  // 规则段要的是「可读规则」，两者目标不同。
+  const text = stripControlChars(withoutBom);
 
   return { ok: true, text, block: renderResidentBlock(source, text) };
 }
