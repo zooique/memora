@@ -41,6 +41,8 @@ import {
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
 import { sanitizeExternalText, stripControlChars } from '@/agent/toolExecutor.js';
+// 二进制嗅探唯一真理源：read_file 在解码成字符串之前先判「这是不是文本」
+import { decodeTextBuffer } from '@/agent/textSanitize.js';
 import type { BackgroundTaskScheduler } from '@/utils/backgroundTask.js';
 import { touchScores } from '@/memory/keywordsTouch.js';
 import type { ImageRef } from '@/llm/provider.js';
@@ -143,6 +145,47 @@ export const IGNORED_DIR_NAMES: readonly string[] = [
 export function isReservedTaskTableFile(absolutePath: string): boolean {
   const base = basename(absolutePath).replace(/\.(md|markdown|txt)$/i, '');
   return /^task[-_ ]?table(?:[-_ ].+)?$/i.test(base) || /^任务表(?:[-_ ].+)?$/.test(base);
+}
+
+/**
+ * 按魔数粗识别二进制形态（**只服务 read_file 的错误文案**，不做安全裁决、不替代宿主读图校验）
+ *
+ * 为什么需要：只说「二进制文件」时，模型仍可能换个路径继续用 read_file 试（把图片当文本读）；
+ * 明确指出「这是 JPEG/PNG 图片」才能把改道方向（read_image）变得显而易见。
+ * 判据取文件头固定字节，识别不了就如实回「二进制文件」，不猜。
+ *
+ * @param buf 文件完整字节（只读前 12 字节）
+ * @returns 人读形态名（如「PNG 图片」「PDF 文档」「二进制文件」）
+ */
+function sniffBinaryLabel(buf: Uint8Array): string {
+  // 越界读出 undefined 时统一给 -1，避免与任何真实字节值相等
+  const at = (i: number): number => buf[i] ?? -1;
+  // PNG：89 50 4E 47 0D 0A 1A 0A（只认前 4 字节签名即可判定）
+  if (at(0) === 0x89 && at(1) === 0x50 && at(2) === 0x4e && at(3) === 0x47) return ' PNG 图片';
+  // JPEG：FF D8 FF（SOI + 首个标记前缀）
+  if (at(0) === 0xff && at(1) === 0xd8 && at(2) === 0xff) return ' JPEG 图片';
+  // GIF：GIF87a / GIF89a（前 4 字节 GIF8 已足够）
+  if (at(0) === 0x47 && at(1) === 0x49 && at(2) === 0x46 && at(3) === 0x38) return ' GIF 图片';
+  // WebP：RIFF....WEBP（0-3 为 RIFF，8-11 为 WEBP）
+  if (
+    at(0) === 0x52 &&
+    at(1) === 0x49 &&
+    at(2) === 0x46 &&
+    at(3) === 0x46 &&
+    at(8) === 0x57 &&
+    at(9) === 0x45 &&
+    at(10) === 0x42 &&
+    at(11) === 0x50
+  ) {
+    return ' WebP 图片';
+  }
+  // PDF：%PDF
+  if (at(0) === 0x25 && at(1) === 0x50 && at(2) === 0x44 && at(3) === 0x46) return ' PDF 文档';
+  // ZIP（含 docx/xlsx 等容器）：PK + 0x03/0x05/0x07
+  if (at(0) === 0x50 && at(1) === 0x4b && (at(2) === 0x03 || at(2) === 0x05 || at(2) === 0x07)) {
+    return ' ZIP 压缩包';
+  }
+  return '二进制文件';
 }
 
 /**
@@ -427,14 +470,13 @@ export class BuiltinToolHandlers {
       '改用 list_dir 列出该目录下的内容',
     );
 
+    // 读盘分两步：先拿 Buffer（供二进制嗅探），IO 失败走原有异常路径（ENOENT 等）
+    let buf: Buffer;
     try {
-      const content = await readFile(absolutePath, 'utf-8');
-      // 返回净化（去控制字符/ANSI，**不做字符数截断**——按行分段的 token 预算在下方收口）
-      return this.sliceFileByLineBudget(stripControlChars(content), relativePath, offset, limit);
+      buf = await readFile(absolutePath);
     } catch (err) {
       const e = toError(err);
       // 区分 ENOENT（文件不存在）和其他 IO 错误
-      if (e instanceof MemoraError) throw e;
       if (isNodeErrorCode(err, 'ENOENT')) {
         // 前置兄弟目录提示：siblingDirHint 是"失败即给证据"——但内核事件
         // 落盘 summary 只取前 100 字符（loop.ts tool_result）。若把它拼接在长路径**之后**，
@@ -462,6 +504,35 @@ export class BuiltinToolHandlers {
         ToolErrorCode.UNKNOWN,
       );
     }
+
+    // 二进制嗅探（判据唯一真理源 = decodeTextBuffer）：必须在按文本解码**之前**拦下——
+    // JPEG/PNG 等按 utf-8 解码不会报错，只会得到一屏 U+FFFD + 可打印垃圾，模型会误判
+    // 「自己没有视觉能力」而不是「用错了工具」。这里返回**工具错误**（不是成功带警告），
+    // 文案写死改道工具名与参数形式，不给「请使用合适的工具」这类无行动价值的废话。
+    const decoded = decodeTextBuffer(buf);
+    if (decoded.kind === 'binary') {
+      const kind = sniffBinaryLabel(buf);
+      // 原因码 → 用户可读的判据说明（BOM 已排除，故 NUL 只在无 BOM 时才成立）
+      const why =
+        decoded.reason === 'nul-byte'
+          ? '无 BOM 且含 NUL 字节'
+          : decoded.reason === 'invalid-utf16'
+            ? 'UTF-16 编码损坏'
+            : '不是有效的 UTF-8 文本';
+      throw toolError(
+        'read_file 目标是二进制文件',
+        `${relativePath}：这是${kind}，不是文本文件（${why}；按文本读只会得到乱码）。`,
+        [
+          `要看图片请调用 read_image，参数 path 填相对项目根的路径，例如 {"path":"${relativePath}"}`,
+          '需要文本内容时用 list_dir / search_project 确认路径是否写错',
+        ],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
+    }
+
+    // 返回净化（去控制字符/ANSI，**不做字符数截断**——按行分段的 token 预算在下方收口）
+    return this.sliceFileByLineBudget(stripControlChars(decoded.text), relativePath, offset, limit);
   }
 
   /**

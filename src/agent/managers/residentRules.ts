@@ -18,6 +18,8 @@ import { isAbsolute, sep } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { isBlockedPath, resolveRealpath } from '@/security/pathGuard.js';
 import { resolveSafePath } from '@/utils/scanner.js';
+// 二进制嗅探唯一真理源（NUL 字节 + 严格 UTF-8 解码）：read_file 与本模块读盘共用同一判据
+import { decodeTextBuffer } from '@/agent/textSanitize.js';
 import type { WorkProjectionEntry } from './workProjection.js';
 
 /**
@@ -225,27 +227,25 @@ export async function readResidentSource(
     };
   }
 
-  // ⑤ 二进制嗅探：NUL 字节 ⇒ 非文本；fatal UTF-8 解码失败 ⇒ 非文本（不做截断 / 替换式解码）
-  if (buf.includes(0)) {
+  // ⑤ 二进制嗅探：判据唯一真理源在 textSanitize.decodeTextBuffer（NUL 字节 / 严格 UTF-8 解码），
+  // 本模块只负责把原因码翻译成项目规则语境的人读文案（不做截断 / 替换式解码）
+  const decoded = decodeTextBuffer(buf);
+  if (decoded.kind === 'binary') {
+    // 原因码 → 项目规则语境的措辞（无 BOM 含 NUL / UTF-8 非法 / UTF-16 损坏）
+    const reasonText =
+      decoded.reason === 'nul-byte'
+        ? '含 NUL 字节'
+        : decoded.reason === 'invalid-utf16'
+          ? 'UTF-16 编码损坏'
+          : '非 UTF-8 编码';
     return {
       ok: false,
       failure: 'not-textual',
-      message: `源文件不是文本文件（含 NUL 字节），不能作为项目规则：${source}`,
-    };
-  }
-  let text: string;
-  try {
-    // fatal: true ⇒ 非法序列直接抛错，不静默用替换字符吞掉（吞掉等于把乱码当规则发给模型）
-    text = new TextDecoder('utf-8', { fatal: true }).decode(buf);
-  } catch {
-    return {
-      ok: false,
-      failure: 'not-textual',
-      message: `源文件不是文本文件（非 UTF-8 编码），不能作为项目规则：${source}`,
+      message: `源文件不是文本文件（${reasonText}），不能作为项目规则：${source}`,
     };
   }
 
-  return { ok: true, text, block: renderResidentBlock(source, text) };
+  return { ok: true, text: decoded.text, block: renderResidentBlock(source, decoded.text) };
 }
 
 /**

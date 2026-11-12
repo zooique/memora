@@ -2285,15 +2285,16 @@ describe('工具执行器（6 个工具）', () => {
     });
 
     it('含控制字符的文件内容应被净化（去控制字符）', async () => {
-      const messyContent = 'line1\u0000control\u001bEscape\nline2';
+      // 注：fixture 曾含 \u0000，但 read_file 现按「无 BOM 含 NUL ⇒ 二进制」拒绝
+      // （NUL 归二进制嗅探，见 builtinToolHandlers.test.ts）；本用例只锁控制字符净化
+      const messyContent = 'line1control\u001bEscape\nline2';
       const messyFile = 'src/messy-file.txt';
       await executor.execute(
         'write_file',
         JSON.stringify({ path: messyFile, content: messyContent }),
       );
       const result = await executor.execute('read_file', JSON.stringify({ path: messyFile }));
-      // 控制字符（\u0000、\u001b）被移除
-      expect(result).not.toContain('\u0000');
+      // 控制字符（\u001b）被移除
       expect(result).not.toContain('\u001b');
       // 可打印内容保留
       expect(result).toContain('line1');

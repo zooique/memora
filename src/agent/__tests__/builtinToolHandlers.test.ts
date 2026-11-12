@@ -86,6 +86,18 @@ async function createFileInProject(relPath: string, content: string): Promise<vo
   await writeFile(abs, content, 'utf-8');
 }
 
+/**
+ * 在临时项目目录内创建**字节级**文件（二进制嗅探用例专用：不能用 utf-8 写入口，否则字节被改写）
+ * @param relPath - 相对项目根的路径
+ * @param bytes - 原始字节
+ */
+async function createBinaryFileInProject(relPath: string, bytes: Buffer): Promise<void> {
+  const abs = join(projectPath, relPath);
+  const dir = resolve(abs, '..');
+  await mkdir(dir, { recursive: true });
+  await writeFile(abs, bytes);
+}
+
 // ─── 路径安全：resolveSafePath ────────────────────────────
 
 describe('BuiltinToolHandlers.resolveSafePath', () => {
@@ -172,6 +184,112 @@ describe('BuiltinToolHandlers.readFile', () => {
     });
     // 错误 message 明确指明"目标是目录"（区别于原生 EISDIR，语义可执行）
     await expect(handlers.readFile('.')).rejects.toThrow(/目标是目录/);
+  });
+
+  // ── 二进制嗅探（本次新增；判据唯一真理源 = textSanitize.decodeTextBuffer）──
+
+  it('PNG 图片（含 NUL）→ 返回工具错误，文案含「PNG 图片」+ read_image + path 指引', async () => {
+    // 真实 PNG 头 + NUL 填充：按 utf-8 解码曾得到一屏 U+FFFD（模型误判自己没视觉）
+    await createBinaryFileInProject(
+      'shot.png',
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]),
+    );
+    let err: MemoraError | undefined;
+    try {
+      await handlers.readFile('shot.png');
+      expect.unreachable('二进制文件必须返回工具错误，而不是解码成乱码正文');
+    } catch (e) {
+      err = e as MemoraError;
+    }
+    // 模型可见文本 = title + detail + suggestions，三处合并断言（不只看 title）
+    const visible = `${err.title} ${err.detail} ${err.suggestions.join(' ')}`;
+    expect(err.errorCode).toBe(ToolErrorCode.ARGUMENT_ERROR);
+    expect(visible).toContain('二进制文件');
+    expect(visible).toContain('PNG 图片');
+    expect(visible).toContain('read_image');
+    expect(visible).toContain('path');
+    // 非文本文件必须拒绝（不能返回「成功 + 乱码」）
+    expect(err.title).toContain('read_file');
+  });
+
+  it('含 NUL 的非图片二进制 → 返回工具错误，识别不了形态时如实写「二进制文件」', async () => {
+    await createBinaryFileInProject('blob.bin', Buffer.from([0x41, 0x00, 0x42, 0x43]));
+    let err: MemoraError | undefined;
+    try {
+      await handlers.readFile('blob.bin');
+      expect.unreachable('含 NUL 的文件不得按文本返回');
+    } catch (e) {
+      err = e as MemoraError;
+    }
+    const visible = `${err.title} ${err.detail} ${err.suggestions.join(' ')}`;
+    expect(visible).toContain('二进制文件');
+    expect(visible).toContain('含 NUL 字节');
+    expect(visible).toContain('read_image');
+  });
+
+  it('非法 UTF-8 字节（无 BOM、无 NUL）→ 返回工具错误，文案含「不是有效的 UTF-8 文本」', async () => {
+    // 0xFF / 0xFE 不是合法 UTF-8 序列；替换式解码会静默吞成 U+FFFD，必须 fatal 拒绝。
+    // 首字节刻意不用 FF FE / FE FF（那是 UTF-16 BOM，会走 BOM 分支）
+    await createBinaryFileInProject('gbk.txt', Buffer.from([0x41, 0xff, 0xfe, 0x42]));
+    let err: MemoraError | undefined;
+    try {
+      await handlers.readFile('gbk.txt');
+      expect.unreachable('非法 UTF-8 不得按文本返回');
+    } catch (e) {
+      err = e as MemoraError;
+    }
+    const visible = `${err.title} ${err.detail} ${err.suggestions.join(' ')}`;
+    expect(visible).toContain('二进制文件');
+    expect(visible).toContain('不是有效的 UTF-8 文本');
+    expect(visible).toContain('read_image');
+  });
+
+  // ── UTF-16 BOM：Windows 导出的 CSV / Unicode 文本天然含 NUL，不得误判二进制 ──
+
+  it('UTF-16LE 带 BOM 的中文 CSV → 按 UTF-16LE 解码为文本（内容正确，不报二进制）', async () => {
+    const csv = '列A,列B\n值1,值2';
+    // '\uFEFF' + 内容经 utf16le 编码 ⇒ 文件头即 FF FE；ASCII 部分天然带 0x00
+    await createBinaryFileInProject('export.csv', Buffer.from(`\uFEFF${csv}`, 'utf16le'));
+    // BOM 口径与 UTF-8 通道一致：保留为 U+FEFF（不偷偷剥掉）
+    await expect(handlers.readFile('export.csv')).resolves.toBe(`\uFEFF${csv}`);
+  });
+
+  it('UTF-16BE 带 BOM 的中文文本 → 按 UTF-16BE 解码为文本（内容正确）', async () => {
+    const text = '中文BE,值';
+    const le = Buffer.from(`\uFEFF${text}`, 'utf16le');
+    // LE → BE：逐 2 字节交换（BOM 也随之变成 FE FF）
+    const be = Buffer.from(le);
+    for (let i = 0; i < be.length; i += 2) {
+      const first = be[i]!;
+      be[i] = be[i + 1]!;
+      be[i + 1] = first;
+    }
+    await createBinaryFileInProject('be.txt', be);
+    await expect(handlers.readFile('be.txt')).resolves.toBe(`\uFEFF${text}`);
+  });
+
+  it('UTF-8 带 BOM → 行为不变（BOM 保留，正文正常返回）', async () => {
+    const bytes = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('中文', 'utf8')]);
+    await createBinaryFileInProject('bom.txt', bytes);
+    await expect(handlers.readFile('bom.txt')).resolves.toBe('\uFEFF中文');
+  });
+
+  it('正常 UTF-8 中文 + 制表符 → 行为不变（逐字返回，零提示）', async () => {
+    const text = '第一列\t第二列\n第二行：中文与 English 混排\n';
+    await createFileInProject('plain.txt', text);
+    await expect(handlers.readFile('plain.txt')).resolves.toBe(text);
+  });
+
+  it('空文件 → 行为不变（返回空串，不误判二进制）', async () => {
+    await createFileInProject('empty.txt', '');
+    await expect(handlers.readFile('empty.txt')).resolves.toBe('');
+  });
+
+  it('超行数预算被截断 → 分段脚注行为不变（嗅探只判定、不改文本处理）', async () => {
+    await createFileInProject('three.txt', 'l1\nl2\nl3');
+    await expect(handlers.readFile('three.txt', '1', '1')).resolves.toBe(
+      'l1\n[read_file 分段] 已显示第 1–1 行（共 3 行）。继续读用 offset=2。',
+    );
   });
 });
 
