@@ -22,7 +22,8 @@ import {
 } from '@/agent/toolExecutor.js';
 import type { WebSearchExecInfo } from '@/agent/toolExecutor.js';
 // 内置工具定义全量（P2 守卫：deny 清单里的每个名字必须在真实定义中存在）
-import { ALL_BUILTIN_TOOL_DEFS } from '@/agent/builtinTools.js';
+// resolveWriteCapability：写盘判定的唯一派生点（写盘全集守卫不再按 readonly 标记猜）
+import { ALL_BUILTIN_TOOL_DEFS, resolveWriteCapability } from '@/agent/builtinTools.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { estimateTokensText } from '@/agent/contextManager.js';
 import {
@@ -467,6 +468,29 @@ describe('工具执行器（6 个工具）', () => {
       for (const readOnlyName of ['read_file', 'list_dir', 'search_memories', 'search_project']) {
         expect(SUBAGENT_DENIED_TOOLS).not.toContain(readOnlyName);
       }
+
+      // ── 全集缺口守卫：写盘工具全集由工具定义派生，补上「新增内置写工具却忘登记」的静默缺口 ──
+      // 上面 EXPECTED 是手写名单，与常量同改即双绿；本段照 SWITCH_OWNED_TOOL_NAMES 守卫的范式
+      // （读定义收集，不维护名单）：凡元数据判定为写盘的内置工具，必须在拒绝集内。
+      // 判据只认工具定义行的 `diskWrite` 声明（唯一派生点 `resolveWriteCapability`），不认 `readonly`
+      // 标记：search_memories 声明 readonly:true 却写 accessedAt、task_table_write 未声明 readonly
+      // 却在拒绝集里——见 toolExecutor.ts SUBAGENT_DENIED_TOOLS 注释「必须按内容判，不按 readonly 标记判」。
+      /** 「元数据判定为写盘」（`diskWrite` 非 `none`）的内置工具名全集（含条件工具，不论 provider 是否注入） */
+      const diskWriteToolNames = ALL_BUILTIN_TOOL_DEFS.map((tool) => tool.name).filter(
+        (name) => resolveWriteCapability(name) !== 'none',
+      );
+      // 防空转：派生集若因元数据缺失 / 派生逻辑变化变成空集，下面的循环会静默全绿
+      expect(diskWriteToolNames.length).toBeGreaterThan(0);
+      expect(diskWriteToolNames).toContain('write_file');
+      for (const name of diskWriteToolNames) {
+        expect(
+          SUBAGENT_DENIED_TOOLS,
+          `内置写工具「${name}」（diskWrite 非 none）必须登记进 SUBAGENT_DENIED_TOOLS`,
+        ).toContain(name);
+      }
+      // 已知残余（**勿读成全覆盖**）：ask_user / remember_intel / task_table_write /
+      // task_table_update / run_team_meeting 的 diskWrite 均为 'none'（父状态 / 职责例外），
+      // 无法由元数据推出「必须禁」，仍需按职责人工复核；本守卫只覆盖元数据可判的写盘工具。
     });
 
     it('run_team_meeting 属职责例外：deny 生效后从可见面移除（不是靠白名单顺带隐藏）', () => {
