@@ -179,7 +179,7 @@ export interface ProcessTreeKillResult {
    */
   ok: boolean;
   /**
-   * 根进程已先行退出（Windows taskkill 128 语义）
+   * 根进程已先行退出（Windows taskkill 128 / POSIX kill ESRCH 两处同源语义）
    *
    * ⚠️ 该字段**不**蕴含「树已清空」：根自己先退出、孙进程仍在跑时 taskkill /T /F
    * 同样返回 128（孙进程已成孤儿，无人收割）。消费方不得据此报「进程树已终止」。
@@ -252,6 +252,14 @@ export function killProcessTree(child: childProcess.ChildProcess): Promise<Proce
     process.kill(-pid, 'SIGKILL');
     return Promise.resolve({ ok: true, alreadyExited: false });
   } catch (err) {
+    // POSIX 侧「根已先行退出」归类（与 Windows taskkill 128 对称，见 KILLTREE-ESRCH-1）：
+    // kill(2) 对**不存在的进程组**报 ESRCH ⇒ 组内已无进程，属正常竞态（进程在终止指令
+    // 到达前自行退出），不是「终止失败」⇒ 归 alreadyExited 且 error 留空。
+    // ⚠️ 仅 ESRCH：EPERM 等表示目标**可能仍存活**（权限不足杀不动），仍须记 error。
+    // ⚠️ 与 128 同理，alreadyExited 只证明组不在，不是「树已确认清空」的确认。
+    if ((err as NodeJS.ErrnoException).code === 'ESRCH') {
+      return Promise.resolve({ ok: false, alreadyExited: true });
+    }
     logger.warn({ pid, err }, '进程组强杀失败，降级为 kill 直接子进程');
     try {
       child.kill('SIGKILL');

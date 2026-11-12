@@ -447,6 +447,23 @@ describe('killProcessTreeSync（exit 兜底同步杀树，经 startBackgroundCom
   });
 });
 
+/**
+ * 临时把 `process.platform` 伪装成指定值，执行完恢复
+ *
+ * 为什么需要：KILLTREE-ESRCH-1 的判定逻辑只在 POSIX 分支触达，而本地全量只在 Windows 跑
+ * （见台账 POSIX-RED-CI-ONLY-1）——不用平台桩的话，该判定在 Windows 上**结构上不可测**。
+ * `process.platform` 是 configurable 数据属性，可临时改写并原样还原。
+ */
+async function withPlatform<T>(platform: NodeJS.Platform, fn: () => Promise<T>): Promise<T> {
+  const desc = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+  try {
+    return await fn();
+  } finally {
+    if (desc) Object.defineProperty(process, 'platform', desc);
+  }
+}
+
 describe('killProcessTree（异步杀树的「根已退出」归类）', () => {
   const mockedSpawn = vi.mocked(childProcess.spawn);
   afterEach(() => mockedSpawn.mockReset());
@@ -484,5 +501,65 @@ describe('killProcessTree（异步杀树的「根已退出」归类）', () => {
     expect(r.ok).toBe(true);
     expect(r.alreadyExited).toBe(false);
     expect(r.error).toBeUndefined();
+  });
+
+  // ── KILLTREE-ESRCH-1：「进程先退出再杀」两平台同义归类 ──
+  it('「进程先退出再杀」→ alreadyExited=true（Windows 走 taskkill 128 真实分支 / POSIX 走 kill ESRCH 真实分支）', async () => {
+    // 判据：正常竞态（探活与终止之间进程自然结束）不得被报成「终止失败」。
+    // 变异方向：删掉 POSIX 的 ESRCH 归类 → POSIX 侧分支断言红（error 被填、alreadyExited=false）
+    if (IS_WINDOWS) {
+      const killer = fakeKiller();
+      const pending = killProcessTree(fakeChildWithPid(() => undefined));
+      killer.emit('close', 128, null);
+      const r = await pending;
+      expect(r.ok).toBe(false);
+      expect(r.alreadyExited).toBe(true);
+      return;
+    }
+    const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' });
+    });
+    try {
+      const r = await killProcessTree(fakeChildWithPid(() => undefined));
+      expect(r.ok).toBe(false);
+      expect(r.alreadyExited).toBe(true);
+      expect(r.error).toBeUndefined(); // 正常竞态不记 error（error 留空 = 不是失败）
+    } finally {
+      killSpy.mockRestore();
+    }
+  });
+
+  it('POSIX ESRCH 归类（平台桩，Windows 本机亦可验判定逻辑）→ alreadyExited=true 且 error 留空', async () => {
+    // 本地全量只在 Windows 跑 ⇒ 用平台桩 + kill 桩驱动 POSIX 判定，不依赖 POSIX 真机
+    const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' });
+    });
+    try {
+      const r = await withPlatform('linux', () =>
+        killProcessTree(fakeChildWithPid(() => undefined)),
+      );
+      expect(r.ok).toBe(false);
+      expect(r.alreadyExited).toBe(true);
+      expect(r.error).toBeUndefined();
+    } finally {
+      killSpy.mockRestore();
+    }
+  });
+
+  it('POSIX 非 ESRCH（EPERM：目标可能仍存活）→ 不归 alreadyExited，仍记 error（归类范围守卫）', async () => {
+    // 防「一律当成已退出」的过度归类：EPERM = 权限不足、进程可能还活着，必须如实记 error
+    const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw Object.assign(new Error('kill EPERM'), { code: 'EPERM' });
+    });
+    try {
+      const r = await withPlatform('linux', () =>
+        killProcessTree(fakeChildWithPid(() => undefined)),
+      );
+      expect(r.ok).toBe(false);
+      expect(r.alreadyExited).toBe(false);
+      expect(r.error).toMatch(/进程组强杀失败/);
+    } finally {
+      killSpy.mockRestore();
+    }
   });
 });
