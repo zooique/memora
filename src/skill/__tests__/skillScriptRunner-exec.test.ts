@@ -523,13 +523,15 @@ describe('killProcessTree（异步杀树的「根已退出」归类）', () => {
       const r = await killProcessTree(fakeChildWithPid(() => undefined));
       expect(r.ok).toBe(false);
       expect(r.alreadyExited).toBe(true);
-      expect(r.error).toBeUndefined(); // 正常竞态不记 error（error 留空 = 不是失败）
+      // 原因句必须自带（对齐 128 分支）：留空会让消费端的 `error ?? '进程树终止未确认'`
+      // 把「已先行退出」写成「未确认」，并触发 128 分支刻意避免的 WARN
+      expect(r.error).toMatch(/根进程已先行退出（kill ESRCH）/);
     } finally {
       killSpy.mockRestore();
     }
   });
 
-  it('POSIX ESRCH 归类（平台桩，Windows 本机亦可验判定逻辑）→ alreadyExited=true 且 error 留空', async () => {
+  it('POSIX ESRCH 归类（平台桩，Windows 本机亦可验判定逻辑）→ alreadyExited=true 且带原因句', async () => {
     // 本地全量只在 Windows 跑 ⇒ 用平台桩 + kill 桩驱动 POSIX 判定，不依赖 POSIX 真机
     const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => {
       throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' });
@@ -540,7 +542,7 @@ describe('killProcessTree（异步杀树的「根已退出」归类）', () => {
       );
       expect(r.ok).toBe(false);
       expect(r.alreadyExited).toBe(true);
-      expect(r.error).toBeUndefined();
+      expect(r.error).toMatch(/根进程已先行退出（kill ESRCH）/);
     } finally {
       killSpy.mockRestore();
     }
