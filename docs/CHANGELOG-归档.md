@@ -893,7 +893,7 @@ builtinToolHandlers 路标 / agent.archiveSession JSDoc / ArchiveMode 注释中�
 
 - **persona.md**：定位「从模糊想法设计自洽项目方案的顾问」，承载种子（最小单元锚点）/ 土壤（网络信息养分）两条设计主线
 - **rules.md**：设计指令——先搜索再构思、种子定位、SSOT、最小单元解题、识别补丁思维、外部方案种子过滤、搜索结论进入决策、记录来源、种子收敛交互、产出结构、SSOT 三问收敛自检、不越界生成骨架
-- **manifest.skills**：声明 `file:read` / `file:write` / `web:search` / `memory:recall` / `llm:summarize` 五个可调用能力，让角色能真正「先搜索再构思」、读写方案文档
+- **manifest.skills**：声明 `file:read` / `file:write` / `web:search` / `memory:recall` / `llm:summarize` 五个可调用能力，让角色能真正「先搜索再构思」、读写方案文档（历史记录：`file:read` / `file:write` / `memory:recall` 自 2026-09-08 起已清出 memora 映射表，当前仅 `web:search` / `web:fetch` / `code:execute` / `llm:summarize`）
 - **落地**：插件生产库（`hosts/memora-vscode/src/extension/role-packs/方案设计师/`，随 VSIX 分发）+ 根示例库（`role-packs/方案设计师/`，参考指引），两包 manifest 均通过标准校验（`validateManifestText` valid=true）
 
 > 非破坏性变更：纯新增角色包，内核零改动；新增包经 validator 校验合规，全量测试无回归。

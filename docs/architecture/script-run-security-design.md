@@ -11,6 +11,8 @@
 
 宿主（vscode 插件）最新一轮对话中，LLM 明确回答工具仅 5 个（read_file / write_file / search_project / search_memories / web_search），无脚本能力。对照内核机制（[agent.ts 白名单应用](../../src/agent/agent.ts)、[capabilityMap.ts](../../src/role-pack/capabilityMap.ts)）验证：
 
+> **历史记录（口径已变）**：`file:read` / `file:write` / `project:search` / `memory:recall` 自 2026-09-08 起已清出 `CAPABILITY_TO_TOOLS`；当前映射表只余 `web:search` / `web:fetch` / `code:execute` / `llm:summarize`。下文保留当时原文，现状见 [tool-exposure-model.md](./tool-exposure-model.md)。
+
 - 这 5 个工具与该宿主「方案设计师」角色包声明的能力映射**严格一一对应**（file:read / file:write / project:search / memory:recall / web:search）——LLM 回答是白名单精确过滤的结果，不是编造；
 - 技能系统 4 工具（read_skill / read_resource / run_skill_script / list_skills）**在能力映射表中无对应键** → 角色包一旦声明任何 capabilities，技能工具即被误杀；
 - run_code（通用代码执行）需 `code:execute` 能力 + 宿主注入 `ICodeExecutionProvider` 双重门槛。
