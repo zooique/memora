@@ -15,7 +15,7 @@
 ### Added（内核）
 
 - **`read_image` 支持目录多图读取**（`357de856` · `9686a466`）：`path` 既可传单文件也可传目录；传目录时**不递归**、按文件名排序、逐张调用读图端口（端口契约仍是「读一张」），坏 1 张不影响其余。限额：单张 5 MiB、单次 8 张 / 合计 20 MiB、同一轮附图 12 张；超过单次张数或总量时**直接报错并列出候选（文件名 + 大小）**，不静默只附前几张。工具结果写明【附件去重】/【本轮附图上限】结论，单轮超限时点名哪几张留到下一轮。**对消费者**：纯新增入参语义，传单文件的行为逐字不变；错误文案去掉了内部术语。
-- **`read_file` 二进制嗅探与 UTF-16 BOM 文本支持**（`c58a258a` · `ed40f95b`）：解码前用共享判据 `decodeTextBuffer` 判定——**有 BOM 按 BOM 声明的编码严格解码**（UTF-8 / UTF-16LE / UTF-16BE），无 BOM 时含 NUL 字节或严格 UTF-8 解码失败即判二进制。读 JPEG / PNG 等不再静默返回一屏 U+FFFD 乱码，而是可执行的工具错误，识别 PNG / JPEG / GIF / WebP / PDF / ZIP 并指引用 `read_image`。**对消费者**：UTF-8 无 BOM 文本、空文件、分段截断行为逐字不变；Windows 导出的 UTF-16 CSV 不再被 NUL 误杀；项目规则读盘复用同一判据（规则段额外的剥离与净化见 Fixed）。
+- **`read_file` 二进制嗅探与 UTF-16 BOM 文本支持**（`c58a258a` · `ed40f95b`）：解码前用共享判据 `decodeTextBuffer` 判定——**有 BOM 按 BOM 声明的编码严格解码**（UTF-8 / UTF-16LE / UTF-16BE），无 BOM 时含 NUL 字节或严格 UTF-8 解码失败即判二进制。读 JPEG / PNG 等不再静默返回一屏 U+FFFD 乱码，而是可执行的工具错误：识别 PNG / JPEG / GIF / WebP 图片并指向 `read_image`；PDF 与 ZIP **不指向读图工具**——PDF 明确「没有内置 PDF 解析工具，需要文本请先转 TXT / Markdown」，ZIP 明确「容器格式，先解压出具体文件再读」（`d05693a6` 起按形态分流，本条原文曾把 PDF / ZIP 一并写成「指引用 `read_image`」，与实现相反，已订正）。**对消费者**：UTF-8 无 BOM 文本、空文件、分段截断行为逐字不变；Windows 导出的 UTF-16 CSV 不再被 NUL 误杀；项目规则读盘复用同一判据（规则段额外的剥离与净化见 Fixed）。
 - **子会话并发额度改由 `act.subagentConcurrency` 驱动**（`e3b217bb` · `d0dc1992`）：删除非公开固定常量 `SUBAGENT_MAX_CONCURRENT`（原值 2），改为角色包策略键：取值 `0~16`、缺省 `4`（缺省值唯一真源 = `DEFAULT_BEHAVIOR_STRATEGY.act.subagentConcurrency`），`0` = 关闭派发——装配期不注入派发端口，`delegate_task` 结构性不可见。额度只约束「同一批 tool_call 内最多同时跑几个子会话」，**不会让模型自动并行**。**对消费者**：不写该键的既有角色包，并发上限从固定 2 变为缺省 4；写 `0` 可关闭派发。
 - **角色包未登记能力名产生 warning 诊断**（`1c1b8148`）：`capabilities` 项格式合法但内核未登记时，校验期给出 `UNREGISTERED_CAPABILITY` warning，明确「它不会解锁任何工具」以及「声明 `capabilities` 会把工具面从全开收窄为常驻集 + 已登记能力映射」。解析期仍只跳过、不产诊断（诊断归校验期，避免解析层副作用）。级别为 warning：现有角色包不会因这条新检查装不上。**对消费者**：只是多一条可见诊断，装载结果不变。
 
@@ -26,8 +26,29 @@
 
 ### Fixed（内核）
 
+- **`read_image` 重新进入工具面：Agent 门面补转发 `imageReadPort`**（`ff83b0eb` · **消费者可感知**）：构造器 `#config` 与 `assembleComponents` 入参两处都漏了 `imageReadPort` 转发——该字段可选、类型系统不报错，loop 因此每 step 判定 `host-no-port` 并累进「不可用」集合，**宿主已注入读图端口的场景下工具仍永远不进工具面，原因还被误报成运行环境不支持**。现两处各补一行转发，并补门面级回归用例：注入端口 + 视觉 provider 时 `read_image` 出现在暴露面；不注入时不在且原因为 `host-no-port`（变异验证：注释掉装配转发即转红）。**对消费者**：VS Code 宿主下 `read_image` 真正可用；修复前的错误引导指向「配置大模型 / 换宿主」，而真实病因在门面漏转发。真机验收见台账 `IMAGE-TOOL-MESSAGE-1`。
+- **Agent 门面补转发 `builtinFallbackRole` / `environmentProvider`**（`4539efef`）：两处 `AgentOptions` 声明了、门面却没转发到装配入口。前者漏转发 ⇒ 装配端恒落内核常量兜底角色，**宿主设置的兜底角色静默失效**；后者漏转发 ⇒ 装配期初始系统前缀缺「## 运行环境」段（之后每轮刷新自愈，影响小）。补两组用例：装配器直接经 `toolExec.execute('read_image')` 断言执行面拿到端口（不只看暴露面）；门面注入 `builtinFallbackRole` 后断言 `rolePackManager` 的兜底角色为注入值。**对消费者**：宿主注入的兜底角色不再被内核常量顶掉；首轮 system prompt 起就有运行环境段。
+- **`read_file` 二进制建议按形态分流，不再把 PDF / ZIP 谎报为「用 `read_image`」**（`d05693a6` · **消费者可感知**）：魔数识别扩为「图片 / PDF / ZIP / 未知」四类，各给可执行的下一步——图片走条件句（清单里有 `read_image` 才指路，没有则分列两因）；PDF 写明「没有内置 PDF 解析工具，需要文本请先转 TXT / Markdown」；ZIP 写明「容器格式（也可能内嵌 docx / xlsx），先解压出具体文件再读」；未知形态给「查路径 / 查编码 / 支持的图片格式清单」。**对消费者**：此前连 PDF / ZIP 也建议改用 `read_image`，模型会白试一轮；现每种形态都有能落地的一步。**边界**：handler 看不到本轮工具清单（暴露面在 loop 里逐 step 按视觉位裁剪），所以图片这条只写条件句，不在建议层另算一份可用性判据。
+- **图片建议改为两因并列，不再把「模型没开视觉」与「环境没给读图」混为一谈**（`fc60841a`）：`read_file` 遇到受支持图片时，若清单里没有 `read_image`，旧文案只指向「配置大模型里勾选支持图片输入」；宿主不提供读图能力（如 MCP）时这条引导是错的。现并列两因：① 模型未开启「支持图片输入」；② 当前运行环境未提供读图能力（非配置问题，需换宿主或入口）。同批给未知二进制补「若确认是图片但未被识别，当前只支持 …」清单。**对消费者**：错误文案与真实病因对齐，少一轮「改了配置还是不生效」的往返。
 - **`read_image` 两种「不可用」按精确原因分列，不再笼统说不可用**（`d1ffb72a` · `67cde4fd`）：`read_image` 被暴露面裁掉后模型仍硬点名调用时，loop 在执行前按原因拦下——宿主未注入读图端口（`host-no-port`，如 MCP 宿主）与 provider 未声明 `supportsVision`（`model-blind`）分列，且都明确「**不是文件问题**」，避免模型误判成文件缺失而换路径反复重试。判据与暴露面裁剪同源（单点 `readImageUnavailableReason`），每 step 现算以跟随 provider 热切换。同批收口单张上限常量 `READ_IMAGE_MAX_BYTES_PER_FILE`（与宿主 `MAX_IMAGE_BYTES` 的契约由测试锁定）。**对消费者**：零接口变更；错误文案从一句笼统的「不可用」变为可区分的排查方向。
 - **项目规则段读盘剥 BOM 并净化控制字符**（`4c42d354` · `ed40f95b`）：规则段会被原样拼进 system prompt，而渲染层没有第二道净化——「BOM 优先于 NUL」的共享判据会让 BOM+NUL 文本里的 NUL 随正文进入模型上下文。现 `readResidentSource` 显式剥掉开头 BOM，并复用 `stripControlChars` 净化正文；`read_file` 的「返回文件原貌」口径不变（两处目标不同：一个要可读规则，一个要原始内容）。**对消费者**：零接口变更；带 BOM / 控制字符的规则文件不再把不可见字符注入提示词。
+
+## [0.10.0] · 未发布 · 宿主
+
+> **随包内核代次 = `7.1.0`**（esbuild 内联 dist，内核自身变更见内核区）。本区收 `vscode@0.9.0` 之后 36 笔动 `hosts/` 的提交中**消费者可感知**的部分（纯注释 / 测试 / 台账整理不逐条列出）；发布日期待定档时补齐。
+
+### Added（宿主）
+
+- **`read_image` 宿主执行端口：图片按路径摄取**（`d2636952` · `ab497962` · **消费者可感知**）：新增 `createImageReadPort`——stat 预检体积 → readFile → sha256 → `validateImageCandidate` 校验 → `ImageCache.ingestBytes` 入缓存；失败一律返回 `{ ok: false, text }`，不抛。端口内部再查 `ProviderStore.getActiveVision()`，视觉关直接拒绝（不读盘、不入缓存），与内核 `resolveActiveTools()` 的能力位同源。`assemble` / `extension` 完成接线；webview 补 `read_image` 的显示名与动作叙述（露出图片路径、归到 `read` 型，不再落 `other` 被轮收尾摘要跳过），中英两份 l10n 键成对补齐。**对消费者**：视觉 provider 下 `read_image` 真正可用；工具行能看出读的是哪张图。
+- **`delegate_task` 过程行呈现为派发回执（四态）**（`21c00e4d` · `c61c3f9e` · `4f3a1626` · **消费者可感知**）：主行改为「派发子任务 · <task 首行≤60 字> 〔四态〕」，展开体分「派发」（task 全文 + capabilities）与「回执」（excerpt 800 字 + 执行耗时）两段；四态文案与视觉由内核枚举经 l10n 映射，**不解析 `[SUBAGENT:*]` 文本**；老数据没有 `delegate` 字段时诚实回退 Succeeded / Failed 两态。轮指标 `toolFailureCount` 只统计 `failed`，`incomplete` / `interrupted` 不再被算成工具失败。主行文案的唯一产地标注为 `toolActionLabel`，展开体里的 task 原文只作数据面。**对消费者**：子 agent 不再只有一个「unknown」工具行；排队耗时一段随内核字段一并移除，回执尾部只显示「执行 Ns」。
+- **`kill_command` 专属动作叙述**（`ade5d90d`）：工具行显示被终止的任务 id，不再套用通用叙述；同步补两份 l10n 键与用例。
+- **附件行汇流：图片 chip 并入引用行**（`12f6944d` · `4b6dc0cd`）：`#imageChips` 行退役，图片与引用合并到同一条附件行（`#refChips`）；附件行渲染域整体外置为 `attachmentRowView.ts`，清行与显隐收归单点。**对消费者**：一次附图 + 引用只占一行，既有按钮行为不变。
+
+### Changed（宿主）
+
+- **引用行范围越界时如实提示并停在末尾**（`8c657e30`）：点击引用时复用 `open_ref` 已打开的文档判 `range.end > 文档行数`（文件被改短），命中则走既有提示条告知引用区间与现有行数，`reveal` 到末尾但**不设 selection**——选中末尾会暗示「这段就是该引用」。不新增协议字段、不改 chip 灰显。**边界**：只覆盖「文件被改短、行号越界」，不覆盖「行数不变但内容被换」。**对消费者**：文件改短后点旧引用不再静默落到错误位置。
+- **子 agent 并发额度设置项文案与角色包文档对齐**（`e3b217bb` · `2b7b8428` · `d0dc1992` · `6f78163e` · `f3dd89fc` · `b93516f4`）：设置页 `act.subagentConcurrency` 的合法区间由键面统一下发（`0~16`，越界由内核直接报错、不再静默回退）；`role-pack-creator` 的技能文档 / 模板 / 速查表同批订正（模板 `stepBudget` 归零、`contextLimit` 补明 `1~119999` 非法）；角色包规范里已不映射的五个能力键改标为草案。**对消费者**：设置页少一次「填了不生效」的困惑；新建角色包不再抄到非法区间或过期能力键。
+- **宿主 MCP 只读工具显式声明 `diskWrite: 'none'`**（`dc8dd805` 宿主侧）：内核把「未声明的写盘能力」fail-closed 归为 `opaque`，宿主 MCP 的只读工具此前未声明，会被当成不透明写盘参与串行屏障与写后缓存失效；现逐个显式声明 `none`。**对消费者**：只读 MCP 工具不再无谓触发写后失效。
 
 ## [7.0.0] · 2026-11-10
 

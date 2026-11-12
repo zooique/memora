@@ -8,7 +8,7 @@ Memora is a kernel-driven **VS Code AI assistant**: a thin shell that assembles 
 
 **Open source**: [github.com/zooique/memora](https://github.com/zooique/memora)
 
-**Kernel**: built on the npm package [@zooique/memora](https://www.npmjs.com/package/@zooique/memora) `7.0.0` (the kernel generation bundled into this version, reconciled with every host release)
+**Kernel**: built on the npm package [@zooique/memora](https://www.npmjs.com/package/@zooique/memora) `7.1.0` (the kernel generation bundled into this version, reconciled with every host release)
 
 ---
 
