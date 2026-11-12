@@ -541,3 +541,79 @@ describe('ProviderStore 密钥读取通道（secretsAccess 收口）', () => {
     );
   });
 });
+
+// ══════════════════════════════════════════════════════════════
+// 读侧 contextWindow 归一（手改 settings.json 可写入 0 / 负数 / 非整数）
+// ══════════════════════════════════════════════════════════════
+
+describe('ProviderStore · 读侧 contextWindow 归一', () => {
+  let store: ProviderStore;
+
+  /** 构造一条内存 Provider（contextWindow 收 unknown：模拟 settings.json 里的外部数据） */
+  const providerWith = (contextWindow: unknown) => ({
+    name: 'alpha',
+    displayName: 'Alpha',
+    provider: 'deepseek',
+    model: 'deepseek-chat',
+    baseUrl: 'https://api.example.com/v1',
+    contextWindow,
+  });
+
+  beforeEach(() => {
+    h.store['providers'] = [];
+    h.store['activeProvider'] = 'alpha';
+    for (const k of Object.keys(secretsStore)) delete secretsStore[k];
+    secretsStore['memora.provider.alpha.apiKey'] = 'sk-alpha';
+    store = new ProviderStore(secrets as unknown as import('vscode').SecretStorage);
+  });
+
+  it.each([0, -1, 1023, 1.5, Number.NaN, Number.POSITIVE_INFINITY, null])(
+    'list：非法 contextWindow=%p → 读出 undefined（按未配置处理）',
+    async (bad) => {
+      h.store['providers'] = [providerWith(bad)];
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const list = await store.list();
+      expect(list[0]!.contextWindow).toBeUndefined();
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+    },
+  );
+
+  it('list：合法边界 1024 与正常值 128000 原样保留', async () => {
+    h.store['providers'] = [providerWith(1024), { ...providerWith(128_000), name: 'beta' }];
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const list = await store.list();
+    expect(list[0]!.contextWindow).toBe(1024);
+    expect(list[1]!.contextWindow).toBe(128_000);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('getActive：走同一归一（0 → undefined，不把零窗口送给内核）', async () => {
+    h.store['providers'] = [providerWith(0)];
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const active = await store.getActive();
+    expect(active?.contextWindow).toBeUndefined();
+    warn.mockRestore();
+  });
+
+  it('listMasked：展示面同样拿到归一后的值', async () => {
+    h.store['providers'] = [providerWith(-5)];
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const list = await store.listMasked();
+    expect(list[0]!.contextWindow).toBeUndefined();
+    warn.mockRestore();
+  });
+
+  it('非法值告警带 provider 名与原始值，同一坏值只记一次', async () => {
+    h.store['providers'] = [providerWith(0)];
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await store.list();
+    await store.list();
+    expect(warn).toHaveBeenCalledWith(
+      'Memora Provider "alpha" 的 contextWindow 非法（收到 0），已按未配置处理，将使用内核默认窗口',
+    );
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+});

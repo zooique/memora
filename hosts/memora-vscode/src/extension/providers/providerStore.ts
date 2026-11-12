@@ -87,21 +87,77 @@ function maskKey(key: string): string {
  * 便于独立测试。本身不持有 LLM 状态，仅负责读写。
  */
 export class ProviderStore {
+  /** 已告警过的非法 contextWindow 签名（name + 原始值）：读面高频调用，避免同一坏值反复刷日志 */
+  private readonly warnedContextWindow = new Set<string>();
+
   /**
    * @param secrets VS Code SecretStorage（apiKey 加密存储）
    */
   constructor(private readonly secrets: vscode.SecretStorage) {}
 
   /**
-   * 从 configuration 读取 Provider 列表（不含 apiKey）
+   * 从 configuration 原样读取 Provider 列表（不含 apiKey，不做归一）
    *
-   * @returns 未脱敏的 Provider 列表（apiKey 字段为空占位）
+   * 只给**写入侧**用（如旧 maxContextTokens 迁移要按磁盘原样判 `contextWindow === undefined`），
+   * 读面一律走 {@link readConfig}——归一必须单点，不能各调用方自己再判一遍。
+   *
+   * @returns 磁盘上的 Provider 列表（apiKey 字段为空占位）
    */
-  private readConfig(): LlmProviderConfig[] {
+  private readRawProviders(): LlmProviderConfig[] {
     const providers = vscode.workspace
       .getConfiguration(CFG_SECTION)
       .get<Omit<LlmProviderConfig, 'apiKey'>[]>(CFG_PROVIDERS, []);
     return providers.map((p) => ({ ...p, apiKey: '' }));
+  }
+
+  /**
+   * 归一 contextWindow：只保留与 `save()` 同判据的值（整数且落在
+   * `[CONTEXT_WINDOW_MIN, CONTEXT_WINDOW_MAX]`），其余一律视为**未配置**（undefined）。
+   *
+   * 为什么读侧也要归一：settings.json 可手改，`package.json` 对数组元素无 schema，拦不住
+   * `contextWindow: 0`；而内核 `resolveContextWindow` 用 `??` 取默认（不兜 0），0 会被当真窗口
+   * ⇒ 预算归零 ⇒ 每轮跳过召回与最近对话注入。归到 undefined 才能让内核回落默认窗口。
+   *
+   * 非法值记一条 warn（带 provider 名与原始值），只在首次遇到时记——读面高频调用，不刷屏。
+   *
+   * @param name Provider 别名（告警定位用）
+   * @param raw 磁盘上的原始值（可能是任何类型）
+   * @returns 合法值原样返回；非法或未配置返回 undefined
+   */
+  private normalizeContextWindow(name: string, raw: unknown): number | undefined {
+    if (raw === undefined) return undefined;
+    if (
+      typeof raw === 'number' &&
+      Number.isInteger(raw) &&
+      raw >= CONTEXT_WINDOW_MIN &&
+      raw <= CONTEXT_WINDOW_MAX
+    ) {
+      return raw;
+    }
+    const signature = `${name}:${String(raw)}`;
+    if (!this.warnedContextWindow.has(signature)) {
+      this.warnedContextWindow.add(signature);
+      console.warn(
+        `Memora Provider "${name}" 的 contextWindow 非法（收到 ${String(raw)}），已按未配置处理，将使用内核默认窗口`,
+      );
+    }
+    return undefined;
+  }
+
+  /**
+   * 从 configuration 读取 Provider 列表（不含 apiKey）——**所有读面的唯一入口**
+   *
+   * 每条都经 {@link normalizeContextWindow}：非法 `contextWindow` 在这里就降为 undefined，
+   * 下游（list / listMasked / getActive / getBackground / getActiveVision / 配置面板）拿到
+   * 的永远是一份已归一的列表，不必各自再判。
+   *
+   * @returns 已归一、未脱敏的 Provider 列表（apiKey 字段为空占位）
+   */
+  private readConfig(): LlmProviderConfig[] {
+    return this.readRawProviders().map((p) => ({
+      ...p,
+      contextWindow: this.normalizeContextWindow(p.name, p.contextWindow),
+    }));
   }
 
   /**
@@ -643,7 +699,8 @@ export class ProviderStore {
     const cfg = vscode.workspace.getConfiguration(CFG_SECTION);
     const old = cfg.inspect<number | undefined>('maxContextTokens')?.globalValue;
     if (old === undefined) return;
-    const providers = this.readConfig();
+    // 写入侧按磁盘原样判：归一后的 undefined 不等于「用户没配过」，迁移不得改写非法值
+    const providers = this.readRawProviders();
     if (providers.length > 0) {
       const target = providers.find((p) => p.contextWindow === undefined);
       if (target) {
