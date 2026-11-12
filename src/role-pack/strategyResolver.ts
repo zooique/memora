@@ -216,7 +216,9 @@ export function resolveSubagentConcurrency(strategy: BehaviorStrategy | undefine
       [
         // 唯一真实可写路径：装配期只在 assembler 里读 rolePackManager.getActive().strategy，
         // 该读取不经 resolveActiveStrategy，故 AgentOptions.strategyOverride 对本键不生效
-        '角色包场景：改 <configDir>/role-packs/<包名>/manifest.json 里的 ' +
+        // 不写死宿主侧具体路径：角色包有内置 / 用户 / 项目三层来源（宿主加包时各自落盘），
+        // 内核只指向「该包自己所在的角色包目录」，避免把用户误导向没有该文件的 configDir
+        '角色包场景：改该包所在角色包目录下的 manifest.json 里的 ' +
           `strategy.act.subagentConcurrency，取值 ${range.min}~${range.max} 的整数`,
         `不需要限制时删除该键，使用内核缺省 ${defaultValue}`,
       ],

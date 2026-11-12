@@ -359,7 +359,7 @@ describe('resolve* 函数 — 数值解析', () => {
       // 整组建议**精确比对**：多点一条 / 少点一条 / 换个说法（如再写回「运行时覆盖」）都必须转红。
       // 唯一真实可写路径 = manifest（装配期 assembler 直读 rolePackManager.getActive().strategy）。
       expect(error.suggestions).toEqual([
-        '角色包场景：改 <configDir>/role-packs/<包名>/manifest.json 里的 ' +
+        '角色包场景：改该包所在角色包目录下的 manifest.json 里的 ' +
           `strategy.act.subagentConcurrency，取值 ${expectedRange} 的整数`,
         `不需要限制时删除该键，使用内核缺省 ${defaultValue}`,
       ]);
