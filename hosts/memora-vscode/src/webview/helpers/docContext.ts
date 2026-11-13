@@ -22,7 +22,7 @@ import { MOUNTABLE_INJECTION_META } from '../../shared/injectionSourceMeta.js';
  *
  * 🔴 值用 Unicode 转义承载、**运行期字符串一字不改**：信封标记是**持久化数据**
  * （已落盘的历史消息里就是这串字面）+ 剥离契约的锚点，翻译或改值即让旧消息剥离失效。
- * 协议标记 / 内核镜像，非 UI 文案，**不得翻译**。
+ * 协议标记（持久化数据 / 剥离锚点），非 UI 文案，**不得翻译**。
  */
 export const DOC_CONTEXT_OPEN = '[\u5f53\u524d\u6253\u78e8\u6587\u6863\u5185\u5bb9]';
 
@@ -41,7 +41,7 @@ export const DOC_CONTEXT_CLOSE = '[/\u5f53\u524d\u6253\u78e8\u6587\u6863\u5185\u
  */
 export const REF_CONTEXT_OPEN = '[\u53c2\u8003\u6587\u4ef6/\u76ee\u5f55]';
 
-/** 引用上下文块闭标签（同上：协议标记，非 UI 文案，不得翻译） */
+/** 闭标签 */
 export const REF_CONTEXT_CLOSE = '[/\u53c2\u8003\u6587\u4ef6/\u76ee\u5f55]';
 
 /**
@@ -56,7 +56,7 @@ export const REF_CONTEXT_CLOSE = '[/\u53c2\u8003\u6587\u4ef6/\u76ee\u5f55]';
  */
 export const PROBLEMS_CONTEXT_OPEN = MOUNTABLE_INJECTION_META.problems.envelope.open;
 
-/** 诊断上下文块闭标签（剥离侧锚点；值真源同开标签） */
+/** 闭标签 */
 export const PROBLEMS_CONTEXT_CLOSE = MOUNTABLE_INJECTION_META.problems.envelope.close;
 
 /**
@@ -68,7 +68,7 @@ export const PROBLEMS_CONTEXT_CLOSE = MOUNTABLE_INJECTION_META.problems.envelope
  */
 export const GIT_CHANGES_CONTEXT_OPEN = MOUNTABLE_INJECTION_META['git-changes'].envelope.open;
 
-/** git 未提交改动上下文块闭标签（剥离侧锚点；值真源同开标签） */
+/** 闭标签 */
 export const GIT_CHANGES_CONTEXT_CLOSE = MOUNTABLE_INJECTION_META['git-changes'].envelope.close;
 
 /**
@@ -119,7 +119,7 @@ function refItemLine(ref: ChatRef, missingPaths?: ReadonlySet<string>): string {
   // `#L5-L24` 与 offset/limit 同样是注定读空的精确指令）。标记仅行内追加文案，
   // 不新增标签/分隔符 ⇒ 剥离契约（stripInjectedContextPrefix 认 REF_CONTEXT_OPEN）零触碰。
   // 标记用**纯文本**而非 `⚠` 符号：本块会被剥离契约从 UI 隐藏、只喂模型，且
-  // `iconLanguage` 守卫把 `⚠`(U+26A0) 列为 webview 代码内禁用的字符图标（代码内出现即红）。
+  // `iconLanguage` 守卫扫描**字符串字面量**——字面量内出现 `⚠`(U+26A0) 即红，注释不受限。
   if (missingPaths?.has(ref.path)) {
     return `- Referenced file: ${ref.path} (warning: no longer exists since it was added; confirm with the user)`;
   }
@@ -145,7 +145,8 @@ function refItemLine(ref: ChatRef, missingPaths?: ReadonlySet<string>): string {
  *
  * 为什么当前文件只给指针、不注入正文：宿主上下文定案是「引用模式 Reference-Only」——
  * 所有上下文选择一律只挂指针。干净文件的磁盘内容就是真相，模型需要时 `read_file` 一次即可；
- * 仅当文件**有未保存修改**（磁盘不是真相）时才由调用方改走有界注入。
+ * 仅当磁盘不是真相（脏 / 未命名 / 工作区外）时才由调用方改走有界注入——判据真源
+ * `chatPanel.mustInjectDocBody`，此处只列出当前三分支（增删以该函数为准）。
  * 已有同 path 引用时不重复追加（引用行本身已经告诉模型这个文件）。
  *
  * 空块返回空串（**不产出空信封**）——调用方据此判断「无任何上下文块」。
@@ -220,14 +221,15 @@ export function buildInjectedContextEnvelope(
  *      **以技能块开标签开头**（技能块恒为信封首块；普通消息即便含「用户请求：」
  *      字样也不满足此条）；
  *   2. 锚点之后存在信封分隔符。
- * 锚点：取**最后一个成对块（文档块 / 诊断块）闭标签之后**（块内正文可能自带
+ * 锚点：取**最后一个成对块（文档块 / 诊断块 / git 块）闭标签之后**（块内正文可能自带
  * 「用户请求：」字样，必须排除在搜索区外）；技能块无闭标签、引用块旧例不进锚点计算，
  * 故纯技能 / 仅引用场景自 0 起搜索。
  * 用户 input 内含「用户请求：」必然出现在注入分隔符之后，不会被误剥。
  *
  * 已知局限（非破坏性）：技能正文为载体自由撰写，若正文自身含「用户请求：」，
- * 纯技能消息会在正文处截断。实测 role-packs + bundled skills 全量 45 文件 0 命中该
- * 字样；文档块场景不受此限（有闭标签锚点）。畸形消息（有开无闭 / 无分隔符）原样返回。
+ * 纯技能消息会在正文处截断。当时实测 role-packs + bundled skills 全量 45 文件 0 命中该
+ * 字样（历史举证而非活约束：意为当前局限可接受，不代表每次改动都要满足）；
+ * 文档块场景不受此限（有闭标签锚点）。畸形消息（有开无闭 / 无分隔符）原样返回。
  *
  * @param content 内核持久化的 user 消息原文
  * @returns 剥离前缀后的用户请求文本

@@ -2,9 +2,9 @@
  * 聊天记录里的图片缩略图条 —— 唯一渲染实现
  *
  * ## 为什么外置成 helper
- * `chatView.ts` 贴着 eslint `max-lines` 的只降不升基线（6694），而在面板里写 DOM 又必须
- * 与 `append` 同命运；本文件的职责单一（refs + URL 表 → 一条缩略图带），落在 helpers 层
- * 与 `chipRow.ts` 同类（DOM 构造，无跨模块状态）。
+ * `chatView.ts` 受 eslint `max-lines` 的只降不升闸约束（基线见 `eslint.config.mjs`），
+ * 而在面板里写 DOM 又必须与 `append` 同命运；本文件的职责单一（refs + URL 表 → 一条缩略图带），
+ * 落在 helpers 层与 `chipRow.ts` 同类（DOM 构造，无跨模块状态）。
  *
  * ## 为什么是缩略图而不是 chip（D30，2026-10-27 拍板）
  * 输入框附件行是**选择清单**（文字可扫、省高度，故为文件名 chip + 悬停预览）；聊天记录是
@@ -31,6 +31,8 @@ import type { ImageRef } from '@zooique/memora';
  * 之类的中间命名，避免多一层翻译——通道对象可整体传入，没有第三套字段名要维护。
  *
  * `attachments` 缺省 / 空数组 ⇒ **零 DOM**（纯文字消息的形状与升级前逐字一致）。
+ * `renderAttachmentStrip` 内再判一次空 / 缺省，是防调用方直传空数组（`chatView` 侧只判
+ * 「有没有传入」），不是第二套判据；两层都保留。
  */
 export interface UserAttachmentView {
   /** 附件引用（内核 `RoundMessage.attachments` 原样透传） */
