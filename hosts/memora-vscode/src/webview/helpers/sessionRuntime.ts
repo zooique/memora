@@ -22,7 +22,7 @@ import type { RoundView } from '../../shared/protocol.js';
  * 局部缓冲流结束即焚，重放通道够不着，表现为「切界面回来本流内容全空白」。
  * 生命周期 = consumeFlow 开始创建；正常/中断收场清除；软暂停（pausedOnPurpose）保留——
  * 半截正文只在缓冲里，清了会让暂停中重建丢内容；续跑新流覆盖或最终收场时退场；
- * 身份比对防误清新流缓冲。删除轮成功后 `discardLiveBuffer` 会主动清空现场（`chatTurnStructureOps`
+ * 身份比对防误清新流缓冲。删除 / 重新生成轮成功后 `discardLiveBuffer` 会主动清空现场（`chatTurnStructureOps`
  * 删轮路径，先于重放）。会话归属随行（sessionId），重建重放时校验当前会话，
  * 防切走再切回旧会话时跨会话污染。
  */
