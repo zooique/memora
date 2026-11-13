@@ -1,8 +1,9 @@
 /**
  * 角色卡顶部控件（状态徽章 + 操作按钮）的 DOM 构造（**纯构造，无面板状态**）
  *
- * 为什么外置：rolesView.ts 贴 max-lines 1000 红线（HOST-SPLIT-1），而本段是
- * 「当前 / 默认」两个层面文案的集中地——散在千行长文件里最容易被误改或复制出第二份。
+ * 为什么外置：本段是「当前 / 默认」两个层面文案的集中地——散在千行长文件里
+ * 最容易被误改或复制出第二份。（原文称「rolesView.ts 贴 max-lines 1000 红线」，
+ * 2026-11-13 复核实测 927 行、已低于该线，指认已不成立。）
  *
  * 语义边界（两个层面互不代替，可同时成立）：
  *   - 「当前」= 本会话的激活角色（`roles_set_active` 缺省 scope，只改该会话）；
@@ -23,7 +24,7 @@ export interface RoleCardPack {
 /** 控件构造依赖（由 rolesView 注入） */
 export interface RoleCardControlDeps {
   document: Document;
-  /** webview → extension 投递器（与 settingsView 共用同一实例） */
+  /** webview → extension 投递器（由 rolesView 注入，内部即 `vscode.postMessage`） */
   post(message: WebviewToExtensionMessage): void;
   /** 当前会话激活角色（undefined = 无激活） */
   activeName: string | undefined;
@@ -84,7 +85,7 @@ export function appendRoleCardActions(
   );
   handoffBtn.addEventListener('click', () => post({ type: 'roles_handoff', name: pack.name }));
   actions.appendChild(handoffBtn);
-  // 项目级专属：拷贝到用户级（非同步；同名先备份再覆盖）
+  // 项目级专属：拷贝到用户级（拷贝而非同步；同名由宿主先备份再覆盖）
   if (pack.source === 'project') appendPromoteToUserButton(actions, 'rolePack', pack.name, post);
 
   // 「设为当前」：仅非激活角色展示（切的是**当前会话**的角色）
