@@ -167,17 +167,40 @@ function selfTest() {
   const noArchive = [{ file: 'x.md', text: '# x\n' }];
   const withArchive = [{ file: 'x.md', text: '# x\n\n- **GONE-1** — 副本｜✅\n' }];
 
+  // 标题形态副本：ID 处于结构位（`·` 之后段首）⇒ 认副本（旧实现与收紧后都该认）
+  const titleMounted = [
+    { file: 'x.md', text: '# x\n\n## 2026-10-10 · GONE-1 真机验收形态 SSOT 沉淀\n' },
+  ];
+  // 撞词：英文词组型 ID 出现在标题从句里 ⇒ **不得**认副本（旧实现的假绿形态）
+  const bumpBase = ['# 台账', '', '- **Step 3** — 被折叠｜✅ 已落地', ''].join('\n');
+  const bumpHead = ['# 台账', '', ''].join('\n');
+  const bumpArchive = [
+    { file: 'x.md', text: '# x\n\n## 0.3.0 区发版前归档批（2026-10-26 · 出包 Step 3）\n' },
+  ];
+
   const bad = auditFold({ baseText, headText, archives: noArchive });
   const good = auditFold({ baseText, headText, archives: withArchive });
+  const mounted = auditFold({ baseText, headText, archives: titleMounted });
+  const bumped = auditFold({ baseText: bumpBase, headText: bumpHead, archives: bumpArchive });
 
   const ok1 = bad.lost.length === 1 && bad.lost[0] === 'GONE-1';
   const ok2 = good.lost.length === 0 && good.gone.length === 1;
+  const ok3 = mounted.lost.length === 0;
+  const ok4 = bumped.lost.length === 1 && bumped.lost[0] === 'Step 3';
   console.log(`  ${ok1 ? '✅' : '❌'} 消失且无副本 ⇒ 被捕获（lost=${bad.lost.join(',')}）`);
   console.log(
     `  ${ok2 ? '✅' : '❌'} 消失但有副本 ⇒ 放行（gone=${good.gone.length} / lost=${good.lost.length}）`,
   );
-  console.log(ok1 && ok2 ? '\n✅ 自检通过：折叠遗失可被捕获' : '\n❌ 自检失败：存在失明判据');
-  return ok1 && ok2 ? 0 : 1;
+  console.log(
+    `  ${ok3 ? '✅' : '❌'} 标题结构位副本 ⇒ 放行（lost=${mounted.lost.join(',') || '-'}）`,
+  );
+  console.log(
+    `  ${ok4 ? '✅' : '❌'} 标题撞词（出包 Step 3）⇒ 不认副本（lost=${bumped.lost.join(',')}）`,
+  );
+  console.log(
+    ok1 && ok2 && ok3 && ok4 ? '\n✅ 自检通过：折叠遗失可被捕获' : '\n❌ 自检失败：存在失明判据',
+  );
+  return ok1 && ok2 && ok3 && ok4 ? 0 : 1;
 }
 
 process.exit(process.argv.includes('--self-test') ? selfTest() : run());

@@ -207,16 +207,22 @@ function todayISO() {
 }
 
 /**
- * 自检用：取台账观察区**第一个**顶层条目 ID —— ⑬c 的存量豁免探针必须复用**真实存量 ID**，
- * 才能验证「ID 在 HEAD 且 blame 早于建门时点 ⇒ 不报」。写死一个 ID 会随台账改名而漂移，
- * 故动态取；取不到 = 判据失明，直接抛错（自检宁可红，不要静默变绿）。
+ * 自检用：取台账观察区**第一条 blame 早于建门时点**的顶层条目 ID。
+ * ⑬c 的存量豁免探针必须复用**真实存量 ID**，才能验证「ID 在 HEAD 且首行 blame 早于建门时点 ⇒ 不报」。
+ *
+ * 为什么不能只取「第一条」（2026-11-13 实测）：观察区首条 `LEDGER-ARCHIVE-CONFLICT-1` 的标题行
+ * 在 2026-11-11 被改写，blame 已晚于 `GATE13_BORN_AT` ⇒ 它按 ⑬ 的定义就是「被改写的存量」，
+ * 必然报红。探针选它 ≠ 判据坏了，而是**探针自己失效**——自检会永久红，最后被人当成噪音关掉。
+ * 故按 blame 时间挑，找不到就抛错（自检宁可红，不要静默变绿）。
  */
-function stockObservationId(text) {
+function stockObservationId(text, timing) {
   const i = text.search(/^##\s*观察/m);
   if (i < 0) throw new Error('自检失明：台账无观察区，取不到存量条目 ID');
-  const m = /^-\s+\*\*(.+?)\*\*/m.exec(text.slice(i));
-  if (!m) throw new Error('自检失明：观察区无顶层条目，取不到存量条目 ID');
-  return m[1];
+  for (const m of text.slice(i).matchAll(/^-\s+\*\*(.+?)\*\*/gm)) {
+    const born = timing.byId.get(m[1])?.headTime;
+    if (born !== null && born !== undefined && born < GATE13_BORN_AT) return m[1];
+  }
+  throw new Error('自检失明：观察区找不到 blame 早于建门时点的存量条目，⑬c 无合格探针');
 }
 
 /**
@@ -531,6 +537,23 @@ function axisAt(lines, sec, idx) {
   return null;
 }
 
+/**
+ * ⑧ 的**有效版本轴白名单**（显式枚举，未覆盖即红）。
+ * 为什么不再静默跳过（2026-11-13 · `LEDGER-ARCHIVE-FALSE-GREEN-1` 事实②）：
+ * 旧实现只认 `内核轴` / `宿主轴` 两个字面值，其它 `###` 标题一律回落 `tagTime=null`
+ * 再 `continue` —— 已收口条目只要被放进第三个 `###` 区，⑧ 就**永久失明**，
+ * 真实欠账被结构盲区静默吞掉，且没有任何输出会提示「这条没被判过」。
+ */
+const AXIS_TITLES = new Set(['内核轴', '宿主轴']);
+
+/**
+ * 观察区前置条（`## 观察 / 待拍板` 与首个 `###` 之间）的显式白名单。
+ * 这类条目不是产品轴上的东西（当前唯一实例 `LEDGER-ARCHIVE-CONFLICT-1` 讲的是台账归档纪律，
+ * 正文明确「按纪律留主台账」），硬塞进某一轴会让 axis 语义失真 ⇒ 显式承认 `null` 这一结构位。
+ * 新出现的 `###` 标题不在白名单 ⇒ 走「轴归属缺失」红灯，由人决定归位或补白名单。
+ */
+const AXIS_ALLOWED_NON_AXIS = new Set([null]);
+
 /** 所有归档文件的副本查询（缓存文本，逐 ID 复用 `lib/ledger-archive.mjs` 的同一判据）。 */
 function archiveCopies() {
   const dir = join(ROOT, 'tasks', 'archive');
@@ -665,7 +688,8 @@ function diagnose(text, opts = {}) {
   const overdue = []; // ⑭ 观察项复查日已过期仍未处置
   const dupIds = []; // ⑮ 顶层条目 ID 撞名
   const allIds = []; // ⑮ 的全量条目（跨区）
-  const closedCands = []; // ⑧ 的候选：观察区内已收口、且标题行无归档指针
+  const closedCands = []; // ⑧ 的候选：观察区内已收口、标题行无归档指针、且 ### 轴在白名单内
+  const axisUnknown = []; // ⑧ 的结构前置：已收口观察条落在白名单外的 ### 区（不再静默跳过）
   let itemTotal = 0;
   const releasedSections = [];
   // ⑬ 需要「HEAD 里有没有这个 ID」来界定新增 ⇒ timing 必须提到条目循环之前取。
@@ -717,8 +741,20 @@ function diagnose(text, opts = {}) {
       }
       // ⑧ 候选：观察区（主台账里唯一长期承载条目的区）内已收口、标题行无归档指针。
       //    判据本体（跨发版线 + 无副本）在 checkArchiveTiming 里，故此处只收集，不判定。
+      //    轴归属先过白名单：白名单外的 ### 标题不再静默跳过，而是转「结构红」——
+      //    否则该条在 ⑧ 里永久失明（事实②），真实欠账会被结构盲区吞掉。
       if (OBSERVATION_RE.test(sec.title) && !ptr && isClosedHead(it.head)) {
-        closedCands.push({ ...it, sec: sec.title, axis: axisAt(lines, sec, it.start) });
+        const axis = axisAt(lines, sec, it.start);
+        if (AXIS_TITLES.has(axis) || AXIS_ALLOWED_NON_AXIS.has(axis)) {
+          closedCands.push({ ...it, sec: sec.title, axis });
+        } else {
+          axisUnknown.push({
+            ...it,
+            sec: sec.title,
+            axis,
+            why: `已收口条目落在线轴白名单外的 ### 区「${axis}」⇒ ⑧ 无法判定，先归位或补白名单`,
+          });
+        }
       }
       // ⑫ 观察区条目体量：超过上限必是混入了过程叙述（判据与阈值理由见文件头 ⑫）。
       if (OBSERVATION_RE.test(sec.title) && it.lines > MAX_ITEM_LINES) {
@@ -802,6 +838,7 @@ function diagnose(text, opts = {}) {
     pending,
     indexIssues,
     timing: checkArchiveTiming(closedCands, timing, archiveCopies()),
+    axisUnknown,
     oversize,
     noExpiry,
     overdue,
@@ -824,6 +861,8 @@ function report(r) {
     problems.push(['⑤⑦版本索引不一致（三方 / README 归档表）', r.indexIssues]);
   if (r.pending.length) problems.push(['⑥待执行无完成判据', r.pending]);
   if (r.timing.length) problems.push(['⑧落态跨发版线但无归档副本', r.timing]);
+  if (r.axisUnknown.length)
+    problems.push(['⑧b已收口观察条的 ### 轴归属缺失（⑧ 无法判定）', r.axisUnknown]);
   if (r.oversize.length) problems.push(['⑫观察区条目体量超限', r.oversize]);
   // 标题必须与两路文案自洽：判据同时命中「真新登记」与「老条目被改写」，写死「新登记」会说谎。
   if (r.noExpiry.length) problems.push(['⑬观察项缺到期复查（新登记 / 被改写）', r.noExpiry]);
@@ -846,7 +885,7 @@ function report(r) {
 
   if (problems.length === 0) {
     console.log(
-      '✅ [ledger-hygiene] 十四类判据全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0 / 版本索引三方一致 / 待执行均有完成判据 / 版本索引↔README 归档表一致 / 无落态跨版未归档 / 观察区条目体量未超限 / 新登记观察项均有到期复查 / 无过期未处置复查日 / 无 ID 撞名 / 无跨条目逐字克隆 / 结构锚点齐备）',
+      '✅ [ledger-hygiene] 十四类判据全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0 / 版本索引三方一致 / 待执行均有完成判据 / 版本索引↔README 归档表一致 / 无落态跨版未归档且轴归属齐备 / 观察区条目体量未超限 / 新登记观察项均有到期复查 / 无过期未处置复查日 / 无 ID 撞名 / 无跨条目逐字克隆 / 结构锚点齐备）',
     );
     return 0;
   }
@@ -874,6 +913,7 @@ function report(r) {
       '\n   ⑤ 校准「版本索引」表 ↔ 归档文件 H1 ↔ git tag 三方；⑥ 给 📌 待执行条目补「完成判据：」行；' +
       '\n   ⑦ 让「版本索引」与 `tasks/archive/README.md` 归档表的文件名集合双向相等（改一处必须同步另一处）；' +
       '\n   ⑧ 把该条目搬进对应版本归档（发版时就该做），或在标题行注明归档去向；' +
+      '\n   ⑧b 把该已收口条目移进 `### 内核轴` / `### 宿主轴`；确属观察区前置条则把标题加进 `AXIS_ALLOWED_NON_AXIS` 白名单并写明理由；' +
       '\n   ⑫ 把过程叙述 / 实施流水整段迁归档、原位只留判据行 + 指针（`D1-MCP` 的精简做法）——**改阈值即门失明**；' +
       '\n   ⑬ 给新登记观察项补一行「到期复查 YYYY-MM-DD」（建门前的存量豁免，不回填；建门后新登记一律要写）；' +
       '\n   ⑭ 复查日过期即处置（台账头部「到期处置」三选一）：维持·改期（须补本轮实测作新证据）/ 升档 📌 / 封存·归档（默认）；' +
@@ -901,7 +941,7 @@ function selfTest() {
   const baseTiming = ledgerTiming();
   const baseR = diagnose(base, { timing: baseTiming });
   const idsOf = (list) => new Set(list.map((x) => x.id));
-  const stockId = stockObservationId(base);
+  const stockId = stockObservationId(base, baseTiming);
 
   // 注入锚点 = 观察区标题（2026-10-26 台账归元后，主台账不再常驻「已发布版本区」⇒
   // 自检必须**自建**一个已发布区，否则 ①②③ 判据无投放面 ⇒ 自检会因「锚点不存在」失明）
@@ -1017,6 +1057,39 @@ function selfTest() {
         };
       },
       pick: (r) => idsOf(r.timing),
+    },
+    // ⑧c 正向：已收口条目落在**白名单外的 ### 区** ⇒ 轴归属缺失必须被捕获。
+    //    旧实现对该形态直接 `tagTime=null → continue`，⑧ 永久失明且无任何输出（事实②）。
+    {
+      label: '⑧c轴归属缺失',
+      probe: 'ZZ-AXIS-1',
+      mutate: (t) =>
+        t.replace(
+          axisAnchor,
+          `### ZZ非轴区（自检注入）\n\n${probeTimeLine('ZZ-AXIS-1')}\n\n${axisAnchor}`,
+        ),
+      timing: (b) => {
+        const tag = b.kernelTagTime ?? 1000;
+        return {
+          ...b,
+          kernelTagTime: tag,
+          byId: new Map(b.byId).set('ZZ-AXIS-1', {
+            headTime: tag - 1,
+            lastTime: tag - 1,
+            headLine: probeTimeLine('ZZ-AXIS-1'),
+          }),
+        };
+      },
+      pick: (r) => idsOf(r.axisUnknown),
+    },
+    // ⑧d 反例控制：观察区前置条（`## 观察 / 待拍板` 与首个 `###` 之间，axis=null）属白名单结构位
+    //    ⇒ 不得报「轴归属缺失」（防把合法结构位当成缺陷，进而逼人硬塞进某一轴）。
+    {
+      label: '⑧d观察区前置条不误报',
+      probe: 'ZZ-AXIS-2',
+      invert: true,
+      mutate: (t) => t.replace(anchor, `${anchor}\n\n${probeTimeLine('ZZ-AXIS-2')}`),
+      pick: (r) => idsOf(r.axisUnknown),
     },
     // ⑦a：README 归档表删掉 0.1.0 行 ⇒ 版本索引引用了但表未登记（只改 README，不改台账）
     {
