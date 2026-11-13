@@ -15,7 +15,7 @@ import type { HostSessionStore } from '../../extension/host/sessionStore.js';
 import type { RoundView } from '../../shared/protocol.js';
 import { stripInjectedContextPrefix } from './docContext.js';
 
-/** 历史回放单次最大条数：跨天合并视图聚焦近期对话，防长期使用后累积导致每次打开/切换全量回放 + 逐条建 DOM。 */
+/** 历史回放单次最大条数：聚焦近期对话，防长期使用后累积导致每次打开/切换全量回放 + 逐条建 DOM。 */
 const MAX_HISTORY_MESSAGES = 200;
 
 /** 历史回放最大轮数（round-based 模式）：按完整 round 截断，杜绝「正文有、过程无」的半轮不对称 */
@@ -38,7 +38,7 @@ export function loadRoundBasedHistory(
     console.warn('Memora：round-based 会话需要 viewLoader，但未注入');
     return [];
   }
-  // 空会话守卫（SSOT 单点：replayHistory / postTurnUpdate / collectHistoryMessages 共用判据）：
+  // 空会话守卫（SSOT 单点：replayHistory / postTurnUpdate / collectOccupancyHistory 共用判据）：
   // 无轮次记录（新建/空会话）→ 返回空数组，不触发 loadView「会话不存在」抛错路径。
   // 判据直用完整 sessionId（getRoundIds 以 sessionId 为键，parse 再拼回是恒等变换）
   if (sessionStore.getRoundIds(sessionId).length === 0) {
@@ -72,7 +72,7 @@ export function loadRoundBasedHistory(
         processEvents: round.processEvents ?? [],
         // 裁决证据（悬案取证轨）：随 Round 整对象已在 view.rounds 中，直接透出（无证据轮
         // undefined，零冗余）。重放经本投影下发；运行时由宿主 settle 从同一 roundStore 读出随
-        // done/interrupted 下发（证据轮末才落盘，不进 processEvents，见内核 RoundEvidenceEvent）。
+        // done/interrupted 下发（证据是 Round 的独立字段 `Round.evidence`，随写点即时落盘，不进 processEvents）。
         evidence: round.evidence,
       });
     }
