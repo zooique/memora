@@ -1,13 +1,15 @@
 /**
  * 会话大纲导航条（HOST-NAV-1）— 右缘按轮锚点 + hover 预览 + 点击定位
  *
- * 形态（ChatGPT 同款范式，台账 HOST-NAV-1）：对话流右缘一列小横条，每轮用户输入一根；
+ * 形态（台账 HOST-NAV-1：全量地图 + hover 展开目录；ChatGPT 原生无导航条）：对话流右缘一列小横条，
+ * 每轮用户输入一根；
  * 视口内当前轮加粗高亮；hover 弹浮层列各轮用户输入原文预览；点击滚动定位到对应轮。
  * 平时几乎隐形（不滚动/不足两轮时整条隐藏），不占布局。
  *
  * SSOT 决策：
  *  - **锚定对象 = 用户消息气泡 .msg.user，不依赖 roundId**——运行时发送时刻还没有
- *    roundId（meta/chunk 到达才回填），重放路径才有。大纲条只做「定位 + 预览 + 高亮」，
+ *    roundId，且运行时 user 回显载荷不带 roundId（meta/chunk 回填只落 assistant 骨架 /
+ *    轮块），重放路径才带。大纲条只做「定位 + 预览 + 高亮」，
  *    全部可由气泡 DOM 位置与上屏文本表达，绕开「运行时无 id」的时序问题。
  *    🔴 刻意**不锚** `.msg-wrapper`：该外壳由 chatView `append()` 的 else 分支创建，
  *    同时包 **user 与 error** 两种 role，按它会误把 error 气泡算作一轮（多一根条 +
@@ -37,7 +39,7 @@ import { trackScroll } from './scrollToBottom.js';
 /** 定位落点：目标块顶滚到容器可视顶下方该像素（留一点呼吸空隙） */
 const JUMP_INSET = 12;
 
-/** 当前轮判定阈值：块顶滚入容器可视顶该像素内即视为「已读过」（ChatGPT 同款手感） */
+/** 当前轮判定阈值：块顶滚入容器可视顶该像素内即视为「已读过」 */
 const ACTIVE_THRESHOLD = 96;
 
 /**
@@ -70,8 +72,9 @@ const GAP_MIN = 1;
  * 导航条可用高度预算 = 视口高 × 该比例。
  *
  * 取 0.5 的理由：导航条竖向居中锚定（top:50%），占视口高一半即上下各占至 25%~75%
- * 区间，恒不与右下角「一键到底」按钮（贴底约 5% 内）重叠 —— 这正是「侧边栏位置紧张」
- * 的结构性解，而非再挪一个边距。**SSOT：条列高度上限的唯一真源在此**，经 applyMetrics
+ * 区间，恒让出底部按钮区 —— 右下角「一键到底」按钮锚在 `#inputBar` 顶边
+ * （`bottom: calc(100% + sp-4)`），垂直位置随输入区增高而变，不是按视口比例贴底；这正是
+ * 「侧边栏位置紧张」的结构性解，而非再挪一个边距。**SSOT：条列高度上限的唯一真源在此**，经 applyMetrics
  * 下发条列内联 max-height；**条列** CSS 不设 max-height（避免第二套值静默漂移）。
  * 浮层视觉盒 `.round-nav__list` 另有 `max-height:50vh`（CSS，C 类）与本比例同判——该对
  * 镜像由 roundNav.test.ts 镜像守卫钉死（比例漂移即红）。
@@ -87,8 +90,10 @@ export const NAV_HEIGHT_RATIO = 0.5;
 /**
  * 提取轮次预览文本：上屏文本 → 剥注入前缀 → 压缩空白成单行 → 截断
  *
- * 输入是上屏 .msg-body 的 textContent（渲染同源）；strip 让重放路径（带
- * 「Current open file: …」前缀）与运行时（无前缀）归一。空体返回空串（调用方
+ * 输入是上屏 .msg-body 的 textContent（渲染同源）；strip 让重放路径（信封 =
+ * 技能块 / 文档块 / 诊断块 / git 改动块 / 引用块 + `用户请求：` + input；
+ * 「Current open file: …」只是引用块内的一行指针，仅在没有注入文档正文时出现）
+ * 与运行时（无信封）归一。空体返回空串（调用方
  * 据此给「（空输入）」占位）。
  */
 export function extractPreview(raw: string): string {
@@ -139,8 +144,9 @@ export function computeActiveIndex(
  * 一点即达」的形态），靠压缩条高与间隙适配可用高度；极端仍不足时由条列自身滚动
  * 兜底（CSS overflow，见 chatStyles 注释）。
  *
- * 压密次序 —— 先动间隙、后动条高（间隙视觉权重低，先牺牲）：①间隙压到 GAP_MIN；
- * ②仍不足再压条高（下限 BAR_MIN_H，保证每根仍可辨可点）。
+ * 压密次序 —— 先动间隙、后动条高（间隙视觉权重低，先牺牲）：①条高保持宽松，间隙压到
+ * 刚好装下（落在 GAP_MIN 之上，多数情况高于下限）；②装不下才让间隙触底 GAP_MIN 并压条高
+ * （下限 BAR_MIN_H，保证每根仍可辨可点）。
  *
  * @param count  轮数（条数）
  * @param availH 条列可用高度（px）；count<=0 或 availH<=0（视口未就绪）返回宽松态默认
@@ -186,8 +192,9 @@ export interface RoundNavController {
  * 重建签名：条数 + 全量预览文本拼接（分隔符防歧义）。
  *
  * ⚠️ **勿退回「条数 + 首尾块文本长」**：重放 / 分叉时条数与首尾长度都可能不变、仅中段
- * 文本不同，长度式签名会误判「未变」而跳过重建 ⇒ 条预览与浮层静默失效（读者信了、
- * 无测试会红类伤）。全量拼接对「任一预览变化」敏感，且锚 `.msg.user` = **仅用户输入**
+ * 文本不同，长度式签名会误判「未变」而跳过重建 ⇒ 条预览与浮层静默失效。该回归已由
+ * 「指纹全量：仅中段预览变化也重建」用例钉死（与全量指纹同笔引入），改回长度式即打红。
+ * 全量拼接对「任一预览变化」敏感，且锚 `.msg.user` = **仅用户输入**
  * （AI / error 气泡不在列，用户气泡在流式期文本不变）⇒ 不会因 AI 流式增长而每帧重建。
  */
 function signatureOf(previews: string[]): string {
@@ -222,7 +229,7 @@ export function createRoundNav(messages: HTMLElement, nav: HTMLElement): RoundNa
   const track: HTMLElement = track0;
   const list: HTMLElement = list0;
   let lastSignature = '';
-  /** 最近一次构建时的轮次气泡（点击定位按它寻址；与条列/浮层行同序） */
+  /** 最近一次 sync 收集的轮次气泡（每次 sync 都覆盖；点击定位按它寻址；与条列/浮层行同序） */
   let cachedWrappers: HTMLElement[] = [];
   /** 压密缓存键：轮数 + 预算 + 条高 + 间隙 任一变化才重写内联样式（防流式期每帧重写 DOM） */
   let lastMetricsKey = '';
@@ -319,8 +326,9 @@ export function createRoundNav(messages: HTMLElement, nav: HTMLElement): RoundNa
     const bars = track.querySelectorAll<HTMLElement>('.round-nav__bar');
     if (bars.length === 0) return;
     const viewTop = messages.getBoundingClientRect().top;
-    // tops 与 bars 同序（同一批 wrapper 的块顶）；jsdom 恒 0 ⇒ 全部命中阈值 0 号位——
-    // 真机才有效，测试用例经打桩或纯函数覆盖
+    // tops 与 bars 同序（同一批 wrapper 的块顶）。jsdom 无布局：rect 恒 0 且
+    // remaining = scrollHeight - scrollTop - clientHeight 恒 0 ⇒ 先撞贴底分支判**末位**，
+    // 不是 0 号位；阈值扫描只在真机/打桩下有效，测试用例经打桩或纯函数覆盖
     const tops = Array.from(bars).map((bar) => {
       const wrapper = cachedWrappers[Number(bar.dataset.index)];
       return wrapper?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY;
