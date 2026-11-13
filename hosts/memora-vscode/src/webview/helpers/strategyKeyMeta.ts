@@ -135,7 +135,7 @@ export const STRATEGY_KEY_META: Record<string, StrategyKeyMetaEntry> = {
  */
 export const SWITCH_CONTROL_KEYS: ReadonlySet<string> = new Set(['selfReview']);
 
-/** 详情值渲染：数组（askOn 多选）逐项走选项映射并过 l10n；标量命中 valueLabels 才过 l10n，未命中原样返回；对象走 JSON 兜底 */
+/** 详情值渲染：数组（askOn 多选）逐项走选项映射，命中 optionLabels 才过 l10n、未命中项原样返回；标量命中 valueLabels 才过 l10n，未命中原样返回；对象走 JSON 兜底 */
 export function formatDetailValue(meta: StrategyKeyMetaEntry | undefined, value: unknown): string {
   if (Array.isArray(value)) {
     return value
