@@ -2,7 +2,7 @@
  * 聊天记录里的图片缩略图条 —— 唯一渲染实现
  *
  * ## 为什么外置成 helper
- * `chatView.ts` 受 eslint `max-lines` 的只降不升闸约束（基线见 `eslint.config.mjs`），
+ * `chatView.ts` 贴近 eslint `max-lines` 的只降不升闸基线（见 `eslint.config.mjs`），余量已很小，
  * 而在面板里写 DOM 又必须与 `append` 同命运；本文件的职责单一（refs + URL 表 → 一条缩略图带），
  * 落在 helpers 层与 `chipRow.ts` 同类（DOM 构造，无跨模块状态）。
  *

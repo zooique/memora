@@ -146,7 +146,7 @@ function refItemLine(ref: ChatRef, missingPaths?: ReadonlySet<string>): string {
  * 为什么当前文件只给指针、不注入正文：宿主上下文定案是「引用模式 Reference-Only」——
  * 所有上下文选择一律只挂指针。干净文件的磁盘内容就是真相，模型需要时 `read_file` 一次即可；
  * 仅当磁盘不是真相（脏 / 未命名 / 工作区外）时才由调用方改走有界注入——判据真源
- * `chatPanel.mustInjectDocBody`，此处只列出当前三分支（增删以该函数为准）。
+ * `activeFileTracker.mustInjectDocBody`，此处只列出当前三分支（增删以该函数为准）。
  * 已有同 path 引用时不重复追加（引用行本身已经告诉模型这个文件）。
  *
  * 空块返回空串（**不产出空信封**）——调用方据此判断「无任何上下文块」。
