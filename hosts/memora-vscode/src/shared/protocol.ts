@@ -1337,6 +1337,18 @@ export type ExtensionToWebviewMessage =
          * 包已卸载时打开会话由既有回落 notice 告知。
          */
         activeRolePackName?: string;
+        /**
+         * 上一轮结局（读侧投影，真源 = 该会话末位轮的 `RoundStatus`）。
+         *
+         * - `completed` = 正常跑完；`interrupted` = 已收场的停 turn；
+         * - `unsettled` = 未收场（`pending` / `error`）。**文案必须是「上次未正常结束」——
+         *   暂停检查点只在内存，重启后不可续跑，写「暂停中」会误导用户。**
+         *
+         * 缺省 = 索引查不到该轮 / 宿主未注入读取口，webview 不渲染终态标签（不猜状态）。
+         * 刻意**不写 `SessionMeta`**：终态真源已在 RoundStore，写第二份必然与 `mergeSessionMeta`
+         * 的整对象合并长期漂移。
+         */
+        lastOutcome?: 'completed' | 'interrupted' | 'unsettled';
       }[];
       /** 属于留存区（视图分组标签）的会话 id；**不是**状态字段，会话本身与近期条目无任何差别 */
       archivedIds: string[];

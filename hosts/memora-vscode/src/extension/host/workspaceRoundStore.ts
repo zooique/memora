@@ -62,6 +62,24 @@ export function hasFreshRoundRead(store: IRoundStore): store is IRoundStore & Fr
   return typeof (store as Partial<FreshRoundReadable>).getByIdFresh === 'function';
 }
 
+/**
+ * 「索引态读取」能力（`WorkspaceRoundStore.getStatus` 提供，不在内核 IRoundStore 契约内）
+ *
+ * 会话终态投影只需要「这一轮最后是什么状态」，不需要整轮正文；索引条目本就带 `status`
+ * （`load()` 启动时重建），读索引即得，**不读盘**。消费方用结构化探测，缺失即不投影
+ * （webview 只是少一个标签，不影响列表本身）。
+ */
+export interface RoundStatusIndexReadable {
+  getStatus(roundId: string): RoundStatus | undefined;
+}
+
+/** 判断某 roundStore 是否具备「按索引读轮状态」能力 */
+export function hasRoundStatusIndex(
+  store: IRoundStore,
+): store is IRoundStore & RoundStatusIndexReadable {
+  return typeof (store as Partial<RoundStatusIndexReadable>).getStatus === 'function';
+}
+
 /** 回收站保留期（7 天）：到期由 load() 清理，删除后仍可人工找回 */
 export const ROUND_TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -426,6 +444,22 @@ export class WorkspaceRoundStore implements IRoundStore {
     }
 
     return null;
+  }
+
+  /**
+   * 按 ID 读取轮状态（**只读内存索引，不读盘**）
+   *
+   * 终态投影的唯一读取口：会话列表只需要「这一轮最后怎么结束的」，索引条目本就带
+   * `status`（`load()` 启动时重建、`save()` 时同步更新），无需为一条标签加载整轮正文。
+   * 索引里没有该轮（不存在 / 已被摘除）时返回 `undefined`，由调用方「不投影」而非猜一个状态。
+   *
+   * @param roundId - Round ID
+   * @returns 索引中的轮状态；索引无此条目时为 undefined
+   */
+  getStatus(roundId: string): RoundStatus | undefined {
+    // 只查派生索引：status 的真源在轮文件，但索引条目是它在内存里的同步副本；
+    // 这里刻意不回读盘，避免列表渲染对每个会话做一次 IO。
+    return this.index.get(roundId)?.status;
   }
 
   /**

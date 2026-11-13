@@ -345,6 +345,11 @@ export const chatStyles = `
   }
   .session-history__item-state.is-pending { color: var(--accent, #0e639c); font-weight: 600; }
   .session-history__item-state.is-running { color: var(--text-secondary, #9aa0a6); }
+  /* 上一轮终态（P1 会话终态投影）：completed / interrupted 是中性历史信息；
+     unsettled = 上次未正常结束，用警示色提示「这轮没收场」，但不抢待处理的主色。 */
+  .session-history__item-state.is-completed { color: var(--text-secondary, #9aa0a6); }
+  .session-history__item-state.is-interrupted { color: var(--text-secondary, #9aa0a6); }
+  .session-history__item-state.is-unsettled { color: var(--warn, #d7ba7d); }
   /* 历史入口角标：绝对定位在 trigger 右上角（数字 = 待处理会话数；0 时 hidden）。
      尺寸用 em 相对父级字号（角标是字号的派生刻度，不引入一次性 px 裸值）。 */
   #historyBtn { position: relative; }

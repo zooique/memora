@@ -26,6 +26,7 @@ import { diffWorkspaceSnapshots } from '../../extension/host/fileChangeTracker.j
 import type { HostSessionStore } from '../../extension/host/sessionStore.js';
 import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
 import { salvageInterruptedRounds } from '../../extension/host/interruptedSalvage.js';
+import { hasRoundStatusIndex } from '../../extension/host/workspaceRoundStore.js';
 import { ingestImage } from '../../extension/host/imageIngest.js';
 // IMG-8 宿主兜底：三维聚合限额裁决（判据单点 shared/imageTurnLimits，token 走内核 imageTokens）
 import { imageTurnRejection } from '../../extension/host/imageTurnGuard.js';
@@ -1534,8 +1535,23 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 供 webview 渲染历史模态浮层。无历史时 sessions 为空数组（webview 显示空态）。
    */
   private pushSessionList(): void {
-    // 投影口径（非当前会话 / 降序 / 单数据源 + 前端过滤）见 helpers/sessionList 头注释
-    this.post(buildSessionListMessage(this.sessionStore, this._currentSessionId, vscode.l10n));
+    // 终态投影（P1）：只需要「末位轮什么状态」，由 RoundStore 索引直读，不加载整轮正文。
+    // 结构化能力探测而非 `instanceof`：面板只依赖 IRoundStore 契约，探测失败就退化为
+    // 不投影 lastOutcome（列表本身不受影响）。
+    const roundStore = this._eventLogRoundStore;
+    const readLastRoundStatus =
+      roundStore && hasRoundStatusIndex(roundStore)
+        ? (roundId: string) => roundStore.getStatus(roundId)
+        : undefined;
+    // 投影口径（非当前会话 / 降序 / 单数据源 + 前端过滤 / 终态读侧投影）见 helpers/sessionList 头注释
+    this.post(
+      buildSessionListMessage(
+        this.sessionStore,
+        this._currentSessionId,
+        vscode.l10n,
+        readLastRoundStatus,
+      ),
+    );
   }
 
   /** 历史运维动作的依赖注入（单一构建点：新增动作只在此挂依赖，不在各处散开） */

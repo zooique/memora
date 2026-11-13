@@ -43,6 +43,13 @@ export interface SessionSummaryDto {
   messageCount?: number;
   /** 会话记录的角色包名快照（缺省 = 从未选过角色；列表只展示快照，不判断包是否仍可用） */
   activeRolePackName?: string;
+  /**
+   * 上一轮结局（宿主读侧投影；缺省 = 索引查不到末位轮 / 宿主未注入读取口）
+   *
+   * 状态槽优先级：pending > running > lastOutcome —— 活跃度是实时真源，
+   * 终态是盘上投影；正在跑 / 等答时不能拿旧终态盖住当前状态。
+   */
+  lastOutcome?: 'completed' | 'interrupted' | 'unsettled';
 }
 
 /** 本域经 postMessage 发出的消息型（窄联合：历史菜单的全部出口动作） */
@@ -259,6 +266,8 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
     /**
      * 活跃度标识（E4 批 4）：待处理优先于运行中——既在跑又在等你答，先说的是「等你答」；
      * 同一条目只挂一个标签（两个都挂会让用户以为要处理两件事）。
+     * 第三优先级 = 上一轮终态（P1 会话终态投影）：活跃度是实时真源，正在跑 / 等答时
+     * 不拿盘上旧终态盖住当前状态；只有两者都不亮时才显示「上一轮怎么结束的」。
      * 纯展示元素（span，非 .treedd__item）：不得干扰下拉选择委托与键盘导航。
      */
     const stateEl = document.createElement('span');
@@ -268,6 +277,16 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
     } else if (runningSessionIds.has(s.sessionId)) {
       stateEl.className = 'session-history__item-state is-running';
       stateEl.textContent = l10n.t('Executing');
+    } else if (s.lastOutcome) {
+      stateEl.className = `session-history__item-state is-${s.lastOutcome}`;
+      // unsettled 必须说「上次未正常结束」：暂停检查点只在内存、重启后不可续跑，
+      // 写「暂停中」会让用户以为还能接着跑（P1 硬约束）。
+      stateEl.textContent =
+        s.lastOutcome === 'completed'
+          ? l10n.t('Completed')
+          : s.lastOutcome === 'interrupted'
+            ? l10n.t('Stopped')
+            : l10n.t('Last run did not finish normally');
     }
     // 分组动作：会话记录 → 移入留存区；留存区 → 移回会话记录。
     // 两者都**不是删除**（数据一字不动），故图标与文案都不用删除类语言。

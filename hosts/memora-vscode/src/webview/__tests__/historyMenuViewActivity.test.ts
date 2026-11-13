@@ -84,4 +84,48 @@ describe('历史菜单会话活跃度标识（E4 批 4）', () => {
     expect(badge.hidden).toBe(true);
     expect(badge.textContent).toBe('');
   });
+
+  it('上一轮终态是第三优先级：待处理压过运行中、运行中压过终态（P1 会话终态投影）', () => {
+    const { view } = mount();
+    // 三条会话分别带 completed / interrupted / unsettled 终态投影
+    view.renderMenu(
+      [
+        {
+          sessionId: '2026-11-06-a',
+          title: 'A',
+          updatedAt: '2026-11-06T10:00:00.000Z',
+          lastOutcome: 'unsettled',
+        },
+        {
+          sessionId: '2026-11-06-b',
+          title: 'B',
+          updatedAt: '2026-11-06T09:00:00.000Z',
+          lastOutcome: 'interrupted',
+        },
+        {
+          sessionId: '2026-11-06-c',
+          title: 'C',
+          updatedAt: '2026-11-06T08:00:00.000Z',
+          lastOutcome: 'completed',
+        },
+      ],
+      [],
+    );
+    // 无实时活跃度 ⇒ 只有终态标签；unsettled 的文案必须是「上次未正常结束」
+    expect(stateLabel('2026-11-06-a')).toBe('Last run did not finish normally');
+    expect(stateLabel('2026-11-06-b')).toBe('Stopped');
+    expect(stateLabel('2026-11-06-c')).toBe('Completed');
+
+    // 运行中（实时真源）压过终态（盘上投影）
+    view.setActivity(['2026-11-06-a'], [], 0);
+    expect(stateLabel('2026-11-06-a')).toBe('Executing');
+
+    // 待处理压过运行中，也压过终态
+    view.setActivity(['2026-11-06-a'], ['2026-11-06-a'], 1);
+    expect(stateLabel('2026-11-06-a')).toBe('Awaiting answer');
+
+    // 活跃度清空后回落到终态投影（不是消失）
+    view.setActivity([], [], 0);
+    expect(stateLabel('2026-11-06-a')).toBe('Last run did not finish normally');
+  });
 });
