@@ -21,7 +21,7 @@
 - **环境变量缺失时保留 `${NAME}` 占位符，不再替换成空串**（`208eef16` · **消费者可感知**）：此前未设置的变量会被展成空串——`apiKey` 变空后请求 401、`baseUrl` 变空后 `new URL()` 抛错，且从现象看不出是哪个变量缺失。现整段 `${NAME}` 原样保留；刻意不抛配置错误（一个占位符没设不该让整份配置失败）。**对消费者**：配置读出来能直接看到缺哪个变量；已设变量、显式空串、非字符串入参的行为逐字不变。
 - **日志脱敏递归覆盖数组**（`78f7e37c` · **消费者可感知 · 安全面**）：`redactSensitiveKeys` 此前遇到数组直接透传，`logger.info({ args: [{ apiKey: 'sk-xxx' }] })` 里的敏感键会原样进日志。现按元素递归脱敏且保持数组形态（不重建为 `{0:…}`）。**对消费者**：数组载荷里的 `apiKey` / `token` 等同样显示为 `[REDACTED]`；对象分支与非敏感值不变。
 - **DDG 跳转链接剥前缀兼容绝对地址**（`560210df` · **消费者可感知**）：DuckDuckGo 返回 `https://duckduckgo.com/l/?uddg=…` 时，旧正则只剥协议相对形式，残留的 `https:` 会拼出 `https:https://…` 畸形 URL。现兼容协议相对 / `https://` / `http://` 三种前缀。**对消费者**：绝对地址形态的搜索结果能正常打开，不再产出畸形链接。
-- **POSIX 上 `kill ESRCH` 归为「根已先行退出」，中断不再误报终止失败**（`90806c85` · `22759bd8` · **消费者可感知**）：POSIX 杀进程树时，目标若在终止指令到达前自行退出，`kill(-pid)` 抛 ESRCH，旧实现一律记 `error`，与 Windows `taskkill 128` 归 `alreadyExited` 的语义不对称。现 ESRCH → `{ ok: false, alreadyExited: true }`；中断回调按 `alreadyExited` 分档，已确认根先行退出走 INFO，其余（如 EPERM、目标可能仍存活）仍 WARN。**对消费者**：`ProcessTreeKillResult.alreadyExited` 在 POSIX 上不再误报；正常竞态不再打「终止失败」WARN。
+- **POSIX 上 `kill ESRCH` 归为「根已先行退出」，中断不再误报终止失败**（`90806c85` · `22759bd8` · `920f9498` · **消费者可感知**）：POSIX 杀进程树时，目标若在终止指令到达前自行退出，`kill(-pid)` 抛 ESRCH，旧实现一律记 `error`，与 Windows `taskkill 128` 归 `alreadyExited` 的语义不对称。现 ESRCH → `{ ok: false, alreadyExited: true }`；中断回调按 `alreadyExited` 分档，已确认根先行退出走 INFO，其余（如 EPERM、目标可能仍存活）仍 WARN。同一处改动的余波：ESRCH 判成「已先行退出」后 `terminationError` 不再留空，补一句原因句（与 Windows `taskkill 128` 同构），避免消费端用 `error ?? '进程树终止未确认'` 把「已先行退出」写成「未确认」、并让 `formatExecutionResult` 拼出重复病句；「已先行退出 ≠ 进程树已清空」的语义边界不变。**对消费者**：`ProcessTreeKillResult.alreadyExited` 在 POSIX 上不再误报；正常竞态不再打「终止失败」WARN，失败结果也总带可读原因。
 
 ## [Unreleased] · 宿主
 
