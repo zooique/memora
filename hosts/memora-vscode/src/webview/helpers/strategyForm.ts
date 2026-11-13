@@ -3,9 +3,9 @@
  *
  * 从 `webview/scripts/rolesView.ts` 抽出（2026-10-26）。为什么与 `strategyKeyMeta.ts` 分开：
  * 两者的 `kind` **不同源**——本文件的 `StrategyFormCell['kind']` 是 5 值控件形态
- * （enum/number/text/multi/switch），而 `StrategyKeyMetaEntry` 只有 `valueLabels` /
- * `optionLabels` 两个映射字段，没有 `kind`，也没有 `control`（switch 形态由
- * `SWITCH_CONTROL_KEYS` 独立判定）。合成一个文件会让人误以为是同一套枚举。
+ * （enum/number/text/multi/switch），而 `StrategyKeyMetaEntry` 的四个字段里只有 `valueLabels` /
+ * `optionLabels` 两个是映射字段（另两个是 `label` / `tip` 文案），没有 `kind`，也没有 `control`
+ * （`control?: 'switch'` 曾存在，`b3a12a11` 删除后由 `SWITCH_CONTROL_KEYS` 独立判定）。合成一个文件会让人误以为是同一套枚举。
  *
  * DOM 读取与表单构建仍在 rolesView（依赖 document）；本文件只做「读到的原始值 → strategy 段」，
  * 因此保存链路的数据纪律可脱离 DOM 单测（守卫见 `__tests__/rolesKeyface.test.ts`）。

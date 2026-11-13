@@ -1,7 +1,7 @@
 /**
  * 附件行渲染域（活动文件 chip / 注入 chip / 图片 chip / 引用回复胶囊 / 引用 chip 编排 / 注入回执）
  *
- * 从 chatView.ts 外置的自足渲染单元（CHATPANEL-MARGIN-1 第一刀）：该文件已贴死 eslint max-lines 上限（只降不升；外置后实测 4122/4200，余 78），而「附件行里每个
+ * 从 chatView.ts 外置的自足渲染单元（CHATPANEL-MARGIN-1 第一刀）：外置前 chatView.ts 已贴死 eslint max-lines 上限（只降不升；外置后实测 4122/4200，余 78），而「附件行里每个
  * chip 长什么样、点哪儿干什么」本来就是一段自足逻辑。
  *
  * HOST-ATT-1 汇流（2026-11-11）：原独立的图片行 `#imageChips` 并入本行——图片与引用同属
