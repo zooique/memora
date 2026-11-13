@@ -163,7 +163,7 @@ const TOOL_ACTION_LABELS: Record<string, ToolActionFn> = {
   },
   compress_context: () => l10n.t('Compact context'),
   // delegate_task（条件工具）：唯一可叙述面 = 子任务描述（task）。
-  // **主行文案的唯一产地就是这里**：主行叙述只由 `renderToolRow` / `upgradePendingRow` 经
+  // **主行文案的唯一产地就是这里**：主行叙述只由 `renderToolRow` / `upgradePendingToolRow` 经
   // toolActionLabel 产出；`updateToolRowState` 只改状态标签/展开态/回执摘要，不碰主行文案——
   // 不存在第二处拼接点，因此截断也只会发生在这同一处。
   // 与 run_command「全表统一不截断」不同，这里**要截断**：task 常是整段 prompt，

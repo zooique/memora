@@ -149,8 +149,9 @@ export function groupThoughtBuckets(events: ProcessEvent[]): {
  * TS-12b：aborted 中断语义 → 展示文案（单一映射，与 error category 词典同构）。
  *
  * 值域（`AbortStopReason`）：'user' → 用户停止；'timeout' → 超时（chat 锁超时 / LLM 无响应）；
- * 'interrupted' → 中断。'connection' 类型允许，但当前无 aborted 生产者，故不做分支——
- * 连接中断由 error chunk category 承载（TS-10b chatPanel 映射），避免文案双源。
+ * 'interrupted' → 中断。'connection' 类型允许，但当前无**携带 `connection` 的** aborted
+ * 生产者（内核标注为预留语义），故不做分支——连接中断由 error chunk category 承载
+ * （TS-10b chatPanel 映射），避免文案双源。
  * 无 stopReason（旧数据/直接构造） → 回退 reason 原文（调试可追溯，不丢原始细节）。
  */
 export function stopReasonLabel(payload: { reason: string; stopReason?: string }): string {
