@@ -69,8 +69,8 @@ export interface CapturedImage {
    */
   source: 'paste' | 'drop-file' | 'pick';
   /**
-   * 用户可见文件名（D29）：由 `shared/imageValidation.validateImageCandidate` 单点生产
-   * （无名时由 `resolveImageName` 兜底）；本文件只透传，宿主落盘时按同一函数重算。
+   * 用户可见文件名（D29）：由 `shared/imageValidation.resolveImageName` 唯一生产
+   * （`validateImageCandidate` 是其入口）；本文件只注入兜底词；宿主落盘时用同一函数重算。
    */
   name: string;
   /** 原始字节数（`paste`/`drop-file` 提案自算；`pick` 取回执真值） */
@@ -565,8 +565,10 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
         digest,
         file.type,
         declaredName,
-        // 兜底名会落进 `ImageRef` 被持久化 ⇒ 必须按当前语言生成，不能留英文默认；
-        // `'Pasted image'` 与宿主 `imageIngest.ts` 同键，禁改单侧
+        // 兜底名会落进 `ImageRef` 被持久化 ⇒ 必须按当前语言生成，不能留英文默认。
+        // `'Pasted image'` 共三处同字面量：本处、宿主 `imageIngest.ts`、以及
+        // `imageValidation.ts` 里 `resolveImageName` 的默认值（英文默认正是不该留存的那个）
+        // ——三处同键，禁改单侧
         l10n.t('Pasted image'),
       );
       if (result.ok) {
