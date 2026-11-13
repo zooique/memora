@@ -8,12 +8,14 @@ Webview 渲染层纯函数 / 工具（时间格式化、工具名映射、上下
 
 已实现：
 - `fmtTime.ts` — 时间格式化（ISO → HH:MM），导出 `fmtTime`。
-- `toolNameMap.ts` — 工具名中文映射（read_file → 读取文件），导出 `getToolDisplayName`。
+- `toolNameMap.ts` — 工具名展示映射（read_file → Read file，值 = 英文源键 / l10n 键，由消费侧过各自 `t()`），导出 `getToolDisplayName`。
 - `capabilityLabels.ts` — 角色能力名映射（file:read → Read files，值为英文源键），导出 `capabilityLabel`。
   注意：文件本身不做 l10n。host 侧投递路径（`rolePackListView` / `chatPanel`）只取源键原样推送，
-  不做本地化；本地化发生在 webview 侧（`@vscode/l10n` 的 `t()`）。归入 helpers 因其是
-  「能力名 → 展示文案」的纯映射，与 toolNameMap 同类（无 DOM 副作用，esbuild 各端安全）。
-- `strategyKeyMeta.ts` — 角色策略键中文元数据（`STRATEGY_KEY_META`，键名 → label/tip/值映射）
+  不做本地化；本地化发生在 webview 侧（`@vscode/l10n` 的 `t()`）——但 `capabilityChips` 的
+  `list` 分支尚未过 `t()`（裸取 `c.label`），当前只有 `all` / `residentOnly` 状态文案过 `t()`。
+  归入 helpers 因其是「能力名 → 展示文案」的纯映射，与 toolNameMap 同类（无 DOM 副作用，esbuild 各端安全）。
+- `strategyKeyMeta.ts` — 角色策略键展示元数据（`STRATEGY_KEY_META`，键名 → label/tip/值映射，
+  值均为英文源键，渲染时过 `t()`）
   + 详情值本地化（`formatDetailValue`）。与 `capabilityLabels.ts` 同类（领域无关的展示映射表），
   从 `scripts/rolesView.ts` 抽出。键集由 `__tests__/rolesKeyface.test.ts` 与内核
   `describeStrategyKeys()` **双向锁定**，漏翻译或拼错键名都会红。
