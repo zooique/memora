@@ -73,7 +73,7 @@ export const chatStyles = `
   body.confirm-active .scroll-to-bottom { display: none; }
 
   /* ============ 会话大纲导航条（HOST-NAV-1） ============ */
-  /* 右缘按轮锚点：每轮用户输入一根细横条，hover 弹浮层列预览，点击定位（ChatGPT 同款）。
+  /* 右缘按轮锚点：每轮用户输入一根细横条，hover 弹浮层列预览，点击定位。
    * 定位锚 = body（absolute，视口等效）——🔴 不挂 #messages 内：滚动容器的 absolute
    * 子元素随内容滚走（planBar / scrollToBottomBtn 两次同款血训）。z-float 层：浮于
    * 消息区与一键到底按钮之上、低于输入区。浮层显形走 :hover/:focus-within（键盘焦点

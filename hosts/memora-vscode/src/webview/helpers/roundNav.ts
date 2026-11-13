@@ -72,8 +72,9 @@ const GAP_MIN = 1;
  * 导航条可用高度预算 = 视口高 × 该比例。
  *
  * 取 0.5 的理由：导航条竖向居中锚定（top:50%），占视口高一半即上下各占至 25%~75%
- * 区间，恒让出底部按钮区 —— 右下角「一键到底」按钮锚在 `#inputBar` 顶边
- * （`bottom: calc(100% + sp-4)`），垂直位置随输入区增高而变，不是按视口比例贴底；这正是
+ * 区间，常态下让出底部按钮区（输入区超过 25% 视口高时按钮会上移进入条列区间）—— 右下角
+ * 「一键到底」按钮锚在 `#inputBar` 顶边（`bottom: calc(100% + sp-4)`），垂直位置随输入区
+ * 增高而变，不是按视口比例贴底；这正是
  * 「侧边栏位置紧张」的结构性解，而非再挪一个边距。**SSOT：条列高度上限的唯一真源在此**，经 applyMetrics
  * 下发条列内联 max-height；**条列** CSS 不设 max-height（避免第二套值静默漂移）。
  * 浮层视觉盒 `.round-nav__list` 另有 `max-height:50vh`（CSS，C 类）与本比例同判——该对
@@ -145,8 +146,8 @@ export function computeActiveIndex(
  * 兜底（CSS overflow，见 chatStyles 注释）。
  *
  * 压密次序 —— 先动间隙、后动条高（间隙视觉权重低，先牺牲）：①条高保持宽松，间隙压到
- * 刚好装下（落在 GAP_MIN 之上，多数情况高于下限）；②装不下才让间隙触底 GAP_MIN 并压条高
- * （下限 BAR_MIN_H，保证每根仍可辨可点）。
+ * 刚好装下（不低于 GAP_MIN：gapFit >= GAP_MIN 时返回 Math.floor(gapFit)，可等于下限）；
+ * ②装不下才让间隙触底 GAP_MIN 并压条高（下限 BAR_MIN_H，保证每根仍可辨可点）。
  *
  * @param count  轮数（条数）
  * @param availH 条列可用高度（px）；count<=0 或 availH<=0（视口未就绪）返回宽松态默认
@@ -326,9 +327,9 @@ export function createRoundNav(messages: HTMLElement, nav: HTMLElement): RoundNa
     const bars = track.querySelectorAll<HTMLElement>('.round-nav__bar');
     if (bars.length === 0) return;
     const viewTop = messages.getBoundingClientRect().top;
-    // tops 与 bars 同序（同一批 wrapper 的块顶）。jsdom 无布局：rect 恒 0 且
-    // remaining = scrollHeight - scrollTop - clientHeight 恒 0 ⇒ 先撞贴底分支判**末位**，
-    // 不是 0 号位；阈值扫描只在真机/打桩下有效，测试用例经打桩或纯函数覆盖
+    // tops 与 bars 同序（同一批 wrapper 的块顶）。jsdom 无布局：rect 恒 0、
+    // scrollHeight / clientHeight 均为 0 ⇒ remaining = -scrollTop；scrollTop 未写入时默认为 0
+    // ⇒ 先撞贴底分支判**末位**，不是 0 号位；阈值扫描只在真机/打桩下有效，测试用例经打桩或纯函数覆盖
     const tops = Array.from(bars).map((bar) => {
       const wrapper = cachedWrappers[Number(bar.dataset.index)];
       return wrapper?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY;
