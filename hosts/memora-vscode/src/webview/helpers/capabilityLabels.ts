@@ -8,7 +8,8 @@
  *
  * 能力 → 工具映射与「特权键」分类的真源 = 内核 `capabilityMap.ts`；本表只是文案
  * 投影，不复述分类（复述即第二份文字真源，内核改分类时无门会红）。表内保留
- * 非特权键的翻译，只为兼容其它实现生成的中立角色包：未知能力仍回退原始名。
+ * 非特权键的条目（历史上是中文译文、现为英文源键），只为兼容其它实现生成的
+ * 中立角色包（中立字典兼容）：未知能力仍回退原始名。
  *
  * **值全为英文源键**：本文件保持纯函数（不 import l10n），由**消费侧**决定
  * 用哪个本地化器——webview 侧 `@vscode/l10n` 的 `t()`，extension host 侧 `vscode.l10n.t()`。
@@ -21,7 +22,7 @@
 
 // @nls-keys
 const CAPABILITY_LABELS: Readonly<Record<string, string>> = {
-  // 文件域（memora 默认常驻工具；保留翻译 = 中立字典兼容）
+  // 文件域（memora 默认常驻工具；保留条目 = 中立字典兼容）
   'file:read': 'Read files',
   'file:write': 'Write files',
   'file:list': 'Browse directories',
@@ -32,7 +33,7 @@ const CAPABILITY_LABELS: Readonly<Record<string, string>> = {
   'code:execute': 'Execute code',
   // 记忆域（memora 默认常驻；中立字典兼容）
   'memory:recall': 'Recall memories',
-  // 任务域（memora 默认常驻、非特权键；保留翻译 = 中立字典兼容）
+  // 任务域（memora 默认常驻、非特权键；保留条目 = 中立字典兼容）
   'task:plan': 'Plan tasks',
   // 内核内部能力
   'llm:summarize': 'Generate summaries',
