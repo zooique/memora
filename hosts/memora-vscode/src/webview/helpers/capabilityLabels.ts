@@ -1,10 +1,10 @@
 /**
- * capabilityLabels — 中立能力名（`域:动作`）→ 展示文案投影（**非真源**）
+ * capabilityLabels — 中立能力名（`域:动作`）→ 展示文案投影（**非「能力→工具分类」真源**）
  *
  * 角色管理视图（roles view）展示角色能力时的展示映射。能力命名空间是内核概念
  * （role-pack-spec §四：`web:search` / `code:execute` / `task:plan`，见内核
  * `src/role-pack/capabilityMap.ts` 的能力→工具映射），本文档只负责「UI 展示文案」，由 host 在
- * 推送 roles_loaded 时把 capability 翻译为 label。
+ * 推送 `roles_loaded` 时把 capability 映射为 label（走默认 `capabilityLabel`，产出英文源键，不做 l10n）。
  *
  * 能力 → 工具映射与「特权键」分类的真源 = 内核 `capabilityMap.ts`；本表只是文案
  * 投影，不复述分类（复述即第二份文字真源，内核改分类时无门会红）。表内保留
@@ -13,7 +13,8 @@
  * **值全为英文源键**：本文件保持纯函数（不 import l10n），由**消费侧**决定
  * 用哪个本地化器——webview 侧 `@vscode/l10n` 的 `t()`，extension host 侧 `vscode.l10n.t()`。
  * 两个环境取同一个 `t` 的实现不同，函数内写死任一个都会在另一侧失效。
- * 当前实际消费点都在 webview 侧（`capabilityChips` / `roleBadgeView`）。
+ * 当前**过 l10n** 的消费点在 webview 侧（`capabilityChips` / `roleBadgeView`）；host 侧
+ * `capabilityState` / `chatPanel` 也消费本表，但只取源键、不做本地化。
  *
  * 未知能力回退显示原始 capability（不硬造文案，避免误导）。
  */

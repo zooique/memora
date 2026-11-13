@@ -9,7 +9,8 @@
  * 因此本模块是唯一判定点：调用方只消费判定结果，禁止再判 `length`。
  *
  * 边界：纯函数、零状态、不读 DOM、不发消息。当前调用点均在 host 侧
- * （`settingsPanel` / `chatPanel`）；webview 渲染层只消费已判定的 `CapabilityStateDto`。
+ * （`chatPanel` / `rolePackListView`；`settingsPanel` 经 `rolePackListView` 推送）；
+ * webview 渲染层只消费已判定的 `CapabilityStateDto`。
  *
  * @module capabilityState
  */
