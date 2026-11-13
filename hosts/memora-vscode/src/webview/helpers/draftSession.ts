@@ -12,8 +12,8 @@
  * 但只记一个名字（本控制器 `_rolePackName`）——目录复用设置页既有 `roles_loaded`，
  * 落盘复用面板唯一建会话路径里那一次 `updateSessionMeta`（不造第二条写入）。
  *
- * 为什么外置：`chatPanel.ts` 贴 eslint `max-lines` 只降不升基线；本域是「一个布尔标记 +
- * 纯投递序列」，无业务裁决，符合 helpers 落点纪律（判据仍归面板，本模块只做投影）。
+ * 为什么外置：`chatPanel.ts` 逼近 eslint `max-lines` 基线（只降不升）；本域是「一个布尔标记 +
+ * 一个角色名 + 投递序列」，无业务裁决，符合 helpers 落点纪律（判据仍归面板，本模块只做投影）。
  */
 import * as vscode from 'vscode';
 import { formatDateKey } from '@zooique/memora';
@@ -107,15 +107,14 @@ export class DraftSessionController {
   /**
    * 重建草稿页（webview 刷新而面板对象存活）
    *
-   * @param historyLoaded 历史回放收尾信号：ready 链路需要（replaySession），
-   *        切换会话的防御分支不需要
+   * @param historyLoaded 历史回放收尾信号：当前唯一调用方（`replaySession` 草稿分支）恒传 true
    */
   replay(historyLoaded = false): void {
     this.project(historyLoaded);
   }
 
   /**
-   * 草稿态首次发送：真正创建会话（全流程唯一的会话创建点）
+   * 草稿态首次发送：真正创建会话（草稿态唯一入口，面板另有启动让位失败的新建路径）
    *
    * 失败（锁被占等）则留在草稿并重推草稿页——绝不恢复「暂无会话，请点＋」的死态
    * （可见 notice 已由面板的 createSession 弹出）。

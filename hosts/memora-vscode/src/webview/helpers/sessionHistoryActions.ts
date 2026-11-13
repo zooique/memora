@@ -1,12 +1,14 @@
 /**
  * 会话历史运维动作（删除 / 移入留存 / 移回 + manual 归档嫁接）——从 chatPanel 外置
- * （HOST-SPLIT-1 行数闸门；判据与文案随函数搬走，面板只做依赖注入，不新增第二份口径）
+ * （HOST-SPLIT-1 行数闸门）
  *
  * 三个动作的共同点：都会改写会话文件 ⇒ 需要该会话的写归属。
- * **本面板已持锁的会话**（面板为每个进入过的会话长持有，E4 批 3）不再重复拿/放
+ * **本面板已持锁的会话**（面板为每个进入过的会话长持有）不再重复拿/放
  * （重复放会误伤长锁）；其余会话一次性短锁（拿 → 写 → 放）。判据真源 = 面板锁收尾器的
- * 持有集（`isLockHeld`），**不是**「是否当前会话」——切走后旧会话仍由本面板持锁。
- * 面板侧只保留同名薄包装（既有测试与 webview 消息分派按方法名直达）。
+ * 持有集（`PanelSessionLockFinalizer.holds`，经 deps `isLockHeld` 注入），**不是**「是否当前会话」
+ * ——切走后旧会话仍由本面板持锁。
+ * 面板侧保留同名包装（既有测试与 webview 消息分派按方法名直达）：归档 / 移回为薄包装，
+ * 删除入口在转发后另做实例回收与长锁归还。
  */
 import * as vscode from 'vscode';
 import { getSessionDisplayName, splitSessionId } from '@zooique/memora';
@@ -32,7 +34,7 @@ export interface SessionHistoryDeps {
   /**
    * 目标会话是否正在生成（缺省 = 当前会话）
    *
-   * ⚠️ 必须按**目标会话**判（E4 批 2）：后台会话可以在别的会话正在显示时继续跑流，
+   * ⚠️ 必须按**目标会话**判：后台会话可以在别的会话正在显示时继续跑流，
    * 只判当前会话会让「删除/归档一个后台仍在流式写盘的会话」被放行——实例随即被关闭，
    * 流在写盘中途炸掉（且锁被提前还回去，另一窗口可接管后写冲突）。
    */
@@ -67,7 +69,7 @@ export async function deleteSessionAction(
   sessionId: string,
 ): Promise<void> {
   // 运行时守卫：按**目标会话**判定（删除会重写/移除会话文件，与在途落盘冲突）；
-  // 会话导航（切换 / 新建 / 重命名）不设此闸（E4 批 2 已放开）
+  // 会话导航（切换 / 新建 / 重命名）不设此闸：`chatSessionNavOps` 各动作无流式守卫
   if (deps.isStreaming(sessionId)) {
     deps.notify('info', vscode.l10n.t('Generating, please wait before deleting the session'));
     return;
@@ -106,7 +108,7 @@ export async function deleteSessionAction(
     console.warn('Memora failed to delete the session record', err);
     deps.notify('error', vscode.l10n.t('Failed to delete the session, please try again later'));
   } finally {
-    // 短持有才还；长锁留在面板手里，随实例 close 一起归还（批 3 判据）
+    // 短持有才还；长锁留在面板手里，随实例 close 一起归还
     if (oneShotLock) deps.store.releaseSessionLock(sessionId);
   }
   deps.pushList();
@@ -118,8 +120,9 @@ export async function deleteSessionAction(
  * 与删除的三点刻意差异（勿互相靠拢，靠拢即造伤）：
  *   ① **无 modal 确认**：移入留存完全可逆（Round 文件、引用计数、内容全部不变），
  *      对它弹「此操作不可恢复」是撒谎——删除才配这个确认强度；
- *   ② **不减引用、不删任何文件**：引用归零会让启动清扫（`sweepOrphans`）把 Round 当孤儿
- *      物理删除，与「留存 = 保住记忆溯源的原文」的立项目的正好相反；
+ *   ② **不减引用、不删任何文件**：引用归零且超龄（默认 24h 存活保护）后，启动清扫
+ *      （`sweepOrphans`）才会把 Round 当孤儿物理删除，与「留存 = 保住记忆溯源的原文」的
+ *      立项目的正好相反；
  *   ③ **给可见反馈**：改位是不可见的动作，没有反馈用户不知道发生了什么（静默改位 =
  *      「点了没反应」的观感）。
  *
@@ -154,7 +157,8 @@ export async function archiveSessionAction(
     const archiveTriggered = triggerManualArchive(deps, sessionId);
     deps.notify(
       'info',
-      // 触发了才提摘要：未触发（full 模式）时文案与改动前**一字不差**（不打扰既有用户）
+      // 触发了才提摘要：未触发（full 模式）时业务文案未变（zh-CN 译文与本地化前逐字一致，
+      // 不打扰既有用户；源码为英文源键，非 zh-CN 界面随本地化变化）
       archiveTriggered
         ? vscode.l10n.t(
             'Moved to retained · session summary update requested (skipped if content unchanged)',
@@ -173,8 +177,8 @@ export async function archiveSessionAction(
  * 四条定案（改前必读，均属判据/边界，勿顺手改）：
  *   ① **模式门控**：仅 `archiveMode === 'manual'` 触发。full 模式零动作——自动归档已在离场
  *      时跑过，再点按钮重复调 LLM 等于给既有用户加成本与时延（**带伤**，不做）。
- *   ② **防重判据不在宿主**：传 `{ skipIfUnchanged: true }` 交内核 `SessionArchiver`
- *      单点判断（消息数快照）。宿主**不**自查「summary 是否存在」——那判据更粗，会把
+ *   ② **防重判据不在宿主**：经 `deps.requestArchive` 注入侧（面板）传 `{ skipIfUnchanged: true }`
+ *      交内核 `SessionArchiver` 单点判断（消息数快照）。宿主**不**自查「summary 是否存在」——那判据更粗，会把
  *      「归档后又聊了新内容、本该刷新」的摘要永久挡掉（防重 ≠ 防更新）。
  *   ③ **fire-and-forget**：成败走既有 `sessionArchived`（重拉列表 → 悬停 tooltip 落摘要）
  *      / `archiveFailed`（notice）事件，不阻塞点击；防重跳过 = 静默（无浪费亦无噪音）。
@@ -184,7 +188,7 @@ export async function archiveSessionAction(
  * 术语：本模块的「留存」= 视图分组标记（本地/可逆/不动数据）；「归档」= 会话摘要生成
  * （LLM/可失败/写 SessionMeta）。二者**同词不同义**，注释与文案不得混用。
  *
- * @returns 是否触发了归档（false = full 模式 / Agent 未就绪 / 会话标识非法）
+ * @returns 是否触发了归档（false = 非 manual 模式 / 会话标识非法）
  */
 export function triggerManualArchive(deps: SessionHistoryDeps, sessionId: string): boolean {
   if (deps.archiveMode() !== 'manual') return false;
@@ -200,7 +204,7 @@ export function triggerManualArchive(deps: SessionHistoryDeps, sessionId: string
 }
 
 /**
- * 把会话移回归属列表（留存区条目「移回」触发）——归档的逆操作
+ * 把会话移回归属列表（留存区条目「移回」触发）——移入留存区的逆操作
  *
  * 同样只改显示分组：不存在「数据恢复」这一说（数据从头到尾没动过）。
  *
@@ -214,7 +218,7 @@ export async function restoreSessionAction(
     deps.notify('info', vscode.l10n.t('Generating, please wait before organizing sessions'));
     return;
   }
-  // 一次性写（短持有）：与归档同判据（判「是否已持锁」，不判「是否当前会话」）
+  // 一次性写（短持有）：与移入留存同判据（判「是否已持锁」，不判「是否当前会话」）
   const oneShotLock = !deps.isLockHeld(sessionId);
   if (oneShotLock && !(await deps.store.acquireSessionLock(sessionId))) {
     deps.notify('info', sessionHeldNotice());
