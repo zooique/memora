@@ -428,7 +428,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "~1.90.0",
     "@vscode/vsce": "^3.9.2",
     "@zooique/memora": "file:../..",
     "esbuild": "^0.28.2",
