@@ -1,5 +1,5 @@
 /**
- * 启动会话归属裁决（纯函数 · 面板与验收共用同一份判据）
+ * 启动会话归属裁决（无状态判据函数 · 取锁副作用全部经 deps 注入 · 面板与验收共用同一份判据）
  *
  * 为什么需要它：用户开两个 VS Code 窗口，两边都会按 `lastActiveAt` 恢复「上次停留的会话」，
  * 极可能落到同一个。第二个窗口拿不到该会话的跨进程写锁 ⇒ 必须让位，否则静默覆盖。
@@ -21,7 +21,7 @@ export interface StartupSessionClaimDeps {
 
 /** 裁决结果 */
 export interface StartupSessionClaimResult {
-  /** 最终归属的会话 id；空串 = 没有可用会话（调用方新建） */
+  /** 最终归属的会话 id；空串 = 没有可用会话（`displaced=true` 时由调用方新建；`displaced=false` 表示从未有过会话，调用方进草稿态） */
   sessionId: string;
   /** 是否因首选被占用而发生了让位（供调用方决定要不要给用户可见提示） */
   displaced: boolean;
