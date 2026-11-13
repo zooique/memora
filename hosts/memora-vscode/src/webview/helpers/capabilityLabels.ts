@@ -6,10 +6,10 @@
  * `src/role-pack/capabilityMap.ts` 的能力→工具映射），本文档只负责「UI 展示文案」，由 host 在
  * 推送 `roles_loaded` 时把 capability 映射为 label（走默认 `capabilityLabel`，产出英文源键，不做 l10n）。
  *
- * 能力 → 工具映射与「特权键」分类的真源 = 内核 `capabilityMap.ts`；本表只是文案
- * 投影，不复述分类（复述即第二份文字真源，内核改分类时无门会红）。表内保留
- * 非特权键的条目（历史上是中文译文、现为英文源键），只为兼容其它实现生成的
- * 中立角色包（中立字典兼容）：未知能力仍回退原始名。
+ * 能力 → 特权工具映射的真源 = 内核 `capabilityMap.ts`；工具是否默认常驻由内核
+ * `toolExecutor.DEFAULT_EXPOSED_TOOLS` 决定。本表只是文案投影，不复述这两类分类
+ * （复述即第二份文字真源，内核改分类时无门会红）。表内条目只负责让中立能力名
+ * 有可读文案、并兼容其它实现生成的中立角色包：未知能力仍回退原始名。
  *
  * **值全为英文源键**：本文件保持纯函数（不 import l10n），由**消费侧**决定
  * 用哪个本地化器——webview 侧 `@vscode/l10n` 的 `t()`，extension host 侧 `vscode.l10n.t()`。
@@ -22,18 +22,18 @@
 
 // @nls-keys
 const CAPABILITY_LABELS: Readonly<Record<string, string>> = {
-  // 文件域（memora 默认常驻工具；保留条目 = 中立字典兼容）
+  // 文件域（保留条目 = 中立字典兼容）
   'file:read': 'Read files',
   'file:write': 'Write files',
   'file:list': 'Browse directories',
-  // 网络域（特权键）
+  // 网络域
   'web:search': 'Web search',
   'web:fetch': 'Fetch page content',
-  // 通用计算域（特权键）
+  // 通用计算域
   'code:execute': 'Execute code',
-  // 记忆域（memora 默认常驻；中立字典兼容）
+  // 记忆域（保留条目 = 中立字典兼容）
   'memory:recall': 'Recall memories',
-  // 任务域（memora 默认常驻、非特权键；保留条目 = 中立字典兼容）
+  // 任务域（保留条目 = 中立字典兼容）
   'task:plan': 'Plan tasks',
   // 内核内部能力
   'llm:summarize': 'Generate summaries',
