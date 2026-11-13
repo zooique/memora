@@ -1,6 +1,6 @@
 /**
  * 会话历史运维动作（删除 / 移入留存 / 移回 + manual 归档嫁接）——从 chatPanel 外置
- * （HOST-SPLIT-1 行数闸门）
+ * （HOST-SPLIT-1 行数闸门；判据与文案随函数搬走，不另立第二份口径）
  *
  * 三个动作的共同点：都会改写会话文件 ⇒ 需要该会话的写归属。
  * **本面板已持锁的会话**（面板为每个进入过的会话长持有）不再重复拿/放
@@ -69,7 +69,8 @@ export async function deleteSessionAction(
   sessionId: string,
 ): Promise<void> {
   // 运行时守卫：按**目标会话**判定（删除会重写/移除会话文件，与在途落盘冲突）；
-  // 会话导航（切换 / 新建 / 重命名）不设此闸：`chatSessionNavOps` 各动作无流式守卫
+  // 会话导航（切换 / 新建 / 重命名）不设此闸：`chatSessionNavOps` 三动作
+  // 与面板 `createSession` 均无流式守卫
   if (deps.isStreaming(sessionId)) {
     deps.notify('info', vscode.l10n.t('Generating, please wait before deleting the session'));
     return;
@@ -121,8 +122,8 @@ export async function deleteSessionAction(
  *   ① **无 modal 确认**：移入留存完全可逆（Round 文件、引用计数、内容全部不变），
  *      对它弹「此操作不可恢复」是撒谎——删除才配这个确认强度；
  *   ② **不减引用、不删任何文件**：引用归零且超龄（默认 24h 存活保护）后，启动清扫
- *      （`sweepOrphans`）才会把 Round 当孤儿物理删除，与「留存 = 保住记忆溯源的原文」的
- *      立项目的正好相反；
+ *      （`sweepOrphans`）才会把 Round 当孤儿移入回收站（保留期后可彻底清除），与
+ *      「留存 = 保住记忆溯源的原文」的立项目的正好相反；
  *   ③ **给可见反馈**：改位是不可见的动作，没有反馈用户不知道发生了什么（静默改位 =
  *      「点了没反应」的观感）。
  *
@@ -157,7 +158,7 @@ export async function archiveSessionAction(
     const archiveTriggered = triggerManualArchive(deps, sessionId);
     deps.notify(
       'info',
-      // 触发了才提摘要：未触发（full 模式）时业务文案未变（zh-CN 译文与本地化前逐字一致，
+      // 触发了才提摘要：未触发（非 manual 模式）时业务文案未变（zh-CN 译文与本地化前逐字一致，
       // 不打扰既有用户；源码为英文源键，非 zh-CN 界面随本地化变化）
       archiveTriggered
         ? vscode.l10n.t(
