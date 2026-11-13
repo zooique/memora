@@ -58,6 +58,14 @@ export interface ConfirmDeps {
   onPendingChanged?: (sessionId: string, count: number) => void;
 }
 
+/**
+ * 时间线决策记录载荷（`notice` + `kind:'decision'`）
+ *
+ * 后台会话产生的决策先存进该会话自己的待补发队列（见 `SessionConfirmState.pendingDecisions`），
+ * 会话切到前台时原样上屏——载荷形状与前台直发完全同一条消息，不造第二种记录形态。
+ */
+type DecisionNotice = Extract<ExtensionToWebviewMessage, { type: 'notice' }>;
+
 /** 单条确认请求（入队即定型：requestId / logLabel 只算一次，重推不换身份） */
 interface ConfirmEntry {
   requestId: string;
@@ -77,6 +85,19 @@ interface SessionConfirmState {
   queue: ConfirmEntry[];
   /** 当前在途（已推出或待重推）的请求；null = 无在途 */
   current: ConfirmEntry | null;
+  /**
+   * 该会话在**后台期间**产生的决策记录（当前唯一来源 = 卡上屏后被切走的超时自动拒）
+   *
+   * 为什么必须按会话暂存：`notice` 载荷没有会话寻址字段，后台直发就会写进**用户此刻
+   * 正在看的那个会话**的时间线（跨会话串台）；而实际投递还会被 chatPanel 的后台流闸拦掉
+   * （超时回调运行在原会话的 ALS 上下文里）⇒ 用户回到原会话什么也看不到。
+   * 确认协调器是唯一知道「这条决策属于哪个会话」的地方，故先存这里，等该会话切到前台时
+   * （`setForeground`）按序补上屏——归属正确、不丢信息。
+   *
+   * **刻意不落盘**：宿主当前没有持久审计 sink（AuditSink 是另一工程量级），这里只闭合
+   * 「后台决策不丢、不串台」这一层语义，不预支持久化。
+   */
+  pendingDecisions: DecisionNotice[];
 }
 
 /**
@@ -162,6 +183,25 @@ export class ConfirmCoordinator {
     } else if (!next?.current) {
       this._pump(sessionId);
     }
+    // 该会话在后台期间产生的决策记录（如超时自动拒）此刻补进**它自己的**时间线：
+    // 用户在后台期间不会看到这些行，切回来必须能看到「它替你拒了什么」。
+    this._flushPendingDecisions(sessionId);
+  }
+
+  /**
+   * 把某会话暂存的决策记录按序补上屏，并清空暂存
+   *
+   * 只在会话成为显示会话时调用（`setForeground`）——这正是「记录归属该会话」的时刻：
+   * 用户正看着这个会话，时间线写的也是这个会话。
+   *
+   * @param sessionId 刚切到前台的会话
+   */
+  private _flushPendingDecisions(sessionId: string): void {
+    const state = this._sessions.get(sessionId);
+    if (!state || state.pendingDecisions.length === 0) return;
+    const notices = state.pendingDecisions;
+    state.pendingDecisions = [];
+    for (const notice of notices) this._deps.post(notice);
   }
 
   /**
@@ -225,7 +265,7 @@ export class ConfirmCoordinator {
   private _stateFor(sessionId: string): SessionConfirmState {
     let state = this._sessions.get(sessionId);
     if (!state) {
-      state = { queue: [], current: null };
+      state = { queue: [], current: null, pendingDecisions: [] };
       this._sessions.set(sessionId, state);
     }
     return state;
@@ -287,9 +327,13 @@ export class ConfirmCoordinator {
    * @param entry 已上屏的请求
    */
   private _timeout(entry: ConfirmEntry): void {
+    // 会话归属必须在 resolve / settle 之前取：settle 会把 current 置空，之后反查即落空
+    const sessionId = this._findSession(entry);
     entry.resolve(false);
-    // 超时拒同样走决策记录（唯一发点 _logDecision）：红条警示 + 时间线留痕，单条双职不双写
-    this._logDecision(entry, 'timeout');
+    // 超时拒同样走决策记录（唯一发点 _logDecision）：红条警示 + 时间线留痕，单条双职不双写。
+    // 归属显式传入：卡上屏后被切走的请求，超时发生时该会话已是后台——记录要落回它自己，
+    // 不能写进用户此刻正在看的会话（也不能因后台流闸被整条丢掉）。
+    if (sessionId !== undefined) this._logDecision(entry, 'timeout', sessionId);
     this._settle(entry);
   }
 
@@ -299,15 +343,27 @@ export class ConfirmCoordinator {
    * 载荷纪律：**只记工具面（`logLabel`）+ 裁决结果，不记载荷全文**——`info.description`
    * 是 diff 全文级内容，入线即撑爆时间线窗口（20 条淘汰下挤掉的全是别人的记录）。
    * 超时拒 level 保留 error（红条警示职责不变，单条双职：瞬态条 + 时间线决策行，不双写）。
+   *
+   * 会话寻址也收口在这里：`notice` 载荷没有会话字段，只有本协调器知道记录属于哪个会话
+   * ⇒ 后台会话的记录先入该会话的待补发队列（`pendingDecisions`），等它切到前台再上屏。
+   * 这一处判据同时服务裁决与超时两条路径，避免「前台路径记得判、超时路径忘了判」的分叉。
+   *
+   * @param entry     已定型的确认请求
+   * @param verdict   裁决结果
+   * @param sessionId 记录归属会话（禁止缺省：缺省即回到「写进当前屏幕」的串台老路）
    */
-  private _logDecision(entry: ConfirmEntry, verdict: 'approved' | 'declined' | 'timeout'): void {
+  private _logDecision(
+    entry: ConfirmEntry,
+    verdict: 'approved' | 'declined' | 'timeout',
+    sessionId: string,
+  ): void {
     const word =
       verdict === 'approved'
         ? vscode.l10n.t('Approved')
         : verdict === 'declined'
           ? vscode.l10n.t('Declined')
           : confirmTimeoutNotice();
-    this._deps.post({
+    const notice: DecisionNotice = {
       type: 'notice',
       level: verdict === 'timeout' ? 'error' : 'info',
       // 动作词中性化：同一张卡也承载命令/代码/脚本执行确认，写「写入」即失实。
@@ -317,7 +373,13 @@ export class ConfirmCoordinator {
           ? `${word} ${vscode.l10n.t('({0})', entry.logLabel)}`
           : `${word} ${entry.logLabel}`,
       kind: 'decision',
-    });
+    };
+    // 后台会话：暂存待补发（切过去时由 _flushPendingDecisions 按序入它的时间线）
+    if (sessionId !== this._foreground) {
+      this._stateFor(sessionId).pendingDecisions.push(notice);
+      return;
+    }
+    this._deps.post(notice);
   }
 
   /**
@@ -395,9 +457,9 @@ export class ConfirmCoordinator {
    * 排队中（未上屏）的请求与未知 requestId 一律丢弃——排队请求尚未进入用户视野，
    * 提前裁决会让「卡还没出现就被答了」，与 FIFO 串行语义冲突。
    *
-   * ⚠️ 决策留痕（notice）**只在该会话正是显示会话时发**：notice 载荷没有会话寻址能力，
-   * 给后台会话发就会写进当前屏幕的时间线（跨会话串台）。这条门控不改变 `answer` 的
-   * 既有行为（`answer` 恒传前台会话），只约束新增的远程路径。
+   * ⚠️ 决策留痕按**会话寻址**（判据收口在 `_logDecision`）：前台会话立即上屏；后台会话先入
+   * 该会话自己的待补发队列，切到前台时补上屏——既不会写进当前屏幕（跨会话串台），也不会
+   * 「后台代答/超时」整条丢失。`answer` 恒传前台会话，因此行为与改前逐字一致。
    *
    * @param sessionId 会话标识（确认请求所属会话）
    * @param requestId 该会话在途请求的 id
@@ -408,11 +470,9 @@ export class ConfirmCoordinator {
     const state = this._sessions.get(sessionId);
     const entry = state?.current;
     if (!entry || entry.requestId !== requestId) return false;
-    // 顺序与 answer 原样一致：① resolve → ② 决策留痕（仅前台）→ ③ 终结 + 泵下一条
+    // 顺序与 answer 原样一致：① resolve → ② 决策留痕（按会话寻址）→ ③ 终结 + 泵下一条
     entry.resolve(approved);
-    if (sessionId === this._foreground) {
-      this._logDecision(entry, approved ? 'approved' : 'declined');
-    }
+    this._logDecision(entry, approved ? 'approved' : 'declined', sessionId);
     this._settle(entry);
     return true;
   }

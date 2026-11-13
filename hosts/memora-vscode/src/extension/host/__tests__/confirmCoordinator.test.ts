@@ -451,6 +451,7 @@ describe('ConfirmCoordinator · 按会话绑定（E4 批 4）', () => {
           requestId: string;
         }>,
       closed: () => posted.filter((m) => m.type === 'write_confirm_closed'),
+      decisions: () => posted.filter((m) => m.kind === 'decision') as Posted[],
     };
   }
 
@@ -499,6 +500,35 @@ describe('ConfirmCoordinator · 按会话绑定（E4 批 4）', () => {
     expect(h.requests()[1].requestId).toBe(requestId); // 请求身份不因上屏次数而变
     h.coordinator.answer(requestId, false);
     await expect(promise).resolves.toBe(false);
+  });
+
+  it('卡上屏后被切走 ⇒ 超时拒的记录不写当前屏幕，切回该会话时补进它自己的时间线', async () => {
+    vi.useFakeTimers();
+    const h = makeSessionCoordinator();
+    const stub = agentStub();
+    h.coordinator.bindSession('2026-11-06-a', stub.agent);
+    h.coordinator.setForeground('2026-11-06-a');
+
+    const settled = stub.trigger(confirmInfo());
+    expect(h.requests()).toHaveLength(1);
+    const decisionsBefore = h.decisions().length;
+
+    // 切到 B：A 的卡收掉，但请求未终结、计时器继续走（既有语义）
+    h.coordinator.setForeground('2026-11-06-b');
+    expect(h.closed()).toHaveLength(1);
+
+    // 30 分钟后 A 在后台超时 ⇒ fail-closed，且记录**不得**写进当前屏幕（B 的时间线）
+    vi.advanceTimersByTime(30 * 60 * 1000 + 1);
+    await expect(settled).resolves.toBe(false);
+    expect(h.decisions()).toHaveLength(decisionsBefore);
+
+    // 切回 A ⇒ 该会话自己的时间线补上这条「替你拒了什么」
+    h.coordinator.setForeground('2026-11-06-a');
+    const decisions = h.decisions();
+    expect(decisions).toHaveLength(decisionsBefore + 1);
+    expect(decisions.at(-1)?.level).toBe('error');
+    expect(String(decisions.at(-1)?.message)).toContain('foo.md');
+    expect(String(decisions.at(-1)?.message)).toContain('declined automatically');
   });
 
   it('后台会话的迟到回执被拒：只认当前显示会话在途请求', async () => {
@@ -704,7 +734,7 @@ describe('ConfirmCoordinator · answerFor 按会话应答（R0-c）', () => {
     expect(posted.filter((m) => m.type === 'write_confirm_closed')).toHaveLength(1);
   });
 
-  it('后台会话（卡已上屏后被切走）可远程裁决：resolve 生效，但不发决策通知、不驱动屏幕', async () => {
+  it('后台会话（卡已上屏后被切走）可远程裁决：不写当前屏幕，切回该会话时补上决策记录', async () => {
     const posted: Posted[] = [];
     const coordinator = new ConfirmCoordinator({
       getAgent: () => undefined,
@@ -727,11 +757,17 @@ describe('ConfirmCoordinator · answerFor 按会话应答（R0-c）', () => {
 
     expect(coordinator.answerFor('s-a', requestId, true)).toBe(true);
     await expect(settled).resolves.toBe(true);
-    // ④ 决策通知是「屏幕时间线」载荷，后台会话不得写入（跨会话串台）
+    // ④ 决策通知是「屏幕时间线」载荷，后台会话不得**当场**写入（跨会话串台）
     expect(posted.filter((m) => m.kind === 'decision')).toHaveLength(decisionsBefore);
     // 后台会话裁决不驱动屏幕：不额外发 closed（卡在切走时已收）
     expect(posted.filter((m) => m.type === 'write_confirm_closed')).toHaveLength(closedBefore);
     expect(coordinator.pendingCount('s-a')).toBe(0);
+
+    // ⑤ 切回该会话 ⇒ 暂存的决策记录补进它自己的时间线（不丢）
+    coordinator.setForeground('s-a');
+    const decisions = posted.filter((m) => m.kind === 'decision');
+    expect(decisions).toHaveLength(decisionsBefore + 1);
+    expect(String((decisions.at(-1) as Posted).message)).toContain('Approved');
   });
 
   it('排队未上屏 / 未知 id / 迟到旧回执 ⇒ 拒（false）且零副作用', async () => {
