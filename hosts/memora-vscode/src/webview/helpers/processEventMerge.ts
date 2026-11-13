@@ -59,8 +59,9 @@ export function mergeMetricsPayload(
 /**
  * 按 seq 幂等合并过程事件（SSOT 单一合并语义）
  *
- * step 检查点与流尾完成共用本函数，避免两份合并逻辑漂移；靠 seq 全局唯一
- * （_processSeq 单调）天然幂等——step 检查点已写入的增量，流尾重合并不会重复追加，保序。
+ * step 检查点与流尾完成共用本函数，避免两份合并逻辑漂移。幂等性只对过程事件成立：
+ * `_processSeq` 单调且全局唯一，step 检查点已写入的增量流尾重合并不会重复追加、保序；
+ * metrics 是段级求和（见 mergeMetricsPayload），**不可对同一份 fresh 重复调用**。
  *
  * 合并规则：
  * - 终态净化：prior 中旧流 aborted 恒剔除——终局终态恒为末流。

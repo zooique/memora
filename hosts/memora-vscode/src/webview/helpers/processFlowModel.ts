@@ -31,7 +31,8 @@ export interface ToolBatchEntry {
 }
 
 /**
- * 工具批（toolBatch）：过程条目流中前后相邻、中间无打断物的最大工具序列。
+ * 工具批（toolBatch）：过程条目流中前后相邻、按切段判据未被断开的最大工具序列。
+ * 切段判据见 `groupToolBatches`：打断物白名单 / 步切换 / 外部可见条目。
  *
  * segId = 段内首个 tool_start 的 seq——批容器唯一 DOM key（`data-tool-batch`），
  * 稳定可复现、不新造标识（口径③：批 key 用段 id，不用 toolCallId）。
@@ -145,16 +146,12 @@ export function groupThoughtBuckets(events: ProcessEvent[]): {
 }
 
 /**
- * 工具调用行（tool_start 配对 tool_result）——折叠行：summary = 名称(状态) 常显，
- * args + result 摘要折叠进 body，避免工具详情抢占报告主体。失败/进行中默认展开（错误直显）。
- * 宿主容器（扁平化）：直接平铺在 round-block__details 顶层（insertPlanItemInOrder 按 seq 插入）。
- */
-/**
  * TS-12b：aborted 中断语义 → 展示文案（单一映射，与 error category 词典同构）。
- * 'user' → 用户停止；'interrupted' → 中断；
+ *
+ * 值域（`AbortStopReason`）：'user' → 用户停止；'timeout' → 超时（chat 锁超时 / LLM 无响应）；
+ * 'interrupted' → 中断。'connection' 类型允许，但当前无 aborted 生产者，故不做分支——
+ * 连接中断由 error chunk category 承载（TS-10b chatPanel 映射），避免文案双源。
  * 无 stopReason（旧数据/直接构造） → 回退 reason 原文（调试可追溯，不丢原始细节）。
- * 注：'connection' 不在此映射——连接中断统一由 error chunk category 承载（TS-10b chatPanel 映射），
- * aborted 永不带此语义，假分支删除防文案双源漂移。
  */
 export function stopReasonLabel(payload: { reason: string; stopReason?: string }): string {
   // 值 = 英文源键（l10n 键面）：本模块在 `initWebviewL10n` 前即被 import，不可在此预解析
@@ -297,8 +294,8 @@ export function toolRowStatus(result: Extract<ProcessEvent, { type: 'tool_result
  * - **主配（toolCallId）**：新证据 payload 带 `toolCallId`（= tool_start.payload.toolCallId），
  *   按唯一 ID 直配——同 query 多次搜索、被护栏硬拦的搜索（不产证据）都不再张冠李戴。
  * - **回退（query 游标）**：旧持久化轮次的证据无 `toolCallId`，退回旧的「按 query 分组 + 行序消费」
- *   启发式（保不带伤——历史轮证据照常渲染）。两级互不串味：某轮要么全带 ID 走主配、
- *   要么全无 ID 走回退，不存在同轮混用的迁移缝。
+ *   启发式（保不带伤——历史轮证据照常渲染）。预期数据不混用（某轮全带 ID 走主配、或全无 ID
+ *   走回退）；代码对混用逐条按主配优先兜底，不报错。
  * 证据面只留净化标题（无 URL 锚点），故误配不进一步放大——这也正是主配要消灭的不确定性。
  *
  * @param evidence 本轮 RoundView.evidence（可为空 → 解析器恒返回 undefined）
@@ -374,12 +371,11 @@ export function buildMemoryHitsEvidenceResolver(
  * 一次计算两处消费，杜绝「标签与停止行各判一遍、不一致且无测试会红」的双写伤。
  *
  * 语义映射同旧的 §已停止：error（失败：超时/连接中断）优先，其次 aborted（中断：
- * 用户停止/锁超时），皆无则 generic 兜底（旧数据）。error 优先是保守排序——二者本应
+ * 用户停止/锁超时），皆无则 generic 兜底（崩溃打捞 / 无事件轮）。error 优先是保守排序——二者本应
  * 互斥（failed 路径 signal 未 abort），此序仅防异常组合。
  *
  * @returns kind='user-interrupted' → 用户主动停止（停止行退役，底栏标签承载）；
- *          kind='error-interrupted' → error/锁超时等意外（原因句留折叠块外当现场）；
- *          kind=null      → 事件不足不猜态（诚实投影：无载体不撒状态，停止行照旧兜底）
+ *          kind='error-interrupted' → error/锁超时等意外（原因句留折叠块外当现场）
  */
 export function decideTerminus(events: ProcessEvent[]): {
   kind: TerminusInterruptKind;
@@ -404,7 +400,8 @@ export function decideTerminus(events: ProcessEvent[]): {
       : { kind: 'error-interrupted', reason: stopReasonLabel(aborted.payload) };
   }
   // 兜底案归「用户中断」（TERMINUS-SSOT-1，2026-10-31）：interrupted 收场的唯一运行时来源 =
-  // handleStop（chatPanel 唯一 abort() 调用方；paused 案 abandonOnStop 同属用户停）+ 崩溃打捞轮
+  // handleStop（生产唯一 abort() 调用点 = `chatRunControlOps.handleStop`，chatPanel 只委托；
+  // paused 案 abandonOnStop 同属用户停）+ 崩溃打捞轮
   // （messageHistory 定案「崩溃残留轮 = 等同于用户点停止的正常 turn」）——两来源数据面同构，
   // 展示面跟随同一事实；旧 null 案「不猜终态」令底栏无标签、停止行「对话已中断」孤悬上方
   // （真机主诉）。旧 null 返回域退役，签名随之收窄。语义键仍放法定口袋 stopReason
@@ -429,8 +426,8 @@ export function decideTerminus(events: ProcessEvent[]): {
  *   结构上不可能出现在工具之间）。自审查只在工具循环后做一次终审，故它**常态**居工具之后；
  *   仅「审查轮交付后排队插话续跑、续跑再调工具」这一路径可让它落在两条工具之间 → **可达，保留**。
  * - `plan_item_boundary`：任务项折叠分组边界（分组容器本身即断面）。
- * 其余类型（thinking / memory_added / self_review / tool_start / tool_result / metrics / aborted / meta）
- * 都不渲染成可断面 → 不断段。
+ * 其余类型不参与本节判据（`thought` 的步切换见 `groupToolBatches`，`background_report` 由
+ * chatView finalize 渲染成独立小节）→ 不断段。
  */
 export const BATCH_SPLITTER_TYPES: ReadonlySet<ProcessEvent['type']> = new Set([
   'narrate',
@@ -462,7 +459,7 @@ export function groupToolBatches(
   events: ProcessEvent[],
   boundaryTs: readonly string[],
 ): ToolBatch[] {
-  // 全序按 seq 稳定排序（宿主可见 ProcessEvent 全序，方案 §二约束：判据只读 seq/类型/toolCallId）
+  // 全序按 seq 稳定排序（宿主可见 ProcessEvent 全序，方案 §二约束：判据读 seq / type / toolCallId / ts / stepIndex）
   const ordered = [...events].sort((a, b) => a.seq - b.seq);
   // 桶号 = 小于该 ts 的边界条目数：相邻工具桶号不同 ⇒ 二者之间夹着问答卡 ⇒ 断段
   const bucketOf = (ts: string): number => {

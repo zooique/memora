@@ -772,6 +772,11 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
     return box;
   }
 
+  /**
+   * 工具调用行（tool_start 配对 tool_result）——折叠行：summary = 名称(状态) 常显，
+   * args + result 摘要折叠进 body，避免工具详情抢占报告主体。失败/进行中默认展开（错误直显）。
+   * 宿主容器（扁平化）：直接平铺在 round-block__details 顶层（insertPlanItemInOrder 按 seq 插入）。
+   */
   function renderToolRow(
     start: Extract<ProcessEvent, { type: 'tool_start' }>,
     events: ProcessEvent[],
