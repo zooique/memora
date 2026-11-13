@@ -67,7 +67,7 @@ export function mergeMetricsPayload(
  * - 终态净化：prior 中旧流 aborted 恒剔除——终局终态恒为末流。
  * - metrics 同轮合并：prior 与 incoming 同轮各有 metrics（多流续跑）时求和成单条
  *   （mergeMetricsPayload：计数求和、success 取末段），前段指标不再被静默丢弃；
- *   incoming 无 metrics（step 检查点常态）时 prior metrics 原样保留，待流尾合并。
+ *   incoming 无 metrics 时保留 prior metrics（代码侧理由见 `base` 过滤处）。
  * - 身份去重：**prior 里确实含 meta** 时剔除 incoming 的 meta——身份保留既有那份，
  *   续跑不重复身份；prior 无 meta（检查点只有过程事件）时保留 incoming meta（身份不丢）。
  * - 幂等去重：incoming 中 seq 已写入的丢弃（跨流不重叠，seq 全局唯一）。

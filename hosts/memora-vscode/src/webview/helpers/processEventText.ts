@@ -5,13 +5,15 @@
  * chatView 侧已删除原体，经本文件 import 引用）。搬迁动机 = chatView.ts 行数闸门
  * （max-lines 只降不升），本批函数零闭包状态、零 DOM 依赖，符合 helpers 落点纪律。
  *
- * 消费方：chatView（webview）—— 过程流渲染（叙述行 / 工具行 / 轮收尾摘要 / 日期分组 /
- * 任务项归组）。行为级覆盖见 `__tests__/chatView.test.ts`（经 DOM 驱动不变），
- * 本文件单测 `__tests__/processEventText.test.ts` 锁纯函数边界。
+ * 消费方：chatView 与 processFlowCells（webview）—— 过程流渲染（叙述行 / 工具行 / 轮收尾
+ * 摘要 / 日期分组 / 任务项归组）；工具行正由 processFlowCells 渲染。行为级覆盖见
+ * `__tests__/chatView.test.ts`（经 DOM 驱动不变），本文件单测
+ * `__tests__/processEventText.test.ts` 锁纯函数边界。
  *
  * **webview 沙箱约束**（同 toolNameMap）：webview 运行时对内核只有 `import type`、
- * 无运行时依赖（esbuild `platform: 'browser'` / `format: 'iife'` 单独打包）——
- * 本文件引用内核类型一律 `import type`，运行时依赖只有同目录 `toolNameMap`。
+ * 对内核零运行时依赖（esbuild `platform: 'browser'` / `format: 'iife'` 单独打包）——
+ * 本文件引用内核类型一律 `import type`；宿主注入模块之外，运行时依赖只有同目录
+ * `toolNameMap` 与 `@vscode/l10n`。
  */
 
 import type { ProcessEvent, ProcessThinkingPhase } from '@zooique/memora';
@@ -20,8 +22,8 @@ import { getToolDisplayName } from './toolNameMap.js';
 
 /** 本地时区 YYYY-MM-DD 日期键。
  *  ⚠️ **镜像点（刻意为之，勿强行收口）**：内核同语义真源 = `src/utils/time.ts` 的
- *  `formatDateKey`（宿主 Node 侧 chatPanel / sessionStore 即 import 它）。webview 侧**不能**
- *  复用——本文件由 esbuild 以 `platform: 'browser'` / `format: 'iife'` 单独打包
+ *  `formatDateKey`（宿主 Node 侧 chatPanel / chatSessionNavOps / draftSession 即 import 它）。
+ *  webview 侧**不能**复用——本文件由 esbuild 以 `platform: 'browser'` / `format: 'iife'` 打包
  *  （esbuild.config.mjs 步骤 3），webview 运行时对内核只有 `import type`、无运行时依赖。
  *  故此处为**必要镜像**：改判定口径（换格式 / 改时区）须**两侧同改**。
  *  等价关系：内核 `todayDate()` = 本文件 `toDateKey(new Date())`。
@@ -61,8 +63,8 @@ export function phaseLabel(phase: ProcessThinkingPhase): string {
  * 对齐 Trae「执行过程」的工程侧人话渲染（"调用了 X 技能 / 浏览了 N 个网页"）：
  * 由工具名 + args 关键参数确定性生成「读取文件：path」式叙述，零 LLM 成本。
  * 参数名与 src/agent/builtinTools.ts（ToolDefinition.parameters）一一对应。
- * 兜底纪律：未收录工具 / 参数缺失 / args 非 JSON 均回退中文显示名（toolNameMap 单一真源）；
- * 中文名亦未收录的角色包自定义工具才落到原生英文名（零遗漏）；
+ * 兜底纪律：未收录工具 / 参数缺失 / args 非 JSON 均回退工具显示名（toolNameMap 单一真源，
+ * 值为英文源键、调用时经 l10n 解析）；该表也未收录的角色包自定义工具才落到原生英文名（零遗漏）；
  * 原始 args JSON 仍保留在折叠 pre 中（细节不丢）。
  */
 type ToolActionFn = (args: Readonly<Record<string, unknown>>) => string | undefined;
@@ -161,8 +163,9 @@ const TOOL_ACTION_LABELS: Record<string, ToolActionFn> = {
   },
   compress_context: () => l10n.t('Compact context'),
   // delegate_task（条件工具）：唯一可叙述面 = 子任务描述（task）。
-  // **主行文案的唯一产地就是这里**：实时增量（updateToolRowState）与重放/收场（renderToolRow）
-  // 都经 toolActionLabel 取本函数结果，不存在第二处拼接点，因此截断也只会发生在这同一处。
+  // **主行文案的唯一产地就是这里**：主行叙述只由 `renderToolRow` / `upgradePendingRow` 经
+  // toolActionLabel 产出；`updateToolRowState` 只改状态标签/展开态/回执摘要，不碰主行文案——
+  // 不存在第二处拼接点，因此截断也只会发生在这同一处。
   // 与 run_command「全表统一不截断」不同，这里**要截断**：task 常是整段 prompt，
   // 不截断会把主行撑满。只取首行前 60 字做「这次派了什么」的提示；
   // 全文仍在展开体「派发」段的 args.task 原文（那是原文数据，不是第二条文案产地）。
