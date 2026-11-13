@@ -1,7 +1,7 @@
 /**
  * strategyKeyMeta — 策略键展示元数据（SSOT）+ 详情值本地化（纯数据 / 纯函数）
  *
- * 从 `scripts/rolesView.ts` 抽出（2026-10-26）。抽出理由有二：
+ * 从 `webview/scripts/rolesView.ts` 抽出（2026-10-26）。抽出理由有二：
  *   ① rolesView 顶到 1149 行闸门，而这三块零闭包依赖、纯数据纯函数；
  *   ② 与 `capabilityLabels.ts` 同类（「领域无关的展示映射表」），落点有一致先例。
  * 渲染 chip / 详情行的逻辑仍在 rolesView（依赖 document），本文件只提供数据与格式化。
@@ -135,7 +135,7 @@ export const STRATEGY_KEY_META: Record<string, StrategyKeyMetaEntry> = {
  */
 export const SWITCH_CONTROL_KEYS: ReadonlySet<string> = new Set(['selfReview']);
 
-/** 详情值渲染：数组（askOn 多选）走选项映射，枚举走值映射，其余原样字符串化（对象 JSON 兜底）；每一项都过 l10n */
+/** 详情值渲染：数组（askOn 多选）逐项走选项映射并过 l10n；标量命中 valueLabels 才过 l10n，未命中原样返回；对象走 JSON 兜底 */
 export function formatDetailValue(meta: StrategyKeyMetaEntry | undefined, value: unknown): string {
   if (Array.isArray(value)) {
     return value

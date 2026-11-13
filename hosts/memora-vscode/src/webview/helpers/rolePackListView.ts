@@ -96,7 +96,7 @@ export function postRolePackList(
         displayName: m.displayName ?? m.name,
         source,
         description: m.description ?? '',
-        // 三态判定走 host 唯一出口（CAP-TRISTATE-1）：这里只透传结果，不自行判 length
+        // 三态判定走 capabilityState.deriveCapabilityState 单点（CAP-TRISTATE-1）：这里只透传结果，不自行判 length
         capabilityState: deriveCapabilityState(pack?.capabilities),
         traits: pack?.traits,
         handoffPrompt: pack?.meta.handoffPrompt,

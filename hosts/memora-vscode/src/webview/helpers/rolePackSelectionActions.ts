@@ -72,7 +72,7 @@ export async function selectDraftRolePack(
   name: string,
 ): Promise<boolean> {
   // 入口先判读写桥：未注入 = 没有地方记录选择，必须如实失败——
-  // 旧实现短路后仍 return true，是「报成功但什么都没发生」的静默谎报。
+  // 否则就是「报成功但什么都没发生」的静默谎报。
   if (!deps.hasDraftBridge) {
     deps.post({
       type: 'notice',
