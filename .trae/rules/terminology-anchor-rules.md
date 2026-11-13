@@ -62,6 +62,8 @@ description: 领域术语唯一定义处（turn / loop / step / planItem / round
 | **thought** | 模型思考流（CoT，不进正文），按 **step** 归属（`thought.stepIndex`） |
 | **PlanItem（任务项）** | 任务表一行；UI 显示「任务项 N」。**不属 step 阵营** |
 | **目标模式（G-Mode，远期）** | 对多个 turn 的编排：只给目标文档、全自动至达成（未实现） |
+| **自助（Self-service）** | memora 的一种**使用模式**：用户自己创建会话、自行协调各会话推进，用户是信息的汇总处 |
+| **托管（Managed）** | memora 的一种**使用模式**：由 trae 宝理解需求、撰写任务提示词、创建与追问会话并推进任务，用户只提需求与拍板。**同名不同指**：仓库里「托管」还有第二个所指——[delegation-discipline-rules.md](./generic/delegation-discipline-rules.md) 的「托管执行纪律」（派发 / 并发 / 自证 / 汇报 / 边界）。模式名说的是「谁负责推进」，纪律说的是「AI 干活时该守什么规矩」；纪律对自助模式下派发子 agent 的会话同样适用，两者不可互相替代 |
 | **子 agent** | 会话内 `delegate_task` 派出的执行体：父 turn 内同步递归，不落 Round、不进会话列表、无 session id，results 用完即弃；代码标识符保持 `subagent`（`subagentConcurrency` / `SUBAGENT_DENIED_TOOLS` / `[SUBAGENT:*]`）；历史与引用写法 `子 Agent` 视为同一术语 |
 | **子会话** | 由路由 agent 管理的独立会话：有 session id、可单独停止与读取、落 Round、进会话列表（**设计中·未实现**） |
 | **角色包（Role Pack）** | 角色为单位的固定范式：L1 内容 + L2 行为策略（+远期 L3），可插拔整体 |
