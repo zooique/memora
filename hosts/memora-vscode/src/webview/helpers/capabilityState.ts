@@ -4,11 +4,12 @@
  * 职责：把内核角色包的 `capabilities` 原值（`undefined` / `[]` / 非空）判定为
  * `CapabilityStateDto`，供 host 推送协议（`capability_badge` / `roles_loaded`）使用。
  *
- * **为什么必须单点**：三态一旦在两处各自判 `length`，两份语义从落笔即漂移——
- * 上一轮的真机缺陷正是「显式空 `[]`」被显示层折叠成「全部工具」。
+ * **为什么必须单点**：三态一旦在两处各自判 `length`，两份语义会从落笔即漂移
+ * （典型错法：显式空 `[]` 被显示层折叠成「全部工具」）。
  * 因此本模块是唯一判定点：调用方只消费判定结果，禁止再判 `length`。
  *
- * 边界：纯函数、零状态、不读 DOM、不发消息（可在 extension host 与 webview 侧复用）。
+ * 边界：纯函数、零状态、不读 DOM、不发消息。当前调用点均在 host 侧
+ * （`settingsPanel` / `chatPanel`）；webview 渲染层只消费已判定的 `CapabilityStateDto`。
  *
  * @module capabilityState
  */
@@ -37,7 +38,7 @@ export function deriveCapabilityState(
   if (capabilities === undefined) return { kind: 'all' };
   // 显式空 = 仅常驻工具（与「未声明」严格区分，不可折叠）
   if (capabilities.length === 0) return { kind: 'residentOnly' };
-  // 非空 = 白名单，label 在此统一翻译（各显示面只拿结果，不再自行映射）
+  // 非空 = 白名单，label 在此统一映射为展示串（默认 = 英文源键）；本地化由消费侧决定
   return {
     kind: 'list',
     capabilities: capabilities.map((c) => ({

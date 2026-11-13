@@ -1,18 +1,19 @@
 /**
- * capabilityLabels — 中立能力名（`域:动作`）→ 可读标签（SSOT）
+ * capabilityLabels — 中立能力名（`域:动作`）→ 展示文案投影（**非真源**）
  *
  * 角色管理视图（roles view）展示角色能力时的展示映射。能力命名空间是内核概念
  * （role-pack-spec §四：`web:search` / `code:execute` / `task:plan`，见内核
- * capabilityMap.ts 的能力→工具映射），本文档只负责「UI 展示文案」，由 host 在
+ * `src/role-pack/capabilityMap.ts` 的能力→工具映射），本文档只负责「UI 展示文案」，由 host 在
  * 推送 roles_loaded 时把 capability 翻译为 label。
  *
  * 能力 → 工具映射与「特权键」分类的真源 = 内核 `capabilityMap.ts`；本表只是文案
  * 投影，不复述分类（复述即第二份文字真源，内核改分类时无门会红）。表内保留
  * 非特权键的翻译，只为兼容其它实现生成的中立角色包：未知能力仍回退原始名。
  *
- * **值全为英文源键**（B3 起）：本文件保持纯函数（不 import l10n），由**消费侧**决定
+ * **值全为英文源键**：本文件保持纯函数（不 import l10n），由**消费侧**决定
  * 用哪个本地化器——webview 侧 `@vscode/l10n` 的 `t()`，extension host 侧 `vscode.l10n.t()`。
  * 两个环境取同一个 `t` 的实现不同，函数内写死任一个都会在另一侧失效。
+ * 当前实际消费点都在 webview 侧（`capabilityChips` / `roleBadgeView`）。
  *
  * 未知能力回退显示原始 capability（不硬造文案，避免误导）。
  */
@@ -75,7 +76,8 @@ export const CAPABILITY_STATE_TEXT: Readonly<
 };
 
 /**
- * 能力名 → 域级短标签（取 `域:动作` 的域段；未知域回退原始域段，不硬造文案）
+ * 能力名 → 域级短标签（取 `域:动作` 的域段；未配短标签的域回退原始域段，不硬造文案。
+ * 当前表只配 `file` / `web` / `memory` / `llm`，`code` / `task` 域会显示原文）
  *
  * 供输入区能力徽章使用（`roles_loaded` 的角色卡用 `capabilityLabel` 的细粒度文案）。
  * 两者都只是**标签投影**；三态判定仍只由 `capabilityState.ts` 一处做。

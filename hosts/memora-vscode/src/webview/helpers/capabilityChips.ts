@@ -1,9 +1,10 @@
 /**
  * capabilityChips — 能力面三态 → 角色卡 chip 行的渲染（`rolesView` 的薄视图外置件）
  *
- * 为什么独立成文件：`rolesView.ts` 贴 eslint `max-lines` 上限（只降不升），而能力 chip 的
- * DOM 构造 + 三态分支属纯渲染细节，继续留在视图里只会推高行数。外置是让视图回归
- * 「装配 + 交互」，不是为过闸妥协。
+ * 为什么独立成文件：能力 chip 的 DOM 构造 + 三态分支属纯渲染细节，外置让 `rolesView`
+ * 回归「装配 + 交互」。
+ * 注（2026-11-13 复核）：原文称「`rolesView.ts` 贴 eslint `max-lines` 上限（只降不升）」，
+ * 实测 `rolesView.ts` 927 行、已低于通用上限 1000，且无专属闸——该指认已不成立，故删。
  *
  * 边界：本文件只做 DOM 构造与分支，**不判定三态**——判定唯一出口仍是
  * `capabilityState.ts` 的 `deriveCapabilityState`；文案唯一真源仍是 `capabilityLabels.ts`
@@ -26,8 +27,8 @@ interface ChipSpec {
 /**
  * 在 `parent` 末尾追加一行能力 chip。
  *
- * - `list` ⇒ 每个能力名一枚 chip（文本 = 已翻译 label，title = 原始能力名）
- * - `all` / `residentOnly` ⇒ 一枚**状态 chip**：两态文案不同。此前两者都留空，
+ * - `list` ⇒ 每个能力名一枚 chip（文本 = `label`（英文源键，当前未过 l10n），title = 原始能力名）
+ * - `all` / `residentOnly` ⇒ 一枚**状态 chip**：两态文案不同。两态若共用同一文案，
  *   用户会把「未声明（全部工具）」与「显式空（仅基础工具）」读成同一件事。
  *
  * @param doc webview 文档对象（DOM 构造唯一入口；本模块不读全局 `document`）
@@ -39,7 +40,7 @@ export function appendCapabilityChips(
   parent: HTMLElement,
   state: CapabilityStateDto,
 ): void {
-  /** 待渲染的 chip 规格：`list` 展开为多条（label 由 host 已本地化），其余两态各一条（本表值是源键，此处过 l10n） */
+  /** 待渲染的 chip 规格：`list` 展开为多条（`label` 是英文源键，本渲染点当前未过 `t()`），其余两态各一条（本表值是源键，此处过 l10n） */
   const specs: ChipSpec[] =
     state.kind === 'list'
       ? state.capabilities.map((c) => ({ text: c.label, title: c.capability, stateChip: false }))
