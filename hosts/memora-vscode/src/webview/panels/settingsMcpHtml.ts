@@ -1,8 +1,8 @@
 /**
  * 设置面板「MCP」选项卡 HTML 主体片段
  *
- * 为什么独立成文件（与 settingsSecurityHtml.ts 同款理由）：settingsPanel 是贴 eslint
- * max-lines 上限、只降不升的 TARGET 文件，而选项卡骨架是线性增长域；MCP 页还要随功能
+ * 为什么独立成文件（与 settingsSecurityHtml.ts 同款理由）：settingsPanel 是逼近 eslint
+ * max-lines 基线、只降不升的 TARGET 文件，而选项卡骨架是线性增长域；MCP 页还要随功能
  * 迭代长条目，留在大文件必爆线。
  *
  * 职责边界（同上）：**只提供静态 DOM 骨架，零逻辑、零插值变量**。列表渲染、表单与交互由

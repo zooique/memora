@@ -210,7 +210,7 @@ import {
   buildRefContextBlock,
 } from '../helpers/docContext.js';
 // HOST-CTX-4：发送时刻的注入正文采集（problems 诊断 / git-changes 未提交改动）——自本文件拆出
-// （贴 max-lines 上限；「每加一个注入源加一个 collectXxxBody」是线性增长域，留此必爆线）
+// （逼近 max-lines 基线；「每加一个注入源加一个 collectXxxBody」是线性增长域，留此必爆线）
 import {
   collectGitChangesBody,
   collectProblemsBody,
@@ -2259,7 +2259,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
   /**
    * 推送角色包列表到 webview（输入区角色切换下拉）：载荷构造外置在 `helpers/rolePackListView.ts`
-   * （本文件贴 max-lines 只降不升基线，纯投影不占行数）。
+   * （本文件逼近 max-lines 基线、只降不升，纯投影不占行数）。
    */
   private pushRolePacks(): void {
     this.post(

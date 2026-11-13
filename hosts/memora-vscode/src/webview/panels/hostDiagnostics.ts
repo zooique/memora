@@ -1,7 +1,7 @@
 /**
  * 宿主诊断聚合 — 「复制诊断摘要」命令的数据源
  *
- * 为什么独立成文件（自 chatPanel.ts 拆出）：chatPanel 是贴 eslint max-lines 上限的
+ * 为什么独立成文件（自 chatPanel.ts 拆出）：chatPanel 是逼近 eslint max-lines 基线的
  * TARGET 文件（只降不升），而诊断聚合是「配置项逐个增加」的线性增长域，留在大文件必爆线
  * （同 injectionBodies.ts 先例）。本模块只做只读聚合，不持有 UI 状态。
  *

@@ -1,7 +1,7 @@
 /**
  * historyLoad — 会话历史读取（round-based 投影 + legacy 扁平回退）的唯一实现
  *
- * 为什么外置：`chatPanel.ts` 贴 `max-lines` 只降不升基线，而两段读取都是「读 store → 投影」
+ * 为什么外置：`chatPanel.ts` 逼近 `max-lines` 基线（只降不升），而两段读取都是「读 store → 投影」
  * 的纯数据逻辑（无 UI 裁决、无锁、无流状态），留在面板里只挤占行预算。
  *
  * 口径（与 `replayHistory` 注释同源）：

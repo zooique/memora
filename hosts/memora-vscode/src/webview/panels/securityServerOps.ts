@@ -3,7 +3,7 @@
  * `custom_search_engines_set` + 测试 / `reset_user_data` 的**唯一实现**）
  *
  * 为什么独立成文件（同 `mcpServerOps.ts` / `settingsMemoryOps.ts`）：
- *   ① `settingsPanel.ts` 是贴 eslint max-lines 上限的 TARGET 文件（只降不升），安全域的
+ *   ① `settingsPanel.ts` 是逼近 eslint max-lines 基线的 TARGET 文件（只降不升），安全域的
  *      消息处理是线性增长区（每加一个配置项就多一段「校验 + 写入 + 回推」）；
  *   ② 这五个 op 是**同一个语义面**（安全页的设置写入与一次性动作），放一处才能保证
  *      「写入路径只有一条」，且本地化判据按文件登记时它们各自成网。

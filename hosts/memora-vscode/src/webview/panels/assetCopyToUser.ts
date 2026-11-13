@@ -2,7 +2,7 @@
  * 设置页「添加到用户级」编排层（项目级资产 → 用户级目录）
  *
  * ## 为什么在 panels 下、而不是继续塞进 settingsPanel
- * `settingsPanel.ts` 贴 eslint max-lines 上限（只降不升），而本动作同时要处理两种资产
+ * `settingsPanel.ts` 逼近 eslint max-lines 基线（只降不升），而本动作同时要处理两种资产
  * 的来源断言、确认弹窗、回执文案与双列表刷新——放进面板只会把面板推过闸。外置后
  * 面板只留一行分发，本文件可独立阅读。
  *

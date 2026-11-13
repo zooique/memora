@@ -34,7 +34,7 @@ import {
   type TeamBroadcastResult,
 } from '../../extension/host/rolePackTeams.js';
 import { MemoraChatViewProvider } from './chatPanel.js';
-// 静态 DOM 骨架外置（settingsPanelHtml.ts）：本文件贴 max-lines 只降不升，骨架线性增长
+// 静态 DOM 骨架外置（settingsPanelHtml.ts）：本文件逼近 max-lines 基线（只降不升），骨架线性增长
 import { buildHtml } from './settingsPanelHtml.js';
 import { refreshUserRolePacksFlow, refreshUserSkillsFlow } from './userAssetRefresh.js';
 // 用户级「新建会话默认角色包」的单点读口（配置键只在那里被读取）
@@ -208,7 +208,7 @@ export class MemoraSettingsPanel {
   ) {
     // MCP 运行态变化（断线 / 启动失败 / 重启）**不是配置变更**，onDidChangeConfiguration 不会
     // 触发 ⇒ 由运行时回调驱动回推，否则面板停在旧值（台账缺口②）。注册在这里而不是
-    // extension.ts：那边是贴 max-lines 上限的文件，且「谁要这份状态」本就是视图自己的事。
+    // extension.ts：那边是逼近 max-lines 基线的文件，且「谁要这份状态」本就是视图自己的事。
     setMcpStatusListener(() => this.pushMcpStatus());
     // 清单被本进程改动（登记 / 切换 / 移除）后回推作品页；报告刷新另走内核事件订阅
     setWorkProjectionListener(() => void this.works.load());
@@ -1065,7 +1065,7 @@ export class MemoraSettingsPanel {
   /**
    * `roles_loaded` 的单点发送（真实会话 / 草稿共用）
    *
-   * 投影实现外置在 `helpers/rolePackListView.ts`：本文件贴 max-lines 只降不升基线，
+   * 投影实现外置在 `helpers/rolePackListView.ts`：本文件逼近 max-lines 基线（只降不升），
    * 纯投影（无面板状态、无写盘）不该占本文件行数。
    *
    * @param rpm 角色包管理器（undefined = 目录不可得：如实空列表，不伪造条目）

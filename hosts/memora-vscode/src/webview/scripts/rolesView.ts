@@ -20,14 +20,14 @@ import type {
 } from '../../shared/protocol.js';
 import { createEmptyState, createGroupTitle } from '../helpers/cardList.js';
 import { appendCapabilityChips } from '../helpers/capabilityChips.js';
-// 卡片顶部控件（当前/默认徽章 + 操作按钮）外置：语义边界与文案集中一处，且本文件贴行数红线
+// 卡片顶部控件（当前/默认徽章 + 操作按钮）外置：语义边界与文案集中一处，且本文件逼近行数红线
 import {
   appendRoleCardActions,
   appendRoleStateBadges,
   type RoleCardControlDeps,
 } from '../helpers/roleCardActions.js';
 import { createPager, PagerController } from './pager.js';
-// 组队弹窗外置（本文件贴 max-lines 基线；弹窗自足、零共享状态）
+// 组队弹窗外置（本文件逼近 max-lines 基线；弹窗自足、零共享状态）
 import { launchTeamModal as launchTeamModalImpl } from './rolesTeamModal.js';
 import { getIconSvg } from './icons.js';
 import {
@@ -386,7 +386,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
    * 默认保留「当前角色已是别队成员」的共享说明（内核当前无互斥限制，组员可复用）。
    *
    * 实现外置于 `rolesTeamModal.ts`：弹窗是自足的 DOM 构造块（输入角色包 + 名单 + 上限，
-   * 输出一条消息），与视图其余部分零共享状态；本文件已贴 max-lines 基线，故抽出。
+   * 输出一条消息），与视图其余部分零共享状态；本文件已逼近 max-lines 基线，故抽出。
    */
   function launchTeamModal(p: RolesPayload['packs'][number], data: RolesPayload): void {
     launchTeamModalImpl({ document, root, vscode, pack: p, data });

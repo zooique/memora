@@ -3,7 +3,7 @@
  *
  * 为什么外置（不是为过闸压行）：这三条动作只读 `globalState` / `getConfiguration`
  * 并 post 一条状态，零面板状态依赖，本就不该长在 `settingsPanel.ts` 的类体里。
- * `settingsPanel.ts` 贴 eslint `max-lines` 只降不升，接入「作品和规则」页前先把这块
+ * `settingsPanel.ts` 逼近 eslint `max-lines` 基线（只降不升），接入「作品和规则」页前先把这块
  * 职责归位，腾出等量行——**先腾行后加功能**，不靠抬阈值。
  *
  * 🔴 判据不变：读的仍是用户级持久值（偏好），不是运行时真相；调用方只注入

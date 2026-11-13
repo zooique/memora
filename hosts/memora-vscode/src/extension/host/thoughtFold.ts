@@ -1,7 +1,7 @@
 /**
  * thought 落盘折叠 — 展示侧全量、落盘侧按 step 聚合
  *
- * 为什么独立成文件（自 chatPanel.ts 拆出）：chatPanel 是贴 eslint max-lines 上限的
+ * 为什么独立成文件（自 chatPanel.ts 拆出）：chatPanel 是逼近 eslint max-lines 基线的
  * TARGET 文件（只降不升），本域是「一份长不变量说明 + 一个纯函数」的完整闭环，
  * 留在面板类旁只是被连带挤占行数。纯逻辑零宿主依赖，测试直接驱动。
  */

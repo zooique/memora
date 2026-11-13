@@ -1,7 +1,7 @@
 /**
  * sessionList — 「历史会话列表」消息载荷的唯一构建点（store → DTO 纯映射）
  *
- * 为什么外置：chatPanel 贴 `max-lines` 上限（只降不升），而列表投影是纯映射，
+ * 为什么外置：chatPanel 逼近 `max-lines` 基线（只降不升），而列表投影是纯映射，
  * 留在大文件里只会挤占行预算；外置后「加一个展示字段」按域改这里，不动面板。
  *
  * 口径（与 `shared/protocol.ts` 的 `session_list_data` 注释同源）：

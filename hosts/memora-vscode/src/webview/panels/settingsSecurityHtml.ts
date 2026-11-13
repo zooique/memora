@@ -1,8 +1,8 @@
 /**
  * 设置面板「安全」选项卡 HTML 主体片段（B7 本地化）
  *
- * 为什么独立成文件（自 settingsPanel.ts 拆出）：settingsPanel 是贴 eslint max-lines
- * 上限的 TARGET 文件（只降不升），而安全页每加一个配置项入口就多一段静态 HTML，
+ * 为什么独立成文件（自 settingsPanel.ts 拆出）：settingsPanel 是逼近 eslint max-lines
+ * 基线的 TARGET 文件（只降不升），而安全页每加一个配置项入口就多一段静态 HTML，
  * 是典型的线性增长域，留在大文件必爆线（同 hostDiagnostics.ts / injectionBodies.ts 先例）。
  *
  * 职责边界：本模块只提供静态 DOM 骨架，零逻辑。交互（开关读写、路径增删、引擎测试、

@@ -2,7 +2,7 @@
  * MCP 写操作（`mcp_write` 全部 op 的**唯一实现**）
  *
  * 为什么独立成文件而不是塞进 settingsPanel：
- *   ① settingsPanel 是贴 eslint max-lines 上限的 TARGET 文件（只降不升），而本域还要随
+ *   ① settingsPanel 是逼近 eslint max-lines 基线的 TARGET 文件（只降不升），而本域还要随
  *      功能长（表单校验、竞态、回执都是线性增长域）；
  *   ② 这些 op 是**同一个语义面**（MCP 配置写入），放一处才能保证「写入路径只有一条」。
  *      `connect` 是唯一的例外形态：它不改配置，只让运行态按当前配置**追平一次**

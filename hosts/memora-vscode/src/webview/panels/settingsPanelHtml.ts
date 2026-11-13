@@ -1,8 +1,8 @@
 /**
  * settingsPanelHtml — 设置面板 webview 静态骨架（自 settingsPanel.ts 拆出）
  *
- * **为什么拆（与 settingsSecurityHtml.ts 同款理由）**：settingsPanel 是贴 eslint
- * max-lines 上限的 TARGET 文件（**只降不升**，见根 eslint.config.mjs 的存量清单）。
+ * **为什么拆（与 settingsSecurityHtml.ts 同款理由）**：settingsPanel 是逼近 eslint
+ * max-lines 基线的 TARGET 文件（**只降不升**，见根 eslint.config.mjs 的存量清单）。
  * 静态骨架是典型的线性增长域——每加一个选项卡就多一屏 HTML，留在大文件必爆线。
  * 拆出后「加一个选项卡」不再消耗 settingsPanel 的行 budgets（只加一行 tab id + 一本 body）。
  *

@@ -2,7 +2,7 @@
  * strategyKeyMeta — 策略键展示元数据（SSOT）+ 详情值本地化（纯数据 / 纯函数）
  *
  * 从 `webview/scripts/rolesView.ts` 抽出（2026-10-26）。抽出理由有二：
- *   ① rolesView 顶到 1149 行闸门，而这三块零闭包依赖、纯数据纯函数；
+ *   ① rolesView 当时已越过 1000 行基线（抽出时 1149 行，现 927），而这三块零闭包依赖、纯数据纯函数；
  *   ② 与 `capabilityLabels.ts` 同类（「领域无关的展示映射表」），落点有一致先例。
  * 渲染 chip / 详情行的逻辑仍在 rolesView（依赖 document），本文件只提供数据与格式化。
  *

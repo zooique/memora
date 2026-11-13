@@ -968,7 +968,7 @@ export class WorkspaceSessionStore implements ISessionStore {
 /**
  * 聊天面板消费的会话存储契约（**宿主扩展面的单一真源**）
  *
- * 迁自 chatPanel 内联定义：该文件已贴 `max-lines` 闸门（新增必先腾等量行），而本类型描述的
+ * 迁自 chatPanel 内联定义：该文件已逼近 `max-lines` 基线（新增优先外置，不再往主文件堆），而本类型描述的
  * 正是本文件实现的类，放这里语义更近、面板也不必为契约变更反复腾行。
  *
  * 组成 = 内核 `ISessionStore` + 宿主扩展能力（删会话返回被回收轮 / 截断 / 标题元数据 /
