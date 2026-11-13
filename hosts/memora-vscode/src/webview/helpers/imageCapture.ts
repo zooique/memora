@@ -58,14 +58,20 @@ type PickedResult = Extract<ExtensionToWebviewMessage, { type: 'image_picked' }>
  */
 const PREVIEW_TIP_ID = 'imgPreviewTip';
 
-/** 采集成功的候选图。字段与内核 `ImageRef` 对齐，但 `sha256` 在提案阶段是**提案值**（见文件头）。 */
+/**
+ * 采集成功的候选图。字段**语义**对齐内核 `ImageRef`（`byteLength` 对应 `ImageRef.bytes`），
+ * 但 `sha256` 在提案阶段是**提案值**（见文件头）；真正的 `ImageRef` 只有 `ref?`。
+ */
 export interface CapturedImage {
   /**
    * `paste` / `drop-file` = 本端字节路径（有提案阶段）；`pick` = 宿主读盘路径（按钮开框 /
    * 右键真图 / 资源管理器拖入经 `image_picked` 回执，IMG-12/13 后同构，无提案阶段）。
    */
   source: 'paste' | 'drop-file' | 'pick';
-  /** 用户可见文件名（D29：唯一生产点就是这里，无名时由 `resolveImageName` 兜底） */
+  /**
+   * 用户可见文件名（D29）：由 `shared/imageValidation.validateImageCandidate` 单点生产
+   * （无名时由 `resolveImageName` 兜底）；本文件只透传，宿主落盘时按同一函数重算。
+   */
   name: string;
   /** 原始字节数（`paste`/`drop-file` 提案自算；`pick` 取回执真值） */
   byteLength?: number;
@@ -111,8 +117,8 @@ export interface ImageCaptureDeps {
   /**
    * 候选变化通知（图片行已并入附件行，2026-11-11 汇流）。
    *
-   * 本层**不再持行容器**：空/隐判据、行清空与成员顺序归 `attachmentRowView` 单点
-   * （见 `appendChips`）。采集层只负责「一枚图 chip 长什么样」与候选真值，
+   * 本层**不再持行容器**：本层 `appendChips` 只追加；行判据（空 / 隐 / 清空 / 成员顺序）
+   * 归 `attachmentRowView.render` 单点。采集层只负责「一枚图 chip 长什么样」与候选真值，
    * 状态一变就喊调用方整行重绘——若这里还去清行 / 藏行，就又是「一个行两个写入者」。
    */
   onChange?: () => void;
@@ -152,7 +158,8 @@ export interface ImageCaptureHandle {
    * 用户贴了图、看见 chip、按了发送，结果图没跟着走 = 「以为自己做到了」的静默错态。
    *
    * @param interjectRoute 本轮 send 会被宿主路由为**插话**（生成中）：该通道内核不收附件（D13）
-   *   ⇒ 有图即拦。判据随渲染骨架态由调用方传入，本层不反向读 UI 状态。
+   *   ⇒ 有图即拦。内核侧签名只有文本：`AgentLoop.interject(content: string)`。
+   *   判据随渲染骨架态由调用方传入，本层不反向读 UI 状态。
    */
   resolveSendable(interjectRoute: boolean): SendableImages;
   /**
@@ -290,7 +297,7 @@ export function pickImageFiles(transfer: DataTransfer | null): File[] {
  * 转字符再拼接——分块边界取 3 的倍数，避免块尾产生半个 base64 分组。
  */
 export function bytesToBase64(bytes: Uint8Array): string {
-  // 块大小 = 32768 字节（32768 % 3 === 2，故取 32766 保证每块都是完整分组）
+  // 候选块大小 32768 字节；32768 % 3 === 2，故取 32766 保证每块都是完整分组
   const CHUNK = 32766;
   let binary = '';
   for (let i = 0; i < bytes.length; i += CHUNK) {
@@ -330,10 +337,7 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
    * 只产 DOM 不碰行状态：空/隐与清空归行渲染域；顺序理由见下方 rejected 注释。
    */
   function appendChips(parent: HTMLElement): void {
-    /**
-     * 失败项排在**前面**：探针阶段要的是「一眼看见出事了」。等正式版接入落盘与预览后，
-     * 这条顺序可以再议（届时失败项通常不进 chip 行，而是走瞬态提示）。
-     */
+    /** 失败项排在**前面**：探针阶段要的是「一眼看见出事了」。 */
     for (const item of rejected) parent.appendChild(buildRejectedChip(item));
     for (const item of accepted) parent.appendChild(buildChip(item));
   }
@@ -476,7 +480,6 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     const view = doc.defaultView;
     const scrollX = view?.scrollX ?? 0;
     const scrollY = view?.scrollY ?? 0;
-    // chip 与浮层之间的视觉间隙
     const gap = 6;
     // 必须先显形再量尺寸（hidden 时 offsetHeight 恒 0，翻向判断会永远成立）
     const height = tip.offsetHeight;
@@ -562,7 +565,8 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
         digest,
         file.type,
         declaredName,
-        // 兜底名会落进 `ImageRef` 被持久化 ⇒ 必须按当前语言生成，不能留英文默认
+        // 兜底名会落进 `ImageRef` 被持久化 ⇒ 必须按当前语言生成，不能留英文默认；
+        // `'Pasted image'` 与宿主 `imageIngest.ts` 同键，禁改单侧
         l10n.t('Pasted image'),
       );
       if (result.ok) {
@@ -600,7 +604,9 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
           name: declaredName || l10n.t('Image'),
           // 文案刻意**不带环号**：屏上 loop 已占用「第 N 步」措辞（术语锚点 §4.2 禁同词同屏），
           // 且用户只关心「为什么被拒」、不关心是第几环——环号保留在结构化字段供测试/日志定位
-          // 校验链只回「英文源键 + 插值实参」（`shared/` 零依赖不产句子），此处按当前语言解析
+          // 六步校验链只回「英文源键 + 插值实参」（`shared/` 零依赖不产句子），此处按当前语言解析；
+          // 限额文案不同源：`imageTurnLimits` 直接产句（见 checkTurnLimits），不走 key 面。
+          // `'Image validation failed: {0}'` 与宿主 `imageIngest.ts` 同键，禁改单侧
           reason: l10n.t(
             'Image validation failed: {0}',
             l10n.t(result.messageKey, ...result.messageArgs),

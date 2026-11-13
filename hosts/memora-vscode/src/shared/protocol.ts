@@ -352,7 +352,7 @@ export type WebviewToExtensionMessage =
       type: 'image_ingest';
       /** 图片字节的 base64 编码（JSON 可序列化的唯一字节形态） */
       base64: string;
-      /** 展示名（D29 唯一生产点在采集侧：`file.name`，无名则 `粘贴图片-{sha256 前 6}`） */
+      /** 展示名（D29 唯一生产点在采集侧：仅文件选择 / 拖入用 `file.name`；粘贴入口一律丢弃平台合成名，按 sha256 派生） */
       name: string;
       /** MIME 提案（magic bytes 嗅探产出，禁用 `file.type` 声明值——方案 D18） */
       mime: string;
