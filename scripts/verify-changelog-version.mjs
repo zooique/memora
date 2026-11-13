@@ -34,6 +34,21 @@
  *      ⇒ 窗口是容**时区差**，不是容懒。写 `2099-01-01` / `1970-01-01` 一律红。
  *   ⑥ 「未发布」/ `Unreleased` 仍保留为**冗余检查**：带合法日期时它不可能同时出现，
  *      保留只为给出更直白的报错文案（「你还写着未发布」比「日期不在窗口」更好定位）。
+ *   ⑦ 轴分流 + 常开弱校验（2026-11-13 加固 · 台账 CHLOG-VERSION-HOST-AXIS-1）：
+ *      内核区标题不带 `· 宿主`，宿主区标题带 `· 宿主`（与 `hosts/memora-vscode/scripts/
+ *      changelog-host-sections.mjs` 同源约定）。两轴发布日期**不同步**：宿主区要么早于本次
+ *      内核发版、要么还写着「未发布」（实证 v7.0.0 / v7.1.0 / v7.2.0 三个 tag 均如此）
+ *      ⇒ 对宿主区直接套 ±1 天窗口是**恒假红**。故分两种模式：
+ *        · 宿主模式（tag ref 前缀 `vscode@` 自动识别；`RELEASE_AXIS=host` 手动覆盖）：
+ *          只校验宿主段，判据同 ②③④⑤（含 ±1 天窗口）。
+ *        · 内核模式（其余）：内核段判据 ②③④⑤ **一字不改**；宿主段只做**常开弱校验**——
+ *          日期须是合法日历日期、且不晚于发布日 +1（不设下限，宿主可能早于本次发版）；
+ *          标题仍写「未发布」时跳过（内核先发、宿主未发是合法状态）。
+ *      两种模式下 `[Unreleased]` 都豁免日期判断（它没有发布日）。
+ *
+ * ⚠️ CI 接线欠账（台账 CHLOG-VERSION-HOST-AXIS-1）：本脚本当前只挂 `release.yml`（内核轴），
+ *   `host-release.yml` 尚未调用 ⇒ 宿主模式在 CI 里不会自动跑，只能手动执行：
+ *   `RELEASE_AXIS=host RELEASE_DATE=YYYY-MM-DD node scripts/verify-changelog-version.mjs`。
  *
  * 挂点（**刻意只挂 release.yml**）：
  *   不进 `local-ci`（pre-push）：开发期版本区**合法地**写着「未发布」（`deliverables/内核变更报告-4.0.0发布后至今-20261017.md`
@@ -50,13 +65,20 @@
  *   node scripts/verify-changelog-version.mjs                    # 裸跑：跳过（exit 0）
  *   RELEASE=1 node scripts/verify-changelog-version.mjs          # 发版模式：发布日取当天（UTC）
  *   RELEASE_DATE=2026-10-22 node scripts/verify-changelog-version.mjs   # 发版模式：注入发布日（复盘）
- *   node scripts/verify-changelog-version.mjs --selfTest          # 闸门自检（样例：绿 / 红 / 边界）
+ *   RELEASE_AXIS=host RELEASE_DATE=2026-11-12 node scripts/verify-changelog-version.mjs  # 宿主轴（手动）
+ *   node scripts/verify-changelog-version.mjs --selfTest          # 闸门自检（样例：绿 / 红 / 边界 / 轴分流）
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+/** 宿主版本号真源：与宿主发版产物同源，不在本脚本另立一份 */
+const HOST_PKG_JSON = join(ROOT, 'hosts', 'memora-vscode', 'package.json');
+
+/** 宿主区标题的轴标记（与 changelog-host-sections.mjs 的 HOST_SECTION_RE 同源约定） */
+const HOST_SECTION_MARK = '· 宿主';
 
 /** 「未发布」两类写法：本仓中文标题 + Keep a Changelog 的英文惯例 */
 const UNRELEASED_TOKENS = ['未发布', 'Unreleased'];
@@ -91,15 +113,115 @@ function parseUtcDate(y, m, d) {
 }
 
 /**
- * 判据本体（纯函数，不碰文件系统 ⇒ 可被自检样例直接调用）。
+ * 版本令牌是否 `[Unreleased]`：它没有发布日，日期判据整体豁免（不适用，不是放宽）。
+ * @param {string} version 版本令牌
+ * @returns {boolean}
+ */
+export function isUnreleasedVersion(version) {
+  return version === 'Unreleased';
+}
+
+/**
+ * 找目标版本的标题行：内核轴按行首 `## [<version>]` 锚定；宿主轴额外要求带 `· 宿主`。
+ * @param {string} changelogText CHANGELOG 全文
+ * @param {string} version 目标版本
+ * @param {{ hostOnly?: boolean }} [opts] hostOnly=true 时只认宿主区标题
+ * @returns {string[]}
+ */
+function findVersionHeadings(changelogText, version, { hostOnly = false } = {}) {
+  const heading = `## [${version}]`;
+  return changelogText.split(/\r?\n/).filter((line) => {
+    if (!line.startsWith(heading)) return false;
+    return hostOnly ? line.includes(HOST_SECTION_MARK) : true;
+  });
+}
+
+/**
+ * 标题日期断言（内核 / 宿主共用；轴差异只在标题匹配与报错前缀）。
+ * @param {string[]} hits 命中的标题行
+ * @param {string} heading 标题前缀（用于报错示例）
+ * @param {string} todayISO 发布日
+ * @param {{ label?: string, requireWindow?: boolean, allowUnreleased?: boolean }} [opts]
+ *   requireWindow=true ⇒ 日期须落在 ±1 天窗口（内核轴 / 宿主发版轴）；
+ *   requireWindow=false ⇒ 只判合法日历日期 + 不晚于发布日 +1（宿主弱校验，允许更早）；
+ *   allowUnreleased=true ⇒ 标题写着「未发布」时跳过（内核先发、宿主未发是合法状态）。
+ * @returns {{ reasons: string[] }}
+ */
+function collectDateReasons(
+  hits,
+  heading,
+  todayISO,
+  { label = '', requireWindow = true, allowUnreleased = false } = {},
+) {
+  const reasons = [];
+
+  const todayTs = parseUtcDate(todayISO.slice(0, 4), todayISO.slice(5, 7), todayISO.slice(8, 10));
+  if (todayTs === null) {
+    reasons.push(
+      `${label}发布日 \`${todayISO}\` 不是合法日历日期（RELEASE_DATE 注入值有误，或取当天失败）→ 判据失明，按 fail-closed 判红`,
+    );
+    return { reasons };
+  }
+
+  for (const line of hits) {
+    const token = UNRELEASED_TOKENS.find((t) => line.toLowerCase().includes(t.toLowerCase()));
+    if (token) {
+      if (allowUnreleased) continue;
+      reasons.push(
+        `${label}版本标题仍带「${token}」：\`${line}\` —— 出包前须改为实际发布日期（` +
+          `已发布版本不可重发，tarball 不可变）`,
+      );
+      continue;
+    }
+
+    const m = DATE_RE.exec(line);
+    if (!m) {
+      reasons.push(
+        `${label}版本标题未带发布日期：\`${line}\` —— 须形如 \`${heading} · YYYY-MM-DD\`。` +
+          `（本次发布日 = ${todayISO}；只挡「未发布」两个词是失明的：\`· 待定\`、裸标题同样缺日期）`,
+      );
+      continue;
+    }
+
+    const ts = parseUtcDate(m[1], m[2], m[3]);
+    if (ts === null) {
+      reasons.push(
+        `${label}版本标题日期 \`${m[0]}\` 不是合法日历日期：\`${line}\` —— 正则只保证形态，真伪须构造校验`,
+      );
+      continue;
+    }
+
+    const diffDays = Math.round((ts - todayTs) / MS_PER_DAY);
+    if (requireWindow) {
+      if (Math.abs(diffDays) > RELEASE_WINDOW_DAYS) {
+        reasons.push(
+          `${label}版本标题日期 \`${m[0]}\` 与发布日 \`${todayISO}\` 相差 ${Math.abs(diffDays)} 天` +
+            `（容差 ±${RELEASE_WINDOW_DAYS} 天，只容本地时区与 UTC 的 1 天差）：\`${line}\``,
+        );
+      }
+    } else if (diffDays > RELEASE_WINDOW_DAYS) {
+      reasons.push(
+        `${label}版本标题日期 \`${m[0]}\` 晚于发布日 \`${todayISO}\` 超过 ${RELEASE_WINDOW_DAYS} 天` +
+          `（宿主段弱校验：不得写未来日期）：\`${line}\``,
+      );
+    }
+  }
+
+  return { reasons };
+}
+
+/**
+ * 内核轴判据本体（纯函数，不碰文件系统 ⇒ 可被自检样例直接调用）。
  * @param {string} changelogText CHANGELOG 全文
  * @param {string} version 目标版本（如 `5.0.0`）
  * @param {string} todayISO 发布日 `YYYY-MM-DD`（CI 取当天 UTC；测试可注入）
  * @returns {{ ok: boolean, reasons: string[] }}
  */
 export function evaluateChangelogVersion(changelogText, version, todayISO) {
+  if (isUnreleasedVersion(version)) return { ok: true, reasons: [] };
+
   const heading = `## [${version}]`;
-  const hits = changelogText.split(/\r?\n/).filter((line) => line.startsWith(heading));
+  const hits = findVersionHeadings(changelogText, version);
   const reasons = [];
 
   if (hits.length === 0) {
@@ -112,50 +234,59 @@ export function evaluateChangelogVersion(changelogText, version, todayISO) {
     );
   }
 
-  const todayTs = parseUtcDate(todayISO.slice(0, 4), todayISO.slice(5, 7), todayISO.slice(8, 10));
-  if (todayTs === null) {
+  reasons.push(...collectDateReasons(hits, heading, todayISO).reasons);
+  return { ok: reasons.length === 0, reasons };
+}
+
+/**
+ * 宿主轴整判据（宿主发版模式）：标题须带 `· 宿主`，日期判据同内核轴（含 ±1 天窗口）。
+ * @param {string} changelogText CHANGELOG 全文
+ * @param {string} hostVersion 宿主版本（来自 hosts/memora-vscode/package.json）
+ * @param {string} todayISO 发布日
+ * @returns {{ ok: boolean, reasons: string[] }}
+ */
+export function evaluateHostSection(changelogText, hostVersion, todayISO) {
+  if (isUnreleasedVersion(hostVersion)) return { ok: true, reasons: [] };
+
+  const heading = `## [${hostVersion}]`;
+  const hits = findVersionHeadings(changelogText, hostVersion, { hostOnly: true });
+  const reasons = [];
+
+  if (hits.length === 0) {
     reasons.push(
-      `发布日 \`${todayISO}\` 不是合法日历日期（RELEASE_DATE 注入值有误，或取当天失败）→ 判据失明，按 fail-closed 判红`,
+      `CHANGELOG.md 找不到以 \`${heading}\` 开头且带「${HOST_SECTION_MARK}」的宿主版本标题（该宿主版本无 CHANGELOG 区）`,
     );
     return { ok: false, reasons };
   }
-
-  for (const line of hits) {
-    const token = UNRELEASED_TOKENS.find((t) => line.toLowerCase().includes(t.toLowerCase()));
-    if (token) {
-      reasons.push(
-        `版本标题仍带「${token}」：\`${line}\` —— 出包前须改为实际发布日期（` +
-          `已发布版本不可重发，tarball 不可变）`,
-      );
-      continue;
-    }
-
-    const m = DATE_RE.exec(line);
-    if (!m) {
-      reasons.push(
-        `版本标题未带发布日期：\`${line}\` —— 须形如 \`${heading} · YYYY-MM-DD\`。` +
-          `（本次发布日 = ${todayISO}；只挡「未发布」两个词是失明的：\`· 待定\`、裸标题同样缺日期）`,
-      );
-      continue;
-    }
-
-    const ts = parseUtcDate(m[1], m[2], m[3]);
-    if (ts === null) {
-      reasons.push(
-        `版本标题日期 \`${m[0]}\` 不是合法日历日期：\`${line}\` —— 正则只保证形态，真伪须构造校验`,
-      );
-      continue;
-    }
-
-    const diffDays = Math.round((ts - todayTs) / MS_PER_DAY);
-    if (Math.abs(diffDays) > RELEASE_WINDOW_DAYS) {
-      reasons.push(
-        `版本标题日期 \`${m[0]}\` 与发布日 \`${todayISO}\` 相差 ${Math.abs(diffDays)} 天` +
-          `（容差 ±${RELEASE_WINDOW_DAYS} 天，只容本地时区与 UTC 的 1 天差）：\`${line}\``,
-      );
-    }
+  if (hits.length > 1) {
+    reasons.push(
+      `CHANGELOG.md 有 ${hits.length} 行以 \`${heading}\` 开头且带「${HOST_SECTION_MARK}」的标题（同版本多区，须人工分诊）`,
+    );
   }
 
+  reasons.push(...collectDateReasons(hits, heading, todayISO, { label: '宿主段：' }).reasons);
+  return { ok: reasons.length === 0, reasons };
+}
+
+/**
+ * 宿主轴常开弱校验（内核模式也跟着跑）：只抓「日期写错」——非法日历日期或未来日期。
+ * 刻意不判「区不存在 / 同版本多区 / 日期偏旧」：宿主发布日期本就可能早于本次内核发版。
+ * @param {string} changelogText CHANGELOG 全文
+ * @param {string} hostVersion 宿主版本
+ * @param {string} todayISO 发布日
+ * @returns {{ ok: boolean, reasons: string[] }}
+ */
+export function evaluateHostSectionWeak(changelogText, hostVersion, todayISO) {
+  if (isUnreleasedVersion(hostVersion)) return { ok: true, reasons: [] };
+
+  const hits = findVersionHeadings(changelogText, hostVersion, { hostOnly: true });
+  if (hits.length === 0) return { ok: true, reasons: [] };
+
+  const { reasons } = collectDateReasons(hits, `## [${hostVersion}]`, todayISO, {
+    label: '宿主段：',
+    requireWindow: false,
+    allowUnreleased: true,
+  });
   return { ok: reasons.length === 0, reasons };
 }
 
@@ -248,48 +379,152 @@ function selfTest() {
       console.log(`  ✗ ${c.name}：期望 ${c.expectOk ? '绿' : '红'}，实际 ${ok ? '绿' : '红'}`);
     }
   }
-  console.log(`闸门自检: ${passed}/${cases.length} 样例符合预期`);
-  return passed === cases.length;
+
+  // ── 轴分流新增（2026-11-13）：Unreleased 豁免 / 宿主段日期 / 窗口边界 ──
+  const hostCases = [
+    {
+      name: '宿主段 [Unreleased] 无日期（应绿 · 无发布日可判）',
+      run: () => evaluateHostSection('## [Unreleased] · 宿主\n', 'Unreleased', T),
+      expectOk: true,
+    },
+    {
+      name: '宿主段缺日期（应红）',
+      run: () => evaluateHostSection(`## [${V}] · 宿主\n`, V, T),
+      expectOk: false,
+    },
+    {
+      name: '宿主段未来日期（应红 · 弱校验）',
+      run: () => evaluateHostSectionWeak(`## [${V}] · 2099-01-01 · 宿主\n`, V, T),
+      expectOk: false,
+    },
+    {
+      name: '宿主模式窗口内（应绿）',
+      run: () => evaluateHostSection(`## [${V}] · 2026-10-22 · 宿主\n`, V, T),
+      expectOk: true,
+    },
+    {
+      name: '宿主模式窗口外（应红）',
+      run: () => evaluateHostSection(`## [${V}] · 2026-10-18 · 宿主\n`, V, T),
+      expectOk: false,
+    },
+    {
+      name: '宿主段陈旧真实日期（弱校验应绿 · 宿主可能早于内核发版）',
+      run: () => evaluateHostSectionWeak(`## [${V}] · 2026-10-01 · 宿主\n`, V, T),
+      expectOk: true,
+    },
+    {
+      name: '宿主段仍写未发布（弱校验应绿 · 内核先发、宿主未发）',
+      run: () => evaluateHostSectionWeak(`## [${V}] · 未发布 · 宿主\n`, V, T),
+      expectOk: true,
+    },
+  ];
+  for (const c of hostCases) {
+    const { ok } = c.run();
+    if (ok === c.expectOk) {
+      passed += 1;
+    } else {
+      console.log(`  ✗ ${c.name}：期望 ${c.expectOk ? '绿' : '红'}，实际 ${ok ? '绿' : '红'}`);
+    }
+  }
+
+  const total = cases.length + hostCases.length;
+  console.log(`闸门自检: ${passed}/${total} 样例符合预期`);
+  return passed === total;
 }
 
 const args = process.argv.slice(2);
-if (args.includes('--selfTest')) {
-  process.exit(selfTest() ? 0 : 1);
-}
 
-// 发版模式闸：裸跑只报「跳过」且 exit 0。
-// 非发版日版本区合法写着 [Unreleased]，按当天校验必红 ⇒ 稳定假红会让所有人无视本闸
-//（台账 CHANGELOG-GATE-FAKE-RED-1：比没有闸更坏）。仅发版流水线显式置 RELEASE=1
-// 或注入 RELEASE_DATE 时才做日期校验。
-const releaseDateEnv = process.env.RELEASE_DATE;
-const inReleaseMode = process.env.RELEASE === '1' || releaseDateEnv !== undefined;
-if (!inReleaseMode) {
+/** 作为模块被 import（回归脚本取纯函数）时不跑 CLI；直接执行才进闸门 */
+const isDirectRun =
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+/**
+ * 把失败原因打印成 GitHub Actions 注解 + 收口行。
+ * @param {string[]} reasons 失败原因
+ * @param {string} scopeLabel 收口行的范围描述
+ */
+function emitReasons(reasons, scopeLabel) {
+  for (const reason of reasons) {
+    // GitHub Actions 会把它渲染成该步骤的注解，直接贴在红灯那一步上
+    console.log(`::error::${reason}`);
+  }
   console.log(
-    '⏭️ [changelog-version] 未处于发版模式，跳过日期校验' +
-      '（发版流水线须置 RELEASE=1 或 RELEASE_DATE=YYYY-MM-DD）',
+    `❌ [changelog-version] ${scopeLabel} 标题未通过发布前置校验（${reasons.length} 条）`,
   );
-  process.exit(0);
 }
 
-const version = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
-const changelogText = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8');
-// 发布日：发版模式取当天（UTC）；注入 RELEASE_DATE 可复现/复盘
-const todayISO = releaseDateEnv ?? new Date().toISOString().slice(0, 10);
+/**
+ * CLI 主流程：按轴分流执行发版前日期校验。
+ * @returns {number} 进程退出码（0 = 通过 / 跳过；1 = 未通过或无法判定）
+ */
+function main() {
+  // 发版模式闸：裸跑只报「跳过」且 exit 0。
+  // 非发版日版本区合法写着 [Unreleased]，按当天校验必红 ⇒ 稳定假红会让所有人无视本闸
+  //（台账 CHANGELOG-GATE-FAKE-RED-1：比没有闸更坏）。仅发版流水线显式置 RELEASE=1
+  // 或注入 RELEASE_DATE 时才做日期校验。
+  const releaseDateEnv = process.env.RELEASE_DATE;
+  const inReleaseMode = process.env.RELEASE === '1' || releaseDateEnv !== undefined;
+  if (!inReleaseMode) {
+    console.log(
+      '⏭️ [changelog-version] 未处于发版模式，跳过日期校验' +
+        '（发版流水线须置 RELEASE=1 或 RELEASE_DATE=YYYY-MM-DD）',
+    );
+    return 0;
+  }
 
-const { ok, reasons } = evaluateChangelogVersion(changelogText, version, todayISO);
+  const changelogText = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8');
+  // 发布日：发版模式取当天（UTC）；注入 RELEASE_DATE 可复现/复盘
+  const todayISO = releaseDateEnv ?? new Date().toISOString().slice(0, 10);
 
-if (ok) {
-  console.log(
-    `✅ [changelog-version] CHANGELOG.md 的 [${version}] 标题已带发布日期（发布日 ${todayISO}）`,
-  );
-  process.exit(0);
+  // 宿主版本号真源 = 宿主包 package.json；读不到就 fail-closed，不静默跳过宿主轴
+  let hostVersion;
+  try {
+    hostVersion = JSON.parse(readFileSync(HOST_PKG_JSON, 'utf8')).version;
+  } catch (error) {
+    console.log(
+      `::error::[changelog-version] 读取宿主版本失败（${HOST_PKG_JSON}）：${error.message} → fail-closed`,
+    );
+    return 1;
+  }
+
+  // 轴识别：tag ref 前缀 `vscode@` 自动进宿主模式；`RELEASE_AXIS=host/kernel` 可手动覆盖
+  const axisOverride = (process.env.RELEASE_AXIS ?? '').trim().toLowerCase();
+  const isHostMode =
+    axisOverride === 'host' ||
+    (axisOverride !== 'kernel' && /^vscode@/.test(process.env.GITHUB_REF_NAME ?? ''));
+
+  if (isHostMode) {
+    const { ok, reasons } = evaluateHostSection(changelogText, hostVersion, todayISO);
+    if (ok) {
+      console.log(
+        `✅ [changelog-version] CHANGELOG.md 的宿主段 [${hostVersion}] 标题已带发布日期（发布日 ${todayISO}）`,
+      );
+      return 0;
+    }
+    emitReasons(reasons, `CHANGELOG.md 的宿主段 [${hostVersion}]`);
+    return 1;
+  }
+
+  const version = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
+  // 内核轴：原判据一字不改；宿主轴：常开弱校验（只抓错字与未来日期）
+  const kernelResult = evaluateChangelogVersion(changelogText, version, todayISO);
+  const hostWeakResult = evaluateHostSectionWeak(changelogText, hostVersion, todayISO);
+  const reasons = [...kernelResult.reasons, ...hostWeakResult.reasons];
+
+  if (reasons.length === 0) {
+    console.log(
+      `✅ [changelog-version] CHANGELOG.md 的 [${version}] 标题已带发布日期（发布日 ${todayISO}）`,
+    );
+    console.log(
+      `✅ [changelog-version] CHANGELOG.md 的宿主段 [${hostVersion}] 标题日期合法且不晚于发布日（弱校验 · 发布日 ${todayISO}）`,
+    );
+    return 0;
+  }
+
+  emitReasons(reasons, `CHANGELOG.md 的 [${version}]`);
+  return 1;
 }
 
-for (const reason of reasons) {
-  // GitHub Actions 会把它渲染成该步骤的注解，直接贴在红灯那一步上
-  console.log(`::error::${reason}`);
+if (isDirectRun) {
+  process.exit(args.includes('--selfTest') ? (selfTest() ? 0 : 1) : main());
 }
-console.log(
-  `❌ [changelog-version] CHANGELOG.md 的 [${version}] 标题未通过发布前置校验（${reasons.length} 条）`,
-);
-process.exit(1);
