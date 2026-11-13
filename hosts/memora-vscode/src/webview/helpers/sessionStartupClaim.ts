@@ -21,7 +21,7 @@ export interface StartupSessionClaimDeps {
 
 /** 裁决结果 */
 export interface StartupSessionClaimResult {
-  /** 最终归属的会话 id；空串 = 没有可用会话（`displaced=true` 时由调用方新建；`displaced=false` 表示从未有过会话，调用方进草稿态） */
+  /** 最终归属的会话 id；空串 = 没有可用会话（`displaced=true` 时由调用方新建；`displaced=false` 表示从未有过会话——面板在调用前即短路空首选，该分支为防御性） */
   sessionId: string;
   /** 是否因首选被占用而发生了让位（供调用方决定要不要给用户可见提示） */
   displaced: boolean;

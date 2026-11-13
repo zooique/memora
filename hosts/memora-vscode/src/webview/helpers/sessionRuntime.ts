@@ -7,7 +7,7 @@
  *
  * 结构先按会话命名空间化；导航放开后，流状态各自跟随所属会话，流中可切换 / 新建，宿主不再设闸。
  *
- * 生命周期 = 懒建、随面板实例存活（会话数上界 = 本面板打开过的会话数）。会话被删除时由
+ * 生命周期 = 懒建、随面板实例存活（会话数上界 = 本面板打开过、或做过删除 / 归档 / 恢复取态的会话数）。会话被删除时由
  * `delete()` 摘除记录（见会话删除路径）：不摘就是永久残留的僵尸记录。
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -22,7 +22,8 @@ import type { RoundView } from '../../shared/protocol.js';
  * 局部缓冲流结束即焚，重放通道够不着，表现为「切界面回来本流内容全空白」。
  * 生命周期 = consumeFlow 开始创建；正常/中断收场清除；软暂停（pausedOnPurpose）保留——
  * 半截正文只在缓冲里，清了会让暂停中重建丢内容；续跑新流覆盖或最终收场时退场；
- * 身份比对防误清新流缓冲。会话归属随行（sessionId），重建重放时校验当前会话，
+ * 身份比对防误清新流缓冲。删除轮时 `discardLiveBuffer` 会主动清空现场（`chatTurnStructureOps`
+ * 删轮路径，先于重放）。会话归属随行（sessionId），重建重放时校验当前会话，
  * 防切走再切回旧会话时跨会话污染。
  */
 export interface LiveFlowBuffer {
