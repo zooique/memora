@@ -1,7 +1,7 @@
 /**
  * 角色列表投影 —— 聊天页 / 设置页共用的角色列表消息构造点
  *
- * 为什么外置：`settingsPanel.ts`、`chatPanel.ts` 均已贴 eslint `max-lines` 只降不升基线；
+ * 为什么外置：`settingsPanel.ts`、`chatPanel.ts` 均已逼近 eslint `max-lines` 只降不升基线；
  * 本段是**纯投影**（输入 rpm（+ 会话记录名）→ 一条消息），无面板状态、无写盘。
  *
  * 判据全部来自既有点，本模块不另写：
