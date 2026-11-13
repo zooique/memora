@@ -44,7 +44,11 @@ export interface AttentionDeps {
 }
 
 export interface AttentionNotifier {
-  /** 审批卡已推出 */
+  /**
+   * 确认进入等待用户处理（前台 = 卡已上屏；后台 = 已入队并亮待处理标识）
+   *
+   * 同一张卡两次进入等待（后台入队 + 切入补推）靠 `confirm:${requestId}` 去重，只响一次。
+   */
   onConfirmShown(info: { requestId: string }): void;
   /** ask 进入等待 */
   onAskWaiting(info: { question: string }): void;

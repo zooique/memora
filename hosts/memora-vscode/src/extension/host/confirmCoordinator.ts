@@ -42,11 +42,17 @@ export interface ConfirmDeps {
   /** 消息投递单点（chatPanel 既有 `this.post`） */
   post: (msg: ExtensionToWebviewMessage) => void;
   /**
-   * 审批卡已推出 webview 之后的钩子（交互提醒，HOST-ATTN-1）
+   * 确认请求进入「等待用户处理」之后的钩子（交互提醒，HOST-ATTN-1）
+   *
+   * 触发时机两个（同一含义：用户的注意该被叫回来了）：
+   *   - 前台会话：卡已推出 webview（`_show`）；
+   *   - 后台会话：请求已入队且待处理标识已亮（`_enqueue`）——卡不上屏是防跨会话串台，
+   *     但离屏提醒不能跟着静默，否则面板折叠 + 窗口失焦时后台确认零感知（与 ask 侧不对称）。
+   * 同一张卡可能触发两次（后台入队一次、切入补推一次），**提醒层按 requestId 去重**。
    *
    * **可选**：不注入 = 零行为（既有测试与其它装配点无需改动）。
    * 载荷只给 `requestId` + `label`（`工具：文件名` 简写，与决策记录同一取法）：
-   * 通知里**不得**承载 diff 全文——`info.description` 是全文级内容，进 toast 即撑爆且泄露。
+   * 通知里**不得**承载 diff 全文——`info.description` 是全文级内容，进提示面即撑爆且泄露。
    */
   onConfirmShown?: (info: { requestId: string; label: string }) => void;
   /**
@@ -258,7 +264,16 @@ export class ConfirmCoordinator {
     const state = this._stateFor(sessionId);
     state.queue.push(entry);
     this._deps.onPendingChanged?.(sessionId, this.pendingCount(sessionId));
-    if (sessionId === this._foreground) this._pump(sessionId);
+    if (sessionId === this._foreground) {
+      this._pump(sessionId);
+      return;
+    }
+    // 后台会话：卡不上屏（防跨会话串台），但**离屏提醒照发**——提醒的判据是「有确认在等你」，
+    // 不是「卡已经在你眼前」。面板折叠 + 窗口失焦时若静默，后台确认就是零感知（ask 侧一直有
+    // 提醒，确认侧曾是缺口）。放在 onPendingChanged 之后：列表标识 / 入口角标先亮，提醒才有
+    // 承接面。与 `_show` 共用同一钩子、同一 requestId —— 提醒层按 `confirm:${requestId}` 去重，
+    // 切到该会话补推同一张卡时不会再响第二声。
+    this._deps.onConfirmShown?.({ requestId: entry.requestId, label: entry.logLabel });
   }
 
   /** 取（或建）某会话的确认队列 */

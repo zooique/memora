@@ -379,6 +379,33 @@ describe('ConfirmCoordinator · onConfirmShown 交互提醒钩子（HOST-ATTN-1�
     expect(h.shown[1].requestId).toBe(h.requests[1].requestId);
   });
 
+  it('后台会话入队即提醒（不等卡上屏）；切入补推同一张卡不响第二声（按 requestId 去重）', () => {
+    // 真形态：接真实 notifier（判据与去重都在 attentionNotice 内），只数响了几下
+    let sounds = 0;
+    const notifier = createAttentionNotifier({
+      isWindowFocused: () => false, // 离屏（面板折叠 + 窗口失焦）
+      playSound: () => {
+        sounds += 1;
+      },
+    });
+    const holder = { agent: undefined as Agent | undefined };
+    const coordinator = new ConfirmCoordinator({
+      getAgent: () => holder.agent,
+      post: () => {},
+      onConfirmShown: (info) => notifier.onConfirmShown(info),
+    });
+    const stub = agentStub();
+    coordinator.bindSession('2026-11-06-a', stub.agent); // 后台：前台仍是默认 ''
+
+    stub.trigger(confirmInfo());
+    // 后台确认必须响：卡不上屏是防串台，不是「不用提醒」
+    expect(sounds).toBe(1);
+
+    // 切入该会话 ⇒ 卡补推（第二次进同一钩子）⇒ 同一 requestId 被提醒层去重
+    coordinator.setForeground('2026-11-06-a');
+    expect(sounds).toBe(1);
+  });
+
   it('未注入钩子 ⇒ 主链路零行为变化（向后兼容）', () => {
     const h = makeCoordinator();
     const stub = agentStub();
