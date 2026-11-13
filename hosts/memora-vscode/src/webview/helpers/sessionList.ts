@@ -12,7 +12,12 @@
  *   - `lastOutcome` 是**读侧投影**：真源 = 该会话最后一轮的 `RoundStatus`（RoundStore 索引），
  *     这里只做状态 → 展示语义的映射，**不往 SessionMeta 写第二份终态**。
  */
-import type { SessionMeta, RoundStatus } from '@zooique/memora';
+import {
+  isRoundSettled,
+  isRoundSuccessful,
+  type SessionMeta,
+  type RoundStatus,
+} from '@zooique/memora';
 import { sessionDisplayTitle, type SessionTitleL10n } from '../../extension/host/sessionTitle.js';
 import type { HostSessionStore } from '../../extension/host/sessionStore.js';
 import { readSessionRolePackName } from '../../extension/host/sessionRolePack.js';
@@ -56,6 +61,10 @@ export function buildSessionListMessage(
  * - `interrupted` ⇒ `interrupted`（已收场的停 turn：用户停止 / 崩溃打捞升级）
  * - `pending` / `error` ⇒ `unsettled`（未收场）
  *
+ * 状态判据一律调内核（`isRoundSuccessful` / `isRoundSettled`），**宿主不自写状态字面量比较**
+ * —— 收场判据的第二真相源会被内核 `roundStore.test.ts` 的判据单源守卫当场拦下。
+ * 三态无需内核新增出口：`settled && !successful` 在内核语义下只可能是 `interrupted`。
+ *
  * ⚠️ `unsettled` 的文案必须是「上次未正常结束」：暂停检查点只在内存，重启后不可续跑，
  * 写「暂停中」会误导用户以为还能接着跑。
  *
@@ -63,8 +72,8 @@ export function buildSessionListMessage(
  * @returns 会话列表展示用的终态枚举
  */
 function toLastOutcome(status: RoundStatus): 'completed' | 'interrupted' | 'unsettled' {
-  if (status === 'complete') return 'completed';
-  if (status === 'interrupted') return 'interrupted';
+  if (isRoundSuccessful(status)) return 'completed';
+  if (isRoundSettled(status)) return 'interrupted';
   // pending / error 都不算收场（error 是内核预留态，仅与 pending 共用「未收场」语义）
   return 'unsettled';
 }
