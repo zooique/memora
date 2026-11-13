@@ -1040,7 +1040,7 @@ function selfTest() {
     },
     // ⑧ 反例控制（invert）：落态时间在发版线**之后** ⇒ 不该报（防「凡已收口就报」的过度拦截）。
     {
-      label: '⑧b落态在发版线后不误报',
+      label: '⑧反例1落态在发版线后不误报',
       probe: 'ZZ-TIME-2',
       invert: true,
       mutate: (t) => t.replace(axisAnchor, `${axisAnchor}\n\n${probeTimeLine('ZZ-TIME-2')}`),
