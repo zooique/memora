@@ -269,14 +269,19 @@ export {
  */
 interface FlowSeed {
   /**
-   * 本轮开轮用户输入（与内核 `appendUser` 落盘内容同源：**含注入信封**，非 UI 上屏的原始文本）。
+   * 本轮开轮用户输入的**上屏裸文本**（不含注入信封）。
+   *
+   * 与重放口径必须同值：历史读的是 `stripInjectedContextPrefix(落盘原文)`，而注入信封
+   * （技能 / 文档 / problems / git / 引用）只进 `chat()` 的入参、由内核原样落盘。
+   * 这里若跟着带信封，同一轮在 live 投影与重放投影会变成两种内容（同一轮两副面孔）；
+   * 托管派发同理——`dispatchHostedInput` 只放原文，不构造信封。
    *
    * id 用宿主临时值（内核生成的 `msg-{uuid}` 此刻未知）：轮收场落盘后由历史版本整体替换，
    * 与 `toRoundView` 的 `assistantMessage.id = live-{roundId}` 同一范式。
    */
   userMessage?: RoundView['userMessage'];
   /**
-   * 本轮输入来源标记（当前宿主入口恒为 `'user'`；托管通道接入后由调用方传 `'hosted'`）。
+   * 本轮输入来源标记（普通发送 = `'user'`；托管派发 = `'hosted'`）。
    *
    * 与 `userMessage` 同批传：live 轮投影要靠它把 origin 带给 `RoundView`，
    * 否则 mergeLiveRound 会按缺省处理。

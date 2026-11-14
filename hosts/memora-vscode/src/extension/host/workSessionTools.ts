@@ -32,14 +32,17 @@ export const SEND_TO_SESSION_TOOL_NAME = 'send_to_session';
 /**
  * `send_to_session` 的返回信封（业务失败一律 `{ ok:false }`，不 throw）
  *
- * 码集与设计文档 §13.11.1 一致：`E_DENIED` 非主控调用 / `E_NOT_FOUND` 未知会话 /
- * `E_BUSY` 目标会话正在跑（真实运行态，不排队）。
+ * 码集按**产生位置**分三档（不承诺与设计文档逐字相等，文档更新滞后时以本类型为准）：
+ *   - 工具层自判：`E_ARGS`（未知键 / 非字符串 / 空白串）；
+ *   - 派发层业务判定：`E_DENIED` 非托管调用 / `E_NOT_FOUND` 会话不存在 /
+ *     `E_BUSY` 目标会话正在跑（真实运行态，不排队）；
+ *   - 宿主兜底：`E_HOST`（装配失败 / 面板抛错等），**不得**冒名 `E_NOT_FOUND`。
  */
 export type SendToSessionResult =
   | { ok: true; accepted: true }
   | {
       ok: false;
-      code: 'E_DENIED' | 'E_NOT_FOUND' | 'E_BUSY';
+      code: 'E_ARGS' | 'E_DENIED' | 'E_NOT_FOUND' | 'E_BUSY' | 'E_HOST';
       message: string;
     };
 
@@ -224,12 +227,14 @@ export function registerWorkSessionTools(
         );
         return JSON.stringify(result, null, 2);
       } catch (err) {
-        // 业务契约：不 throw（throw 会让模型只看到工具失败，读不到可判读的错误码）
+        // 业务契约：不 throw（throw 会让模型只看到工具失败，读不到可判读的错误码）。
+        // 码 = E_HOST：装配 / 面板等**宿主侧**异常，与「sid 不存在」是两回事，
+        // 不许冒名 E_NOT_FOUND——那会让模型误以为换一个 sid 就能成功。
         return JSON.stringify(
           {
             ok: false,
-            code: 'E_NOT_FOUND',
-            message: `目标会话暂时不可用：${err instanceof Error ? err.message : String(err)}`,
+            code: 'E_HOST',
+            message: `宿主派发失败：${err instanceof Error ? err.message : String(err)}`,
           },
           null,
           2,

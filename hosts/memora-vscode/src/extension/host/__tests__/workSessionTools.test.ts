@@ -200,19 +200,19 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
   );
 });
 
-/** 工具返回信封（E_ARGS 是工具层自判，其余码集见 `SendToSessionResult`） */
-type SendEnvelope = SendToSessionResult | { ok: false; code: 'E_ARGS'; message: string };
-
 /**
  * 调一次 `send_to_session` 并解析返回 JSON
  *
  * @param probe 探针（真实装配的 Agent）
  * @param args 工具参数对象（按执行器契约序列化成 JSON 字符串）
- * @returns 解析后的结果信封
+ * @returns 解析后的结果信封（码集见 `SendToSessionResult`，含工具层自判的 `E_ARGS`）
  */
-async function executeSend(probe: Probe, args: Record<string, unknown>): Promise<SendEnvelope> {
+async function executeSend(
+  probe: Probe,
+  args: Record<string, unknown>,
+): Promise<SendToSessionResult> {
   const raw = await probe.agent.tools!.execute(SEND_TO_SESSION_TOOL_NAME, JSON.stringify(args));
-  return JSON.parse(raw) as SendEnvelope;
+  return JSON.parse(raw) as SendToSessionResult;
 }
 
 describe('托管 v0 · send_to_session 最小闭环（工具层）', () => {
@@ -297,15 +297,16 @@ describe('托管 v0 · send_to_session 最小闭环（工具层）', () => {
     }
   }, 120_000);
 
-  it('派发回调抛错 ⇒ 工具不抛，回 { ok:false }（模型读得到码而不是工具异常）', async () => {
+  it('派发回调抛错 ⇒ 工具不抛，回 E_HOST（宿主故障不得冒名「未知会话」）', async () => {
     const dispatch = vi.fn(async (): Promise<SendToSessionResult> => {
       throw new Error('装配失败');
     });
     const probe = await assembleProbe(true, dispatch);
     try {
+      // 码必须是 E_HOST：若仍映射成 E_NOT_FOUND，模型会误判「换个 sid 就能成」
       expect(await executeSend(probe, { sid: TARGET_SESSION_ID, text: 'hi' })).toMatchObject({
         ok: false,
-        code: 'E_NOT_FOUND',
+        code: 'E_HOST',
       });
     } finally {
       await disposeProbe(probe);
