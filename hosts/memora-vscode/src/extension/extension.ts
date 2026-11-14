@@ -412,6 +412,8 @@ async function assembleAgentForSession(
   const options = buildAssembleOptions(projectPath, deps);
   options.activeRolePack = readSessionRolePackName(deps.sessionStore, sessionId);
   // mode 是装配期输入（重启回落 self）；origin 是持久事实，两者不同步是设计允许的。
+  // 调度权只给「用户亲自选择的托管会话」：代理开出的子会话按 self 装配，
+  // 出生来源仍记 'hosted'（见 sessionModeStore 类型注释），不能借来源标记拿到主控工具集。
   options.orchestratorSession = deps.sessionModes.isManaged(sessionId);
   // 主控工具的调用方身份：E_DENIED 判据靠它，不能从 agent 反推（装配层不持有会话映射）
   options.orchestratorSessionId = sessionId;

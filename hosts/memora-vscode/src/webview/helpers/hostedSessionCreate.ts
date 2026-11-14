@@ -6,7 +6,8 @@
  * 面板只留一个注入依赖的薄壳（`chatPanel.createHostedSession`）。
  *
  * 事实边界（与面板方法 JSDoc 同口径）：
- *   - 出生来源 = `mode` 走 `'managed'` ⇒ `originForMode` 落 `SessionMeta.origin = 'hosted'`；
+ *   - 出生来源 = `SessionMeta.origin = 'hosted'`（代理开的，出生事实）；
+ *   - 装配身份 = `'self'`（**不是**托管模式）：子会话拿不到主控工具集，不能再开会话；
  *   - 首轮 `origin: 'hosted'` + `RoundMessage.name = senderName`（装配期注入，不硬编码）；
  *   - 创建复用宿主既有新建路径（`createBackgroundSession`），本模块不碰会话文件；
  *   - 角色包只做**存在性**判定，权限面与用户可选范围完全一致（不额外授权）。

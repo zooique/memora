@@ -24,10 +24,11 @@ import { diffWorkspaceSnapshots } from '../../extension/host/fileChangeTracker.j
 import type { HostSessionStore } from '../../extension/host/sessionStore.js';
 import {
   createEphemeralSessionModeStore,
-  originForMode,
   type SessionMode,
   type SessionModeStore,
 } from '../../extension/host/sessionModeStore.js';
+// 新建会话元数据拼装（出生来源 / 标题 / 角色包 / 范围声明）：单点外置，面板只留一行调用
+import { newSessionMeta, type CreateSessionOptions } from '../helpers/newSessionMeta.js';
 import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
 import { salvageInterruptedRounds } from '../../extension/host/interruptedSalvage.js';
 import { hasRoundStatusIndex } from '../../extension/host/workspaceRoundStore.js';
@@ -1765,14 +1766,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * @param sessionId 目标会话 id（date-name 格式）
    * @param opts `background: true` = 后台建会话（主控代开）：不切显示源、不写「上次模式」、
-   *   不换绑实例，只落 meta / 装配 / 刷会话清单；`title` 落 `SessionMeta.displayName`
+   *   不换绑实例，只落 meta / 装配 / 刷会话清单；`title` 落 `SessionMeta.displayName`；
+   *   `agentCreated: true` = 「这条是代理开的」——只落出生来源 `'hosted'`，
+   *   **不**给调度权（mode 仍是调用方传进来的 `self`）
    * @returns 是否创建成功（background 下 = 是否落成，不代表已切入）
    */
   private async createSession(
     sessionId: string,
     rolePackName?: string,
     mode: SessionMode = this.sessionModes.getLastMode(),
-    opts: { title?: string; background?: boolean; declaredPaths?: readonly string[] } = {},
+    opts: CreateSessionOptions = {},
   ): Promise<boolean> {
     // 新会话 id 由时间戳/随机后缀生成，跨进程不会撞；拿锁只为让后续写盘有归属
     if (!(await this._lockFinalizer.acquire(sessionId))) {
@@ -1789,16 +1792,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 会话运行模式先入 Map：装配链（assembleAgentForSession）读它决定是否注入主控工具面，
       // 必须早于 agentForSession。mode 不落盘、重启回落 'self'；origin 是持久事实，二者不同步是设计允许的。
       this.sessionModes.set(sessionId, mode);
-      // 会话来源标记由 mode 唯一映射（managed ⇒ 'hosted'，self ⇒ 'user'），不留 undefined 悬空；
-      // 角色名的**唯一落盘点**与此同批写入（必须早于装配：装配经 readSessionRolePackName 读回），未选/失效不写。
-      // displayName 仅主控建会话传入（模型要拿标题跟用户说话）；普通新建仍由首条消息自动命名。
-      this.sessionStore.updateSessionMeta(sessionId, {
-        origin: originForMode(mode),
-        ...(opts.title ? { displayName: opts.title } : {}),
-        ...(roleDecision.rolePackName ? { activeRolePackName: roleDecision.rolePackName } : {}),
-        // 开活范围声明（主控建会话时给）：与标题同批落元数据，读侧直接读、不反推历史
-        ...(opts.declaredPaths?.length ? { declaredPaths: [...opts.declaredPaths] } : {}),
-      });
+      // 来源标记与调度权分开：拼装逻辑在 newSessionMeta（代理开的会话落 hosted，但没有调度权）
+      this.sessionStore.updateSessionMeta(
+        sessionId,
+        newSessionMeta(mode, roleDecision.rolePackName, opts),
+      );
       const agent = await this.agentForSession(sessionId);
       if (opts.background) {
         // 后台建会话：不换绑显示源、不打断当前回放；只刷会话清单（用户要能在列表里看到它）。
@@ -2844,12 +2842,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       {
         isManaged: (sid) => this.sessionModes.isManaged(sid),
         readRolePackCatalog: this._readRolePackCatalog,
-        // 后台建：不切显示源、不写「上次模式」，标题与范围声明由调用方给
+        // 后台建：不切显示源、不写「上次模式」，标题与范围声明由调用方给。
+        // 装配身份 = 'self'（代理开的会话**不拿调度权**，不能再开会话）；
+        // 出生来源由 agentCreated 单独落 'hosted'，两件事不混用同一个标记。
         createBackgroundSession: (sid, rolePack, sessionTitle, paths) =>
-          this.createSession(sid, rolePack, 'managed', {
+          this.createSession(sid, rolePack, 'self', {
             title: sessionTitle,
             background: true,
             declaredPaths: paths,
+            agentCreated: true,
           }),
         // 实例已由建会话链路装配；这里只取（不建），再走既有 runFlow 通路
         getAgent: (sid) => this.agentForSession(sid),

@@ -505,8 +505,9 @@ describe('代理能开会话 · createHostedSession', () => {
     expect(meta?.displayName).toBe('调研会话');
     // 开活范围声明随标题同批落元数据（读侧真源，不靠历史轮次反推）
     expect(meta?.declaredPaths).toEqual(['docs']);
-    // 会话模式 = managed（装配期据此注入主控工具面；撤销入口可再收回）
-    expect(modes.isManaged(result.sid)).toBe(true);
+    // 出生来源与调度权分开：来源是 hosted，但装配身份是 self（拿不到主控工具集，不能再开会话）
+    expect(modes.isManaged(result.sid)).toBe(false);
+    expect(modes.listManagedSessionIds()).toEqual([callerId]);
     // ② 会话清单可见（用户能在列表里看到它）
     expect(store.listSessionMetas().map((item) => item.sessionId)).toContain(result.sid);
     // ③ 代理开会话不是用户导航：显示源仍在调用方，用户的新建默认仍是 self

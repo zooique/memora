@@ -15,7 +15,13 @@
 
 import type { Memento } from 'vscode';
 
-/** 会话运行模式：`self` = 用户自助；`managed` = 主控（托管）装配 */
+/**
+ * 会话运行模式：`self` = 用户自助；`managed` = **用户亲自选择的**托管装配
+ *
+ * ⚠️ `managed` 只代表「这一条会话有调度权（主控工具面）」，不代表「它是代理开的」。
+ * 代理开出的子会话按 `self` 装配（拿不到主控工具集，不能再层层开会话），
+ * 「代理开的」只记在持久来源 `SessionMeta.origin = 'hosted'`（出生事实，不当权限用）。
+ */
 export type SessionMode = 'self' | 'managed';
 
 /**
@@ -23,6 +29,10 @@ export type SessionMode = 'self' | 'managed';
  *
  * 只有 `managed` 产生的会话 / 输入才标记 `'hosted'`；`self` 与缺省一律 `'user'`。
  * 这是 mode → origin 的**唯一映射点**：调用方不得各写一份三元表达式（防两处判据漂移）。
+ *
+ * ⚠️ 唯一例外是「代理开出的子会话」：它按 `self` 装配（没有调度权），但出生来源仍是
+ * `'hosted'`。该来源由建会话参数显式传入（见 `createSession` 的 `agentCreated`），
+ * 不走本函数——这不是第二个映射点，而是「调度权」与「出生事实」分家的落点。
  */
 export function originForMode(mode: SessionMode): 'user' | 'hosted' {
   return mode === 'managed' ? 'hosted' : 'user';
@@ -53,11 +63,11 @@ export class SessionModeStore {
   }
 
   /**
-   * 列出本进程内按托管装配的会话 id
+   * 列出本进程内**有调度权**的会话 id（= 用户亲自选择的托管会话）
    *
    * 只读同一条 `Map`（不新增状态、不落盘）：工作台的命令入口用它决定「打开哪一条座位」。
-   * 注意：代理开出的子会话同样是 `managed`（v0 允许嵌套），故本方法只回答
-   * 「哪些是本进程的托管会话」，**不**回答「哪一条是顶层代理」——那个问题没有既有事实可答。
+   * 代理开出的子会话按 `self` 装配（见类型注释），因此不会出现在这里——
+   * 嵌套开会话被工具面缺席挡住，不需要深度闸 / 父字段 / 层级树。
    *
    * @returns 托管会话 id 列表（按登记顺序；无托管会话时为空数组）
    */
