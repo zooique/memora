@@ -30,19 +30,28 @@ export const LIST_WORK_SESSIONS_TOOL_NAME = 'list_work_sessions';
 export const SEND_TO_SESSION_TOOL_NAME = 'send_to_session';
 
 /**
+ * 派发回调可产生的业务结果（**唯一**真源 = `chatPanel.dispatchHostedInput` 的返回面）
+ *
+ * 只含派发层真实会判的两档：调用方非托管 `E_DENIED`、目标会话在跑 `E_BUSY`。
+ * 参数校验（`E_ARGS`）、会话存在性（`E_NOT_FOUND`）、宿主异常兜底（`E_HOST`）都在
+ * 工具层产生，**不属于**派发契约——写进这里就等于让实现承诺一个永远不会返回的码。
+ */
+export type HostedDispatchResult =
+  { ok: true; accepted: true } | { ok: false; code: 'E_DENIED' | 'E_BUSY'; message: string };
+
+/**
  * `send_to_session` 的返回信封（业务失败一律 `{ ok:false }`，不 throw）
  *
- * 码集按**产生位置**分三档（不承诺与设计文档逐字相等，文档更新滞后时以本类型为准）：
- *   - 工具层自判：`E_ARGS`（未知键 / 非字符串 / 空白串）；
- *   - 派发层业务判定：`E_DENIED` 非托管调用 / `E_NOT_FOUND` 会话不存在 /
- *     `E_BUSY` 目标会话正在跑（真实运行态，不排队）；
+ * 码集按**产生位置**分三层（不承诺与设计文档逐字相等，文档更新滞后时以本类型为准）：
+ *   - 工具层自判：`E_ARGS`（未知键 / 非字符串 / 空白串）、`E_NOT_FOUND`（会话不存在）；
+ *   - 派发层业务判定：`E_DENIED` 非托管调用 / `E_BUSY` 目标会话正在跑（真实运行态，不排队）；
  *   - 宿主兜底：`E_HOST`（装配失败 / 面板抛错等），**不得**冒名 `E_NOT_FOUND`。
  */
 export type SendToSessionResult =
-  | { ok: true; accepted: true }
+  | HostedDispatchResult
   | {
       ok: false;
-      code: 'E_ARGS' | 'E_DENIED' | 'E_NOT_FOUND' | 'E_BUSY' | 'E_HOST';
+      code: 'E_ARGS' | 'E_NOT_FOUND' | 'E_HOST';
       message: string;
     };
 
@@ -59,7 +68,7 @@ export type HostedInputDispatcher = (
   targetSessionId: string,
   text: string,
   senderName: string,
-) => Promise<SendToSessionResult>;
+) => Promise<HostedDispatchResult>;
 
 /** 派发工具的运行期依赖（缺省 ⇒ 只注册 list 工具；装配层负责在缺失时记警告） */
 export interface WorkSessionToolDeps {

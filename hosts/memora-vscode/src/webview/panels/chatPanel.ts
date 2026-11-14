@@ -171,7 +171,7 @@ import {
 // 引用发送前存在性核实（HOST-CTX-9 发送侧）：解析器复用 refPath（首根 SSOT），不由本文件另写
 import { collectMissingFileRefPaths } from '../../extension/host/refProbe.js';
 // 托管派发结果信封：工具面（workSessionTools）与面板实现共用同一联合类型，避免各写一套码集
-import type { SendToSessionResult } from '../../extension/host/workSessionTools.js';
+import type { HostedDispatchResult } from '../../extension/host/workSessionTools.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createProvider } from '../../extension/host/llmConfig.js';
 import {
@@ -2725,7 +2725,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     targetSessionId: string,
     text: string,
     senderName: string,
-  ): Promise<SendToSessionResult> {
+  ): Promise<HostedDispatchResult> {
     // ① 调用方身份：mode 是装配期事实，重启回落 self（此时工具面本就不存在，这里只是防御）
     if (!this.sessionModes.isManaged(callingSessionId)) {
       return {

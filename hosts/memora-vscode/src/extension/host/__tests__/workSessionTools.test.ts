@@ -18,7 +18,11 @@ import { createHostMemoryStorage } from '../memoryStorage.js';
 import { WorkspaceSessionStore } from '../sessionStore.js';
 import { WorkspaceRoundStore } from '../workspaceRoundStore.js';
 import { LIST_WORK_SESSIONS_TOOL_NAME, SEND_TO_SESSION_TOOL_NAME } from '../workSessionTools.js';
-import type { HostedInputDispatcher, SendToSessionResult } from '../workSessionTools.js';
+import type {
+  HostedDispatchResult,
+  HostedInputDispatcher,
+  SendToSessionResult,
+} from '../workSessionTools.js';
 import { makeTempDir } from '../../../__tests__/helpers/tmpDir.js';
 
 // 装配链间接 import 了 tracer / searchEngines（模块级 import vscode），本测试不触真实 VS Code API：
@@ -218,7 +222,7 @@ async function executeSend(
 describe('托管 v0 · send_to_session 最小闭环（工具层）', () => {
   it('参数只认 { sid, text }：未知键 / 空白串一律 E_ARGS，且不触派发', async () => {
     // 派发回调不应被调用：参数不合法时必须在工具层就返回，不能把脏载荷交给宿主
-    const dispatch = vi.fn(async (): Promise<SendToSessionResult> => ({
+    const dispatch = vi.fn(async (): Promise<HostedDispatchResult> => ({
       ok: true,
       accepted: true,
     }));
@@ -240,7 +244,7 @@ describe('托管 v0 · send_to_session 最小闭环（工具层）', () => {
   }, 120_000);
 
   it('未知会话 ⇒ E_NOT_FOUND，且不触派发（存在性在工具层先判）', async () => {
-    const dispatch = vi.fn(async (): Promise<SendToSessionResult> => ({
+    const dispatch = vi.fn(async (): Promise<HostedDispatchResult> => ({
       ok: true,
       accepted: true,
     }));
@@ -257,7 +261,7 @@ describe('托管 v0 · send_to_session 最小闭环（工具层）', () => {
   }, 120_000);
 
   it('受理：调用方 id / 目标 sid / 原文 / 注入的发送者名四件原样交给派发回调', async () => {
-    const dispatch = vi.fn(async (): Promise<SendToSessionResult> => ({
+    const dispatch = vi.fn(async (): Promise<HostedDispatchResult> => ({
       ok: true,
       accepted: true,
     }));
@@ -281,7 +285,7 @@ describe('托管 v0 · send_to_session 最小闭环（工具层）', () => {
   }, 120_000);
 
   it('派发层的业务失败码原样透传（工具层不改写 E_BUSY）', async () => {
-    const dispatch = vi.fn(async (): Promise<SendToSessionResult> => ({
+    const dispatch = vi.fn(async (): Promise<HostedDispatchResult> => ({
       ok: false,
       code: 'E_BUSY',
       message: '目标会话正在运行，本条输入未发送。',
@@ -298,7 +302,7 @@ describe('托管 v0 · send_to_session 最小闭环（工具层）', () => {
   }, 120_000);
 
   it('派发回调抛错 ⇒ 工具不抛，回 E_HOST（宿主故障不得冒名「未知会话」）', async () => {
-    const dispatch = vi.fn(async (): Promise<SendToSessionResult> => {
+    const dispatch = vi.fn(async (): Promise<HostedDispatchResult> => {
       throw new Error('装配失败');
     });
     const probe = await assembleProbe(true, dispatch);
