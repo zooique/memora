@@ -63,17 +63,18 @@ export interface ConfirmDeps {
    */
   onPendingChanged?: (sessionId: string, count: number) => void;
   /**
-   * 该会话是否为**托管会话**（是 ⇒ 确认请求在入口自动放行）
+   * 该会话是否为**托管会话**（是 ⇒ 请求照常入队，但由代理代替用户按「批准」）
    *
-   * 为什么需要：后台托管会话的卡上不了屏（防跨会话串台），只能挂到 30 分钟超时被
-   * fail-closed 自动拒——代理发起的写入/命令会白等半小时然后失败。托管语义下没有
-   * 「用户此刻能不能看到卡」这回事，故对托管会话直接在 `_enqueue` 放行。
+   * 为什么需要：后台托管会话的卡上不了屏，只能挂到 30 分钟超时被 fail-closed 自动拒。
+   * 托管语义下用户把操作权委派给了代理，确认请求不需要人点击——但**请求本身照常存在**：
+   * 照常入队、按前台规则推送（前台推卡 / 后台不推）、该起计时就起计时，差别只在
+   * 「谁来按」，并在既有决策记录里留下与用户点击完全一样的「已批准」痕迹。
    *
    * 边界（刻意如此）：
    *   - **只认托管**：自助会话不注入判据 ⇒ 排队/计时/上屏/超时逐字不变；
    *   - 恒拦黑名单（`deny` 档）在内核判据处就不进确认流程，本钩子看不到、也绕不过；
-   *   - 放行也要留痕：走既有 `_logDecision('approved')`（前台直发 / 后台暂存待补发），
-   *     **不新造第二套审计**。
+   *   - 自动批准走既有 `answerFor` 唯一应答入口（决策记录 `_logDecision` 唯一发点），
+   *     不新造第二套审计，也不从旁路直接 `resolve`。
    *
    * **可选**：不注入 = 零行为（既有测试与其它装配点无需改动）。
    */
@@ -99,6 +100,13 @@ interface ConfirmEntry {
   presented: boolean;
   /** 超时计时器（**首次推出时**才启动；从未上屏的后台请求不烧超时额度） */
   timer?: ReturnType<typeof setTimeout>;
+  /**
+   * 是否需要代理代替用户按「批准」（托管会话 = true）
+   *
+   * 刻意放在**条目上**而不是入队前分支：请求照常入队/推送/起计时，只在轮到它时把
+   * 「谁来按」换成代理——与用户点击同一条 `answerFor` 通路，决策记录也同一发点。
+   */
+  autoApprove: boolean;
 }
 
 /** 单会话确认队列（FIFO 串行：同会话同时只推一张卡） */
@@ -276,28 +284,48 @@ export class ConfirmCoordinator {
         info.targetPath.split(/[\\/]/).pop() ?? info.targetPath,
       ),
       presented: false,
+      // 托管会话：由代理代按批准（不是绕过确认——入队/推送/计时照常，见 _show/_drainAutoApproved）
+      autoApprove: this._deps.isManagedSession?.(sessionId) === true,
     };
-    // 托管会话：入口即放行（不进队列、不上屏、不起计时）——后台托管会话的卡本来也上不了屏，
-    // 排队只会挂到 30 分钟超时被自动拒。留痕仍走既有决策记录唯一发点，不新造审计。
-    // 判据放在 `_stateFor` 之前：放行的请求从不入表，不必为它建会话态。
-    if (this._deps.isManagedSession?.(sessionId) === true) {
-      entry.resolve(true);
-      this._logDecision(entry, 'approved', sessionId);
-      return;
-    }
     const state = this._stateFor(sessionId);
     state.queue.push(entry);
     this._deps.onPendingChanged?.(sessionId, this.pendingCount(sessionId));
     if (sessionId === this._foreground) {
       this._pump(sessionId);
-      return;
+    } else {
+      // 后台会话：卡不上屏（防跨会话串台），但**离屏提醒照发**——提醒的判据是「有确认在等你」，
+      // 不是「卡已经在你眼前」。面板折叠 + 窗口失焦时若静默，后台确认就是零感知（ask 侧一直有
+      // 提醒，确认侧曾是缺口）。放在 onPendingChanged 之后：列表标识 / 入口角标先亮，提醒才有
+      // 承接面。与 `_show` 共用同一钩子、同一 requestId —— 提醒层按 `confirm:${requestId}` 去重，
+      // 切到该会话补推同一张卡时不会再响第二声。
+      this._deps.onConfirmShown?.({ requestId: entry.requestId, label: entry.logLabel });
+      // 托管后台请求：依正常入队后由代理代按（微任务 ⇒ 先让入队/计数/提醒落地，再走应答入口）
+      if (entry.autoApprove) queueMicrotask(() => this._drainAutoApproved(sessionId));
     }
-    // 后台会话：卡不上屏（防跨会话串台），但**离屏提醒照发**——提醒的判据是「有确认在等你」，
-    // 不是「卡已经在你眼前」。面板折叠 + 窗口失焦时若静默，后台确认就是零感知（ask 侧一直有
-    // 提醒，确认侧曾是缺口）。放在 onPendingChanged 之后：列表标识 / 入口角标先亮，提醒才有
-    // 承接面。与 `_show` 共用同一钩子、同一 requestId —— 提醒层按 `confirm:${requestId}` 去重，
-    // 切到该会话补推同一张卡时不会再响第二声。
-    this._deps.onConfirmShown?.({ requestId: entry.requestId, label: entry.logLabel });
+  }
+
+  /**
+   * 托管后台会话：把队首的托管请求按 FIFO 逐条交「代理批准」
+   *
+   * 为什么单独一段：后台请求不推卡（前台规则），`_pump` 不会被调用，也就没有 `_show`
+   * 去触发代按。这里**只做「谁来按」**——入队/计数/提醒已在 `_enqueue` 正常发生过；
+   * 裁决与留痕仍走 `answerFor`（唯一应答入口 + 唯一决策发点），不直接 `resolve`。
+   *
+   * 遇到非托管条目立即停手（理论上同 sid 不会混档，但守住判据：不自作主张替用户拍板）。
+   *
+   * @param sessionId 会话标识
+   */
+  private _drainAutoApproved(sessionId: string): void {
+    const state = this._sessions.get(sessionId);
+    if (!state) return;
+    // 已切到前台：交给 `_pump` → `_show` 的正常推卡路径去代按（避免同一条被答两次）
+    if (sessionId === this._foreground) return;
+    while (state.queue.length > 0 && state.queue[0].autoApprove) {
+      // 与 `_pump` 同序：先出队再置为在途（否则应答后仍留在队列 = 死循环/重复投递）
+      const head = state.queue.shift()!;
+      state.current = head;
+      if (!this.answerFor(sessionId, head.requestId, true)) return;
+    }
   }
 
   /** 取（或建）某会话的确认队列 */
@@ -358,6 +386,16 @@ export class ConfirmCoordinator {
     // 交互提醒钩子（可选）：卡已推出 ⇒ 通知不在面板前的用户。放在 post 之后：
     // 只有卡真的发出去了，提醒才有承接面（先提醒后发卡 = 用户回来找不到卡）。
     this._deps.onConfirmShown?.({ requestId, label: entry.logLabel });
+    // 托管会话：卡照常推出、计时照常起，随后由代理「代按批准」——微任务让本轮
+    // post / 计时器先落地，再走与用户点击**同一条**应答入口（决策记录同源）。
+    // 用 `_findSession` 反查而非前台会话：微任务执行前若已切走，找不到就不答，
+    // 绝不对着新前台会话的卡误按。
+    if (entry.autoApprove) {
+      queueMicrotask(() => {
+        const sessionId = this._findSession(entry);
+        if (sessionId !== undefined) this.answerFor(sessionId, requestId, true);
+      });
+    }
   }
 
   /**

@@ -687,11 +687,12 @@ describe('ConfirmCoordinator · disposeSession 会话删除清理（E4 批 3）'
  * fail-closed 自动拒——代理发起的写入/命令白等半小时然后失败。
  *
  * 判据：
- *   ① 只对**托管**会话放行：入队即 `resolve(true)`，零卡、零计时、零待处理计数、零提醒；
- *   ② 放行**留痕**：走既有决策记录（前台直发 / 后台暂存待补发），不新造第二套审计；
- *   ③ 自助会话（判据 false / 未注入）⇒ 排队、上屏、超时逐字不变。
+ *   ① 请求**照常走链路**：入队、按前台规则推送（前台推卡 / 后台不推）、该起计时就起计时；
+ *   ② 差别只在「谁来按」：托管会话由代理代按批准，与用户点击同一条 `answerFor` 通路；
+ *   ③ 留痕同构：走既有决策记录（前台直发 / 后台暂存待补发），切回会话可见「被批了」；
+ *   ④ 自助会话（判据 false / 未注入）⇒ 排队、上屏、超时逐字不变。
  */
-describe('ConfirmCoordinator · 托管会话自动放行（isManagedSession）', () => {
+describe('ConfirmCoordinator · 托管会话由代理代按（isManagedSession）', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
@@ -724,7 +725,7 @@ describe('ConfirmCoordinator · 托管会话自动放行（isManagedSession）',
     };
   }
 
-  it('后台托管会话：入队即批准（零卡 / 零计时 / 零计数 / 零提醒），留痕暂存待补发', async () => {
+  it('后台托管会话：照常入队（计数 + 离屏提醒都发），由代理代按批准，留痕切回可见', async () => {
     vi.useFakeTimers();
     const h = makeManagedCoordinator(['s-managed']);
     const stub = agentStub();
@@ -732,14 +733,16 @@ describe('ConfirmCoordinator · 托管会话自动放行（isManagedSession）',
 
     const settled = stub.trigger(confirmInfo());
 
-    // ① 立即批准：内核拿到的就是 true，不再等 30 分钟
+    // ① 请求真的进过队列：待处理计数 1 → 0（不是入队前就 resolve 的旁路）
     await expect(settled).resolves.toBe(true);
+    expect(h.pendingChanges[0]).toEqual({ sessionId: 's-managed', count: 1 });
+    expect(h.pendingChanges.at(-1)).toEqual({ sessionId: 's-managed', count: 0 });
+    expect(h.coordinator.pendingCount('s-managed')).toBe(0);
+    // ② 卡不上屏（前台规则），但离屏提醒照发——请求存在这件事仍被感知
     expect(h.requests()).toHaveLength(0);
     expect(h.closed()).toHaveLength(0);
-    expect(h.coordinator.pendingCount('s-managed')).toBe(0);
-    expect(h.pendingChanges).toHaveLength(0);
-    expect(h.shown).toHaveLength(0);
-    // ② 后台会话的决策记录不写当前屏幕（防串台），切过去才补上屏
+    expect(h.shown).toHaveLength(1);
+    // ③ 后台决策记录不写当前屏幕（防串台），切回该会话补上屏一次「已批准」
     expect(h.decisions()).toHaveLength(0);
     h.coordinator.setForeground('s-managed');
     const decisions = h.decisions();
@@ -753,7 +756,7 @@ describe('ConfirmCoordinator · 托管会话自动放行（isManagedSession）',
     expect(h.decisions()).toHaveLength(1);
   });
 
-  it('前台托管会话：同样直接批准，不推卡也不发收卡（决策记录当场入时间线）', async () => {
+  it('前台托管会话：卡照常推出并起计时，代理代按后收卡 + 决策入时间线', async () => {
     const h = makeManagedCoordinator(['s-managed']);
     const stub = agentStub();
     h.coordinator.bindSession('s-managed', stub.agent);
@@ -762,11 +765,31 @@ describe('ConfirmCoordinator · 托管会话自动放行（isManagedSession）',
     const settled = stub.trigger(confirmInfo());
 
     await expect(settled).resolves.toBe(true);
-    expect(h.requests()).toHaveLength(0);
-    expect(h.closed()).toHaveLength(0);
+    // 推卡 → 代按 → 收卡：与用户手点确认的可见轨迹一致
+    expect(h.requests()).toHaveLength(1);
+    expect(h.closed()).toHaveLength(1);
+    expect(h.shown).toHaveLength(1);
     const decisions = h.decisions();
     expect(decisions).toHaveLength(1);
     expect(String(decisions[0].message)).toContain('Approved');
+  });
+
+  it('后台托管会话 FIFO：两条按序各代按一次，两条决策记录都在', async () => {
+    const h = makeManagedCoordinator(['s-managed']);
+    const stub = agentStub();
+    h.coordinator.bindSession('s-managed', stub.agent);
+
+    const first = stub.trigger(confirmInfo());
+    const second = stub.trigger(confirmInfo({ targetPath: '/mock/workspace/notes/bar.md' }));
+
+    await expect(first).resolves.toBe(true);
+    await expect(second).resolves.toBe(true);
+    expect(h.coordinator.pendingCount('s-managed')).toBe(0);
+    h.coordinator.setForeground('s-managed');
+    const decisions = h.decisions();
+    expect(decisions).toHaveLength(2);
+    expect(String(decisions[0].message)).toContain('foo.md');
+    expect(String(decisions[1].message)).toContain('bar.md');
   });
 
   it('自助会话不受影响：仍排队 + 上屏 + 等用户裁决（判据只认托管集合）', async () => {

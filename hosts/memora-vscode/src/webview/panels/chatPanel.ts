@@ -659,8 +659,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     onConfirmShown: (info) => this._attention.onConfirmShown({ requestId: info.requestId }),
     // 待处理确认数变化（含后台会话入队）⇒ 重算列表标识与入口角标
     onPendingChanged: () => this.refreshSessionActivity(),
-    // 托管会话的确认请求入口自动放行（后台卡上不了屏，排队只会挂到超时被拒）；
-    // 自助会话判据恒 false ⇒ 排队/计时/上屏/超时逐字不变
+    // 托管会话的确认请求照常入队/推送/计时，只把「谁来按」换成代理代按批准（后台卡上不了屏，
+    // 挂着只会等超时被拒）；自助会话判据恒 false ⇒ 排队/计时/上屏/超时逐字不变
     isManagedSession: (sid) => this.sessionModes.isManaged(sid),
   });
 
