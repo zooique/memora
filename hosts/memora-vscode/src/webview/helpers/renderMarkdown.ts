@@ -10,8 +10,8 @@
  *   - 依赖 marked（Markdown → HTML），消毒（DOMPurify）由调用方在 webview 环境构造后注入，
  *     不在本模块顶层 import（Node 端 import 链安全，见 renderMarkdown 注释）；
  *   - 半截子补全仅「渲染时」拼凑，不污染存库的原始文本（调用方始终传原始串）；
- *   - 表格防爆由 chatStyles 的 `.msg-body table { display:block; overflow-x:auto }` 承担
- *     （纯 CSS 降维，不写复杂正则补全表格结构）。
+ *   - 表格防爆由 chatStyles 的 `.msg.assistant .msg-body table`（`display:block` +
+ *     `overflow-x:auto`）承担（纯 CSS 降维，不写复杂正则补全表格结构）。
  */
 import { marked } from 'marked';
 // import type：仅编译期引用契约，esbuild/tsc 剥离后不产生运行时依赖——Node 端 import
