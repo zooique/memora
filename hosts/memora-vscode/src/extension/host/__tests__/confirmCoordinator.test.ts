@@ -681,6 +681,119 @@ describe('ConfirmCoordinator · disposeSession 会话删除清理（E4 批 3）'
 });
 
 /**
+ * 托管会话自动放行（`isManagedSession`）
+ *
+ * 事实背景：后台托管会话的卡上不了屏（防跨会话串台），只能挂到 30 分钟超时被
+ * fail-closed 自动拒——代理发起的写入/命令白等半小时然后失败。
+ *
+ * 判据：
+ *   ① 只对**托管**会话放行：入队即 `resolve(true)`，零卡、零计时、零待处理计数、零提醒；
+ *   ② 放行**留痕**：走既有决策记录（前台直发 / 后台暂存待补发），不新造第二套审计；
+ *   ③ 自助会话（判据 false / 未注入）⇒ 排队、上屏、超时逐字不变。
+ */
+describe('ConfirmCoordinator · 托管会话自动放行（isManagedSession）', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** 带托管判据的协调器（按 sid 精确匹配「托管集合」） */
+  function makeManagedCoordinator(managed: string[]) {
+    const posted: Posted[] = [];
+    const pendingChanges: Array<{ sessionId: string; count: number }> = [];
+    const shown: Array<{ requestId: string; label: string }> = [];
+    const coordinator = new ConfirmCoordinator({
+      getAgent: () => undefined,
+      post: (msg) => {
+        posted.push(msg as unknown as Posted);
+      },
+      onPendingChanged: (sessionId, count) => pendingChanges.push({ sessionId, count }),
+      onConfirmShown: (info) => shown.push(info),
+      isManagedSession: (sid) => managed.includes(sid),
+    });
+    return {
+      coordinator,
+      posted,
+      pendingChanges,
+      shown,
+      requests: () =>
+        posted.filter((m) => m.type === 'write_confirm_request') as Array<{
+          requestId: string;
+        }>,
+      closed: () => posted.filter((m) => m.type === 'write_confirm_closed'),
+      decisions: () => posted.filter((m) => m.kind === 'decision') as Posted[],
+    };
+  }
+
+  it('后台托管会话：入队即批准（零卡 / 零计时 / 零计数 / 零提醒），留痕暂存待补发', async () => {
+    vi.useFakeTimers();
+    const h = makeManagedCoordinator(['s-managed']);
+    const stub = agentStub();
+    h.coordinator.bindSession('s-managed', stub.agent); // 前台仍是默认 ''（后台）
+
+    const settled = stub.trigger(confirmInfo());
+
+    // ① 立即批准：内核拿到的就是 true，不再等 30 分钟
+    await expect(settled).resolves.toBe(true);
+    expect(h.requests()).toHaveLength(0);
+    expect(h.closed()).toHaveLength(0);
+    expect(h.coordinator.pendingCount('s-managed')).toBe(0);
+    expect(h.pendingChanges).toHaveLength(0);
+    expect(h.shown).toHaveLength(0);
+    // ② 后台会话的决策记录不写当前屏幕（防串台），切过去才补上屏
+    expect(h.decisions()).toHaveLength(0);
+    h.coordinator.setForeground('s-managed');
+    const decisions = h.decisions();
+    expect(decisions).toHaveLength(1);
+    expect(String(decisions[0].message)).toContain('Approved');
+    expect(String(decisions[0].message)).toContain('foo.md');
+    // 载荷纪律沿用既有单点：不记 description 全文
+    expect(String(decisions[0].message)).not.toContain(CARGO_MARKER);
+    // 超时窗口推进也不应产生第二条记录 / 迟到的超时拒
+    vi.advanceTimersByTime(30 * 60 * 1000 + 1);
+    expect(h.decisions()).toHaveLength(1);
+  });
+
+  it('前台托管会话：同样直接批准，不推卡也不发收卡（决策记录当场入时间线）', async () => {
+    const h = makeManagedCoordinator(['s-managed']);
+    const stub = agentStub();
+    h.coordinator.bindSession('s-managed', stub.agent);
+    h.coordinator.setForeground('s-managed');
+
+    const settled = stub.trigger(confirmInfo());
+
+    await expect(settled).resolves.toBe(true);
+    expect(h.requests()).toHaveLength(0);
+    expect(h.closed()).toHaveLength(0);
+    const decisions = h.decisions();
+    expect(decisions).toHaveLength(1);
+    expect(String(decisions[0].message)).toContain('Approved');
+  });
+
+  it('自助会话不受影响：仍排队 + 上屏 + 等用户裁决（判据只认托管集合）', async () => {
+    const h = makeManagedCoordinator(['s-managed']);
+    const stub = agentStub();
+    h.coordinator.bindSession('s-self', stub.agent);
+    h.coordinator.setForeground('s-self');
+
+    let settled = false;
+    const promise = stub.trigger(confirmInfo()).then((v) => {
+      settled = true;
+      return v;
+    });
+
+    // 卡照常推出、计数照常亮、未裁决前不 settle
+    expect(h.requests()).toHaveLength(1);
+    expect(h.coordinator.pendingCount('s-self')).toBe(1);
+    expect(h.pendingChanges.at(-1)).toEqual({ sessionId: 's-self', count: 1 });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    h.coordinator.answer(h.requests()[0].requestId, true);
+    await expect(promise).resolves.toBe(true);
+  });
+});
+
+/**
  * 按会话应答入口 `answerFor`（R0-c · 远程控制前置）
  *
  * 钉住的不变量：

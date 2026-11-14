@@ -62,6 +62,22 @@ export interface ConfirmDeps {
    * 也要亮标识，否则「后台在等你处理」对用户完全不可见（静默挂起）。
    */
   onPendingChanged?: (sessionId: string, count: number) => void;
+  /**
+   * 该会话是否为**托管会话**（是 ⇒ 确认请求在入口自动放行）
+   *
+   * 为什么需要：后台托管会话的卡上不了屏（防跨会话串台），只能挂到 30 分钟超时被
+   * fail-closed 自动拒——代理发起的写入/命令会白等半小时然后失败。托管语义下没有
+   * 「用户此刻能不能看到卡」这回事，故对托管会话直接在 `_enqueue` 放行。
+   *
+   * 边界（刻意如此）：
+   *   - **只认托管**：自助会话不注入判据 ⇒ 排队/计时/上屏/超时逐字不变；
+   *   - 恒拦黑名单（`deny` 档）在内核判据处就不进确认流程，本钩子看不到、也绕不过；
+   *   - 放行也要留痕：走既有 `_logDecision('approved')`（前台直发 / 后台暂存待补发），
+   *     **不新造第二套审计**。
+   *
+   * **可选**：不注入 = 零行为（既有测试与其它装配点无需改动）。
+   */
+  isManagedSession?: (sessionId: string) => boolean;
 }
 
 /**
@@ -261,6 +277,14 @@ export class ConfirmCoordinator {
       ),
       presented: false,
     };
+    // 托管会话：入口即放行（不进队列、不上屏、不起计时）——后台托管会话的卡本来也上不了屏，
+    // 排队只会挂到 30 分钟超时被自动拒。留痕仍走既有决策记录唯一发点，不新造审计。
+    // 判据放在 `_stateFor` 之前：放行的请求从不入表，不必为它建会话态。
+    if (this._deps.isManagedSession?.(sessionId) === true) {
+      entry.resolve(true);
+      this._logDecision(entry, 'approved', sessionId);
+      return;
+    }
     const state = this._stateFor(sessionId);
     state.queue.push(entry);
     this._deps.onPendingChanged?.(sessionId, this.pendingCount(sessionId));
