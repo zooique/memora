@@ -882,7 +882,7 @@ describe('托管 v0 · answer_session_question（代答子会话提问）', () =
 });
 
 describe('托管 v0 · create_session（工具层）', () => {
-  it('参数只认 { rolePack?, title, text, paths }：未知键 / 空白标题一律 E_ARGS，且不触建会话', async () => {
+  it('参数只认 { rolePack, title, text, paths }：未知键 / 空白标题一律 E_ARGS，且不触建会话', async () => {
     const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
       ok: true,
       sid: '2026-11-14-new',
@@ -890,9 +890,10 @@ describe('托管 v0 · create_session（工具层）', () => {
     }));
     const probe = await assembleProbe(true, { createSession });
     try {
-      // 未知键：键集只允许四枚（缺 title / text / paths 由内核执行器按 schema 先拦）
+      // 未知键：键集只允许四枚（缺 title / text / paths / rolePack 由内核执行器按 schema 先拦）
       expect(
         await executeCreate(probe, {
+          rolePack: '资料员',
           title: 't',
           text: 'x',
           mode: 'managed',
@@ -904,13 +905,20 @@ describe('托管 v0 · create_session（工具层）', () => {
       });
       // 空白标题：trim 后为空，不收
       expect(
-        await executeCreate(probe, { title: '   ', text: 'x', paths: ['docs'] }),
+        await executeCreate(probe, {
+          rolePack: '资料员',
+          title: '   ',
+          text: 'x',
+          paths: ['docs'],
+        }),
       ).toMatchObject({
         ok: false,
         code: 'E_ARGS',
       });
       // paths 给空数组 = 没声明范围：同样拒（范围是开活前置，不许省）
-      expect(await executeCreate(probe, { title: 't', text: 'x', paths: [] })).toMatchObject({
+      expect(
+        await executeCreate(probe, { rolePack: '资料员', title: 't', text: 'x', paths: [] }),
+      ).toMatchObject({
         ok: false,
         code: 'E_ARGS',
       });
@@ -920,7 +928,7 @@ describe('托管 v0 · create_session（工具层）', () => {
     }
   }, 120_000);
 
-  it('paths 在 schema 里是必填项（不能靠 handler 兜：执行器先按 schema 拦）', async () => {
+  it('rolePack / paths 在 schema 里都是必填项（不能靠 handler 兜：执行器先按 schema 拦）', async () => {
     const probe = await assembleProbe(true, {});
     try {
       // 从运行时定义面读（与模型看到的是同一份），不复制一份字面量在本文件里
@@ -929,6 +937,8 @@ describe('托管 v0 · create_session（工具层）', () => {
       );
       expect(definition).toBeDefined();
       expect(definition?.parameters.required).toContain('paths');
+      // 角色包对代理侧必填：代理没有「切换角色包」能力，开活前必须定包
+      expect(definition?.parameters.required).toContain('rolePack');
       const paths = (definition?.parameters.properties as Record<string, { type?: string }>).paths;
       expect(paths?.type).toBe('array');
     } finally {
@@ -993,23 +1003,30 @@ describe('托管 v0 · create_session（工具层）', () => {
     }
   }, 120_000);
 
-  it('rolePack 省略 ⇒ 回调收到 undefined（让宿主既有解析链决定默认包）', async () => {
+  it('rolePack 省略 ⇒ 执行器按 schema 必填拒绝（代理侧必填，不再走宿主默认包解析）', async () => {
     const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
       ok: true,
       sid: '2026-11-14-created',
-      title: '默认包会话',
+      title: '不该出现',
     }));
     const probe = await assembleProbe(true, { createSession });
     try {
-      await executeCreate(probe, { title: '默认包会话', text: '开始', paths: ['docs'] });
-      expect(createSession).toHaveBeenCalledWith(
-        SESSION_ID,
-        undefined,
-        '默认包会话',
-        '开始',
-        SENDER_NAME,
-        ['docs'],
-      );
+      // 必填缺失在 schema 层就抛：handler 的 E_ARGS 分支只是纵深防守，正常调用到不了。
+      // （错误 message 是工具错误的首行「工具参数缺失」，细节里点名 rolePack——具体点名由
+      //  上面那条 required 断言钉住，这里只锁「被拦且不触回调」）
+      await expect(
+        executeCreate(probe, { title: '缺包会话', text: '开始', paths: ['docs'] }),
+      ).rejects.toThrow('工具参数缺失');
+      // 空串则过 schema、在 handler 判 E_ARGS（空包名同样不是「默认包」）
+      expect(
+        await executeCreate(probe, {
+          rolePack: '   ',
+          title: '空包会',
+          text: '开始',
+          paths: ['docs'],
+        }),
+      ).toMatchObject({ ok: false, code: 'E_ARGS' });
+      expect(createSession).not.toHaveBeenCalled();
     } finally {
       await disposeProbe(probe);
     }
@@ -1021,7 +1038,9 @@ describe('托管 v0 · create_session（工具层）', () => {
     });
     const probe = await assembleProbe(true, { createSession });
     try {
-      expect(await executeCreate(probe, { title: 't', text: 'x', paths: ['docs'] })).toMatchObject({
+      expect(
+        await executeCreate(probe, { rolePack: '资料员', title: 't', text: 'x', paths: ['docs'] }),
+      ).toMatchObject({
         ok: false,
         code: 'E_HOST',
       });
@@ -1054,6 +1073,7 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
         declaredPaths: ['src/agent'],
       });
       const result = await executeCreate(probe, {
+        rolePack: '资料员',
         title: '新活',
         text: '也改内核',
         // 目录祖先关系：src/agent 与 src/agent/loop.ts 重叠
@@ -1099,7 +1119,12 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
       });
       // 整仓声明与任何在跑活都重叠 ⇒ 拒（整仓 = 自愿独占）
       expect(
-        await executeCreate(probe, { title: '第三条', text: '全仓', paths: ['.'] }),
+        await executeCreate(probe, {
+          rolePack: '资料员',
+          title: '第三条',
+          text: '全仓',
+          paths: ['.'],
+        }),
       ).toMatchObject({
         ok: false,
         code: 'E_SCOPE_CONFLICT',
@@ -1107,6 +1132,7 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
       });
       // 不重叠：放行，回执写清「核清了」（无 note）
       const accepted = (await executeCreate(probe, {
+        rolePack: '资料员',
         title: '另一块',
         text: '改别的',
         paths: ['src/other'],
@@ -1139,7 +1165,12 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
         declaredPaths: ['src/agent'],
       });
       expect(
-        await executeCreate(probe, { title: '新活', text: '改文档', paths: ['docs'] }),
+        await executeCreate(probe, {
+          rolePack: '资料员',
+          title: '新活',
+          text: '改文档',
+          paths: ['docs'],
+        }),
       ).toMatchObject({ ok: true, sid: '2026-11-14-fresh' });
       expect(createSession).toHaveBeenCalledTimes(1);
     } finally {
@@ -1167,7 +1198,12 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
         declaredPaths: ['docs'],
       });
       expect(
-        await executeCreate(probe, { title: '新活', text: '改文档', paths: ['docs/b.md'] }),
+        await executeCreate(probe, {
+          rolePack: '资料员',
+          title: '新活',
+          text: '改文档',
+          paths: ['docs/b.md'],
+        }),
       ).toMatchObject({ ok: false, code: 'E_SCOPE_CONFLICT' });
       expect(createSession).not.toHaveBeenCalled();
     } finally {
@@ -1195,6 +1231,7 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
     });
     try {
       const result = (await executeCreate(probe, {
+        rolePack: '资料员',
         title: '新活',
         text: '改文档',
         paths: ['docs'],
@@ -1234,6 +1271,7 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
     });
     try {
       const result = (await executeCreate(probe, {
+        rolePack: '资料员',
         title: '新活',
         text: '改文档',
         paths: ['docs'],

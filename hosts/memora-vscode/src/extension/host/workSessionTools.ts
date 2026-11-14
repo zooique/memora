@@ -367,7 +367,8 @@ export interface ScopeConflict {
  * 建会话回调（装配期注入，工具 handler 不持有面板实例）
  *
  * @param callingSessionId 发起创建的会话（E_DENIED 判据）
- * @param rolePackName 角色包名（undefined = 走宿主既有解析链：用户默认 → 兜底包）
+ * @param rolePackName 角色包名（工具层已要求必填；`undefined` 形态仅留给宿主内部既有解析链，
+ *   代理工具不会传——代理没有「切换角色包」能力，`parseCreateArgs` 缺键即拒）
  * @param title 会话标题（展示给用户，落 `SessionMeta.displayName`）
  * @param text 首轮输入（由新会话自己处理）
  * @param senderName 落首轮 `RoundMessage.name` 的发送者名（装配期传入）
@@ -650,15 +651,17 @@ const RESUME_WORK_SESSION_DEFINITION: ToolDefinition = {
  *   真正落盘发生在新建会话自己的内核流程里，不能按 `'opaque'` 与一切写互斥；
  * - `confirmPolicy: 'audit'`：与 list / send 同档（免弹窗但留审计）。
  *
- * 参数封闭：rolePack / title / text / paths；`rolePack` 可省（走宿主既有解析链），
- * `paths` **必填**（开活前必须声明打算动哪些路径），未知键在 handler 判 `E_ARGS`
- * （schema 不支持 additionalProperties）。
+ * 参数封闭：rolePack / title / text / paths **全部必填**；`rolePack` 由代理在开活前定死
+ * （代理没有切换角色包的能力，省了或给不存在的包名都拒——后者由宿主角色包目录回
+ * `E_ROLE_PACK`），`paths` **必填**（开活前必须声明打算动哪些路径），未知键在 handler 判
+ * `E_ARGS`（schema 不支持 additionalProperties）。
  */
 const CREATE_SESSION_DEFINITION: ToolDefinition = {
   name: CREATE_SESSION_TOOL_NAME,
   description:
-    '创建一个新会话，并让它开始处理第一轮任务。rolePack 可选（可先用 list_role_packs 查名字；' +
-    '省略则按用户默认角色解析），title 是给用户看的会话标题，text 是第一轮输入。' +
+    '创建一个新会话，并让它开始处理第一轮任务。rolePack **必填**：必须是 list_role_packs 返回的' +
+    'name（代理没有「切换角色包」的能力，开活前先定清楚，省了或包名不存在都会被拒）。' +
+    'title 是给用户看的会话标题，text 是第一轮输入。' +
     'paths **必填**：声明这条活打算动的文件或目录（相对工作区根；传 ["."] 表示整个工作区，' +
     '等于自愿独占）。与当前在跑的活的声明范围有交集时返回 E_SCOPE_CONFLICT，' +
     '并告诉你撞上哪条活、撞在哪，你可决定等它收场或缩小 paths。' +
@@ -666,7 +669,10 @@ const CREATE_SESSION_DEFINITION: ToolDefinition = {
   parameters: {
     type: 'object',
     properties: {
-      rolePack: { type: 'string', description: '角色包名（list_role_packs 返回的 name）' },
+      rolePack: {
+        type: 'string',
+        description: '角色包名（必填；list_role_packs 返回的 name，不存在或不可用会被拒）',
+      },
       title: { type: 'string', description: '会话标题（展示给用户，不是会话标识）' },
       text: { type: 'string', description: '要交给新会话处理的第一轮输入' },
       paths: {
@@ -678,7 +684,7 @@ const CREATE_SESSION_DEFINITION: ToolDefinition = {
           '传 ["."] 表示整个工作区（自愿独占）。必填，不能为空。',
       },
     },
-    required: ['title', 'text', 'paths'],
+    required: ['rolePack', 'title', 'text', 'paths'],
   },
   readonly: false,
   diskWrite: 'none',
@@ -865,7 +871,7 @@ function parseSidOnlyArgs(args: Record<string, unknown>): { sid: string } | unde
  */
 function parseCreateArgs(
   args: Record<string, unknown>,
-): { rolePack?: string; title: string; text: string; paths: string[] } | undefined {
+): { rolePack: string; title: string; text: string; paths: string[] } | undefined {
   const keys = Object.keys(args);
   // 键集只允许这四键；多一个未知键就拒（不忽略、不透传）
   const allowed = new Set(['rolePack', 'title', 'text', 'paths']);
@@ -873,16 +879,14 @@ function parseCreateArgs(
   const { rolePack, title, text, paths } = args;
   if (typeof title !== 'string' || typeof text !== 'string') return undefined;
   if (title.trim() === '' || text.trim() === '') return undefined;
-  if (rolePack !== undefined) {
-    if (typeof rolePack !== 'string' || rolePack.trim() === '') return undefined;
-  }
+  // rolePack 必填：代理侧没有「切换角色包」能力，开活前必须定包；省了/空串一律拒。
+  // 包名是否存在不在这里判——那属于宿主角色包目录的判据（E_ROLE_PACK）。
+  if (typeof rolePack !== 'string' || rolePack.trim() === '') return undefined;
   // paths 必填：声明范围是开活的前置条件，不许省（省了就无法判重叠）
   if (!Array.isArray(paths) || paths.length === 0) return undefined;
   if (paths.some((item) => typeof item !== 'string' || item.trim() === '')) return undefined;
   const normalizedPaths = paths as string[];
-  return rolePack === undefined
-    ? { title, text, paths: normalizedPaths }
-    : { rolePack, title, text, paths: normalizedPaths };
+  return { rolePack, title, text, paths: normalizedPaths };
 }
 
 /**
@@ -1186,7 +1190,8 @@ export function registerWorkSessionTools(
               ok: false,
               code: 'E_ARGS',
               message:
-                '参数只能是 { rolePack?, title, text, paths }；title / text 必须是非空字符串，' +
+                '参数必须是 { rolePack, title, text, paths }：rolePack 为非空角色包名，' +
+                'title / text 必须是非空字符串，' +
                 'paths 必须是非空字符串数组（传 ["."] 表示整个工作区）。',
             },
             null,
