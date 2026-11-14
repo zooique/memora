@@ -16,6 +16,12 @@
  * 已知的数据形态约束：`tool_result.summary` 会被内核截到 100 字符，但 `sid` 出现在
  * 结果 JSON 的前部，可稳定解析；标题优先取 `tool_start.args`（完整未截断），
  * 取不到时再由调用方用会话元数据标题兜底。
+ *
+ * 🔒 与产生点的互锁（WORKBENCH-SID-1）：摘要文本由宿主
+ * `extension/host/workSessionTools.ts` 的 `serializeCreateSessionResult` 唯一产生；
+ * 本节的前缀假设与 `parseCreateSessionSid` 的解析是同一份契约，改动必须同步，
+ * 由 `__tests__/workbenchSidContract.test.ts` 钉住。解析失败一律计入 `unreadableRecords`
+ * （界面显示「部分历史读不到」），**不**静默跳过、**不**当成「没有」。
  */
 import type { Round } from '@zooique/memora';
 import { CREATE_SESSION_TOOL_NAME } from '../../extension/host/workSessionTools.js';
@@ -136,7 +142,7 @@ function collectFromRound(
     ) {
       continue;
     }
-    const sid = parseSid(event.payload.summary ?? '');
+    const sid = parseCreateSessionSid(event.payload.summary ?? '');
     if (!sid) {
       // 成功过但认不出 sid：不能静默丢，计入「读不到」
       noteUnreadable();
@@ -151,13 +157,20 @@ function collectFromRound(
 /**
  * 从 `tool_result.summary`（可能被截断）里提取 sid
  *
+ * 🔒 互锁（WORKBENCH-SID-1）：本解析**假设**文本由
+ * `extension/host/workSessionTools.ts` 的 `serializeCreateSessionResult` 产出——
+ * `{\n  "ok": true,\n  "sid": "<sid>", …`，且 sid 落在内核 100 字符摘要窗口内。
+ * 改那边的缩进 / 键序 / 字段名，必须同步改这里与互锁测试
+ * `src/webview/__tests__/workbenchSidContract.test.ts`。解析不出来时调用方会计入
+ * 「读不到」（不静默丢、不当成没有）。
+ *
  * 结果 JSON 形如 `{ "ok": true, "sid": "2026-11-14-session-xxx", ... }`；
  * sid 在前部，100 字符足够完整出现。容忍空格 / 单双引号差异。
  *
  * @param summary 工具结果摘要（截断后的 JSON 文本）
  * @returns sid；解析不到返回 undefined
  */
-function parseSid(summary: string): string | undefined {
+export function parseCreateSessionSid(summary: string): string | undefined {
   const match = /["']?sid["']?\s*:\s*["']([^"']+)["']/.exec(summary);
   return match?.[1];
 }

@@ -14,6 +14,8 @@ import {
   WORKBENCH_REBUILD_MAX_ROUNDS,
   type WorkbenchHistorySources,
 } from '../helpers/workbenchHistory.js';
+// 摘要不手抄：直接用真实产生点产出的文本（格式契约由 workbenchSidContract.test.ts 钉住）
+import { serializeCreateSessionResult } from '../../extension/host/workSessionTools.js';
 
 /** 构造 tool_start 事件 */
 function start(toolCallId: string, name: string, args: string): ProcessEvent {
@@ -33,7 +35,7 @@ function round(id: string, events: ProcessEvent[]): Round {
   return { id, status: 'complete', processEvents: events } as Round;
 }
 
-/** 一次 create_session 成功调用的标准事件对（结果摘要按内核 100 字符截断形态给） */
+/** 一次 create_session 成功调用的标准事件对（结果摘要走真实序列化 + 内核 100 字符截断） */
 function createSessionEvents(sid: string, title: string, callId = 'call-1'): ProcessEvent[] {
   return [
     start(callId, 'create_session', JSON.stringify({ title })),
@@ -41,7 +43,7 @@ function createSessionEvents(sid: string, title: string, callId = 'call-1'): Pro
       callId,
       'create_session',
       true,
-      `{\n  "ok": true,\n  "sid": "${sid}",\n  "title": "${title}"\n}`,
+      serializeCreateSessionResult({ ok: true, sid, title }).slice(0, 100),
     ),
   ];
 }
@@ -139,7 +141,15 @@ describe('rebuildWorkbenchChildren', () => {
       sources([
         round('r1', [
           start('call-1', 'create_session', 'not-json'),
-          result('call-1', 'create_session', true, '{"ok":true,"sid":"session-x"}'),
+          result(
+            'call-1',
+            'create_session',
+            true,
+            serializeCreateSessionResult({ ok: true, sid: 'session-x', title: '无入参任务' }).slice(
+              0,
+              100,
+            ),
+          ),
         ]),
       ]),
     );

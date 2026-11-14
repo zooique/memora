@@ -331,6 +331,29 @@ function parseCreateArgs(
 }
 
 /**
+ * 序列化 `create_session` 的结果（工具对外文本的**唯一**产生点）
+ *
+ * 🔒 互锁（WORKBENCH-SID-1）：工作台重启后会从 `tool_result.summary`（内核截到 100 字符）
+ * 里解析 sid，解析实现在 `webview/helpers/workbenchHistory.ts` 的 `parseCreateSessionSid`。
+ * 本函数产出的**前缀与 sid 位置**就是那份解析的输入契约：
+ *   `{\n  "ok": true,\n  "sid": "<sid>", …`
+ * 改缩进、改键序、把 sid 挪出前 100 字符，都必须同步改解析侧与互锁测试
+ * `src/webview/__tests__/workbenchSidContract.test.ts`；否则工作台会**静默变成空清单**
+ * （看起来像「一条活都没有」，实为解析断了）。
+ *
+ * 为什么走文本互锁而不是结构化通道：内核持久化的 `tool_result` 只有通用 `summary` 与
+ * delegate 专用回执，没有给自定义工具的通用结构化载荷；为此新增字段等于新增持久化字段，
+ * 超出本切片边界（见任务约束「不为此新增持久化字段」）。
+ *
+ * @param result 建会话结果（成功带 sid / title；业务失败带错误码）
+ * @returns 缩进 2 空格的 JSON 文本（与既有对外形态逐字一致）
+ */
+export function serializeCreateSessionResult(result: CreateSessionResult): string {
+  // 键序固定 ok → sid → title；sid 落在第 3 行，100 字符窗口内可稳定命中
+  return JSON.stringify(result, null, 2);
+}
+
+/**
  * 为主控会话注册会话工具
  *
  * 幂等性：本函数只做一次性装配注册；`registerTool` 对同名重复注册会抛错——
@@ -424,7 +447,8 @@ export function registerWorkSessionTools(
           parsed.text,
           deps.senderName,
         );
-        return JSON.stringify(result, null, 2);
+        // 文本形态只有一个产生点（工作台重建依赖它的前缀，见 serializeCreateSessionResult 的互锁注释）
+        return serializeCreateSessionResult(result);
       } catch (err) {
         // 业务契约：不 throw；宿主侧异常单独一码，与角色包 / 会话语义分开
         return JSON.stringify(
