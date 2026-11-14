@@ -39,7 +39,7 @@ export function resolveHtmlLang(envLanguage: string | undefined): string {
 }
 
 /**
- * 宿主 l10n bundle → webview 内联译文数据块（HOST-I18N-1 P1 基建的写端）
+ * 宿主 l10n bundle → webview 内联译文数据块（写端；读端见 helpers/webviewL10n）
  *
  * - **内联而非 postMessage**：不新增协议消息、无首屏竞态（译文须先于首个 `l10n.t` 调用就位，
  *   数据块随 HTML 一次到位）。
