@@ -29,6 +29,12 @@ import {
   SEND_TO_SESSION_TOOL_NAME,
   STOP_WORK_SESSION_TOOL_NAME,
 } from '../workSessionTools.js';
+// 代答工具面独立模块：工具名 / 回执类型直接取自声明处（不在两个文件里各抄一份）
+import {
+  ANSWER_SESSION_QUESTION_TOOL_NAME,
+  type HostedAnswerResult,
+  type HostedQuestionAnswerer,
+} from '../answerSessionQuestionTool.js';
 import type {
   CreateSessionResult,
   HostedDispatchResult,
@@ -123,6 +129,8 @@ interface HostedDeps {
   pauseSession?: HostedSessionPauser;
   /** 恢复回调（缺省 = 报告续跑已启动） */
   resumeSession?: HostedSessionResumer;
+  /** 代答回调（缺省 = 报告已答一道题） */
+  answerQuestions?: HostedQuestionAnswerer;
   /** 状态读口（缺省 = 一律 completed，便于断言清单形态） */
   readStatus?: (sessionId: string) => WorkbenchJobStatus;
   /** 创建者账本（缺省 = 空账本） */
@@ -241,6 +249,14 @@ async function assembleProbe(orchestratorSession?: boolean, hosted?: HostedDeps)
           resumeHostedSession:
             hosted.resumeSession ??
             (async (): Promise<{ ok: true; resumed: boolean }> => ({ ok: true, resumed: true })),
+          answerHostedQuestions:
+            hosted.answerQuestions ??
+            ((_calling: string, sid: string): HostedAnswerResult => ({
+              ok: true,
+              sid,
+              answered: true,
+              answeredCount: 1,
+            })),
           readHostedStatus:
             hosted.readStatus ?? ((): WorkbenchJobStatus => ({ kind: 'completed' })),
           hostedAgentCreated: hosted.agentCreated ?? ((): readonly string[] => []),
@@ -727,6 +743,143 @@ async function executeCreate(
   const raw = await probe.agent.tools!.execute(CREATE_SESSION_TOOL_NAME, JSON.stringify(args));
   return JSON.parse(raw) as CreateSessionResult | { ok: false; code: string; message: string };
 }
+
+/**
+ * 执行一次 answer_session_question
+ *
+ * @param probe 探针
+ * @param args  原始参数（由执行器按 schema + handler 双层校验）
+ */
+async function executeAnswer(
+  probe: Probe,
+  args: Record<string, unknown>,
+): Promise<HostedAnswerResult | { ok: false; code: string; message: string }> {
+  const raw = await probe.agent.tools!.execute(
+    ANSWER_SESSION_QUESTION_TOOL_NAME,
+    JSON.stringify(args),
+  );
+  return JSON.parse(raw) as HostedAnswerResult | { ok: false; code: string; message: string };
+}
+
+describe('托管 v0 · answer_session_question（代答子会话提问）', () => {
+  it('参数只认 { sid, answers? }：未知键 / 非字符串数组一律 E_ARGS，且不触代答', async () => {
+    const answerQuestions = vi.fn((): HostedAnswerResult => ({
+      ok: true,
+      sid: TARGET_SESSION_ID,
+      answered: true,
+      answeredCount: 1,
+    }));
+    const probe = await assembleProbe(true, { answerQuestions });
+    try {
+      // 未知键：键集只允许 sid / answers
+      expect(
+        await executeAnswer(probe, { sid: TARGET_SESSION_ID, answers: ['A'], extra: 1 }),
+      ).toMatchObject({ ok: false, code: 'E_ARGS' });
+      // 数组里混入非字符串（执行器只把单个值包成数组，不逐项改类型）
+      expect(await executeAnswer(probe, { sid: TARGET_SESSION_ID, answers: 2 })).toMatchObject({
+        ok: false,
+        code: 'E_ARGS',
+      });
+      // 空白 sid
+      expect(await executeAnswer(probe, { sid: '   ' })).toMatchObject({
+        ok: false,
+        code: 'E_ARGS',
+      });
+      expect(answerQuestions).not.toHaveBeenCalled();
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('未知会话 ⇒ E_NOT_FOUND，且不触代答（存在性在工具层先判）', async () => {
+    const answerQuestions = vi.fn((): HostedAnswerResult => ({
+      ok: true,
+      sid: 'x',
+      answered: true,
+      answeredCount: 1,
+    }));
+    const probe = await assembleProbe(true, { answerQuestions });
+    try {
+      expect(await executeAnswer(probe, { sid: '2026-11-14-missing' })).toMatchObject({
+        ok: false,
+        code: 'E_NOT_FOUND',
+      });
+      expect(answerQuestions).not.toHaveBeenCalled();
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('受理：调用方 id / 目标 sid / trim 后的答案原样交给代答回调（空串位保留）', async () => {
+    const answerQuestions = vi.fn((): HostedAnswerResult => ({
+      ok: true,
+      sid: TARGET_SESSION_ID,
+      answered: true,
+      answeredCount: 2,
+    }));
+    const probe = await assembleProbe(true, { answerQuestions });
+    try {
+      const result = await executeAnswer(probe, {
+        sid: TARGET_SESSION_ID,
+        answers: [' 选 A ', ''],
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        sid: TARGET_SESSION_ID,
+        answered: true,
+        answeredCount: 2,
+      });
+      // 空串是「该题不答」的合法占位：压缩位次即错位，故只 trim、不过滤
+      expect(answerQuestions).toHaveBeenCalledWith(SESSION_ID, TARGET_SESSION_ID, ['选 A', '']);
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('省略 answers = 只读题：回调收到 undefined（回执形态由宿主决定）', async () => {
+    const answerQuestions = vi.fn((): HostedAnswerResult => ({
+      ok: true,
+      sid: TARGET_SESSION_ID,
+      answered: false,
+      questions: [{ index: 0, question: '用哪个库？', options: ['A', 'B'] }],
+    }));
+    const probe = await assembleProbe(true, { answerQuestions });
+    try {
+      const result = await executeAnswer(probe, { sid: TARGET_SESSION_ID });
+      expect(result).toMatchObject({ ok: true, answered: false });
+      expect(answerQuestions).toHaveBeenCalledWith(SESSION_ID, TARGET_SESSION_ID, undefined);
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('宿主回调抛错 ⇒ 工具不抛，回 E_HOST（不得冒名「未知会话」）', async () => {
+    const answerQuestions = vi.fn((): HostedAnswerResult => {
+      throw new Error('面板炸了');
+    });
+    const probe = await assembleProbe(true, { answerQuestions });
+    try {
+      expect(await executeAnswer(probe, { sid: TARGET_SESSION_ID })).toMatchObject({
+        ok: false,
+        code: 'E_HOST',
+      });
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('缺代答依赖 ⇒ 不注册该工具（list 仍在）', async () => {
+    // 只传主控标记、不传依赖盒：宁可不注册，也不注册一个永远失败的空壳
+    const probe = await assembleProbe(true);
+    try {
+      const names = probe.agent.tools!.list.map((tool) => tool.name);
+      expect(names).toContain(LIST_WORK_SESSIONS_TOOL_NAME);
+      expect(names).not.toContain(ANSWER_SESSION_QUESTION_TOOL_NAME);
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+});
 
 describe('托管 v0 · create_session（工具层）', () => {
   it('参数只认 { rolePack?, title, text, paths }：未知键 / 空白标题一律 E_ARGS，且不触建会话', async () => {

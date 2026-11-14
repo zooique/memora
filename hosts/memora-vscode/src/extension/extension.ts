@@ -69,6 +69,8 @@ import type {
   HostedSessionResumer,
   HostedSessionStopper,
 } from './host/workSessionTools.js';
+// 代答回调契约（工具面独立模块）：与工具 handler 同一联合类型
+import type { HostedQuestionAnswerer } from './host/answerSessionQuestionTool.js';
 import { runDemoCommand } from './commands/demo.js';
 import { reloadSkillsCommand } from './commands/reloadSkills.js';
 import { cleanupMemoriesCommand, memoryStatsCommand, runGcCommand } from './commands/memory.js';
@@ -245,6 +247,8 @@ interface AssemblyDeps {
   pauseHostedSession: HostedSessionPauser;
   /** 托管恢复回调（工具 handler → 面板；按目标 sid 取既有实例走既有续跑通路） */
   resumeHostedSession: HostedSessionResumer;
+  /** 托管代答回调（工具 handler → 面板；按目标 sid 读在途提问、按位作答） */
+  answerHostedQuestions: HostedQuestionAnswerer;
   /** 主控清单的状态读口（与工作台共用 `shared/sessionStatus` 的同一投影） */
   readHostedStatus: (sessionId: string) => WorkbenchJobStatus;
   /** 主控清单的归属读口（本进程创建者账本，与工作台同一真源） */
@@ -360,6 +364,8 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
     // 暂停 / 恢复按目标 sid 取既有实例，调实例现有公开方法（内核签名不动）
     pauseHostedSession: deps.pauseHostedSession,
     resumeHostedSession: deps.resumeHostedSession,
+    // 代答：与派发 / 停止同一注入面（工具 handler 不持有面板实例）
+    answerHostedQuestions: deps.answerHostedQuestions,
     // 主控清单看状态 / 归属：与工作台共用同一批读口（不另造第二套判断）
     readHostedStatus: deps.readHostedStatus,
     hostedAgentCreated: deps.hostedAgentCreated,
@@ -630,6 +636,9 @@ export function activate(context: vscode.ExtensionContext): void {
       chatProvider.hostedRunControl.pauseHostedSession(calling, target),
     resumeHostedSession: (calling, target) =>
       chatProvider.hostedRunControl.resumeHostedSession(calling, target),
+    // 代答：按 sid 取目标会话既有实例与既有提问快照（面板薄壳，判据在 helper）
+    answerHostedQuestions: (calling, target, answers) =>
+      chatProvider.answerHostedQuestions(calling, target, answers),
     readHostedStatus,
     // 归属真源 = 与工作台同一个创建者账本（仅本进程；重启后由历史重建补）
     hostedAgentCreated: (orchestratorId) => chatProvider.workbench.childrenOf(orchestratorId),

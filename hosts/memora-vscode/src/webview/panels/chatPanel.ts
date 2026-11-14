@@ -209,6 +209,8 @@ import { createChatTurnStructureOps, truncateFailNotice } from './chatTurnStruct
 import { createChatSessionNavOps } from './chatSessionNavOps.js';
 // 主控建会话实现域（B9-D 拆法：完整闭环外置，面板只留注入依赖的薄壳）
 import { createHostedSessionWith } from '../helpers/hostedSessionCreate.js';
+// 会话作答域（用户作答 + 主控代答）：两条入口共用同一条执行链，判据与回执形态在 helper
+import { createChatAnswerOps } from './chatAnswerOps.js';
 // 会话活跃度纯计算（与工作台共用同一份判据；外置防两处各写一套 Set 遍历）
 import { runSessionActivityPush } from '../helpers/sessionActivity.js';
 // 工作台只读端口（一扇只读窗：运行态 / 待答 / 创建者账本；不投消息、不改布局）
@@ -402,6 +404,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   });
   /** 主控运行控制窄面（停止 / 暂停 / 恢复）：全部转发运行控制域，面板不留实现 */
   public readonly hostedRunControl: HostedRunControlOps = this._runOps;
+  /** 会话作答域（用户作答 + 主控代答）：执行链与题数判据都在模块内，面板只给事实闭包 */
+  private readonly _answerOps = createChatAnswerOps({
+    currentSession: () => ({ sessionId: this._currentSessionId, agent: this._agent }),
+    isManaged: (sid) => this.sessionModes.isManaged(sid),
+    getAsk: (sid) => this._asks.get(sid),
+    getAgent: (sid) => this._sessionAgents.get(sid),
+    askFor: (sid) => this.askFor(sid),
+    runFlow: (factory, sid) => this.runFlow(factory, undefined, sid),
+  });
+  /** 主控代答窄面（answer_session_question）：只转发作答域，面板不留实现 */
+  public readonly answerHostedQuestions = this._answerOps.answerHostedQuestions;
   /** 托管子会话中断通知器（第三切片）：延迟闭包；创建者关系仅进程内，不落盘、不进 meta */
   private readonly _hostedNotifier = new HostedSessionNotifier({
     readSessionMeta: (sid) => this.sessionStore.getSessionMeta(sid),
@@ -2676,7 +2689,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           });
           return;
         }
-        await this.answerInput(answers);
+        await this._answerOps.answerInput(answers);
         return;
       }
       case 'resume':
@@ -3138,43 +3151,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         origin: 'user',
       },
     );
-  }
-
-  /**
-   * answer 意图：处理用户对主动提问的回答——answerQuestion 结构化回填 + resumeExecution 续跑
-   *  内核提问由 ask_user 工具承载——先 answerQuestion 以 tool result 回填
-   *  （与 assistant.tool_calls 配对，结构合法），再由 resumeExecution 续跑（回答 text
-   *  作为新 user 输入注入并记录交互归属 question-answer，round 不分裂）。
-   *  回答落盘由内核 runResume 按交互归属写入同闭环节点，宿主不双写。
-   *  多 ask 聚合回答（clarify_answers）传入数组，answers 与提问按序
-   *  一对一：逐条 post 透出「你答」交互行 + answerQuestion(answers) 数组回填 +
-   *  resumeExecution 以 join 全文注入（内核 answerQuestion 原生支持数组）。
-   *  守卫（Agent 就绪/会话存在）与错位拦截收归 handleInput 相位路由
-   *  （单一判据），提问原文读 turn_update 投影（`_turnState.waiting.questions`
-   *  单点真源，ask 域的在途提问仅事件写入源，非消费式 splice）。
-   * @param answers 归一后的回答数组（单问=单元素，answer 意图恒数组）
-   */
-  private async answerInput(answers: string[]): Promise<void> {
-    // 本方法只服务当前会话的提问（路由守卫保证「有在途提问」才进来），故取当前会话协调器
-    const ask = this.askFor();
-    ask.clearAskTimeout(); // 提问被回答：关闭超时保底
-    // 作答上屏外置到 ask 域单点（`postAnswerRows`）：逐题按有无答案分派 question-answer /
-    // unanswered，屏上 N 条与内核 `runResume` 逐题落盘同构（题目该域自取；迟到回答已在路由层丢弃）。
-    ask.postAnswerRows(answers);
-    // ⚠️ 顺序不可调换：上屏要读 `_pending`（题目来自该域），清空必须在**其后**——
-    // 先清后 post 会让每题都拿不到 question/options，屏上只剩一行干瘪的「你答」。
-    ask.clearPending();
-    await this.runFlow((signal) => {
-      // 按位一对一：空串位由内核归一为「该题未答」（`[ASK_ABORTED]` 占位 + 盘上 unanswered 行），
-      // 故不得压缩位次；join 全文作持续输入注入（空答案不参与，避免空行噪声）。
-      // 持久化由 `resumeExecution → runResume` 按交互归属写入同闭环节点，宿主不双写。
-      this._agent!.answerQuestion(answers);
-      return this._agent!.resumeExecution(
-        answers.filter((a) => a.trim()).join('\n'),
-        signal,
-        'question-answer',
-      );
-    });
   }
 
   /**

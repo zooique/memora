@@ -64,6 +64,8 @@ import {
   type SessionHistoryFacts,
   type WorkSessionToolDeps,
 } from './workSessionTools.js';
+// 代答回调契约（工具面独立模块）：与工具 handler 同一联合类型
+import type { HostedQuestionAnswerer } from './answerSessionQuestionTool.js';
 // 状态判别联合与工作台同源（读口返回它，装配层只透传）
 import type { WorkbenchJobStatus } from '../../shared/workbenchDto.js';
 // 角色包来源层单点判定（与设置页「内置包只读」同一判据）
@@ -419,6 +421,12 @@ export interface AssembleOptions {
   pauseHostedSession?: HostedSessionPauser;
   /** 恢复回调（工具 handler → 面板；按目标 sid 取既有实例走既有续跑通路） */
   resumeHostedSession?: HostedSessionResumer;
+  /**
+   * 代答回调（工具 handler → 面板；按目标 sid 读在途提问、按位作答）
+   *
+   * 缺省 ⇒ 不注册 `answer_session_question`（与派发 / 建会话同一条降级纪律）。
+   */
+  answerHostedQuestions?: HostedQuestionAnswerer;
   /** 单会话状态读口（与工作台共用同一投影；缺省 ⇒ list 项标 unreadable） */
   readHostedStatus?: (sessionId: string) => WorkbenchJobStatus;
   /** 本进程创建者账本读口（与工作台同一真源；缺省 ⇒ 归属 unknown） */
@@ -486,6 +494,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     stopHostedSession,
     pauseHostedSession,
     resumeHostedSession,
+    answerHostedQuestions,
     readHostedStatus,
     hostedAgentCreated,
     readHostedHistory,
@@ -729,6 +738,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
             // 判据 6：暂停 / 恢复成对注册（只给暂停 = 把子会话停在代理解不开的状态）
             ...(pauseHostedSession ? { pauseSession: pauseHostedSession } : {}),
             ...(resumeHostedSession ? { resumeSession: resumeHostedSession } : {}),
+            // 代答：与上一段同批按「回调到位才注册」，缺省不注册空壳
+            ...(answerHostedQuestions ? { answerQuestions: answerHostedQuestions } : {}),
             // 判据 5：与上一段 deny trace_summary 同批生效
             readMemorySummary,
             listRolePacks,

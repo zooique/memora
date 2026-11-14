@@ -28,6 +28,12 @@ import type { WorkbenchJobStatus } from '../../shared/workbenchDto.js';
 import { normalizeRolePackName } from './rolePackName.js';
 // 开活范围声明（判据 4）：规范化与重叠判定的单点实现（纯函数，无锁）
 import { findScopeOverlap, normalizeScopePaths } from './sessionScope.js';
+// 代答子会话提问的工具面（定义 / 参数解析 / 回执类型）：独立闭环外置，注册仍在本文件
+import {
+  ANSWER_SESSION_QUESTION_DEFINITION,
+  parseAnswerQuestionArgs,
+  type HostedQuestionAnswerer,
+} from './answerSessionQuestionTool.js';
 
 /**
  * 会话清单工具名（装配点、单测、后续切片共用的唯一字面量）
@@ -152,6 +158,13 @@ export interface WorkSessionToolDeps {
   pauseSession?: HostedSessionPauser;
   /** 恢复目标会话（由宿主面板提供；缺省 ⇒ 不注册 resume 工具） */
   resumeSession?: HostedSessionResumer;
+  /**
+   * 代答目标会话的在途提问（由宿主面板提供；缺省 ⇒ 不注册 answer_session_question）
+   *
+   * 缺省不注册而不是注册空壳：与 send / create 同一条降级纪律（宁可不给工具，
+   * 也不给一个永远失败的）。只取目标会话既有实例与既有提问快照，不新建。
+   */
+  answerQuestions?: HostedQuestionAnswerer;
   /**
    * 会话摘要读口（判据 5 的窄工具；缺省 ⇒ 不注册 `read_memory_summary`）
    *
@@ -845,7 +858,7 @@ function parseSidOnlyArgs(args: Record<string, unknown>): { sid: string } | unde
 }
 
 /**
- * 校验 `create_session` 的参数（rolePack 可省；title / text 必填且非空）
+ * 校验 `create_session` 的参数（rolePack / title / text / paths 全部必填且 title / text 非空）
  *
  * @param args 工具执行器传入的已解析参数
  * @returns 合法载荷；undefined = 未知键 / 缺键 / 类型不对（调用方统一回 `E_ARGS`）
@@ -1463,6 +1476,53 @@ export function registerWorkSessionTools(
               ok: false,
               code: 'E_HOST',
               message: `宿主恢复失败：${err instanceof Error ? err.message : String(err)}`,
+            },
+            null,
+            2,
+          );
+        }
+      });
+    }
+    if (deps.answerQuestions) {
+      const answerQuestions = deps.answerQuestions;
+      tools.registerTool(ANSWER_SESSION_QUESTION_DEFINITION, async (args) => {
+        // 先过参数封闭：未知键 / 类型不对一律 E_ARGS（不绕过、不猜）
+        const parsed = parseAnswerQuestionArgs(args);
+        if (!parsed) {
+          return JSON.stringify(
+            {
+              ok: false,
+              code: 'E_ARGS',
+              message:
+                '参数只能是 { sid, answers? }：sid 为非空字符串；answers 省略 = 只查看题目，' +
+                '传入时必须是与题目等长同序的字符串数组（空串 = 该题不答）。',
+            },
+            null,
+            2,
+          );
+        }
+        // 存在性用会话清单判（与 send / stop / pause / resume 同一判据，不用 getSessionMeta）
+        if (!sessionStore.listSessionMetas().some((meta) => meta.sessionId === parsed.sid)) {
+          return JSON.stringify(
+            { ok: false, code: 'E_NOT_FOUND', message: `未知会话：${parsed.sid}` },
+            null,
+            2,
+          );
+        }
+        try {
+          // E_DENIED / E_ARGS（题数不符）由宿主回调判；工具层不自造第二套判据
+          return JSON.stringify(
+            answerQuestions(deps.callingSessionId, parsed.sid, parsed.answers),
+            null,
+            2,
+          );
+        } catch (err) {
+          // 业务契约：不 throw；宿主侧异常单独一码，与「会话不存在」分开
+          return JSON.stringify(
+            {
+              ok: false,
+              code: 'E_HOST',
+              message: `宿主代答失败：${err instanceof Error ? err.message : String(err)}`,
             },
             null,
             2,
