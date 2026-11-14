@@ -1460,5 +1460,11 @@
   "Older history was not read (only the latest {0} rounds)": "只读了最近 {0} 轮，更早的没读",
   "{0} session(s) could not be found": "有 {0} 条会话找不到了",
   "Memora: only managed sessions can stop other sessions.": "Memora：只有托管会话可以停止其他会话。",
-  "Memora: failed to stop the session.": "Memora：停止会话失败。"
+  "Memora: failed to stop the session.": "Memora：停止会话失败。",
+  "Memora: only managed sessions can pause other sessions.": "Memora：只有托管会话可以暂停其他会话。",
+  "Memora: the target session has no live instance to pause.": "Memora：目标会话没有可暂停的活实例。",
+  "Memora: failed to pause the session.": "Memora：暂停会话失败。",
+  "Memora: only managed sessions can resume other sessions.": "Memora：只有托管会话可以恢复其他会话。",
+  "Memora: the target session has no live instance to resume.": "Memora：目标会话没有可恢复的活实例。",
+  "Memora: failed to resume the session.": "Memora：恢复会话失败。"
 }

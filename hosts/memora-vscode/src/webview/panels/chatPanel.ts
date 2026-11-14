@@ -220,7 +220,7 @@ import { HostedSessionNotifier } from '../helpers/hostedSessionNotice.js';
 // 记忆软删域（B9-D-5 按 op 组外置）：单条反馈删除 + 会话删除联动软删，同一套降级口径
 import { createChatMemoryOps } from './chatMemoryOps.js';
 // 运行控制域（B9-D-6 按 op 组外置）：停止 / 暂停 toggle / 恢复，共用会话级运行态与 ask 协调器
-import { createChatRunControlOps } from './chatRunControlOps.js';
+import { createChatRunControlOps, type HostedRunControlOps } from './chatRunControlOps.js';
 import {
   buildDocContextBlock,
   buildGitChangesContextBlock,
@@ -394,14 +394,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       (sessionId === this._currentSessionId ? this._agent : undefined),
     currentSessionId: () => this.getCurrentSessionId(),
     isManaged: (id) => this.sessionModes.isManaged(id),
-    runFlow: (factory) => this.runFlow(factory),
+    runFlow: (factory, sessionId) => this.runFlow(factory, undefined, sessionId),
     syncPendingQueue: (force) => this.syncPendingQueue(force),
     postPendingDiscarded: (items) => this.postPendingDiscarded(items),
     onUserStopped: (_agent, roundId, sessionId) =>
       this._hostedNotifier.notePausedStop(sessionId, roundId),
   });
-  /** 主控停止入口（实现在运行控制域：与用户点停止同一条 handleStop，只多一层调用方门禁） */
-  public stopHostedSession = this._runOps.stopHostedSession;
+  /** 主控运行控制窄面（停止 / 暂停 / 恢复）：全部转发运行控制域，面板不留实现 */
+  public readonly hostedRunControl: HostedRunControlOps = this._runOps;
   /** 托管子会话中断通知器（第三切片）：延迟闭包；创建者关系仅进程内，不落盘、不进 meta */
   private readonly _hostedNotifier = new HostedSessionNotifier({
     readSessionMeta: (sid) => this.sessionStore.getSessionMeta(sid),

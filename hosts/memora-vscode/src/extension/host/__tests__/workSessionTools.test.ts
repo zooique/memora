@@ -23,7 +23,9 @@ import {
   CREATE_SESSION_TOOL_NAME,
   LIST_ROLE_PACKS_TOOL_NAME,
   LIST_WORK_SESSIONS_TOOL_NAME,
+  PAUSE_WORK_SESSION_TOOL_NAME,
   READ_MEMORY_SUMMARY_TOOL_NAME,
+  RESUME_WORK_SESSION_TOOL_NAME,
   SEND_TO_SESSION_TOOL_NAME,
   STOP_WORK_SESSION_TOOL_NAME,
 } from '../workSessionTools.js';
@@ -32,6 +34,8 @@ import type {
   HostedDispatchResult,
   HostedInputDispatcher,
   HostedSessionCreator,
+  HostedSessionPauser,
+  HostedSessionResumer,
   HostedSessionStopper,
   SendToSessionResult,
   SessionHistoryFacts,
@@ -115,6 +119,10 @@ interface HostedDeps {
   createSession?: HostedSessionCreator;
   /** 停止回调（缺省 = 报告停到了活） */
   stopSession?: HostedSessionStopper;
+  /** 暂停回调（缺省 = 报告申请已受理） */
+  pauseSession?: HostedSessionPauser;
+  /** 恢复回调（缺省 = 报告续跑已启动） */
+  resumeSession?: HostedSessionResumer;
   /** 状态读口（缺省 = 一律 completed，便于断言清单形态） */
   readStatus?: (sessionId: string) => WorkbenchJobStatus;
   /** 创建者账本（缺省 = 空账本） */
@@ -223,6 +231,16 @@ async function assembleProbe(orchestratorSession?: boolean, hosted?: HostedDeps)
           stopHostedSession:
             hosted.stopSession ??
             (async (): Promise<{ ok: true; stopped: boolean }> => ({ ok: true, stopped: true })),
+          pauseHostedSession:
+            hosted.pauseSession ??
+            (async (): Promise<{ ok: true; paused: boolean; already: boolean }> => ({
+              ok: true,
+              paused: true,
+              already: false,
+            })),
+          resumeHostedSession:
+            hosted.resumeSession ??
+            (async (): Promise<{ ok: true; resumed: boolean }> => ({ ok: true, resumed: true })),
           readHostedStatus:
             hosted.readStatus ?? ((): WorkbenchJobStatus => ({ kind: 'completed' })),
           hostedAgentCreated: hosted.agentCreated ?? ((): readonly string[] => []),
@@ -1237,6 +1255,125 @@ describe('托管 v0 · list_role_packs（工具层）', () => {
           expect.objectContaining({ name: '项目助手', source: 'project' }),
         ]),
       );
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+});
+
+describe('托管 v0 · pause / resume（判据 6 成对开放）', () => {
+  it('两个工具必须同时存在；参数只接受 { sid }', async () => {
+    const probe = await assembleProbe(true, {});
+    try {
+      const exposed = probe.agent.tools!.list.map((tool) => tool.name);
+      // 成对：只给暂停 = 把子会话停在代理自己解不开的状态
+      expect(exposed).toContain(PAUSE_WORK_SESSION_TOOL_NAME);
+      expect(exposed).toContain(RESUME_WORK_SESSION_TOOL_NAME);
+      const rejected = JSON.parse(
+        await probe.agent.tools!.execute(
+          PAUSE_WORK_SESSION_TOOL_NAME,
+          JSON.stringify({ sid: TARGET_SESSION_ID, roundId: 'round-1' }),
+        ),
+      ) as { ok: boolean; code: string };
+      expect(rejected.code).toBe('E_ARGS');
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('归属门禁与 stop 同一套：用户建的会话 / 无法确认 ⇒ E_DENIED，不调宿主回调', async () => {
+    const paused = vi.fn<HostedSessionPauser>(async () => ({
+      ok: true,
+      paused: true,
+      already: false,
+    }));
+    const resumed = vi.fn<HostedSessionResumer>(async () => ({ ok: true, resumed: true }));
+    const probe = await assembleProbe(true, {
+      pauseSession: paused,
+      resumeSession: resumed,
+      readStatus: () => ({ kind: 'running' }),
+    });
+    try {
+      // TARGET 会话 origin=hosted 但账本 / 历史都没有创建记录 ⇒ 归属 unknown，不能放行
+      for (const tool of [PAUSE_WORK_SESSION_TOOL_NAME, RESUME_WORK_SESSION_TOOL_NAME]) {
+        const parsed = JSON.parse(
+          await probe.agent.tools!.execute(tool, JSON.stringify({ sid: TARGET_SESSION_ID })),
+        ) as { ok: boolean; code: string };
+        expect(parsed.ok).toBe(false);
+        expect(parsed.code).toBe('E_DENIED');
+      }
+      expect(paused).not.toHaveBeenCalled();
+      expect(resumed).not.toHaveBeenCalled();
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('自己开的会话：暂停走 requestPause 回调；恢复只走 paused 目标（等回答的暂停不恢复）', async () => {
+    const paused = vi.fn<HostedSessionPauser>(async () => ({
+      ok: true,
+      paused: true,
+      already: false,
+    }));
+    // 预置两次状态查询：暂停前 running，恢复前 waiting（paused 在工作台投影里就是 waiting）
+    const statuses: WorkbenchJobStatus[] = [{ kind: 'running' }, { kind: 'waiting' }];
+    const resumed = vi.fn<HostedSessionResumer>(async () => ({ ok: true, resumed: false }));
+    const probe = await assembleProbe(true, {
+      pauseSession: paused,
+      resumeSession: resumed,
+      // 账本认领：与 workbench.childrenOf 同一真源形态（本进程创建者记录）
+      agentCreated: () => [TARGET_SESSION_ID],
+      readStatus: () => (statuses.length > 1 ? statuses.shift()! : statuses[0]!),
+    });
+    try {
+      const pauseResult = JSON.parse(
+        await probe.agent.tools!.execute(
+          PAUSE_WORK_SESSION_TOOL_NAME,
+          JSON.stringify({ sid: TARGET_SESSION_ID }),
+        ),
+      ) as { ok: boolean; paused: boolean };
+      expect(pauseResult).toEqual(expect.objectContaining({ ok: true, paused: true }));
+      expect(paused).toHaveBeenCalledWith(SESSION_ID, TARGET_SESSION_ID);
+
+      const resumeResult = JSON.parse(
+        await probe.agent.tools!.execute(
+          RESUME_WORK_SESSION_TOOL_NAME,
+          JSON.stringify({ sid: TARGET_SESSION_ID }),
+        ),
+      ) as { ok: boolean; resumed: boolean; note?: string };
+      expect(resumeResult.ok).toBe(true);
+      // 宿主读实例发现是「等用户回答」，如实回未恢复，不代答
+      expect(resumeResult.resumed).toBe(false);
+      expect(resumeResult.note).toBeTruthy();
+      expect(resumed).toHaveBeenCalledWith(SESSION_ID, TARGET_SESSION_ID);
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('状态读不到 ⇒ E_UNREADABLE（不猜着暂停 / 恢复）', async () => {
+    const paused = vi.fn<HostedSessionPauser>(async () => ({
+      ok: true,
+      paused: true,
+      already: false,
+    }));
+    const resumed = vi.fn<HostedSessionResumer>(async () => ({ ok: true, resumed: true }));
+    const probe = await assembleProbe(true, {
+      pauseSession: paused,
+      resumeSession: resumed,
+      agentCreated: () => [TARGET_SESSION_ID],
+      readStatus: () => ({ kind: 'unreadable' }),
+    });
+    try {
+      for (const tool of [PAUSE_WORK_SESSION_TOOL_NAME, RESUME_WORK_SESSION_TOOL_NAME]) {
+        const parsed = JSON.parse(
+          await probe.agent.tools!.execute(tool, JSON.stringify({ sid: TARGET_SESSION_ID })),
+        ) as { ok: boolean; code: string };
+        expect(parsed.ok).toBe(false);
+        expect(parsed.code).toBe('E_UNREADABLE');
+      }
+      expect(paused).not.toHaveBeenCalled();
+      expect(resumed).not.toHaveBeenCalled();
     } finally {
       await disposeProbe(probe);
     }

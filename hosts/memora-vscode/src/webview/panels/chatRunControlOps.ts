@@ -15,8 +15,14 @@ import type { Agent, AgentChunk } from '@zooique/memora';
 import { toNoticeText } from '../../extension/host/noticeText.js';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import type { HostedStopResult } from '../../extension/host/workSessionTools.js';
+import type {
+  HostedPauseResult,
+  HostedResumeResult,
+} from '../../extension/host/workSessionTools.js';
 // 主控停止复用本域 handleStop 的同一条实现（门禁 → 停止 → 结果信封），见 helpers 模块头
 import { stopHostedSession } from '../helpers/hostedSessionStop.js';
+// 主控暂停 / 恢复：按目标 sid 取既有实例，调实例现有公开方法（内核签名不动）
+import { pauseHostedSession, resumeHostedSession } from '../helpers/hostedSessionRunControl.js';
 
 /** 本域读到的会话级运行态（`runtimeFor()` 的窄投影，只读本域需要的两个字段） */
 export interface RunControlRuntime {
@@ -48,9 +54,15 @@ export interface ChatRunControlOpsDeps {
   currentSessionId: () => string;
   /** 调用方是否托管（主控停止的纵深防守；归属裁决不在本域，见 helpers 模块头） */
   isManaged: (sessionId: string) => boolean;
-  /** 跑一轮 Agent 流（恢复复用 sendInput 的同一条 runFlow 通路） */
+  /**
+   * 跑一轮 Agent 流（恢复复用 sendInput 的同一条 runFlow 通路）
+   *
+   * `sessionId` 缺省 = 当前显示会话；主控恢复等后台入口必须显式传入目标 sid，
+   * 否则流状态会写到切换后的另一个会话记录上（与 `dispatchHostedInput` 同口径）。
+   */
   runFlow: (
     factory: (signal: AbortSignal) => AsyncGenerator<AgentChunk, void, unknown>,
+    sessionId?: string,
   ) => Promise<void>;
   /** 重投影待发送队列（`force` = 绕长度守卫，停止路径必须无条件推相位） */
   syncPendingQueue: (force?: boolean) => void;
@@ -78,7 +90,28 @@ export interface ChatRunControlOps {
     callingSessionId: string,
     targetSessionId: string,
   ) => Promise<HostedStopResult>;
+  /** 主控暂停入口（工具 `pause_work_session`）：按目标 sid 取既有实例调 `requestPause` */
+  pauseHostedSession: (
+    callingSessionId: string,
+    targetSessionId: string,
+  ) => Promise<HostedPauseResult>;
+  /** 主控恢复入口（工具 `resume_work_session`）：按目标 sid 取既有实例走既有续跑通路 */
+  resumeHostedSession: (
+    callingSessionId: string,
+    targetSessionId: string,
+  ) => Promise<HostedResumeResult>;
 }
+
+/**
+ * 面板对外暴露的「主控运行控制」窄面（三个工具入口）
+ *
+ * 面板只持有这一份投影，不逐个复制字段：面板行数已贴 `max-lines` 基线，
+ * 且三入口本就同源（都是 `_runOps`），拆开声明只会多出重复行。
+ */
+export type HostedRunControlOps = Pick<
+  ChatRunControlOps,
+  'stopHostedSession' | 'pauseHostedSession' | 'resumeHostedSession'
+>;
 
 /**
  * 构造运行控制域
@@ -244,6 +277,46 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
     stopHostedSession: (callingSessionId, targetSessionId) =>
       stopHostedSession(
         { isManaged: deps.isManaged, handleStop: (id) => ops.handleStop(id) },
+        callingSessionId,
+        targetSessionId,
+      ),
+
+    /**
+     * 主控暂停：门禁 → 按目标 sid 取既有实例 → 调无参 `requestPause` → 结果信封
+     *
+     * 与用户暂停（`handlePause`）共用同一个内核方法，但**不做 toggle**：
+     * 代理重复调用只应得到「已暂停」的幂等回执，绝不能把暂停反悔成继续。
+     */
+    pauseHostedSession: (callingSessionId, targetSessionId) =>
+      pauseHostedSession(
+        {
+          isManaged: deps.isManaged,
+          getAgent: deps.getAgent,
+          hasPendingQuestion: (id) => deps.askFor(id).pendingQuestions().length > 0,
+          currentSessionId: deps.currentSessionId,
+          postTurnUpdate: deps.postTurnUpdate,
+        },
+        callingSessionId,
+        targetSessionId,
+      ),
+
+    /**
+     * 主控恢复：门禁 → 按目标 sid 取既有实例 → 复核 paused → 走既有 runFlow 续跑
+     *
+     * 等用户回答的暂停不恢复（代理不得代答）；这不是猜测，是读实例态 + 提问队列后的如实拒绝。
+     */
+    resumeHostedSession: (callingSessionId, targetSessionId) =>
+      resumeHostedSession(
+        {
+          isManaged: deps.isManaged,
+          getAgent: deps.getAgent,
+          hasPendingQuestion: (id) => deps.askFor(id).pendingQuestions().length > 0,
+          currentSessionId: deps.currentSessionId,
+          postTurnUpdate: deps.postTurnUpdate,
+          // 复用既有 runFlow 通路并显式带目标 sid；void 不等待——工具要的是「已启动」
+          runResume: (sessionId, agent) =>
+            void deps.runFlow((signal) => agent.resumeExecution(undefined, signal), sessionId),
+        },
         callingSessionId,
         targetSessionId,
       ),

@@ -87,6 +87,15 @@ export const MEMORY_SUMMARY_ROUND_LIMIT = 5;
 export const MEMORY_SUMMARY_TEXT_CHARS = 120;
 
 /**
+ * 暂停 / 恢复工具名（判据 6）
+ *
+ * 必须成对：暂停是「想继续」，恢复是唯一出口。只给暂停 = 把子会话停在一个
+ * 代理自己解不开的状态，用户还得手工去点继续，托管语义就断在半路。
+ */
+export const PAUSE_WORK_SESSION_TOOL_NAME = 'pause_work_session';
+export const RESUME_WORK_SESSION_TOOL_NAME = 'resume_work_session';
+
+/**
  * 派发回调可产生的业务结果（**唯一**真源 = `chatPanel.dispatchHostedInput` 的返回面）
  *
  * 只含派发层真实会判的两档：调用方非托管 `E_DENIED`、目标会话在跑 `E_BUSY`。
@@ -139,6 +148,10 @@ export interface WorkSessionToolDeps {
   createSession?: HostedSessionCreator;
   /** 停止目标会话的当前轮（由宿主面板提供；缺省 ⇒ 不注册 stop 工具） */
   stopSession?: HostedSessionStopper;
+  /** 暂停目标会话（由宿主面板提供；缺省 ⇒ 不注册 pause 工具） */
+  pauseSession?: HostedSessionPauser;
+  /** 恢复目标会话（由宿主面板提供；缺省 ⇒ 不注册 resume 工具） */
+  resumeSession?: HostedSessionResumer;
   /**
    * 会话摘要读口（判据 5 的窄工具；缺省 ⇒ 不注册 `read_memory_summary`）
    *
@@ -357,6 +370,48 @@ export type HostedSessionCreator = (
 ) => Promise<CreateSessionResult>;
 
 /**
+ * 暂停会话的宿主结果（工具 `pause_work_session` 的末段返回值）
+ *
+ * `paused:false` 不是错误：目标已收场 / 本来就无活可暂停（空闲守卫作废）。
+ * `already:true` = 目标已在暂停态或暂停申请已在途（幂等，不重复提交）。
+ * 归属裁决不在这里做（面板只判托管门禁），由工具层用创建者账本 + 历史判。
+ */
+export type HostedPauseResult =
+  | { ok: true; paused: boolean; already: boolean }
+  | { ok: false; code: 'E_DENIED' | 'E_UNREADABLE' | 'E_HOST'; message: string };
+
+/**
+ * 恢复会话的宿主结果（工具 `resume_work_session` 的末段返回值）
+ *
+ * `resumed:false` 不是错误：目标不在暂停态（可能在等用户回答 / 已收场），没有可恢复的活。
+ */
+export type HostedResumeResult =
+  | { ok: true; resumed: boolean }
+  | { ok: false; code: 'E_DENIED' | 'E_UNREADABLE' | 'E_HOST'; message: string };
+
+/**
+ * 暂停会话回调（面板实现；工具 handler 不持有面板实例）
+ *
+ * 实现必须**按目标 sid 取既有实例**，再调该实例的无参公开方法 `requestPause`——
+ * 不给内核加目标形参、不改内核签名（停止已按同一路径按 sid 寻址）。
+ */
+export type HostedSessionPauser = (
+  callingSessionId: string,
+  targetSessionId: string,
+) => Promise<HostedPauseResult>;
+
+/**
+ * 恢复会话回调（面板实现；工具 handler 不持有面板实例）
+ *
+ * 实现必须按目标 sid 取既有实例，复用该实例的 `resumeExecution` 与宿主既有 runFlow 通路，
+ * 不另造续跑逻辑，也不改内核签名。
+ */
+export type HostedSessionResumer = (
+  callingSessionId: string,
+  targetSessionId: string,
+) => Promise<HostedResumeResult>;
+
+/**
  * 停止会话的宿主结果（工具 `stop_work_session` 的末段返回值）
  *
  * `stopped:false` 不是错误：目标当前没有流 / 不是 paused，说明活已经收场或无活可停。
@@ -514,6 +569,67 @@ const STOP_WORK_SESSION_DEFINITION: ToolDefinition = {
 };
 
 /**
+ * 暂停会话工具定义（声明面 · 判据 6）
+ *
+ * - `readonly: false`：会改变目标会话的运行态（软暂停，不中断生成流）；
+ * - `diskWrite: 'none'`：暂停只翻宿主 / 内核内存状态，落盘发生在目标会话自己的检查点；
+ * - `confirmPolicy: 'audit'`：与 stop / send / create 同档。
+ *
+ * 参数封闭：只有 sid；未知键在 handler 判 `E_ARGS`。
+ * 与 `resume_work_session` **成对**：只给暂停会把子会话停在代理自己解不开的状态。
+ */
+const PAUSE_WORK_SESSION_DEFINITION: ToolDefinition = {
+  name: PAUSE_WORK_SESSION_TOOL_NAME,
+  description:
+    '暂停一条**你自己开的**会话（软暂停：当前步骤结束后生效，历史保留，可再恢复）。' +
+    'sid 必须来自 list_work_sessions，且该条目的 createdBy 必须是 agent。' +
+    '用户自己建的会话（createdBy=user）不接受代理暂停，返回 E_DENIED；' +
+    '状态读不到（unreadable）时返回 E_UNREADABLE，不猜着暂停。' +
+    'paused=true 表示已在暂停态 / 申请已被受理；paused=false 表示目标已收场或本来没跑。' +
+    '恢复用 resume_work_session（同一套归属门禁）。',
+  parameters: {
+    type: 'object',
+    properties: {
+      sid: { type: 'string', description: '目标会话标识（list_work_sessions 返回的 sid）' },
+    },
+    required: ['sid'],
+  },
+  readonly: false,
+  diskWrite: 'none',
+  confirmPolicy: 'audit',
+};
+
+/**
+ * 恢复会话工具定义（声明面 · 判据 6）
+ *
+ * - `readonly: false`：会让目标会话继续跑（可能写文件），只读模式（review/plan）应拦住它；
+ * - `diskWrite: 'none'`：续跑落盘发生在目标会话自己的内核流程里，不按 `opaque` 与一切写互斥；
+ * - `confirmPolicy: 'audit'`：与 pause / stop 同档。
+ *
+ * 参数封闭：只有 sid；未知键在 handler 判 `E_ARGS`。
+ */
+const RESUME_WORK_SESSION_DEFINITION: ToolDefinition = {
+  name: RESUME_WORK_SESSION_TOOL_NAME,
+  description:
+    '恢复一条**你自己暂停过 / 你自己开的**会话（复用宿主既有续跑路径，不新造流）。' +
+    'sid 必须来自 list_work_sessions，且该条目的 createdBy 必须是 agent。' +
+    '用户自己建的会话（createdBy=user）不接受代理恢复，返回 E_DENIED；' +
+    '状态读不到（unreadable）时返回 E_UNREADABLE，不猜着恢复。' +
+    'resumed=true 表示续跑已启动；resumed=false 表示目标不在暂停态' +
+    '（可能在等用户回答 / 已收场），没有可恢复的活。',
+  parameters: {
+    type: 'object',
+    properties: {
+      sid: { type: 'string', description: '目标会话标识（list_work_sessions 返回的 sid）' },
+    },
+    required: ['sid'],
+  },
+  readonly: false,
+  diskWrite: 'none',
+  confirmPolicy: 'audit',
+};
+
+/**
  * 建会话工具定义（声明面）
  *
  * - `readonly: false`：首轮会让新会话进入可能写文件的流程，只读模式（review/plan）应拦住它；
@@ -655,16 +771,14 @@ export function buildMemorySummaryFacts(input: {
 /**
  * 校验 `read_memory_summary` 的参数（只接受 { sid }）
  *
+ * 与 stop / pause / resume 共用同一份解析：窄工具的「窄」由这份键集封闭保证，
+ * 多一个 `roundId` 就会退回成 `trace_summary` 的入口。
+ *
  * @param args 工具执行器传入的已解析参数
  * @returns 合法载荷；undefined = 未知键 / 缺键 / 类型不对（调用方统一回 `E_ARGS`）
  */
 function parseReadMemorySummaryArgs(args: Record<string, unknown>): { sid: string } | undefined {
-  const keys = Object.keys(args);
-  // 键集必须恰好是 {sid}：多一个 roundId 就拒，不让窄工具长出原工具的入口
-  if (keys.length !== 1 || keys[0] !== 'sid') return undefined;
-  const { sid } = args;
-  if (typeof sid !== 'string' || sid.trim() === '') return undefined;
-  return { sid };
+  return parseSidOnlyArgs(args);
 }
 
 /**
@@ -713,12 +827,15 @@ function parseSendArgs(args: Record<string, unknown>): { sid: string; text: stri
 }
 
 /**
- * 校验 `stop_work_session` 的参数（只接受 { sid }，且 sid 非空）
+ * 校验「只接受 { sid }」类工具的参数（stop / pause / resume / read_memory_summary 共用）
+ *
+ * 四个入口的入参形态完全相同，共用一份解析，避免某一处悄悄放宽（例如给 resume 加个
+ * roundId）却没人发现。
  *
  * @param args 工具执行器传入的已解析参数
  * @returns 合法载荷；undefined = 未知键 / 缺键 / 类型不对（调用方统一回 `E_ARGS`）
  */
-function parseStopArgs(args: Record<string, unknown>): { sid: string } | undefined {
+function parseSidOnlyArgs(args: Record<string, unknown>): { sid: string } | undefined {
   const keys = Object.keys(args);
   // 键集必须恰好是 {sid}：多一个未知键就拒（不忽略、不透传）
   if (keys.length !== 1 || keys[0] !== 'sid') return undefined;
@@ -835,6 +952,63 @@ export function serializeCreateSessionResult(result: CreateSessionResult): strin
 }
 
 /**
+ * 读「这条会话是不是调用方开的」所需的既有事实（stop / pause / resume 三条入口共用）
+ *
+ * 账本 = 本进程创建者记录（重启后为空）；历史 = 每次按需重建（有上限）。
+ * 两处都读不到时返回 unreadable / 空集，由 `projectCreatedBy` 判 unknown，不猜。
+ *
+ * @param deps 装配期注入的依赖（可能整体缺省）
+ * @returns 历史（可缺省）+ 创建者账本 + 历史事实（缺省时 unreadable 兜底）
+ */
+function readHostedCreatedFacts(deps: WorkSessionToolDeps | undefined): {
+  history?: SessionHistoryFacts;
+  ledger: readonly string[];
+  historyFacts: SessionHistoryFacts;
+} {
+  const callingSessionId = deps?.callingSessionId;
+  // 历史重建每次调用做一次（读盘有上限，结果自带覆盖状态）；没有读口 ⇒ 如实 unreadable
+  const history =
+    callingSessionId && deps?.readHistory ? deps.readHistory(callingSessionId) : undefined;
+  // 创建者账本仅本进程（重启后为空），与历史并集由 `projectCreatedBy` 判归属
+  const ledger = callingSessionId && deps?.agentCreated ? deps.agentCreated(callingSessionId) : [];
+  return {
+    history,
+    ledger,
+    historyFacts: history ?? {
+      coverage: 'unreadable',
+      children: [],
+      totalRounds: 0,
+      scannedRounds: 0,
+    },
+  };
+}
+
+/**
+ * 归属门禁的统一话术（stop / pause / resume 三条入口同一套，语义不放宽）
+ *
+ * @param createdBy 归属裁决结果
+ * @param verb 被拒的动作（停 / 暂停 / 恢复），只影响文案
+ * @returns 给模型看的拒绝原因
+ */
+function ownershipDeniedMessage(createdBy: AgentCreatedBy, verb: string): string {
+  return createdBy === 'user'
+    ? `这是用户自己建的会话，代理不许${verb}。`
+    : `无法确认这条会话是你开的（账本没记、历史也没扫到），代理不许${verb}。`;
+}
+
+/**
+ * 状态是否已经「没有活可暂停 / 恢复」
+ *
+ * 与 stop 同一组判据：已收场、从未跑起来的状态不当作可操作活，如实回 false 而不是报错。
+ *
+ * @param kind 工作台状态投影
+ * @returns true = 没有活（调用方直接回 false，不调用宿主回调）
+ */
+function hasNoLiveRun(kind: WorkbenchJobStatus['kind']): boolean {
+  return kind === 'completed' || kind === 'stopped' || kind === 'unsettled' || kind === 'queued';
+}
+
+/**
  * 为主控会话注册会话工具
  *
  * 幂等性：本函数只做一次性装配注册；`registerTool` 对同名重复注册会抛错——
@@ -897,34 +1071,9 @@ export function registerWorkSessionTools(
     return { scopes, readable, historyReadable, unscopedRunning };
   };
   /**
-   * 读「这条会话是不是调用方开的」所需的既有事实
-   *
-   * 账本 = 本进程创建者记录（重启后为空）；历史 = 每次按需重建（有上限）。
-   * 两处都读不到时返回 unreadable / 空集，由 `projectCreatedBy` 判 unknown，不猜。
+   * 读「这条会话是不是调用方开的」所需的既有事实（单一实现见模块级 `readHostedCreatedFacts`）
    */
-  const readCreatedFacts = (): {
-    history?: SessionHistoryFacts;
-    ledger: readonly string[];
-    historyFacts: SessionHistoryFacts;
-  } => {
-    const callingSessionId = deps?.callingSessionId;
-    // 历史重建每次调用做一次（读盘有上限，结果自带覆盖状态）；没有读口 ⇒ 如实 unreadable
-    const history =
-      callingSessionId && deps?.readHistory ? deps.readHistory(callingSessionId) : undefined;
-    // 创建者账本仅本进程（重启后为空），与历史并集由 `projectCreatedBy` 判归属
-    const ledger =
-      callingSessionId && deps?.agentCreated ? deps.agentCreated(callingSessionId) : [];
-    return {
-      history,
-      ledger,
-      historyFacts: history ?? {
-        coverage: 'unreadable',
-        children: [],
-        totalRounds: 0,
-        scannedRounds: 0,
-      },
-    };
-  };
+  const readCreatedFacts = () => readHostedCreatedFacts(deps);
   tools.registerTool(LIST_WORK_SESSIONS_DEFINITION, async () => {
     // 结果形态对齐设计文档的 `{ ok, sessions }` 信封；本片不含 workspaceRoot（未到需要时）
     const metas = sessionStore.listSessionMetas();
@@ -1100,7 +1249,7 @@ export function registerWorkSessionTools(
     if (deps.stopSession) {
       const stopSession = deps.stopSession;
       tools.registerTool(STOP_WORK_SESSION_DEFINITION, async (args) => {
-        const parsed = parseStopArgs(args);
+        const parsed = parseSidOnlyArgs(args);
         if (!parsed) {
           return JSON.stringify(
             { ok: false, code: 'E_ARGS', message: '参数必须且只能是 { sid }，sid 为非空字符串。' },
@@ -1124,10 +1273,7 @@ export function registerWorkSessionTools(
             {
               ok: false,
               code: 'E_DENIED',
-              message:
-                createdBy === 'user'
-                  ? '这是用户自己建的会话，代理不许停。'
-                  : '无法确认这条会话是你开的（账本没记、历史也没扫到），代理不许停。',
+              message: ownershipDeniedMessage(createdBy, '停'),
             },
             null,
             2,
@@ -1148,12 +1294,7 @@ export function registerWorkSessionTools(
           );
         }
         // 已经收场 / 从没跑起来：没有活可停，如实回 stopped=false（不是错误）
-        if (
-          status.kind === 'completed' ||
-          status.kind === 'stopped' ||
-          status.kind === 'unsettled' ||
-          status.kind === 'queued'
-        ) {
+        if (hasNoLiveRun(status.kind)) {
           return JSON.stringify({ ok: true, stopped: false, status }, null, 2);
         }
         try {
@@ -1174,6 +1315,154 @@ export function registerWorkSessionTools(
               ok: false,
               code: 'E_HOST',
               message: `宿主停止失败：${err instanceof Error ? err.message : String(err)}`,
+            },
+            null,
+            2,
+          );
+        }
+      });
+    }
+    if (deps.pauseSession) {
+      const pauseSession = deps.pauseSession;
+      tools.registerTool(PAUSE_WORK_SESSION_DEFINITION, async (args) => {
+        // ①②③ 与 stop 同一套：参数封闭 → 归属门禁（账本 + 历史）→ 状态可读性
+        const parsed = parseSidOnlyArgs(args);
+        if (!parsed) {
+          return JSON.stringify(
+            { ok: false, code: 'E_ARGS', message: '参数必须且只能是 { sid }，sid 为非空字符串。' },
+            null,
+            2,
+          );
+        }
+        const meta = sessionStore.listSessionMetas().find((m) => m.sessionId === parsed.sid);
+        if (!meta) {
+          return JSON.stringify(
+            { ok: false, code: 'E_NOT_FOUND', message: `未知会话：${parsed.sid}` },
+            null,
+            2,
+          );
+        }
+        const { ledger, historyFacts } = readCreatedFacts();
+        const createdBy = projectCreatedBy(meta, parsed.sid, { ledger, history: historyFacts });
+        if (createdBy !== 'agent') {
+          return JSON.stringify(
+            { ok: false, code: 'E_DENIED', message: ownershipDeniedMessage(createdBy, '暂停') },
+            null,
+            2,
+          );
+        }
+        const status = deps.readStatus?.(parsed.sid) ?? { kind: 'unreadable' as const };
+        if (status.kind === 'unreadable') {
+          // 读不到 ≠ 空闲：不猜着暂停，先让调用方确认
+          return JSON.stringify(
+            {
+              ok: false,
+              code: 'E_UNREADABLE',
+              message: '该会话的状态读不到，未执行暂停；请稍后重试或让用户处理。',
+            },
+            null,
+            2,
+          );
+        }
+        // 已收场 / 从没跑起来：没有活可暂停，如实回 paused=false（不是错误）
+        if (hasNoLiveRun(status.kind)) {
+          return JSON.stringify({ ok: true, paused: false, already: false, status }, null, 2);
+        }
+        try {
+          // ④ 按目标 sid 取既有实例调 requestPause（宿主 helper，内核签名不变）
+          const result = await pauseSession(deps.callingSessionId, parsed.sid);
+          if (!result.ok) return JSON.stringify(result, null, 2);
+          // 暂停在下一 step 边界才生效：此处保留申请前状态快照，不重读成「已暂停」的假象
+          return JSON.stringify(
+            {
+              ok: true,
+              paused: result.paused,
+              ...(result.already ? { already: true } : {}),
+              status,
+            },
+            null,
+            2,
+          );
+        } catch (err) {
+          return JSON.stringify(
+            {
+              ok: false,
+              code: 'E_HOST',
+              message: `宿主暂停失败：${err instanceof Error ? err.message : String(err)}`,
+            },
+            null,
+            2,
+          );
+        }
+      });
+    }
+    if (deps.resumeSession) {
+      const resumeSession = deps.resumeSession;
+      tools.registerTool(RESUME_WORK_SESSION_DEFINITION, async (args) => {
+        // ①②③ 与 stop / pause 同一套门禁，不放宽
+        const parsed = parseSidOnlyArgs(args);
+        if (!parsed) {
+          return JSON.stringify(
+            { ok: false, code: 'E_ARGS', message: '参数必须且只能是 { sid }，sid 为非空字符串。' },
+            null,
+            2,
+          );
+        }
+        const meta = sessionStore.listSessionMetas().find((m) => m.sessionId === parsed.sid);
+        if (!meta) {
+          return JSON.stringify(
+            { ok: false, code: 'E_NOT_FOUND', message: `未知会话：${parsed.sid}` },
+            null,
+            2,
+          );
+        }
+        const { ledger, historyFacts } = readCreatedFacts();
+        const createdBy = projectCreatedBy(meta, parsed.sid, { ledger, history: historyFacts });
+        if (createdBy !== 'agent') {
+          return JSON.stringify(
+            { ok: false, code: 'E_DENIED', message: ownershipDeniedMessage(createdBy, '恢复') },
+            null,
+            2,
+          );
+        }
+        const status = deps.readStatus?.(parsed.sid) ?? { kind: 'unreadable' as const };
+        if (status.kind === 'unreadable') {
+          return JSON.stringify(
+            {
+              ok: false,
+              code: 'E_UNREADABLE',
+              message: '该会话的状态读不到，未执行恢复；请稍后重试或让用户处理。',
+            },
+            null,
+            2,
+          );
+        }
+        // 只有 waiting 可能是暂停态（paused 在工作台投影里就是 waiting）；其余没有可恢复的活
+        if (status.kind !== 'waiting') {
+          return JSON.stringify({ ok: true, resumed: false, status }, null, 2);
+        }
+        try {
+          // ④ 宿主按目标 sid 复核实例态：等用户回答的暂停不代答，未在暂停态如实回 false
+          const result = await resumeSession(deps.callingSessionId, parsed.sid);
+          if (!result.ok) return JSON.stringify(result, null, 2);
+          return JSON.stringify(
+            {
+              ok: true,
+              resumed: result.resumed,
+              ...(result.resumed
+                ? {}
+                : { note: '目标不在代理可恢复的暂停态（可能在等用户回答 / 已收场），未恢复。' }),
+              status,
+            },
+            null,
+            2,
+          );
+        } catch (err) {
+          return JSON.stringify(
+            {
+              ok: false,
+              code: 'E_HOST',
+              message: `宿主恢复失败：${err instanceof Error ? err.message : String(err)}`,
             },
             null,
             2,

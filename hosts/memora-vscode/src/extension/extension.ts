@@ -65,6 +65,8 @@ import { registerRevokeManagedSessionCommand } from './commands/revokeManagedSes
 import type {
   HostedInputDispatcher,
   HostedSessionCreator,
+  HostedSessionPauser,
+  HostedSessionResumer,
   HostedSessionStopper,
 } from './host/workSessionTools.js';
 import { runDemoCommand } from './commands/demo.js';
@@ -239,6 +241,10 @@ interface AssemblyDeps {
   createHostedSession: HostedSessionCreator;
   /** 托管停止回调（工具 handler → 面板；复用用户停止的同一条路径） */
   stopHostedSession: HostedSessionStopper;
+  /** 托管暂停回调（工具 handler → 面板；按目标 sid 取既有实例调 requestPause） */
+  pauseHostedSession: HostedSessionPauser;
+  /** 托管恢复回调（工具 handler → 面板；按目标 sid 取既有实例走既有续跑通路） */
+  resumeHostedSession: HostedSessionResumer;
   /** 主控清单的状态读口（与工作台共用 `shared/sessionStatus` 的同一投影） */
   readHostedStatus: (sessionId: string) => WorkbenchJobStatus;
   /** 主控清单的归属读口（本进程创建者账本，与工作台同一真源） */
@@ -351,6 +357,9 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
     createHostedSession: deps.createHostedSession,
     // 停止走用户停止的同一条实现（面板内 _runOps.handleStop），不另造一套
     stopHostedSession: deps.stopHostedSession,
+    // 暂停 / 恢复按目标 sid 取既有实例，调实例现有公开方法（内核签名不动）
+    pauseHostedSession: deps.pauseHostedSession,
+    resumeHostedSession: deps.resumeHostedSession,
     // 主控清单看状态 / 归属：与工作台共用同一批读口（不另造第二套判断）
     readHostedStatus: deps.readHostedStatus,
     hostedAgentCreated: deps.hostedAgentCreated,
@@ -614,8 +623,13 @@ export function activate(context: vscode.ExtensionContext): void {
     // 建会话同法：工具 handler → 面板既有新建路径（角色包校验、标题与范围声明落盘都在面板内）
     createHostedSession: (calling, rolePack, title, text, sender, paths) =>
       chatProvider.createHostedSession(calling, rolePack, title, text, sender, paths),
-    // 停止同法：工具 handler → 面板的 `_runOps.handleStop`（与用户点停止完全同一条路）
-    stopHostedSession: (calling, target) => chatProvider.stopHostedSession(calling, target),
+    // 停止 / 暂停 / 恢复同法：工具 handler → 面板运行控制窄面（同一真源 `_runOps`）
+    stopHostedSession: (calling, target) =>
+      chatProvider.hostedRunControl.stopHostedSession(calling, target),
+    pauseHostedSession: (calling, target) =>
+      chatProvider.hostedRunControl.pauseHostedSession(calling, target),
+    resumeHostedSession: (calling, target) =>
+      chatProvider.hostedRunControl.resumeHostedSession(calling, target),
     readHostedStatus,
     // 归属真源 = 与工作台同一个创建者账本（仅本进程；重启后由历史重建补）
     hostedAgentCreated: (orchestratorId) => chatProvider.workbench.childrenOf(orchestratorId),

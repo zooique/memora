@@ -1460,5 +1460,11 @@
   "Older history was not read (only the latest {0} rounds)": "",
   "{0} session(s) could not be found": "",
   "Memora: only managed sessions can stop other sessions.": "",
-  "Memora: failed to stop the session.": ""
+  "Memora: failed to stop the session.": "",
+  "Memora: only managed sessions can pause other sessions.": "",
+  "Memora: the target session has no live instance to pause.": "",
+  "Memora: failed to pause the session.": "",
+  "Memora: only managed sessions can resume other sessions.": "",
+  "Memora: the target session has no live instance to resume.": "",
+  "Memora: failed to resume the session.": ""
 }

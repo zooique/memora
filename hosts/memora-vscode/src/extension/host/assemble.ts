@@ -55,6 +55,8 @@ import {
   registerWorkSessionTools,
   type HostedInputDispatcher,
   type HostedSessionCreator,
+  type HostedSessionPauser,
+  type HostedSessionResumer,
   type HostedSessionStopper,
   type MemorySummaryFacts,
   type MemorySummaryReader,
@@ -413,6 +415,10 @@ export interface AssembleOptions {
   createHostedSession?: HostedSessionCreator;
   /** 停止回调（工具 handler → 面板；复用用户停止的同一条路径） */
   stopHostedSession?: HostedSessionStopper;
+  /** 暂停回调（工具 handler → 面板；按目标 sid 取既有实例调 requestPause，内核签名不动） */
+  pauseHostedSession?: HostedSessionPauser;
+  /** 恢复回调（工具 handler → 面板；按目标 sid 取既有实例走既有续跑通路） */
+  resumeHostedSession?: HostedSessionResumer;
   /** 单会话状态读口（与工作台共用同一投影；缺省 ⇒ list 项标 unreadable） */
   readHostedStatus?: (sessionId: string) => WorkbenchJobStatus;
   /** 本进程创建者账本读口（与工作台同一真源；缺省 ⇒ 归属 unknown） */
@@ -478,6 +484,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     dispatchHostedInput,
     createHostedSession,
     stopHostedSession,
+    pauseHostedSession,
+    resumeHostedSession,
     readHostedStatus,
     hostedAgentCreated,
     readHostedHistory,
@@ -718,6 +726,9 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
             ...(dispatchHostedInput ? { dispatch: dispatchHostedInput } : {}),
             ...(createHostedSession ? { createSession: createHostedSession } : {}),
             ...(stopHostedSession ? { stopSession: stopHostedSession } : {}),
+            // 判据 6：暂停 / 恢复成对注册（只给暂停 = 把子会话停在代理解不开的状态）
+            ...(pauseHostedSession ? { pauseSession: pauseHostedSession } : {}),
+            ...(resumeHostedSession ? { resumeSession: resumeHostedSession } : {}),
             // 判据 5：与上一段 deny trace_summary 同批生效
             readMemorySummary,
             listRolePacks,
