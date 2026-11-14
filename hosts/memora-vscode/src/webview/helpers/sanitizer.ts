@@ -13,7 +13,7 @@ import DOMPurify from 'dompurify';
 export type SanitizeFn = (html: string) => string;
 
 /**
- * 创建基于指定 window 的消毒器（每次会话初始化时调用一次）
+ * 创建基于指定 window 的消毒器（webview 入口初始化时经 `createChatView` 调用一次）
  *
  * @param win 宿主 window——在 webview 浏览器环境传入全局 window（createChatView deps）。
  *   不裸用全局 window：若模块被 Node 环境加载，裸引用会抛 ReferenceError。
