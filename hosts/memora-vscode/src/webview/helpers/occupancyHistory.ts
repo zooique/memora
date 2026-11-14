@@ -30,7 +30,8 @@ export interface OccupancyMessage {
  * 图片 token 的折算由内核单点 `estimateTokensMessages` 负责（按尺寸 patches 公式），
  * 本函数**只负责把带 attachments 的历史喂给它**，绝不在此自行重算第二次。
  *
- * assistant 侧的判据与 `loadRoundBasedHistory` 对齐：**仅 complete 轮**取正文——
+ * assistant 侧**只计已收场轮**（判据 = 内核 `isRoundSettled`）；注意 `loadRoundBasedHistory`
+ * 是重放 / 展示投影，**不做收场过滤**、全部轮次照透，两者判据不同源，勿写成「与之对齐」。
  * 中断轮的正文与平铺 narrate 同源，计入会重复计一次。
  *
  * @param rounds 已按时间顺序排列的历史轮次
