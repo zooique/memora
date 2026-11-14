@@ -13,7 +13,7 @@
 
 import * as l10n from '@vscode/l10n';
 
-/** 特征键 → 英文源键（键面 = 内核 persona frontmatter 的 traits 键） */
+/** 特征键 → 英文源键（内核 persona frontmatter 按 `traits.*` 前缀收任意键、不枚举，本表只覆盖自己列出的这些） */
 // @nls-keys
 export const TRAIT_LABELS: Record<string, string> = {
   precision: 'Precision',
