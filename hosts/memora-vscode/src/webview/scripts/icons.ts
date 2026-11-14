@@ -61,9 +61,9 @@ export type IconName =
   // 「导入压缩包」（托盘 + 下沉箭头）：技能 / 角色包区的「导入 .zip」按钮。
   // 语义提示：箭头向托盘内落，表达「把外部内容收进来」，与「导出」相反。
   | 'import'
-  // 「托管会话」来源标（广播信号：中心点 + 两道弧）——会话列表右侧的小图标。
-  // 只表达「不是本机用户输入」，不绑定任何具体助手名（名字可配置）。
-  | 'broadcast';
+  // 「助手会话」来源标（机器人头：圆角方脸 + 天线 + 双眼）——会话列表右侧的小图标。
+  // 只表达「这条会话由助手代你推进」，不用广播 / 群发符号，也不绑定具体助手名（名字可配置）。
+  | 'assistant';
 
 /** SVG 路径集合（viewBox 0 0 16 16）— Trae 柔和线条风格 */
 const ICON_PATHS: Record<IconName, string> = {
@@ -155,9 +155,10 @@ const ICON_PATHS: Record<IconName, string> = {
   // 16px 网格下描边小点会糊成环）
   warning:
     '<path d="M2.2 12.8L8 3.2l5.8 9.6z"/><path d="M8 6.8v2.6"/><circle cx="8" cy="11.4" r="0.9" fill="currentColor" stroke="none"/>',
-  // 托管会话：广播信号（中心点用填充圆，两道同心弧向外扩散）
-  broadcast:
-    '<circle cx="8" cy="10.4" r="1" fill="currentColor" stroke="none"/><path d="M5.6 8.3a3.4 3.4 0 0 1 4.8 0"/><path d="M3.6 6.2a6.3 6.3 0 0 1 8.8 0"/>',
+  // 助手会话：机器人头（圆角方脸 + 天线 + 填充圆双眼）——语义是「助手」，不是广播 / 群发；
+  // 小点用填充圆（与 ellipsis 同法：16px 网格下描边小点会糊成环）
+  assistant:
+    '<rect x="3" y="5.2" width="10" height="8" rx="2.5"/><path d="M8 5.2V3.2"/><circle cx="8" cy="2.6" r="0.6" fill="currentColor" stroke="none"/><circle cx="6" cy="9.2" r="0.9" fill="currentColor" stroke="none"/><circle cx="10" cy="9.2" r="0.9" fill="currentColor" stroke="none"/>',
 };
 
 /** SVG 通用属性（Trae 柔和风格） */

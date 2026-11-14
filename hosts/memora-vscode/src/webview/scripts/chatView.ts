@@ -1919,7 +1919,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         tag.className = 'msg-origin-tag';
         tag.textContent = originMeta.senderName
           ? l10n.t('Sent by {0}', originMeta.senderName)
-          : l10n.t('Sent from a hosted session');
+          : // 缺名时也不能说「托管」：面向用户只有「助手」这一层身份（§14.22.6 第 1 条）
+            l10n.t('Sent by the assistant');
         div.appendChild(tag);
       }
       const body = document.createElement('div');

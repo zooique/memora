@@ -9,7 +9,9 @@
  *   - `send_to_session` 只做参数校验 + 会话存在性判定 + 调注入的派发回调；
  *     它**不持有面板实例**，也不读编辑器 / problems / git（派发实现归 chatPanel，见其 JSDoc）。
  *   - 数据来源 = 注入的 `ISessionStore.listSessionMetas()`（宿主已有的会话元数据真源）。
- *   - 关系表 / `E_LIMIT` / 深度限制明确后置（v0 = 深度 1）：本文件**不预留**对应参数或字段。
+ *   - 关系表 / `E_LIMIT` / 深度限制明确后置：v0 **不限制嵌套深度**——派发工具对每个托管
+ *     会话都可见（只有 self 会话没有），没有「子会话拿不到工具」的结构性保证；本文件
+ *     **不预留**对应参数或字段，深度闸等关系表落地后再加。
  *   - 主控身份**不落盘、不进 `SessionMeta`**：`SessionMeta.mode` 已作废。
  */
 import type { Agent, ISessionStore, SessionMeta, ToolDefinition } from '@zooique/memora';

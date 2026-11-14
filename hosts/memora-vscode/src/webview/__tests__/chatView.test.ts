@@ -798,8 +798,9 @@ describe('chatView clear_ok 消息区清理', () => {
     const tags = messages.querySelectorAll('.msg-origin-tag');
     expect(tags).toHaveLength(2); // 仅两条 hosted 有标签
     expect(tags[0]?.textContent).toBe('Sent by 运营助手');
-    // senderName 缺失 ⇒ 中性文案，不得写死任何具体助手名（名字可配置）
-    expect(tags[1]?.textContent).toBe('Sent from a hosted session');
+    // senderName 缺失 ⇒ 中性文案，不得写死任何具体助手名（名字可配置）；
+    // 也不能退回「托管」这类模式名（面向用户只说助手）
+    expect(tags[1]?.textContent).toBe('Sent by the assistant');
 
     // 用户输入 / 旧数据：气泡存在但零标记（不造「用户」第二语义）
     const wrappers = messages.querySelectorAll('.msg-wrapper');

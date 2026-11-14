@@ -141,7 +141,7 @@ describe('历史菜单会话来源图标（origin）', () => {
       [
         {
           sessionId: '2026-11-06-h',
-          title: '托管会话',
+          title: '助手会话',
           updatedAt: '2026-11-06T10:00:00.000Z',
           origin: 'hosted',
         },
@@ -162,7 +162,8 @@ describe('历史菜单会话来源图标（origin）', () => {
       document.querySelector(`[data-treedd-id="${id}"] .session-history__item-origin`);
 
     expect(originIcon('2026-11-06-h')).not.toBeNull();
-    expect(originIcon('2026-11-06-h')?.getAttribute('aria-label')).toBe('Hosted session');
+    // 面向用户只说「助手」；「托管」属内部模式名，不得出现在列表标识里
+    expect(originIcon('2026-11-06-h')?.getAttribute('aria-label')).toBe('Assistant session');
     // 用户会话与旧数据：不造「用户」标记，也不留空 span（空 span 会多占 flex gap）
     expect(originIcon('2026-11-06-u')).toBeNull();
     expect(originIcon('2026-11-06-o')).toBeNull();

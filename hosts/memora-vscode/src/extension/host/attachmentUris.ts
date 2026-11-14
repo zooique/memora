@@ -93,7 +93,6 @@ export function attachmentPayload(
  * @param text 用户原始输入（裸输入，不含注入信封——上屏与落盘刻意不同形）
  * @param ts 上屏时刻（与 live 轮 seed 的时间戳同源）
  * @param origin 输入来源标记（缺省 = 不写，读侧按 `'user'` 解释）
- * @param senderName 发送者名称（仅托管输入有值；用户输入不传，避免空串占位）
  */
 export function userEcho(
   text: string,
@@ -102,16 +101,14 @@ export function userEcho(
   projectPath: string,
   toUri: ToWebviewUri,
   origin?: UserEcho['origin'],
-  senderName?: string,
 ): UserEcho {
   return {
     type: 'user',
     text,
     ts,
     ...attachmentPayload(refs, projectPath, toUri),
-    // 条件展开：缺省时不产生 `origin: undefined` / `senderName: undefined` 键
+    // 条件展开：缺省时不产生 `origin: undefined` 键
     ...(origin ? { origin } : {}),
-    ...(senderName ? { senderName } : {}),
   };
 }
 

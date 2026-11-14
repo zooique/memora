@@ -290,15 +290,17 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
             ? l10n.t('Stopped')
             : l10n.t('Last run did not finish normally');
     }
-    // 托管会话标识：仅 origin === 'hosted' 才插入小图标；
+    // 助手会话标识：仅 origin === 'hosted' 才插入小图标；
     // 'user' / undefined（旧数据）不显示任何东西——不造「用户会话」标记。
     const originEl = document.createElement('span');
     if (s.origin === 'hosted') {
       originEl.className = 'session-history__item-origin';
-      originEl.title = l10n.t('Hosted session');
+      // 面向用户只说「助手」：不出现「托管」这类模式名（§14.22.6 第 1 条）
+      originEl.title = l10n.t('Assistant session');
       originEl.setAttribute('role', 'img');
-      originEl.setAttribute('aria-label', l10n.t('Hosted session'));
-      originEl.innerHTML = getIconSvg('broadcast', 14, 14);
+      originEl.setAttribute('aria-label', l10n.t('Assistant session'));
+      // 图标取助手语义（机器人头），不用广播符号（§14.22.6 第 3 条）
+      originEl.innerHTML = getIconSvg('assistant', 14, 14);
     }
     // 分组动作：会话记录 → 移入留存区；留存区 → 移回会话记录。
     // 两者都**不是删除**（数据一字不动），故图标与文案都不用删除类语言。

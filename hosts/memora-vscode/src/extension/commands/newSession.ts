@@ -31,17 +31,17 @@ export async function newSessionCommand(
 ): Promise<void> {
   const lastMode = sessionModes.getLastMode();
 
-  /** 自助模式项：origin 落 'user' */
+  /** 自助模式项：origin 落 'user'；文案说「我自己聊」，不出现模式名 */
   const selfItem: ModePickItem = {
     value: 'self',
-    label: vscode.l10n.t('Self mode'),
-    description: vscode.l10n.t('You drive the session'),
+    label: vscode.l10n.t("I'll chat myself"),
+    description: vscode.l10n.t('You send messages; the assistant replies'),
   };
-  /** 托管模式项：origin 落 'hosted'，装配注入主控工具面 */
+  /** 托管模式项：origin 落 'hosted'，装配注入主控工具面；文案说「助手替你干活」 */
   const managedItem: ModePickItem = {
     value: 'managed',
-    label: vscode.l10n.t('Managed mode'),
-    description: vscode.l10n.t('A host orchestrates the session'),
+    label: vscode.l10n.t('Let the assistant work for you'),
+    description: vscode.l10n.t('The assistant moves this session forward for you'),
   };
 
   // VS Code QuickPick 没有「默认选中」API：把上次模式置顶并标注，等价视觉默认
