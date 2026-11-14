@@ -211,6 +211,8 @@ import { createChatTurnStructureOps, truncateFailNotice } from './chatTurnStruct
 import { createChatSessionNavOps } from './chatSessionNavOps.js';
 // 主控建会话实现域（B9-D 拆法：完整闭环外置，面板只留注入依赖的薄壳）
 import { createHostedSessionWith } from '../helpers/hostedSessionCreate.js';
+// 托管子会话中断通知器（第三切片）：只投系统事件队列，不写历史、不落盘
+import { HostedSessionNotifier } from '../helpers/hostedSessionNotice.js';
 // 记忆软删域（B9-D-5 按 op 组外置）：单条反馈删除 + 会话删除联动软删，同一套降级口径
 import { createChatMemoryOps } from './chatMemoryOps.js';
 // 运行控制域（B9-D-6 按 op 组外置）：停止 / 暂停 toggle / 恢复，共用会话级运行态与 ask 协调器
@@ -387,6 +389,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     runFlow: (factory) => this.runFlow(factory),
     syncPendingQueue: (force) => this.syncPendingQueue(force),
     postPendingDiscarded: (items) => this.postPendingDiscarded(items),
+    // paused 态用户停止：轮 id 已在 abandon 前取好，这里只回盘上读轮（不另造一份事件）
+    onUserStopped: (_agent, roundId) =>
+      this._hostedNotifier.notePausedStop(this.getCurrentSessionId(), roundId),
+  });
+  /**
+   * 托管子会话中断通知器（第三切片）
+   *
+   * 依赖全是延迟闭包（本字段初始化早于 `_sessionAgents`）；创建者关系只在进程内有效，
+   * 不落盘、不进 `SessionMeta`。
+   */
+  private readonly _hostedNotifier = new HostedSessionNotifier({
+    readSessionMeta: (sid) => this.sessionStore.getSessionMeta(sid),
+    isManaged: (sid) => this.sessionModes.isManaged(sid),
+    getAgent: (sid) => this._sessionAgents.get(sid),
+    readRound: (roundId) => this._eventLogRoundStore?.getById(roundId) ?? undefined,
   });
   /** 当前**显示会话**的 Agent（`_sessionAgents` 的一份投影；真正的实例归属表在 extension） */
   private _agent: Agent | undefined;
@@ -2825,28 +2842,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 后台建：不切显示源、不写「上次模式」，标题由调用方给
         createBackgroundSession: (sid, rolePack, sessionTitle) =>
           this.createSession(sid, rolePack, 'managed', { title: sessionTitle, background: true }),
-        startFlow: async (sid, input, sender) => {
-          // 实例已由建会话链路装配；这里只取（不建），再走既有 runFlow 通路
-          const agent = await this.agentForSession(sid);
-          const now = new Date().toISOString();
-          void this.runFlow(
-            (signal) =>
-              agent.chat(input, signal, undefined, { origin: 'hosted', senderName: sender }),
-            {
-              userMessage: {
-                // id 用毫秒时间戳（ISO 带冒号，不宜进 id）；timestamp 用 ISO（与 RoundView 同型）
-                id: `live-hosted-${sid}-${Date.now()}`,
-                role: 'user',
-                content: input,
-                timestamp: now,
-                name: sender,
-              },
-              origin: 'hosted',
-            },
-            sid,
-          );
-        },
+        // 实例已由建会话链路装配；这里只取（不建），再走既有 runFlow 通路
+        getAgent: (sid) => this.agentForSession(sid),
+        startFlow: (sid, factory, seed) => this.runFlow(factory, seed, sid),
         nextSessionId: newSessionId,
+        // 登记创建者：必须早于首轮流（首轮可能立刻失败/被停，见 deps.onCreated 注释）
+        onCreated: (sid, creator) => this._hostedNotifier.remember(sid, creator),
       },
       callingSessionId,
       rolePackName,
@@ -3219,6 +3220,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 前台流同样值得一条日志（投递去留交给 post 的后台闸，本处不再判前后台——行为层零分支）
       console.warn(`Memora 会话流异常（${sessionId}）`, err);
       this.post({ type: 'error', message: toNoticeText(err) });
+      // 同步抛错也算「这一轮异常终止」：无轮、无事件，原因就是抛出的异常本身；
+      // 只对代理开的会话生效（帮助器内部判 origin + 创建者）
+      this._hostedNotifier.noteSyncThrow({ sessionId, error: err });
     }
   }
 
@@ -3791,6 +3795,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 此处推一次快照让 webview 同步——正常/中断 → 空 items（顶部条收起）；
     // 暂停 → 保留当前 plan（paused 分支前面，plan 还没被清，继续供 resume 消费）
     this.postPlanUpdate();
+    // 托管子会话中断通知（第三切片）：本轮以 interrupted 收场 → 告诉创建它的主控，
+    // 让它下次说话时在上下文里看到「哪条会话、被谁停的」。只对「本进程记录过创建者的
+    // hosted 会话」生效；暂停可续跑、不是终态，不通知（判据在通知器内，走内核收场单点）。
+    this._hostedNotifier.noteSettledFlow(
+      sessionId,
+      latestRoundId,
+      pausedOnPurpose,
+      controller.signal.aborted,
+    );
     if (controller.signal.aborted) {
       this.post({ type: 'interrupted', roundId: latestRoundId, evidence: settledRound?.evidence });
       this.post({ type: 'status', state: 'done' });

@@ -179,6 +179,8 @@ interface PanelHandle {
     _currentSessionId: string;
     _sessionAgents: Map<string, Agent>;
     _asks: Map<string, unknown>;
+    /** 中断通知器（第三切片）：测试直接登记「谁开的会话」这一进程内路由事实 */
+    _hostedNotifier: { remember(childSessionId: string, creatorSessionId: string): void };
     runtimeFor(sessionId?: string): {
       streaming: boolean;
       abortController?: AbortController;
@@ -2055,5 +2057,71 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
 
     releaseGate();
     await running;
+  });
+});
+
+describe('托管中断通知 · 流收场投递给创建者（第三切片）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('代理开出的会话被停 ⇒ 只向创建者投一条（带标题与停手者）', async () => {
+    const modes = createEphemeralSessionModeStore();
+    const creator = '2026-11-14-creator';
+    const child = '2026-11-14-child';
+    const enqueue = vi.fn();
+    // 创建者实例：只需一条可观察的系统事件队列
+    const creatorAgent = {
+      ...sessionAgent(creator),
+      agentLoop: { enqueueCommandResult: enqueue },
+    } as unknown as Agent;
+    const childAgent = sessionAgent(child);
+    const { provider, cast, store, roundStore } = setupPanel(
+      { [creator]: creatorAgent, [child]: childAgent },
+      [creator, child],
+      modes,
+    );
+    // 生产由 extension 装配时注入；不注入则流尾读不到盘上轮（通知器如实不投）
+    provider.setRoundStore(roundStore);
+    modes.set(creator, 'managed');
+    store.updateSessionMeta(child, { displayName: '抓取任务', origin: 'hosted' });
+    const roundId = 'round-child-stop';
+    // 盘上事实：该轮已按中断收场，aborted.stopReason 说明是用户停的
+    roundStore.save({
+      id: roundId,
+      userMessage: {
+        id: `${roundId}-u`,
+        role: 'user',
+        content: '去抓取',
+        timestamp: '2026-11-14T10:00:00.000Z',
+      },
+      status: 'interrupted',
+      createdAt: '2026-11-14T10:00:00.000Z',
+      completedAt: '2026-11-14T10:00:05.000Z',
+      processEvents: [
+        {
+          type: 'aborted',
+          seq: 1,
+          ts: '2026-11-14T10:00:05.000Z',
+          payload: { reason: 'cancelled', stopReason: 'user' },
+        },
+      ],
+    });
+    // 生产 = createHostedSession 成功后立即登记；本用例直接调同一公开方法
+    cast._hostedNotifier.remember(child, creator);
+
+    cast._currentSessionId = child;
+    cast._agent = childAgent;
+    // 最小流：只为让 latestRoundId 指向种下的轮；中断事实来自盘上轮
+    const flow = (): AsyncGenerator<Chunk> =>
+      (async function* () {
+        yield { type: 'thinking', phase: 'processing', roundId };
+      })();
+    await cast.runFlow(flow, undefined, child);
+
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    const text = enqueue.mock.calls[0][0] as string;
+    expect(text).toContain('抓取任务');
+    expect(text).toContain('用户主动停止');
   });
 });

@@ -49,6 +49,13 @@ export interface ChatRunControlOpsDeps {
   syncPendingQueue: (force?: boolean) => void;
   /** 丢弃排队插话的可见信号（先读后丢，由面板提供） */
   postPendingDiscarded: (items: readonly string[]) => void;
+  /**
+   * paused 态用户停止已收场后的回调（本切片：托管子会话中断通知）
+   *
+   * `roundId` 由本域在 `abandonOnStop()` **之前**取好——内核收场后当前轮标识可能已变，
+   * 晚取会与流尾的轮 id 对不上、造成重复通知。
+   */
+  onUserStopped?: (agent: Agent, roundId: string) => void;
 }
 
 /** 运行控制域对外方法（与面板私有方法一一对应） */
@@ -95,6 +102,8 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
         // 被弃条目 = 丢弃（蒸发不落盘）→ 必须发丢弃信号，否则 webview diff 误判「消费」误上屏
         const before = agent.getPendingInterjections?.() ?? [];
         const hadAsk = ask.pendingQuestions().length > 0;
+        // 轮 id 必须在 abandon 之前取（收场后当前轮标识可能已变，见 onUserStopped 注释）
+        const roundId = agent.currentRoundId();
         // ask 域先清宿主镜像 + 逐条透出「未回答」行（与盘面同文案、同题身份），再走内核收场
         const checkpointDiscarded = await ask.abandonOnStop();
         deps.post({ type: 'status', state: 'done' });
@@ -116,6 +125,8 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
         // 而 `_turnState` 是快照、不重算就停在 waiting/ask ⇒ 下一条输入被当成「回答死提问」
         // 由内核内存消费、不落盘（用户输入凭空蒸发）。
         deps.syncPendingQueue(true);
+        // 收场完成后再通知（失败/异常由调用方自己兜，本域不吞）：此时盘上是 interrupted
+        deps.onUserStopped?.(agent, roundId);
       }
     },
 

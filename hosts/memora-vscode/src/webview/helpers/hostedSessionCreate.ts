@@ -12,6 +12,7 @@
  *   - 角色包只做**存在性**判定，权限面与用户可选范围完全一致（不额外授权）。
  */
 import * as vscode from 'vscode';
+import type { Agent, AgentChunk, RoundMessage } from '@zooique/memora';
 import type { CreateSessionResult } from '../../extension/host/workSessionTools.js';
 
 // 本模块错误文案走 l10n（与面板同一套键面）
@@ -33,8 +34,25 @@ export interface HostedSessionCreateDeps {
     rolePackName: string | undefined,
     title: string,
   ) => Promise<boolean>;
-  /** 走既有 runFlow 通路投递首轮（fire-and-forget，不等待模型跑完） */
-  startFlow: (sessionId: string, text: string, senderName: string) => Promise<void>;
+  /** 取已装配实例（建会话链路内已装配；只取不建） */
+  getAgent: (sessionId: string) => Promise<Agent>;
+  /**
+   * 走既有 runFlow 通路起流（面板注入，流控唯一入口）
+   *
+   * seed 在这里构造而不是面板：首轮的 `origin/senderName/临时 id` 是「托管首轮」的固定口径，
+   * 留一个地方写，面板只转发。
+   */
+  startFlow: (
+    sessionId: string,
+    factory: (signal: AbortSignal) => AsyncGenerator<AgentChunk, void, unknown>,
+    seed: { userMessage: RoundMessage; origin: 'hosted' },
+  ) => void | Promise<void>;
+  /**
+   * 建会话成功、首轮流启动**之前**的登记钩子（本切片：登记「谁开的」）
+   *
+   * 必须早于 startFlow：首轮流可能在返回前就失败/被停，晚登记会漏掉这条中断通知。
+   */
+  onCreated?: (sessionId: string, callingSessionId: string) => void;
   /** 新会话 id 生成（形态单点，不在此拼接日期） */
   nextSessionId: () => string;
 }
@@ -85,7 +103,25 @@ export async function createHostedSessionWith(
       message: l10n.t('Memora: could not create the session.'),
     };
   }
-  // 首轮投递：实例已在建会话链路内装配并记入投影表，这里只取不建
-  await deps.startFlow(sessionId, text, senderName);
+  // 首轮投递：实例已在建会话链路内装配并记入投影表，这里只取不建。
+  // 登记必须早于 startFlow（首轮流可能立即失败/被停，见 onCreated 注释）
+  deps.onCreated?.(sessionId, callingSessionId);
+  const agent = await deps.getAgent(sessionId);
+  await deps.startFlow(
+    sessionId,
+    // 第三参 undefined 与既有 chat 调用形态一致（缺口为「未指定工具白名单」）
+    (signal) => agent.chat(text, signal, undefined, { origin: 'hosted', senderName }),
+    {
+      userMessage: {
+        // id 用毫秒时间戳（ISO 带冒号，不宜进 id）；timestamp 用 ISO（与 RoundMessage 同型）
+        id: `live-hosted-${sessionId}-${Date.now()}`,
+        role: 'user',
+        content: text,
+        timestamp: new Date().toISOString(),
+        name: senderName,
+      },
+      origin: 'hosted',
+    },
+  );
   return { ok: true, sid: sessionId, title };
 }

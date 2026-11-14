@@ -16,6 +16,7 @@ import type { ProcessEvent } from '@zooique/memora';
 import * as l10n from '@vscode/l10n';
 import type { RoundView } from '../../shared/protocol.js';
 import { friendlyErrorMessage } from '../../shared/errorText.js';
+import { deriveInterruptReason } from '../../shared/interruptReason.js';
 import { argStr, isPlanItemBoundaryEvent, parseToolArgs } from './processEventText.js';
 import type { TerminusInterruptKind } from './statusAttrs.js';
 
@@ -382,23 +383,21 @@ export function decideTerminus(events: ProcessEvent[]): {
   kind: TerminusInterruptKind;
   reason: string;
 } {
-  const errorEv = events.find(
-    (e): e is Extract<ProcessEvent, { type: 'error' }> => e.type === 'error',
-  );
-  if (errorEv) {
+  // 判定（谁停的）单点在 shared/interruptReason：本函数只管「展示成哪一档 + 文案」。
+  // 注意两者兜底口径不同且**必须**不同——本函数无事件时有意显示「用户中断」（展示定案），
+  // 事实层的通知走 unavailable，不把展示兜底抄成事实（见该模块头注释）。
+  const derived = deriveInterruptReason(events);
+  if (derived.source?.type === 'error') {
     return {
       kind: 'error-interrupted',
-      reason: friendlyErrorMessage(errorEv.payload.category, errorEv.payload.message),
+      reason: friendlyErrorMessage(derived.source.payload.category, derived.source.payload.message),
     };
   }
-  const aborted = events.find(
-    (e): e is Extract<ProcessEvent, { type: 'aborted' }> => e.type === 'aborted',
-  );
-  if (aborted) {
+  if (derived.source?.type === 'aborted') {
     // 判据字段 = stopReason（reason 是自由文本描述，如 'User cancelled the conversation'）
-    return aborted.payload.stopReason === 'user'
-      ? { kind: 'user-interrupted', reason: stopReasonLabel(aborted.payload) }
-      : { kind: 'error-interrupted', reason: stopReasonLabel(aborted.payload) };
+    return derived.stopper === 'user'
+      ? { kind: 'user-interrupted', reason: stopReasonLabel(derived.source.payload) }
+      : { kind: 'error-interrupted', reason: stopReasonLabel(derived.source.payload) };
   }
   // 兜底案归「用户中断」（TERMINUS-SSOT-1，2026-10-31）：interrupted 收场的唯一运行时来源 =
   // handleStop（生产唯一 abort() 调用点 = `chatRunControlOps.handleStop`，chatPanel 只委托；
