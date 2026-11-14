@@ -308,14 +308,26 @@ export type HostedSessionStopper = (
 /**
  * 单个会话的对外摘要（代理判断「该复用还是该新开」的最小字段集）
  *
- * 六个事实：标识、标题、最后更新时间、**当前状态**、**归属**（谁开的）、**角色包**（能力面）。
- * 全部来自既有事实的读侧投影，不新增持久化、不建关系表。
+ * 七个事实：标识、标题、**归档摘要**、最后更新时间、**当前状态**、**归属**（谁开的）、
+ * **角色包**（能力面）。全部来自既有事实的读侧投影，不新增持久化、不建关系表。
  */
 export interface WorkSessionBrief {
   /** 会话标识（YYYY-MM-DD-sessionName，与 sessionStore 同口径） */
   sid: string;
-  /** 展示标题（displayName 优先，回退 autoName，再回退会话标识） */
+  /**
+   * 展示标题（displayName 优先，回退 autoName，再回退会话标识）
+   *
+   * ⚠️ 只能用于初筛：标题是首轮 LLM 摘要、之后永不更新，任务漂移后稳定误导；
+   * 复用定夺必须看 `summary` / 状态 / `updatedAt`。
+   */
   title: string;
+  /**
+   * 会话级归档摘要（`SessionMeta.summary`，由 SessionArchiver 归档时生成）
+   *
+   * `null` = 这条会话**没有归档过摘要**（还没离场 / 归档没写成）——**不是**标题，
+   * 也**不是**空串。判据 1 的数据面：没有摘要的会话不许被路由（拿不到就新建）。
+   */
+  summary: string | null;
   /** 最后更新时间（ISO 8601，排序依据；store 已按此降序） */
   updatedAt: string;
   /**
@@ -349,8 +361,12 @@ export interface WorkSessionBrief {
 const LIST_WORK_SESSIONS_DEFINITION: ToolDefinition = {
   name: LIST_WORK_SESSIONS_TOOL_NAME,
   description:
-    '列出当前工作区已知的会话（sid、标题、最后更新时间、状态、归属、角色包），用于判断是否已有相关会话、避免重复新建。' +
-    '不含对话正文。status.kind：running 在跑 / waiting 等你（用户要先处理）/ completed 已完成 / ' +
+    '列出当前工作区已知的会话（sid、标题、归档摘要、最后更新时间、状态、归属、角色包），' +
+    '用于判断是否已有相关会话、避免重复新建。不含对话正文。' +
+    'summary 是该会话归档时生成的摘要（判断复用与否的主依据）；null = 没有归档过摘要，' +
+    '不是标题、也不是空串——没有摘要的会话不许被路由。' +
+    'title 只用于初筛：它是首轮生成后永不更新的旧标题，任务漂移后会误导，不能拿它做定夺。' +
+    'status.kind：running 在跑 / waiting 等你（用户要先处理）/ completed 已完成 / ' +
     'stopped 被中止（stop 给原因）/ unsettled 上次未正常结束 / queued 尚未开始 / unreadable 状态读不到。' +
     'createdBy：agent = 你开的 / user = 用户自己建的 / unknown = 无法确认。' +
     'rolePack：该会话挂的角色包名（能力面依据）；null = 会话没有记录角色包，不是默认包。' +
@@ -509,6 +525,8 @@ export function toWorkSessionBrief(
   return {
     sid: meta.sessionId,
     title: getSessionDisplayName(meta) || meta.sessionId,
+    // 摘要只取归档结果：没有归档 = null（不拿标题 / 空串冒充「这条会话有摘要」）
+    summary: meta.summary && meta.summary.trim() !== '' ? meta.summary : null,
     updatedAt: meta.updatedAt,
     status,
     createdBy,

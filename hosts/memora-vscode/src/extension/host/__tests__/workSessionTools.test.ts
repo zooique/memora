@@ -279,6 +279,8 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
       expect(parsed.sessions).toContainEqual({
         sid: SESSION_ID,
         title: SESSION_TITLE,
+        // 没有归档过摘要 ⇒ null（绝不拿标题 / 空串冒充）
+        summary: null,
         updatedAt: SESSION_UPDATED_AT,
         // 缺省读口 = completed（用例只验接线；状态推导由 shared/sessionStatus 单测覆盖）
         status: { kind: 'completed' },
@@ -311,6 +313,28 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
       // 明确钉住「不能冒充」的两个空闲语义
       expect(own?.status.kind).not.toBe('queued');
       expect(own?.status.kind).not.toBe('completed');
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('归档摘要原样进清单；没归档的会话是 null，不拿标题冒充（判据 1 数据面）', async () => {
+    const probe = await assembleProbe(true, {});
+    try {
+      // 只给目标会话播种归档摘要：另一条（主控自身）保持「从未归档」
+      probe.sessionStore.updateSessionMeta(TARGET_SESSION_ID, {
+        summary: '把托管会话工具接到宿主装配面，并补了范围门禁。',
+      });
+      const raw = await probe.agent.tools!.execute(LIST_WORK_SESSIONS_TOOL_NAME, '{}');
+      const parsed = JSON.parse(raw) as {
+        sessions: { sid: string; title: string; summary: string | null }[];
+      };
+      const target = parsed.sessions.find((s) => s.sid === TARGET_SESSION_ID);
+      expect(target?.summary).toBe('把托管会话工具接到宿主装配面，并补了范围门禁。');
+      const own = parsed.sessions.find((s) => s.sid === SESSION_ID);
+      expect(own?.summary).toBeNull();
+      // 负例：null 绝不能是标题（标题 ≠ 摘要）
+      expect(own?.summary).not.toBe(own?.title);
     } finally {
       await disposeProbe(probe);
     }
