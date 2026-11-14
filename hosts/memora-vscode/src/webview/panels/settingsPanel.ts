@@ -111,8 +111,8 @@ import {
   listVisibleSkills,
   resolveSkill,
 } from '../../extension/host/skillAggregation.js';
-// 角色包来源判定的判据单点（与技能聚合共用：normalize + sep 边界）
-import { isPathWithin } from '../../extension/host/userAssets/path.js';
+// 角色包来源层的判据单点（内部走 normalize + sep 边界；与主控 list_role_packs 共用）
+import { rolePackSourceOf } from '../../extension/host/rolePackCatalog.js';
 // 项目级 → 用户级复制编排层（执行面 = zipImport 的事务化原语，本面板只分发）
 import { copyProjectRolePackToUser, copyProjectSkillToUser } from './assetCopyToUser.js';
 // 内核常量与键面/校验入口（宿主不复制字面量，SSOT 单一来源）：
@@ -905,10 +905,17 @@ export class MemoraSettingsPanel {
     return ok;
   }
 
-  /** 来源层单点判定：与技能聚合共用 `isPathWithin`，禁第二份前缀副本（裸 startsWith 会把 `role-packs-x` 误判进 `role-packs`） */
+  /**
+   * 来源层判定（转调 `rolePackSourceOf` 单点）
+   *
+   * 与主控 `list_role_packs` 共用同一判据——两处各写一份前缀判断，
+   * 迟早出现「设置页说内置、助手说用户」的口径分叉。
+   */
   private rolePackSource(filePath: string | undefined): 'builtin' | 'user' | 'project' {
-    if (isPathWithin(this._projectRolePacksDir, filePath)) return 'project';
-    return isPathWithin(this._userRolePacksDir, filePath) ? 'user' : 'builtin';
+    return rolePackSourceOf(filePath, {
+      userRolePacksDir: this._userRolePacksDir,
+      projectRolePacksDir: this._projectRolePacksDir,
+    });
   }
 
   /**

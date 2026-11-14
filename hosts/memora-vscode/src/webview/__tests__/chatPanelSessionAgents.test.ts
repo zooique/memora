@@ -462,6 +462,110 @@ describe('撤销并交还 · revokeManagedSession', () => {
   });
 });
 
+describe('代理能开会话 · createHostedSession', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('托管调用方开新会话：出生来源与首轮都是 hosted，标题落 displayName，清单可见，显示源与默认模式不变', async () => {
+    const modes = createEphemeralSessionModeStore();
+    const callerId = '2026-11-06-boss';
+    const { provider, store } = setupPanel({}, [callerId], modes);
+    // 调用方是托管会话；用户级「上次模式」保持缺省 self（不得被代理的建会话改写）
+    modes.set(callerId, 'managed');
+    /** 每个会话 id 一份替身实例（工厂按 sid 记账，便于断言首轮参数） */
+    const agents: Record<string, Agent> = {};
+    provider.setAgentFactory(async (_projectPath, sid) => {
+      if (!agents[sid]) {
+        const agent = sessionAgent(sid);
+        // sessionAgent 的 chat 是普通函数；首轮参数断言需要可观测 spy
+        agent.chat = vi.fn(agent.chat) as unknown as Agent['chat'];
+        agents[sid] = agent;
+      }
+      return agents[sid];
+    });
+    provider.setRolePackCatalog(async () => new Set(['默认助手', '资料员']));
+
+    const result = await provider.createHostedSession(
+      callerId,
+      '资料员',
+      '调研会话',
+      '先读 README',
+      'Memora',
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.title).toBe('调研会话');
+    // ① 出生来源（持久事实）：SessionMeta.origin = hosted，标题原样落盘
+    const meta = store.getSessionMeta(result.sid);
+    expect(meta?.origin).toBe('hosted');
+    expect(meta?.displayName).toBe('调研会话');
+    // 会话模式 = managed（装配期据此注入主控工具面；撤销入口可再收回）
+    expect(modes.isManaged(result.sid)).toBe(true);
+    // ② 会话清单可见（用户能在列表里看到它）
+    expect(store.listSessionMetas().map((item) => item.sessionId)).toContain(result.sid);
+    // ③ 代理开会话不是用户导航：显示源仍在调用方，用户的新建默认仍是 self
+    expect(provider.getCurrentSessionId()).toBe(callerId);
+    expect(modes.getLastMode()).toBe('self');
+    // ④ 首轮：origin hosted + 装配期注入的发送者名（不是硬编码）
+    const chat = agents[result.sid].chat as unknown as ReturnType<typeof vi.fn>;
+    expect(chat).toHaveBeenCalledWith('先读 README', expect.any(AbortSignal), undefined, {
+      origin: 'hosted',
+      senderName: 'Memora',
+    });
+  });
+
+  it('角色包不存在 ⇒ E_ROLE_PACK（不与 E_NOT_FOUND 混用），且不落任何会话', async () => {
+    const modes = createEphemeralSessionModeStore();
+    const callerId = '2026-11-06-boss';
+    const { provider, store } = setupPanel({}, [callerId], modes);
+    modes.set(callerId, 'managed');
+    provider.setAgentFactory(async (_projectPath, sid) => sessionAgent(sid));
+    provider.setRolePackCatalog(async () => new Set(['默认助手']));
+    const before = store.listSessionMetas().length;
+
+    const result = await provider.createHostedSession(
+      callerId,
+      '不存在的包',
+      '调研会话',
+      '先读 README',
+      'Memora',
+    );
+    expect(result).toMatchObject({ ok: false, code: 'E_ROLE_PACK' });
+    expect((result as { code: string }).code).not.toBe('E_NOT_FOUND');
+    expect(store.listSessionMetas().length).toBe(before);
+  });
+
+  it('角色包编目不可读（null）⇒ 同样 E_ROLE_PACK（「不可用」不是「会话不存在」）', async () => {
+    const modes = createEphemeralSessionModeStore();
+    const callerId = '2026-11-06-boss';
+    const { provider, store } = setupPanel({}, [callerId], modes);
+    modes.set(callerId, 'managed');
+    provider.setAgentFactory(async (_projectPath, sid) => sessionAgent(sid));
+    provider.setRolePackCatalog(async () => null);
+    const before = store.listSessionMetas().length;
+
+    expect(
+      await provider.createHostedSession(callerId, '资料员', 't', 'x', 'Memora'),
+    ).toMatchObject({ ok: false, code: 'E_ROLE_PACK' });
+    expect(store.listSessionMetas().length).toBe(before);
+  });
+
+  it('调用方非托管 ⇒ E_DENIED（纵深防守），且不落任何会话', async () => {
+    const modes = createEphemeralSessionModeStore();
+    const callerId = '2026-11-06-self';
+    const { provider, store } = setupPanel({}, [callerId], modes);
+    modes.set(callerId, 'self');
+    provider.setAgentFactory(async (_projectPath, sid) => sessionAgent(sid));
+    const before = store.listSessionMetas().length;
+
+    expect(
+      await provider.createHostedSession(callerId, undefined, 't', 'x', 'Memora'),
+    ).toMatchObject({ ok: false, code: 'E_DENIED' });
+    expect(store.listSessionMetas().length).toBe(before);
+  });
+});
+
 describe('E4 批 2 · 切换 = 换绑显示源（不换实例、不关闭旧实例）', () => {
   beforeEach(() => {
     vi.clearAllMocks();

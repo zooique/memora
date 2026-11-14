@@ -17,10 +17,17 @@ import { assembleAgent } from '../assemble.js';
 import { createHostMemoryStorage } from '../memoryStorage.js';
 import { WorkspaceSessionStore } from '../sessionStore.js';
 import { WorkspaceRoundStore } from '../workspaceRoundStore.js';
-import { LIST_WORK_SESSIONS_TOOL_NAME, SEND_TO_SESSION_TOOL_NAME } from '../workSessionTools.js';
+import {
+  CREATE_SESSION_TOOL_NAME,
+  LIST_ROLE_PACKS_TOOL_NAME,
+  LIST_WORK_SESSIONS_TOOL_NAME,
+  SEND_TO_SESSION_TOOL_NAME,
+} from '../workSessionTools.js';
 import type {
+  CreateSessionResult,
   HostedDispatchResult,
   HostedInputDispatcher,
+  HostedSessionCreator,
   SendToSessionResult,
 } from '../workSessionTools.js';
 import { makeTempDir } from '../../../__tests__/helpers/tmpDir.js';
@@ -84,18 +91,61 @@ interface Probe {
 }
 
 /**
+ * 主控工具依赖（可只覆盖其中一项，其余给最小可用替身）
+ *
+ * 装配层要求「四件齐全」才注册 send / create：任一缺失都按依赖不全降级，
+ * 所以用例必须显式给出整体依赖盒，而不是逐个塞第二个参数。
+ */
+interface HostedDeps {
+  /** 派发回调（缺省 = 直接受理） */
+  dispatch?: HostedInputDispatcher;
+  /** 建会话回调（缺省 = 返回固定 sid/title） */
+  createSession?: HostedSessionCreator;
+}
+
+/**
+ * 播种用户级 / 项目级角色包目录（各一个包）
+ *
+ * 只为验证 `list_role_packs` 的来源标记：内置包来自 configDir，用户包 / 项目包
+ * 必须由这两个目录真实加载，来源层判定才有输入（否则三条都会被判成内置）。
+ *
+ * @param projectPath 临时工作区路径
+ * @returns 两个额外角色包目录
+ */
+function seedRolePackDirs(projectPath: string): {
+  userRolePacksDir: string;
+  projectRolePacksDir: string;
+} {
+  const userRolePacksDir = join(projectPath, 'user-role-packs');
+  const projectRolePacksDir = join(projectPath, 'project-role-packs');
+  for (const [dir, name] of [
+    [userRolePacksDir, '我的助手'],
+    [projectRolePacksDir, '项目助手'],
+  ] as const) {
+    const packDir = join(dir, name);
+    mkdirSync(packDir, { recursive: true });
+    writeFileSync(
+      join(packDir, 'manifest.json'),
+      JSON.stringify({ name, displayName: name, strategy: {} }),
+      'utf-8',
+    );
+    writeFileSync(join(packDir, 'persona.md'), '你是播种出来的角色包。', 'utf-8');
+  }
+  return { userRolePacksDir, projectRolePacksDir };
+}
+
+/**
  * 起一个真实装配的探针 Agent
  *
  * @param orchestratorSession 主控标记（undefined = 调用方完全不传该键）
- * @param dispatch 派发回调（传入 = 连同调用方 id / 发送者名一起注入，send_to_session 才注册）
+ * @param hosted 主控工具依赖盒（传入 = 连同调用方 id / 发送者名一起注入；缺项用替身补齐）
  * @returns 探针（Agent + 存储）
  */
-async function assembleProbe(
-  orchestratorSession?: boolean,
-  dispatch?: HostedInputDispatcher,
-): Promise<Probe> {
+async function assembleProbe(orchestratorSession?: boolean, hosted?: HostedDeps): Promise<Probe> {
   const projectPath = makeTempDir('memora-work-session-');
   const configDir = seedConfigDir(projectPath);
+  // 用户 / 项目角色包目录：来源标记用例的真实输入（内置包在 configDir 里）
+  const { userRolePacksDir, projectRolePacksDir } = seedRolePackDirs(projectPath);
   const roundStore = new WorkspaceRoundStore(projectPath);
   roundStore.load();
   const sessionStore = new WorkspaceSessionStore(projectPath, roundStore);
@@ -118,6 +168,9 @@ async function assembleProbe(
   const agent = await assembleAgent({
     projectPath,
     configDir,
+    // 与生产同形：内置 / 用户 / 项目三层目录都注入（来源判定才有三档输入）
+    userRolePacksDir,
+    projectRolePacksDir,
     sessionStore,
     roundStore,
     storage,
@@ -131,13 +184,18 @@ async function assembleProbe(
       MEMORA_API_KEY: 'work-session-probe',
     } as NodeJS.ProcessEnv,
     ...(orchestratorSession === undefined ? {} : { orchestratorSession }),
-    // 派发依赖三件套同批注入：只传其中一部分时装配层按「依赖不全」不注册 send_to_session
-    ...(dispatch === undefined
+    // 四件套同批注入：只传其中一部分时装配层按「依赖不全」不注册 send / create
+    ...(hosted === undefined
       ? {}
       : {
           orchestratorSessionId: SESSION_ID,
           orchestratorSenderName: SENDER_NAME,
-          dispatchHostedInput: dispatch,
+          dispatchHostedInput:
+            hosted.dispatch ??
+            (async (): Promise<HostedDispatchResult> => ({ ok: true, accepted: true })),
+          createHostedSession:
+            hosted.createSession ??
+            (async (_calling, _rolePack, title) => ({ ok: true, sid: '2026-11-14-new', title })),
         }),
   });
   return { agent, storage };
@@ -184,7 +242,7 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
     ['缺省', undefined],
     ['显式 false（撤销后按 self 重装的等效输入）', false],
   ] as const)(
-    '普通会话（%s）的工具面里没有主控工具（list + send），即使派发依赖齐全',
+    '普通会话（%s）的工具面里没有任何主控工具（list / send / create / role packs），即使依赖齐全',
     async (_label, flag) => {
       // 依赖齐全也照旧不注册：唯一判据是装配期标记，不靠「依赖缺失」兜底——
       // 撤销（mode → self）后重装必须让两只工具同时消失，而不是只剩 list
@@ -192,7 +250,7 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
         ok: true,
         accepted: true,
       }));
-      const probe = await assembleProbe(flag, dispatch);
+      const probe = await assembleProbe(flag, { dispatch });
       try {
         const tools = probe.agent.tools;
         expect(tools).not.toBeNull();
@@ -200,10 +258,14 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
         const exposed = tools!.list.map((t) => t.name);
         expect(exposed).not.toContain(LIST_WORK_SESSIONS_TOOL_NAME);
         expect(exposed).not.toContain(SEND_TO_SESSION_TOOL_NAME);
+        expect(exposed).not.toContain(CREATE_SESSION_TOOL_NAME);
+        expect(exposed).not.toContain(LIST_ROLE_PACKS_TOOL_NAME);
         // 定义面也没有：证明不是「注册了但被白名单藏起来」
         const defined = tools!.allToolDefinitions.map((t) => t.name);
         expect(defined).not.toContain(LIST_WORK_SESSIONS_TOOL_NAME);
         expect(defined).not.toContain(SEND_TO_SESSION_TOOL_NAME);
+        expect(defined).not.toContain(CREATE_SESSION_TOOL_NAME);
+        expect(defined).not.toContain(LIST_ROLE_PACKS_TOOL_NAME);
       } finally {
         await disposeProbe(probe);
       }
@@ -234,7 +296,7 @@ describe('托管 v0 · send_to_session 最小闭环（工具层）', () => {
       ok: true,
       accepted: true,
     }));
-    const probe = await assembleProbe(true, dispatch);
+    const probe = await assembleProbe(true, { dispatch });
     try {
       // 未知键：键集必须恰好两枚（缺必填键由内核执行器按 schema 先拦，到不了本 handler）
       expect(
@@ -256,7 +318,7 @@ describe('托管 v0 · send_to_session 最小闭环（工具层）', () => {
       ok: true,
       accepted: true,
     }));
-    const probe = await assembleProbe(true, dispatch);
+    const probe = await assembleProbe(true, { dispatch });
     try {
       expect(await executeSend(probe, { sid: '2026-11-14-not-exist', text: 'hi' })).toMatchObject({
         ok: false,
@@ -273,7 +335,7 @@ describe('托管 v0 · send_to_session 最小闭环（工具层）', () => {
       ok: true,
       accepted: true,
     }));
-    const probe = await assembleProbe(true, dispatch);
+    const probe = await assembleProbe(true, { dispatch });
     try {
       expect(await executeSend(probe, { sid: TARGET_SESSION_ID, text: '请看这个任务' })).toEqual({
         ok: true,
@@ -298,7 +360,7 @@ describe('托管 v0 · send_to_session 最小闭环（工具层）', () => {
       code: 'E_BUSY',
       message: '目标会话正在运行，本条输入未发送。',
     }));
-    const probe = await assembleProbe(true, dispatch);
+    const probe = await assembleProbe(true, { dispatch });
     try {
       expect(await executeSend(probe, { sid: TARGET_SESSION_ID, text: 'hi' })).toMatchObject({
         ok: false,
@@ -313,7 +375,7 @@ describe('托管 v0 · send_to_session 最小闭环（工具层）', () => {
     const dispatch = vi.fn(async (): Promise<HostedDispatchResult> => {
       throw new Error('装配失败');
     });
-    const probe = await assembleProbe(true, dispatch);
+    const probe = await assembleProbe(true, { dispatch });
     try {
       // 码必须是 E_HOST：若仍映射成 E_NOT_FOUND，模型会误判「换个 sid 就能成」
       expect(await executeSend(probe, { sid: TARGET_SESSION_ID, text: 'hi' })).toMatchObject({
@@ -325,14 +387,167 @@ describe('托管 v0 · send_to_session 最小闭环（工具层）', () => {
     }
   }, 120_000);
 
-  it('主控但缺派发依赖 ⇒ send_to_session 根本不注册（list 仍在）', async () => {
-    // 只传主控标记、不传派发三件套：宁可不注册，也不注册一个永远失败的空壳
+  it('主控但缺建会话 / 派发依赖 ⇒ send 与 create 都不注册（list 仍在）', async () => {
+    // 只传主控标记、不传依赖四件套：宁可不注册，也不注册一个永远失败的空壳
     const probe = await assembleProbe(true);
     try {
       const tools = probe.agent.tools;
-      expect(tools!.list.map((t) => t.name)).toContain(LIST_WORK_SESSIONS_TOOL_NAME);
-      expect(tools!.list.map((t) => t.name)).not.toContain(SEND_TO_SESSION_TOOL_NAME);
-      expect(tools!.allToolDefinitions.map((t) => t.name)).not.toContain(SEND_TO_SESSION_TOOL_NAME);
+      const names = tools!.list.map((t) => t.name);
+      expect(names).toContain(LIST_WORK_SESSIONS_TOOL_NAME);
+      expect(names).not.toContain(SEND_TO_SESSION_TOOL_NAME);
+      expect(names).not.toContain(CREATE_SESSION_TOOL_NAME);
+      expect(names).not.toContain(LIST_ROLE_PACKS_TOOL_NAME);
+      const defined = tools!.allToolDefinitions.map((t) => t.name);
+      expect(defined).not.toContain(SEND_TO_SESSION_TOOL_NAME);
+      expect(defined).not.toContain(CREATE_SESSION_TOOL_NAME);
+      expect(defined).not.toContain(LIST_ROLE_PACKS_TOOL_NAME);
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+});
+
+/**
+ * 调一次 `create_session` 并解析返回 JSON
+ *
+ * @param probe 探针（真实装配的 Agent）
+ * @param args 工具参数对象
+ * @returns 解析后的结果（成功 / 失败联合；失败码含工具层自判的 `E_ARGS`）
+ */
+async function executeCreate(
+  probe: Probe,
+  args: Record<string, unknown>,
+): Promise<CreateSessionResult | { ok: false; code: string; message: string }> {
+  const raw = await probe.agent.tools!.execute(CREATE_SESSION_TOOL_NAME, JSON.stringify(args));
+  return JSON.parse(raw) as CreateSessionResult | { ok: false; code: string; message: string };
+}
+
+describe('托管 v0 · create_session（工具层）', () => {
+  it('参数只认 { rolePack?, title, text }：未知键 / 空白标题一律 E_ARGS，且不触建会话', async () => {
+    const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
+      ok: true,
+      sid: '2026-11-14-new',
+      title: '不该出现',
+    }));
+    const probe = await assembleProbe(true, { createSession });
+    try {
+      // 未知键：键集只允许三枚（缺 title / text 由内核执行器按 schema 先拦）
+      expect(await executeCreate(probe, { title: 't', text: 'x', mode: 'managed' })).toMatchObject({
+        ok: false,
+        code: 'E_ARGS',
+      });
+      // 空白标题：trim 后为空，不收
+      expect(await executeCreate(probe, { title: '   ', text: 'x' })).toMatchObject({
+        ok: false,
+        code: 'E_ARGS',
+      });
+      expect(createSession).not.toHaveBeenCalled();
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('角色包缺失 ⇒ E_ROLE_PACK，绝不复用 E_NOT_FOUND', async () => {
+    const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
+      ok: false,
+      code: 'E_ROLE_PACK',
+      message: '角色包不存在或不可用：不存在的包',
+    }));
+    const probe = await assembleProbe(true, { createSession });
+    try {
+      const result = await executeCreate(probe, {
+        rolePack: '不存在的包',
+        title: '调研',
+        text: '读一下仓库',
+      });
+      expect(result).toMatchObject({ ok: false, code: 'E_ROLE_PACK' });
+      // 语义分离：模型看到 E_NOT_FOUND 会去换 sid，而这里该换的是角色包名
+      expect((result as { code: string }).code).not.toBe('E_NOT_FOUND');
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('受理：调用方 / 角色包 / 标题 / 首轮 / 注入的发送者名五件原样交给建会话回调，返回 sid + title', async () => {
+    const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
+      ok: true,
+      sid: '2026-11-14-created',
+      title: '调研会话',
+    }));
+    const probe = await assembleProbe(true, { createSession });
+    try {
+      expect(
+        await executeCreate(probe, { rolePack: '资料员', title: '调研会话', text: '先读 README' }),
+      ).toEqual({ ok: true, sid: '2026-11-14-created', title: '调研会话' });
+      // 发送者名必须是装配期注入值：工具内写死字面量会让本断言转红
+      expect(createSession).toHaveBeenCalledWith(
+        SESSION_ID,
+        '资料员',
+        '调研会话',
+        '先读 README',
+        SENDER_NAME,
+      );
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('rolePack 省略 ⇒ 回调收到 undefined（让宿主既有解析链决定默认包）', async () => {
+    const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
+      ok: true,
+      sid: '2026-11-14-created',
+      title: '默认包会话',
+    }));
+    const probe = await assembleProbe(true, { createSession });
+    try {
+      await executeCreate(probe, { title: '默认包会话', text: '开始' });
+      expect(createSession).toHaveBeenCalledWith(
+        SESSION_ID,
+        undefined,
+        '默认包会话',
+        '开始',
+        SENDER_NAME,
+      );
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('建会话回调抛错 ⇒ 工具不抛，回 E_HOST（宿主故障不得冒名角色包 / 会话不存在）', async () => {
+    const createSession = vi.fn(async (): Promise<CreateSessionResult> => {
+      throw new Error('装配失败');
+    });
+    const probe = await assembleProbe(true, { createSession });
+    try {
+      expect(await executeCreate(probe, { title: 't', text: 'x' })).toMatchObject({
+        ok: false,
+        code: 'E_HOST',
+      });
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+});
+
+describe('托管 v0 · list_role_packs（工具层）', () => {
+  it('从内核 listMeta 直读：内置 / 用户 / 项目三档来源都能标出来，不二次过滤', async () => {
+    const probe = await assembleProbe(true, {});
+    try {
+      const raw = await probe.agent.tools!.execute(LIST_ROLE_PACKS_TOOL_NAME, '{}');
+      const parsed = JSON.parse(raw) as {
+        ok: boolean;
+        packs: { name: string; displayName?: string; source: string }[];
+      };
+      expect(parsed.ok).toBe(true);
+      // 三个播种包全在（内置来自 configDir，用户 / 项目来自各自目录）
+      expect(parsed.packs).toHaveLength(3);
+      expect(parsed.packs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: '默认助手', source: 'builtin' }),
+          expect.objectContaining({ name: '我的助手', source: 'user' }),
+          expect.objectContaining({ name: '项目助手', source: 'project' }),
+        ]),
+      );
     } finally {
       await disposeProbe(probe);
     }

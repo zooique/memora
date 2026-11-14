@@ -43,6 +43,17 @@ export interface DraftSessionDeps {
 }
 
 /**
+ * 生成新会话标识（日期前缀 + 秒级 base36 时间戳）
+ *
+ * 单一真源：草稿首次发送、启动期建空会话、主控建会话三处共用同一形态——
+ * 会话 id 的形态一旦分叉，按日期排序 / 会话列表分组会立刻出现两种口径。
+ * 碰撞概率依赖同毫秒内重复调用；调用方（建会话路径）本身有会话锁兜底。
+ */
+export function newSessionId(): string {
+  return `${formatDateKey(new Date())}-s${Date.now().toString(36)}`;
+}
+
+/**
  * 草稿会话控制器
  *
  * 单一职责：持有草稿标记与草稿期角色名两项内存态，并在进出草稿时
@@ -128,7 +139,8 @@ export class DraftSessionController {
    * @returns true = 会话已就绪，可继续走发送流程；false = 留在草稿
    */
   async flush(): Promise<boolean> {
-    const sessionId = `${formatDateKey(new Date())}-s${Date.now().toString(36)}`;
+    // id 形态走单点（newSessionId），不在控制器里再抄一遍日期 + base36 拼接
+    const sessionId = newSessionId();
     // 角色选择与运行模式在建会话前一刻捕获：createSession 会把会话 id 写进面板（随即 exit 清空草稿态）
     const created = await this.deps.createSession(sessionId, this._rolePackName, this._mode);
     if (!created) this.project(false);

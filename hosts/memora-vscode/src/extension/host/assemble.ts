@@ -47,7 +47,14 @@ import { WorkspaceSessionStore } from './sessionStore.js';
 import { vscodeTracer } from './tracer.js';
 import { startMcpServers } from './mcp/runtime.js';
 import type { McpServerConfig } from './mcp/connectionManager.js';
-import { registerWorkSessionTools, type HostedInputDispatcher } from './workSessionTools.js';
+import {
+  registerWorkSessionTools,
+  type HostedInputDispatcher,
+  type HostedSessionCreator,
+  type RolePackBrief,
+} from './workSessionTools.js';
+// 角色包来源层单点判定（与设置页「内置包只读」同一判据）
+import { rolePackSourceOf } from './rolePackCatalog.js';
 
 import type { ProviderStore } from '../providers/providerStore.js';
 
@@ -387,6 +394,12 @@ export interface AssembleOptions {
    * 只负责「把 text 交给目标会话跑一轮」，不注入当前编辑器 / problems / git。
    */
   dispatchHostedInput?: HostedInputDispatcher;
+  /**
+   * 建会话回调（装配层 → 宿主面板，工具 handler 不持有面板实例）
+   *
+   * 走宿主既有新建路径（createSession）并投递首轮；角色包校验与来源落盘都在面板内完成。
+   */
+  createHostedSession?: HostedSessionCreator;
   /** 环境变量（默认 process.env，便于测试注入） */
   env?: NodeJS.ProcessEnv;
 }
@@ -444,6 +457,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     orchestratorSessionId,
     orchestratorSenderName,
     dispatchHostedInput,
+    createHostedSession,
   } = options;
 
   // 日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核；
@@ -613,19 +627,43 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   // 注册点在 init 之后：工具面需要已初始化的执行器，且注册即触发 onToolsChanged。
   // send_to_session 只拿到面板注入的派发回调，不反向依赖面板实例（见 WorkSessionToolDeps）。
   if (orchestratorSession) {
-    const dispatchDeps =
-      orchestratorSessionId && orchestratorSenderName && dispatchHostedInput
+    /**
+     * 角色包只读清单：直接读本 Agent 的 `listMeta()`（与角色页同一份，不另建列表、不加缓存）。
+     *
+     * 回调是**懒执行**的：注册点在本函数较早位置，而用户 / 项目角色包目录在 init 之后才
+     * `loadExtraDir`；工具真正被调用时目录已加载，故此处按调用时刻取最新清单。
+     */
+    const listRolePacks = (): RolePackBrief[] => {
+      const manager = agent.rolePacks;
+      if (!manager) return [];
+      return manager.listMeta().map((meta) => {
+        // filePath 取同一 manager 的装配结果，来源层判定与设置页共用 rolePackSourceOf
+        const filePath = manager.get(meta.name)?.filePath;
+        return {
+          name: meta.name,
+          ...(meta.displayName ? { displayName: meta.displayName } : {}),
+          ...(meta.description ? { description: meta.description } : {}),
+          source: rolePackSourceOf(filePath, { userRolePacksDir, projectRolePacksDir }),
+        };
+      });
+    };
+    const toolDeps =
+      orchestratorSessionId && orchestratorSenderName && dispatchHostedInput && createHostedSession
         ? {
             callingSessionId: orchestratorSessionId,
             senderName: orchestratorSenderName,
             dispatch: dispatchHostedInput,
+            createSession: createHostedSession,
+            listRolePacks,
           }
         : undefined;
-    if (!dispatchDeps) {
-      // 依赖不全时 list 工具仍可用；派发工具宁可不注册，也不注册一个永远 E_NOT_FOUND 的空壳
-      logger?.warn('[work-session] 主控派发依赖缺失，send_to_session 未注册');
+    if (!toolDeps) {
+      // 依赖不全时 list 工具仍可用；派发 / 建会话宁可不注册，也不注册永远失败的空壳
+      logger?.warn(
+        '[work-session] 主控派发或建会话依赖缺失，send_to_session / create_session 未注册',
+      );
     }
-    const registered = registerWorkSessionTools(agent, store, dispatchDeps);
+    const registered = registerWorkSessionTools(agent, store, toolDeps);
     if (!registered) {
       logger?.warn('[work-session] Agent 工具执行器不可用，主控会话工具未注册');
     }

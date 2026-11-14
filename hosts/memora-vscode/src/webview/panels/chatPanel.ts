@@ -51,7 +51,6 @@ import {
   REVERT_ALL_FILE_CHANGES_COMMAND,
 } from '../../extension/host/fileChangeView.js';
 import {
-  formatDateKey,
   resolveContextWindow,
   estimateOccupancy,
   estimateTokensMessages,
@@ -132,7 +131,8 @@ import { buildSessionListMessage } from '../helpers/sessionList.js';
 // 会话历史读取（round-based 投影 / legacy 回退）——纯数据逻辑外置，面板只消费结果
 import { loadMessagesHistory, loadRoundBasedHistory } from '../helpers/historyLoad.js';
 // 草稿会话态（「＋」后、首次发送前的空白页）：红线与降级理由见该模块头注释
-import { DraftSessionController } from '../helpers/draftSession.js';
+// newSessionId：会话 id 形态单点（草稿首发送 / 启动建空会话 / 主控建会话共用）
+import { DraftSessionController, newSessionId } from '../helpers/draftSession.js';
 // 过程事件 / 指标段级合并（纯函数，HOST-SPLIT-1 切片自本类外置；三条调用面共用同一语义）
 import { mergeProcessEvents } from '../helpers/processEventMerge.js';
 // 工具失败数的展示口径（delegate 四态只把 failed 当失败）：与行级徽标共用同一判据
@@ -178,6 +178,8 @@ import {
   refreshActiveProvider,
   type ProviderRefreshOutcome,
 } from '../../extension/host/providerRefresh.js';
+// 托管工具契约（建会话结果 / 派发结果）：工具 handler 与面板共用同一联合类型，防码集漂移
+import type { CreateSessionResult } from '../../extension/host/workSessionTools.js';
 import { createVscodeAttention } from '../../extension/host/vscodeAttention.js';
 import { collectOccupancyHistory } from '../helpers/occupancyHistory.js';
 import {
@@ -207,6 +209,8 @@ import { createChatRefOps } from './chatRefOps.js';
 import { createChatTurnStructureOps, truncateFailNotice } from './chatTurnStructureOps.js';
 // 会话导航域（B9-D-4 按 op 组外置）：分叉 / 改名 / 切换共用「拿锁 → 换显示源 → 回放」
 import { createChatSessionNavOps } from './chatSessionNavOps.js';
+// 主控建会话实现域（B9-D 拆法：完整闭环外置，面板只留注入依赖的薄壳）
+import { createHostedSessionWith } from '../helpers/hostedSessionCreate.js';
 // 记忆软删域（B9-D-5 按 op 组外置）：单条反馈删除 + 会话删除联动软删，同一套降级口径
 import { createChatMemoryOps } from './chatMemoryOps.js';
 // 运行控制域（B9-D-6 按 op 组外置）：停止 / 暂停 toggle / 恢复，共用会话级运行态与 ask 协调器
@@ -1709,12 +1713,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 而是「取该会话的实例并绑定为显示源」（实例装配时已在核内核侧切到该会话）。
    *
    * @param sessionId 目标会话 id（date-name 格式）
-   * @returns 是否切入成功
+   * @param opts `background: true` = 后台建会话（主控代开）：不切显示源、不写「上次模式」、
+   *   不换绑实例，只落 meta / 装配 / 刷会话清单；`title` 落 `SessionMeta.displayName`
+   * @returns 是否创建成功（background 下 = 是否落成，不代表已切入）
    */
   private async createSession(
     sessionId: string,
     rolePackName?: string,
     mode: SessionMode = this.sessionModes.getLastMode(),
+    opts: { title?: string; background?: boolean } = {},
   ): Promise<boolean> {
     // 新会话 id 由时间戳/随机后缀生成，跨进程不会撞；拿锁只为让后续写盘有归属
     if (!(await this._lockFinalizer.acquire(sessionId))) {
@@ -1723,20 +1730,29 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     const previous = this._currentSessionId;
     try {
-      // 先切宿主当前会话：装配会由登记表在核内核侧切到该会话（无需再改单实例身份）
-      this.setCurrentSessionId(sessionId);
+      // 先切宿主当前会话：装配会由登记表在核内核侧切到该会话（无需再改单实例身份）。
+      // 主控建会话（background）不切：代理开会话不是用户导航动作，不能把用户正在看的页面顶走。
+      if (!opts.background) this.setCurrentSessionId(sessionId);
       // 角色来源：草稿显式选择 > 用户级默认 > 兜底包；校验真源 = 角色包目录编目（冷启动亦可读）
       const roleDecision = await decideNewSessionRolePack(rolePackName, this._readRolePackCatalog);
       // 会话运行模式先入 Map：装配链（assembleAgentForSession）读它决定是否注入主控工具面，
       // 必须早于 agentForSession。mode 不落盘、重启回落 'self'；origin 是持久事实，二者不同步是设计允许的。
       this.sessionModes.set(sessionId, mode);
       // 会话来源标记由 mode 唯一映射（managed ⇒ 'hosted'，self ⇒ 'user'），不留 undefined 悬空；
-      // 角色名的**唯一落盘点**与此同批写入（必须早于装配：装配经 readSessionRolePackName 读回），未选/失效不写
+      // 角色名的**唯一落盘点**与此同批写入（必须早于装配：装配经 readSessionRolePackName 读回），未选/失效不写。
+      // displayName 仅主控建会话传入（模型要拿标题跟用户说话）；普通新建仍由首条消息自动命名。
       this.sessionStore.updateSessionMeta(sessionId, {
         origin: originForMode(mode),
+        ...(opts.title ? { displayName: opts.title } : {}),
         ...(roleDecision.rolePackName ? { activeRolePackName: roleDecision.rolePackName } : {}),
       });
       const agent = await this.agentForSession(sessionId);
+      if (opts.background) {
+        // 后台建会话：不换绑显示源、不打断当前回放；只刷会话清单（用户要能在列表里看到它）。
+        // 也不写「上次模式」——代理的选择不等于用户的新建默认值。
+        this.pushSessionList();
+        return true;
+      }
       this.bindAgent(agent);
       // 默认包失效 / 无法校验：meta 未写 ⇒ 既有「原角色包」提示不会触发，用独立文案如实告知
       const roleNotice = newSessionRolePackNotice(roleDecision, agent.rolePackManager?.activeName);
@@ -1753,13 +1769,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._sessionAgents.delete(sessionId);
       // 建会话失败：Map 里刚登记的 mode 一并回滚，避免「未落成会话」在装配链留下主控身份
       this.sessionModes.delete(sessionId);
-      if (previous) {
-        this.setCurrentSessionId(previous);
-        const previousAgent = this._sessionAgents.get(previous);
-        if (previousAgent) this.bindAgent(previousAgent);
-      } else {
-        // 无旧会话可退：经收尾器同一清空写点归零（守卫要求源码仅一处清空赋值）
-        this._sessionIdAccess.clearSessionId();
+      // 后台建会话从未改显示源，不能借回滚把「上次停留会话」重写成同一个值（无意义写盘）
+      if (!opts.background) {
+        if (previous) {
+          this.setCurrentSessionId(previous);
+          const previousAgent = this._sessionAgents.get(previous);
+          if (previousAgent) this.bindAgent(previousAgent);
+        } else {
+          // 无旧会话可退：经收尾器同一清空写点归零（守卫要求源码仅一处清空赋值）
+          this._sessionIdAccess.clearSessionId();
+        }
       }
       this.post({
         type: 'notice',
@@ -2043,10 +2062,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       }
     }
     if (this._currentSessionId === preferred) {
-      // 候选全被占 / 让位失败 ⇒ 新建（新 id 无冲突）
-      const created = await this.createSession(
-        `${formatDateKey(new Date())}-s${Date.now().toString(36)}`,
-      );
+      // 候选全被占 / 让位失败 ⇒ 新建（新 id 无冲突）；id 形态走 newSessionId 单点
+      const created = await this.createSession(newSessionId());
       // 新建失败：createSession 已推送错误通知，此处不再补一句「已新建」的假话
       if (created) {
         this.post({ type: 'notice', level: 'info', message: sessionDisplacedNewNotice() });
@@ -2780,6 +2797,63 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       targetSessionId,
     );
     return { ok: true, accepted: true };
+  }
+
+  /**
+   * 主控建会话（工具 `create_session` 的薄壳）
+   *
+   * 实现见 `helpers/hostedSessionCreate.ts`（校验 / 后台建会话 / 首轮投递的完整闭环）；
+   * 本方法只把面板私有能力以窄依赖注入，避免把装配与流控制外泄。
+   *
+   * @param callingSessionId 调用方（非托管 = E_DENIED）
+   * @param rolePackName 角色包名（undefined = 宿主既有解析链）
+   * @param title 会话标题（落 displayName 并返回给模型）
+   * @param text 首轮输入
+   * @param senderName 首轮发送者名（装配期注入）
+   */
+  public async createHostedSession(
+    callingSessionId: string,
+    rolePackName: string | undefined,
+    title: string,
+    text: string,
+    senderName: string,
+  ): Promise<CreateSessionResult> {
+    return createHostedSessionWith(
+      {
+        isManaged: (sid) => this.sessionModes.isManaged(sid),
+        readRolePackCatalog: this._readRolePackCatalog,
+        // 后台建：不切显示源、不写「上次模式」，标题由调用方给
+        createBackgroundSession: (sid, rolePack, sessionTitle) =>
+          this.createSession(sid, rolePack, 'managed', { title: sessionTitle, background: true }),
+        startFlow: async (sid, input, sender) => {
+          // 实例已由建会话链路装配；这里只取（不建），再走既有 runFlow 通路
+          const agent = await this.agentForSession(sid);
+          const now = new Date().toISOString();
+          void this.runFlow(
+            (signal) =>
+              agent.chat(input, signal, undefined, { origin: 'hosted', senderName: sender }),
+            {
+              userMessage: {
+                // id 用毫秒时间戳（ISO 带冒号，不宜进 id）；timestamp 用 ISO（与 RoundView 同型）
+                id: `live-hosted-${sid}-${Date.now()}`,
+                role: 'user',
+                content: input,
+                timestamp: now,
+                name: sender,
+              },
+              origin: 'hosted',
+            },
+            sid,
+          );
+        },
+        nextSessionId: newSessionId,
+      },
+      callingSessionId,
+      rolePackName,
+      title,
+      text,
+      senderName,
+    );
   }
 
   /**

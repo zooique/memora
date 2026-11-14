@@ -1,15 +1,17 @@
 /**
  * 会话工具 · 主控装配面（托管模式 v0）
  *
- * 职责（只做两件事）：
- *   - 装配层判定「这个 Agent 是主控」时，为它注册 `list_work_sessions` / `send_to_session`；
+ * 职责（只做主控会话的工具面）：
+ *   - 装配层判定「这个 Agent 是主控」时，为它注册 `list_work_sessions` / `send_to_session` /
+ *     `create_session` / `list_role_packs`；
  *   - 普通会话不注册 ⇒ 模型侧「工具不存在」，不是「调用报错」。
  *
  * 边界（刻意如此，勿扩）：
- *   - `send_to_session` 只做参数校验 + 会话存在性判定 + 调注入的派发回调；
- *     它**不持有面板实例**，也不读编辑器 / problems / git（派发实现归 chatPanel，见其 JSDoc）。
- *   - 数据来源 = 注入的 `ISessionStore.listSessionMetas()`（宿主已有的会话元数据真源）。
- *   - 关系表 / `E_LIMIT` / 深度限制明确后置：v0 **不限制嵌套深度**——派发工具对每个托管
+ *   - 三个业务工具都只做参数校验 + 调注入回调；**不持有面板实例**，也不读编辑器 / problems / git。
+ *   - 会话数据来源 = 注入的 `ISessionStore.listSessionMetas()`（宿主已有的会话元数据真源）；
+ *     角色包来源 = 注入的 `listRolePacks`（装配期从内核 `RolePackManager.listMeta()` 单点取，
+ *     不另建列表、不加缓存）。
+ *   - 关系表 / `E_LIMIT` / 深度限制明确后置：v0 **不限制嵌套深度**——派发与建会话工具对每个托管
  *     会话都可见（只有 self 会话没有），没有「子会话拿不到工具」的结构性保证；本文件
  *     **不预留**对应参数或字段，深度闸等关系表落地后再加。
  *   - 主控身份**不落盘、不进 `SessionMeta`**：`SessionMeta.mode` 已作废。
@@ -30,6 +32,21 @@ export const LIST_WORK_SESSIONS_TOOL_NAME = 'list_work_sessions';
  * 合法用途 = 主控把一条输入交给指定会话继续处理；不建会话、不代替目标会话作答。
  */
 export const SEND_TO_SESSION_TOOL_NAME = 'send_to_session';
+
+/**
+ * 建会话工具名（与设计文档 §13.11.1 同名）
+ *
+ * 合法用途 = 主控开一个合适的会话并让它开始第一轮；创建走宿主既有新建路径，不另造链路。
+ */
+export const CREATE_SESSION_TOOL_NAME = 'create_session';
+
+/**
+ * 角色包只读清单工具名
+ *
+ * 为什么要单独一个出口：主控要「按名选包」，就得先知道有哪些名字；
+ * 让模型猜包名只会得到一串 `E_ROLE_PACK`。只读、无副作用。
+ */
+export const LIST_ROLE_PACKS_TOOL_NAME = 'list_role_packs';
 
 /**
  * 派发回调可产生的业务结果（**唯一**真源 = `chatPanel.dispatchHostedInput` 的返回面）
@@ -80,7 +97,64 @@ export interface WorkSessionToolDeps {
   senderName: string;
   /** 派发到目标会话的实现（由宿主面板提供） */
   dispatch: HostedInputDispatcher;
+  /** 新建会话并投递首轮（由宿主面板提供；创建走既有新建路径） */
+  createSession: HostedSessionCreator;
+  /** 角色包只读清单（装配期从内核 `listMeta()` 单点取，带来源标记） */
+  listRolePacks: () => RolePackBrief[];
 }
+
+/** 角色包来源层（与角色页 / 设置页同一口径：内置 < 用户 < 项目） */
+export type RolePackSource = 'builtin' | 'user' | 'project';
+
+/**
+ * 角色包只读摘要（只给「按名挑包」所需的事实）
+ *
+ * 刻意**不含**「隐藏 / 不可选 / 托管不可用」这类字段：现状没有这套概念，
+ * 主控能看到的包 = 用户自己能选的包，不为托管扩接口。
+ */
+export interface RolePackBrief {
+  /** 角色包名（唯一标识，`create_session` 的 rolePack 用它） */
+  name: string;
+  /** 展示名（缺省 = name，由消费方回退） */
+  displayName?: string;
+  /** 角色包描述（可选） */
+  description?: string;
+  /** 来源层（内置 / 用户 / 项目） */
+  source: RolePackSource;
+}
+
+/**
+ * 建会话结果（业务失败一律 `{ ok:false }`，不 throw）
+ *
+ * 码集按产生位置：
+ *   - 工具层：`E_ARGS`（未知键 / 缺键 / 空白串）；
+ *   - 面板业务判定：`E_DENIED` 调用方非托管 / `E_ROLE_PACK` 角色包不存在或编目不可用；
+ *   - 宿主兜底：`E_HOST`（拿锁失败 / 装配失败等），**不得**冒名 `E_NOT_FOUND`。
+ */
+export type CreateSessionResult =
+  | { ok: true; sid: string; title: string }
+  | {
+      ok: false;
+      code: 'E_DENIED' | 'E_ROLE_PACK' | 'E_HOST';
+      message: string;
+    };
+
+/**
+ * 建会话回调（装配期注入，工具 handler 不持有面板实例）
+ *
+ * @param callingSessionId 发起创建的会话（E_DENIED 判据）
+ * @param rolePackName 角色包名（undefined = 走宿主既有解析链：用户默认 → 兜底包）
+ * @param title 会话标题（展示给用户，落 `SessionMeta.displayName`）
+ * @param text 首轮输入（由新会话自己处理）
+ * @param senderName 落首轮 `RoundMessage.name` 的发送者名（装配期传入）
+ */
+export type HostedSessionCreator = (
+  callingSessionId: string,
+  rolePackName: string | undefined,
+  title: string,
+  text: string,
+  senderName: string,
+) => Promise<CreateSessionResult>;
 
 /**
  * 单个会话的对外摘要（本片最小字段集）
@@ -150,6 +224,58 @@ const SEND_TO_SESSION_DEFINITION: ToolDefinition = {
 };
 
 /**
+ * 建会话工具定义（声明面）
+ *
+ * - `readonly: false`：首轮会让新会话进入可能写文件的流程，只读模式（review/plan）应拦住它；
+ * - `diskWrite: 'none'`：会话元数据 / 轮次写的是 `.memora` 数据目录，不是项目磁盘；
+ *   真正落盘发生在新建会话自己的内核流程里，不能按 `'opaque'` 与一切写互斥；
+ * - `confirmPolicy: 'audit'`：与 list / send 同档（免弹窗但留审计）。
+ *
+ * 参数封闭：rolePack / title / text；`rolePack` 可省（走宿主既有解析链），
+ * 未知键在 handler 判 `E_ARGS`（schema 不支持 additionalProperties）。
+ */
+const CREATE_SESSION_DEFINITION: ToolDefinition = {
+  name: CREATE_SESSION_TOOL_NAME,
+  description:
+    '创建一个新会话，并让它开始处理第一轮任务。rolePack 可选（可先用 list_role_packs 查名字；' +
+    '省略则按用户默认角色解析），title 是给用户看的会话标题，text 是第一轮输入。' +
+    '返回新会话的 sid 与 title；角色包不存在或不可用时返回 E_ROLE_PACK。',
+  parameters: {
+    type: 'object',
+    properties: {
+      rolePack: { type: 'string', description: '角色包名（list_role_packs 返回的 name）' },
+      title: { type: 'string', description: '会话标题（展示给用户，不是会话标识）' },
+      text: { type: 'string', description: '要交给新会话处理的第一轮输入' },
+    },
+    required: ['title', 'text'],
+  },
+  readonly: false,
+  diskWrite: 'none',
+  confirmPolicy: 'audit',
+};
+
+/**
+ * 角色包只读清单定义（声明面）
+ *
+ * - `readonly: true` / `diskWrite: 'none'`：只读内存里的清单，不写盘；
+ * - 无参数：清单规模靠 L1 阈值控制，不做过滤参数（需要再扩时不预留空壳）。
+ */
+const LIST_ROLE_PACKS_DEFINITION: ToolDefinition = {
+  name: LIST_ROLE_PACKS_TOOL_NAME,
+  description:
+    '列出当前可用的角色包（名称、展示名、描述、来源：内置 / 用户 / 项目），用于给 create_session 挑包。' +
+    '主控能选的包与用户自己能选的完全相同，没有额外授权。',
+  parameters: {
+    type: 'object',
+    properties: {},
+    required: [],
+  },
+  readonly: true,
+  diskWrite: 'none',
+  confirmPolicy: 'audit',
+};
+
+/**
  * 会话元数据 → 对外摘要（纯函数，便于单测）
  *
  * 标题回退链复用内核 `getSessionDisplayName`（displayName → autoName），
@@ -183,6 +309,28 @@ function parseSendArgs(args: Record<string, unknown>): { sid: string; text: stri
 }
 
 /**
+ * 校验 `create_session` 的参数（rolePack 可省；title / text 必填且非空）
+ *
+ * @param args 工具执行器传入的已解析参数
+ * @returns 合法载荷；undefined = 未知键 / 缺键 / 类型不对（调用方统一回 `E_ARGS`）
+ */
+function parseCreateArgs(
+  args: Record<string, unknown>,
+): { rolePack?: string; title: string; text: string } | undefined {
+  const keys = Object.keys(args);
+  // 键集只允许这三键；多一个未知键就拒（不忽略、不透传）
+  const allowed = new Set(['rolePack', 'title', 'text']);
+  if (keys.some((key) => !allowed.has(key))) return undefined;
+  const { rolePack, title, text } = args;
+  if (typeof title !== 'string' || typeof text !== 'string') return undefined;
+  if (title.trim() === '' || text.trim() === '') return undefined;
+  if (rolePack !== undefined) {
+    if (typeof rolePack !== 'string' || rolePack.trim() === '') return undefined;
+  }
+  return rolePack === undefined ? { title, text } : { rolePack, title, text };
+}
+
+/**
  * 为主控会话注册会话工具
  *
  * 幂等性：本函数只做一次性装配注册；`registerTool` 对同名重复注册会抛错——
@@ -190,7 +338,8 @@ function parseSendArgs(args: Record<string, unknown>): { sid: string; text: stri
  *
  * @param agent 已 init 的内核 Agent（注册面 = `agent.tools`）
  * @param sessionStore 宿主会话存储（数据真源 = `listSessionMetas()`）
- * @param deps 派发依赖（调用方 / 发送者名 / 派发回调）；缺省 = 只注册 list 工具
+ * @param deps 运行期依赖（调用方 / 发送者名 / 派发 / 建会话 / 角色包清单）；
+ *   缺省 = 只注册 list 工具（不注册永远失败的空壳）
  * @returns true = 已注册；false = 工具执行器不可用（未 init），调用方负责记日志
  */
 export function registerWorkSessionTools(
@@ -251,6 +400,47 @@ export function registerWorkSessionTools(
           2,
         );
       }
+    });
+    tools.registerTool(CREATE_SESSION_DEFINITION, async (args) => {
+      const parsed = parseCreateArgs(args);
+      if (!parsed) {
+        return JSON.stringify(
+          {
+            ok: false,
+            code: 'E_ARGS',
+            message: '参数只能是 { rolePack?, title, text }；title / text 必须是非空字符串。',
+          },
+          null,
+          2,
+        );
+      }
+      try {
+        // E_DENIED / E_ROLE_PACK 由创建回调按调用方身份与角色包编目判；工具层不自造判据。
+        // 角色包缺失**绝不**折算成 E_NOT_FOUND：那是「会话不存在」的语义，混用会让模型换 sid。
+        const result = await deps.createSession(
+          deps.callingSessionId,
+          parsed.rolePack,
+          parsed.title,
+          parsed.text,
+          deps.senderName,
+        );
+        return JSON.stringify(result, null, 2);
+      } catch (err) {
+        // 业务契约：不 throw；宿主侧异常单独一码，与角色包 / 会话语义分开
+        return JSON.stringify(
+          {
+            ok: false,
+            code: 'E_HOST',
+            message: `宿主建会话失败：${err instanceof Error ? err.message : String(err)}`,
+          },
+          null,
+          2,
+        );
+      }
+    });
+    tools.registerTool(LIST_ROLE_PACKS_DEFINITION, async () => {
+      // 只读透传装配期注入的清单（内核 listMeta 单点），不在这里二次过滤 / 加缓存
+      return JSON.stringify({ ok: true, packs: deps.listRolePacks() }, null, 2);
     });
   }
   return true;

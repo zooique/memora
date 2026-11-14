@@ -12,6 +12,8 @@
  */
 import { RolePackManager } from '@zooique/memora';
 import type { RolePackCatalogReader } from './newSessionRolePack.js';
+// 路径归属判据单点（与技能聚合共用；裸 startsWith 会把 `role-packs-x` 误判进 `role-packs`）
+import { isPathWithin } from './userAssets/path.js';
 
 /** 编目所需的目录清单（与装配期注入完全同源，解析点唯一 = extension.ts） */
 export interface RolePackCatalogDirs {
@@ -21,6 +23,23 @@ export interface RolePackCatalogDirs {
   userRolePacksDir: string;
   /** 项目级角色包目录（未信任/不存在时为空） */
   projectRolePacksDir?: string;
+}
+
+/**
+ * 角色包来源层（单点判定）
+ *
+ * 判据与设置页「内置包只读」同源：先项目、再用户，剩下都是内置。
+ * 裸 `startsWith` 会把 `role-packs-x` 误判进 `role-packs`，故一律走 `isPathWithin`。
+ *
+ * @param filePath 角色包 manifest.json 的绝对路径（`RolePackAssembly.filePath`）
+ * @param dirs 用户级 / 项目级目录（内置不需要目录——不在前两者内即内置）
+ */
+export function rolePackSourceOf(
+  filePath: string | undefined,
+  dirs: { userRolePacksDir?: string; projectRolePacksDir?: string },
+): 'builtin' | 'user' | 'project' {
+  if (isPathWithin(dirs.projectRolePacksDir, filePath)) return 'project';
+  return isPathWithin(dirs.userRolePacksDir, filePath) ? 'user' : 'builtin';
 }
 
 /**

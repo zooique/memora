@@ -44,7 +44,7 @@ import { openChatCommand } from './commands/openChat.js';
 import { registerNewSessionCommand } from './commands/newSession.js';
 // 收回本会话（撤销助手代理）：与「新建会话选模式」对称的退出入口
 import { registerRevokeManagedSessionCommand } from './commands/revokeManagedSession.js';
-import type { HostedInputDispatcher } from './host/workSessionTools.js';
+import type { HostedInputDispatcher, HostedSessionCreator } from './host/workSessionTools.js';
 import { runDemoCommand } from './commands/demo.js';
 import { reloadSkillsCommand } from './commands/reloadSkills.js';
 import { cleanupMemoriesCommand, memoryStatsCommand, runGcCommand } from './commands/memory.js';
@@ -213,6 +213,8 @@ interface AssemblyDeps {
   orchestratorSenderName: string;
   /** 托管派发回调（工具 handler → 面板；装配层不反向依赖面板实例） */
   dispatchHostedInput: HostedInputDispatcher;
+  /** 托管建会话回调（工具 handler → 面板；创建走面板既有新建路径） */
+  createHostedSession: HostedSessionCreator;
 }
 
 /**
@@ -316,6 +318,7 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
     // 工具 handler 不持有面板实例，也不自带名字字面量（由 session 级装配补 sessionId）
     orchestratorSenderName: deps.orchestratorSenderName,
     dispatchHostedInput: deps.dispatchHostedInput,
+    createHostedSession: deps.createHostedSession,
   };
 }
 
@@ -541,6 +544,9 @@ export function activate(context: vscode.ExtensionContext): void {
     // 面板在 deps 之后创建（与 peekAgent 同一手法）：闭包延迟取，调用时面板必已就绪
     dispatchHostedInput: (calling, target, text, sender) =>
       chatProvider.dispatchHostedInput(calling, target, text, sender),
+    // 建会话同法：工具 handler → 面板既有新建路径（角色包校验与来源落盘都在面板内）
+    createHostedSession: (calling, rolePack, title, text, sender) =>
+      chatProvider.createHostedSession(calling, rolePack, title, text, sender),
   };
 
   // 会话 → Agent 登记表（E4 批 2：生产唯一取用面）。构造参数强制传入
