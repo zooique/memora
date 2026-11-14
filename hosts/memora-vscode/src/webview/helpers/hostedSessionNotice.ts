@@ -28,6 +28,12 @@ export interface HostedSessionNoticeDeps {
   readSessionMeta: (sessionId: string) => SessionMeta | undefined;
   /** 该会话当前是否仍是托管装配（创建者被收回后不再打扰它） */
   isManaged: (sessionId: string) => boolean;
+  /**
+   * 目标会话当前是否仍由代理驱动（唯一的「现在归谁」判据）
+   *
+   * 与创建者账本（出生记录）分开：用户收回后，即使账本还记着「代理开的」也不再通知。
+   */
+  isAgentDriven: (sessionId: string) => boolean;
   /** 同步取已绑定实例（不 await 装配：取不到就如实不投） */
   getAgent: (sessionId: string) => Agent | undefined;
   /** 按轮 id 读盘上轮（paused 停止路径用；正常流尾由调方直接给轮） */
@@ -202,7 +208,7 @@ export class HostedSessionNotifier {
   /**
    * 判定该会话是否该通知，并取出标题与创建者
    *
-   * @returns undefined = 不通知（非代理开的 / 创建者不在 / 创建者已非托管）
+   * @returns undefined = 不通知（非代理开的 / 创建者不在 / 目标已不由代理驱动 / 创建者已非托管）
    */
   private resolveTarget(sessionId: string): { creator: string; title: string } | undefined {
     const meta = this.deps.readSessionMeta(sessionId);
@@ -210,6 +216,8 @@ export class HostedSessionNotifier {
     if (meta?.origin !== 'hosted') return undefined;
     const creator = this.childToCreator.get(sessionId);
     if (!creator) return undefined;
+    // 当前驱动权判据（与停止 / 暂停 / 工作台清单同一判断）：用户收回后当前归用户，不再通知
+    if (!this.deps.isAgentDriven(sessionId)) return undefined;
     // 创建者已被收回托管（或已关窗）：它现在是普通会话，不拿代理的事实打扰它
     if (!this.deps.isManaged(creator)) return undefined;
     return { creator, title: getSessionDisplayName(meta) || sessionId };

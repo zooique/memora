@@ -431,6 +431,12 @@ export interface AssembleOptions {
   readHostedStatus?: (sessionId: string) => WorkbenchJobStatus;
   /** 本进程创建者账本读口（与工作台同一真源；缺省 ⇒ 归属 unknown） */
   hostedAgentCreated?: (orchestratorId: string) => readonly string[];
+  /**
+   * 当前是否由代理驱动的唯一判据（缺省 ⇒ 停止 / 暂停 / 恢复一律拒绝）
+   *
+   * 与出生账本分开：账本只回答「谁开的」，本读口回答「现在归谁」，收回后即不再放行。
+   */
+  readHostedAgentDriven?: (sessionId: string) => boolean;
   /** 调用方历史重建（重启后账本为空时补归属；缺省 ⇒ 覆盖状态 unreadable） */
   readHostedHistory?: (orchestratorId: string) => SessionHistoryFacts;
   /** 环境变量（默认 process.env，便于测试注入） */
@@ -497,6 +503,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     answerHostedQuestions,
     readHostedStatus,
     hostedAgentCreated,
+    readHostedAgentDriven,
     readHostedHistory,
   } = options;
 
@@ -745,6 +752,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
             listRolePacks,
             ...(readHostedStatus ? { readStatus: readHostedStatus } : {}),
             ...(hostedAgentCreated ? { agentCreated: hostedAgentCreated } : {}),
+            // 当前驱动权的唯一判据：停止 / 暂停 / 恢复只看它，不看出生账本
+            ...(readHostedAgentDriven ? { isAgentDriven: readHostedAgentDriven } : {}),
             ...(readHostedHistory ? { readHistory: readHostedHistory } : {}),
             // 范围声明（判据 4）的规范化基准：把绝对路径截成相对，只用于比较
             workspaceRoot: projectPath,

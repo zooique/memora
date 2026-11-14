@@ -419,7 +419,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 托管子会话中断通知器（第三切片）：延迟闭包；创建者关系仅进程内，不落盘、不进 meta */
   private readonly _hostedNotifier = new HostedSessionNotifier({
     readSessionMeta: (sid) => this.sessionStore.getSessionMeta(sid),
+    // 创建者必须仍有调度权（被收回后不再拿代理的事实打扰它）
     isManaged: (sid) => this.sessionModes.isManaged(sid),
+    // 目标当前是否仍由代理驱动（收回后不再替它通知创建者）：与停止 / 暂停 / 清单同一判据
+    isAgentDriven: (sid) => this.sessionModes.isAgentDriven(sid),
     getAgent: (sid) => this._sessionAgents.get(sid),
     readRound: (roundId) => this._eventLogRoundStore?.getById(roundId) ?? undefined,
   });
@@ -1792,6 +1795,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 会话运行模式先入 Map：装配链（assembleAgentForSession）读它决定是否注入主控工具面，
       // 必须早于 agentForSession。mode 不落盘、重启回落 'self'；origin 是持久事实，二者不同步是设计允许的。
       this.sessionModes.set(sessionId, mode);
+      // 当前驱动权：代理开的会话登记「由代理驱动」（mode 仍是 self ⇒ 没有调度权）。
+      // 这是与出生来源分开的运行期事实，收回时清除；停止 / 暂停 / 恢复 / 清单 / 通知共用它。
+      if (opts.agentCreated) this.sessionModes.markAgentDriven(sessionId);
       // 来源标记与调度权分开：拼装逻辑在 newSessionMeta（代理开的会话落 hosted，但没有调度权）
       this.sessionStore.updateSessionMeta(
         sessionId,
@@ -2871,18 +2877,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 收回本会话（撤销助手代理，回到「我自己聊」）
    *
-   * 只改**运行期装配状态**，不改持久事实：
-   *   - mode 置回 `'self'`（容器本就不落盘，重启也是回落 self）；
+   * 只改**运行期状态**，不改持久事实：
+   *   - 驱动权：清 `agentDriven`（代理开出的子会话 → 当前归用户）；
+   *   - 有调度权的会话：mode 置回 `'self'`（容器本就不落盘，重启也是回落 self）；
    *   - 历史轮次的 `origin: 'hosted'` **一个字节都不动**（历史只读，标记永久保留）；
    *   - `SessionMeta.origin` 不改——它记的是「这个会话最初由谁建立」，撤销不擦除归属；
    *   - 用户级「上次模式」不改——撤销这一笔 ≠ 改新建会话的默认值。
+   *
+   * 判据只看**当前是否由代理驱动**（`isManaged || isAgentDriven`），不看出生记录：
+   * 代理开的子会话没有调度权，但收回前仍归代理，必须允许用户收回。
    *
    * 工具面为什么必须重装：主控工具在**装配期**就注册进实例，改 mode 不会摘掉已有实例
    * 的工具面 ⇒ 先回收（登记表 unregister + close），再按新 mode 重新装配并换绑显示源。
    * 会话在跑时拒绝撤销：close 会打断在途流，不能拿用户正在看的回答当代价。
    *
    * @param sessionId 目标会话（缺省 = 当前显示会话）
-   * @returns 是否真的撤销并重装（false = 草稿 / 本来就是自助 / 正在运行 / 重装失败）
+   * @returns 是否真的撤销并重装（false = 草稿 / 本来就是用户自己的 / 正在运行 / 重装失败）
    */
   public async revokeManagedSession(sessionId?: string): Promise<boolean> {
     const sid = sessionId ?? this._currentSessionId;
@@ -2890,7 +2900,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       void vscode.window.showInformationMessage(l10n.t('Memora: open a session first.'));
       return false;
     }
-    if (!this.sessionModes.isManaged(sid)) {
+    // 当前归谁 = 一个判断点：有调度权（用户亲自选的托管）或当前由代理驱动，都允许收回
+    if (!this.sessionModes.isManaged(sid) && !this.sessionModes.isAgentDriven(sid)) {
       void vscode.window.showInformationMessage(l10n.t('Memora: this session is already yours.'));
       return false;
     }
@@ -2900,9 +2911,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       );
       return false;
     }
-    // 顺序不可换：① 先改 mode，重装才读到 self；② 旧实例必须先摘表再回收，
+    // 顺序不可换：① 先改运行期状态，重装才读到 self / 非驱动；② 旧实例必须先摘表再回收，
     // 否则 agentForSession 命中旧实例，工具面原样保留（mode 变了但模型仍能派发）
     this.sessionModes.set(sid, 'self');
+    this.sessionModes.clearAgentDriven(sid);
     this._sessionAgents.delete(sid);
     await this._releaseAgent?.(sid);
     try {

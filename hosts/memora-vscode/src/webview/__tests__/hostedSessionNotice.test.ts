@@ -61,12 +61,15 @@ function harness(): {
   childQueue: ReturnType<typeof vi.fn>;
   metas: Map<string, SessionMeta>;
   managed: Set<string>;
+  driven: Set<string>;
   rounds: Map<string, Round>;
 } {
   const creatorQueue = vi.fn();
   const childQueue = vi.fn();
   const metas = new Map<string, SessionMeta>();
   const managed = new Set<string>([CREATOR]);
+  // 当前由代理驱动的会话（生产 = SessionModeStore.agentDriven；子会话出生后默认在内）
+  const driven = new Set<string>([CHILD]);
   const rounds = new Map<string, Round>();
   const agents = new Map<string, Agent>([
     [CREATOR, { agentLoop: { enqueueCommandResult: creatorQueue } } as unknown as Agent],
@@ -75,10 +78,11 @@ function harness(): {
   const notifier = new HostedSessionNotifier({
     readSessionMeta: (sid) => metas.get(sid),
     isManaged: (sid) => managed.has(sid),
+    isAgentDriven: (sid) => driven.has(sid),
     getAgent: (sid) => agents.get(sid),
     readRound: (roundId) => rounds.get(roundId),
   });
-  return { notifier, creatorQueue, childQueue, metas, managed, rounds };
+  return { notifier, creatorQueue, childQueue, metas, managed, driven, rounds };
 }
 
 describe('HostedSessionNotifier', () => {
@@ -188,6 +192,18 @@ describe('HostedSessionNotifier', () => {
     // 创建者被收回托管（现在是普通会话，不拿代理的事实打扰它）
     h.managed.delete(CREATOR);
     expect(h.notifier.noteSettledFlow(CHILD, 'r7', false, true)).toBe(false);
+    expect(h.creatorQueue).not.toHaveBeenCalled();
+  });
+
+  it('子会话已被用户收回（当前不由代理驱动）→ 不通知创建者（出生账本不当权限用）', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    h.rounds.set('r10', round('r10', 'interrupted', []));
+    // 出生记录仍记着创建者，但当前驱动权已归用户
+    h.notifier.remember(CHILD, CREATOR);
+    h.driven.delete(CHILD);
+
+    expect(h.notifier.noteSettledFlow(CHILD, 'r10', false, true)).toBe(false);
     expect(h.creatorQueue).not.toHaveBeenCalled();
   });
 

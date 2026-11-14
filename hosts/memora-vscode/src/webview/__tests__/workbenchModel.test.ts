@@ -54,6 +54,7 @@ function baseInputs(overrides: Partial<WorkbenchSnapshotInputs> = {}): Workbench
     readRolePackName: () => undefined,
     readRolePackDisplayName: () => undefined,
     isManaged: () => true,
+    isAgentDriven: () => true,
     childrenOf: () => [],
     history: emptyHistory(),
     peekActivity: () => ({ running: false, waiting: false }),
@@ -215,6 +216,25 @@ describe('buildWorkbenchSnapshot — 清单口径', () => {
     expect(snapshot.jobs.map((job) => job.sessionId)).toEqual(['session-from-history']);
     // 会话元数据没名字 → 用创建时给的标题，而不是时间占位标题
     expect(snapshot.jobs[0].title).toBe('整理周报');
+  });
+
+  it('用户收回后：账本 / 历史还记着也不进清单（判据 = 当前驱动权，不是出生记录）', () => {
+    const snapshot = buildWorkbenchSnapshot(
+      baseInputs({
+        childrenOf: () => ['session-revoked'],
+        // 出生记录明确是代理开的，但当前已归用户
+        isAgentDriven: () => false,
+        history: emptyHistory({
+          children: [{ sessionId: 'session-revoked', title: '旧任务' }],
+          totalRounds: 1,
+          scannedRounds: 1,
+        }),
+      }),
+    );
+    expect(snapshot.jobs).toEqual([]);
+    // 主动收回不是数据缺失，不记 missingCount，也不把 coverage 拉成 partial
+    expect(snapshot.missingCount).toBe(0);
+    expect(snapshot.coverage).toBe('complete');
   });
 
   it('历史里有 sid 但会话已删除：跳过并计数，清单不静默少一条', () => {

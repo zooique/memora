@@ -54,6 +54,12 @@ export interface WorkbenchSnapshotInputs {
   readRolePackDisplayName: (sessionId: string, name: string) => string | undefined;
   /** 本进程是否仍按托管装配（真源 = `SessionModeStore`） */
   isManaged: (sessionId: string) => boolean;
+  /**
+   * 该会话当前是否仍由代理驱动（真源 = `SessionModeStore`，与停止 / 暂停 / 通知同一判据）
+   *
+   * 用户收回后即使创建者账本还记着它，也不再出现在清单里——账本只做出生记录，不当权限用。
+   */
+  isAgentDriven: (sessionId: string) => boolean;
   /** 该会话开出去的子会话（真源 = 中断通知器的创建者账本，仅本进程） */
   childrenOf: (creatorSessionId: string) => readonly string[];
   /**
@@ -96,6 +102,8 @@ export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): Workben
   /** 历史里有 sid、但磁盘上已找不到的会话数（跳过并计数，不静默丢） */
   let missingCount = 0;
   for (const [sessionId, historyTitle] of merged) {
+    // 当前驱动权过滤：用户收回后即使账本 / 历史还记着，也不再归代理（唯一判据）
+    if (!inputs.isAgentDriven(sessionId)) continue;
     const meta = inputs.readMeta(sessionId);
     // 元数据缺失 = 会话已删除 / 找不到：跳过但计数，界面明说「有 N 条找不到了」
     if (!meta) {

@@ -2089,6 +2089,8 @@ describe('托管中断通知 · 流收场投递给创建者（第三切片）', 
     // 生产由 extension 装配时注入；不注入则流尾读不到盘上轮（通知器如实不投）
     provider.setRoundStore(roundStore);
     modes.set(creator, 'managed');
+    // 生产 = 代理建会话时登记「当前由代理驱动」；本用例直接构造实例，需同形补上
+    modes.markAgentDriven(child);
     store.updateSessionMeta(child, { displayName: '抓取任务', origin: 'hosted' });
     const roundId = 'round-child-stop';
     // 盘上事实：该轮已按中断收场，aborted.stopReason 说明是用户停的

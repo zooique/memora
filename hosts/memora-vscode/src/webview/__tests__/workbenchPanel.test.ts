@@ -131,6 +131,7 @@ function makeInputs(
     readRolePackName: () => 'coder',
     readRolePackDisplayName: () => '程序员',
     isManaged: () => true,
+    isAgentDriven: () => true,
     childrenOf: () => children,
     history,
     peekActivity: () => ({ running: false, waiting: false }),

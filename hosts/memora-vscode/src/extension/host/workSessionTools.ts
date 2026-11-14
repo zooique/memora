@@ -13,9 +13,9 @@
  *   - 会话数据来源 = 注入的 `ISessionStore.listSessionMetas()`（宿主已有的会话元数据真源）；
  *     角色包来源 = 注入的 `listRolePacks`（装配期从内核 `RolePackManager.listMeta()` 单点取，
  *     不另建列表、不加缓存）。
- *   - 关系表 / `E_LIMIT` / 深度限制明确后置：v0 **不限制嵌套深度**——派发与建会话工具对每个托管
- *     会话都可见（只有 self 会话没有），没有「子会话拿不到工具」的结构性保证；本文件
- *     **不预留**对应参数或字段，深度闸等关系表落地后再加。
+ *   - 嵌套开会话由工具面缺席挡住：只有用户亲自选择的托管会话按 `managed` 装配并拿到本文件
+ *     的工具集；代理开出的子会话按 `self` 装配（出生来源仍记 `hosted`），它没有这组工具，
+ *     不需要关系表 / `E_LIMIT` / 深度闸 / 父字段 / 层级树（这些已被明确砍掉，不要复活）。
  *   - 主控身份**不落盘、不进 `SessionMeta`**：`SessionMeta.mode` 已作废。
  */
 import type { Agent, ISessionStore, Memory, SessionMeta, ToolDefinition } from '@zooique/memora';
@@ -69,9 +69,9 @@ export const CREATE_SESSION_TOOL_NAME = 'create_session';
 /**
  * 停止会话工具名（台账 HOST-MANAGED-MODE-V0-1 判据 6 的「停止」半）
  *
- * 只允许停调用方自己开的活（创建者账本 ∪ 历史重建判归 `agent`）；
- * 用户自己建的会话一律 E_DENIED。停止复用用户停止的同一条实现，
- * 终态与原因仍由既有轮投影给出，不新增通知类型。
+ * 只允许停「当前仍由代理驱动」的活（判据 = `sessionModes.isAgentDriven`，与工作台清单 /
+ * 中断通知同一处）；用户自己建的、或已被用户收回的一律 E_DENIED。
+ * 停止复用用户停止的同一条实现，终态与原因仍由既有轮投影给出，不新增通知类型。
  */
 export const STOP_WORK_SESSION_TOOL_NAME = 'stop_work_session';
 
@@ -192,6 +192,13 @@ export interface WorkSessionToolDeps {
   readStatus?: (sessionId: string) => WorkbenchJobStatus;
   /** 本进程创建者账本（与工作台同一真源 `HostedSessionNotifier`；重启后为空） */
   agentCreated?: (orchestratorId: string) => readonly string[];
+  /**
+   * 当前是否由代理驱动的唯一判据（停止 / 暂停 / 恢复的目标归属）
+   *
+   * 与出生账本分开：账本只回答「谁开的」；用户收回后本读口即为 false，一律拒绝。
+   * 缺省按「不可确认 ⇒ 拒绝」处理——宁可不给操作，也不拿出生记录当权限。
+   */
+  isAgentDriven?: (sessionId: string) => boolean;
   /** 调用方历史重建（重启后账本为空时补来源归属；读盘有上限，结果自带覆盖状态） */
   readHistory?: (orchestratorId: string) => SessionHistoryFacts;
   /**
@@ -537,9 +544,8 @@ const SEND_TO_SESSION_DEFINITION: ToolDefinition = {
 const STOP_WORK_SESSION_DEFINITION: ToolDefinition = {
   name: STOP_WORK_SESSION_TOOL_NAME,
   description:
-    '停止一条**你自己开的**会话当前正在跑的活（复用用户停止的同一条路径）。' +
-    'sid 必须来自 list_work_sessions，且该条目的 createdBy 必须是 agent。' +
-    '用户自己建的会话（createdBy=user）不接受代理停止，返回 E_DENIED；' +
+    '停止一条**当前仍由代理驱动**的会话正在跑的活（复用用户停止的同一条路径）。' +
+    '目标已被用户收回、或本来就是用户自己建的，返回 E_DENIED（判据是当前驱动权，不是出生记录）；' +
     '状态读不到（unreadable）时返回 E_UNREADABLE，不猜着停。' +
     '返回 stopped=true 表示停止信号已发出；stopped=false 表示目标已收场 / 本来没跑。' +
     '终态与原因用 list_work_sessions 再看（completed / stopped + stop）。',
@@ -568,9 +574,8 @@ const STOP_WORK_SESSION_DEFINITION: ToolDefinition = {
 const PAUSE_WORK_SESSION_DEFINITION: ToolDefinition = {
   name: PAUSE_WORK_SESSION_TOOL_NAME,
   description:
-    '暂停一条**你自己开的**会话（软暂停：当前步骤结束后生效，历史保留，可再恢复）。' +
-    'sid 必须来自 list_work_sessions，且该条目的 createdBy 必须是 agent。' +
-    '用户自己建的会话（createdBy=user）不接受代理暂停，返回 E_DENIED；' +
+    '暂停一条**当前仍由代理驱动**的会话（软暂停：当前步骤结束后生效，历史保留，可再恢复）。' +
+    '目标已被用户收回、或本来就是用户自己建的，返回 E_DENIED（判据是当前驱动权，不是出生记录）；' +
     '状态读不到（unreadable）时返回 E_UNREADABLE，不猜着暂停。' +
     'paused=true 表示已在暂停态 / 申请已被受理；paused=false 表示目标已收场或本来没跑。' +
     '恢复用 resume_work_session（同一套归属门禁）。',
@@ -598,9 +603,8 @@ const PAUSE_WORK_SESSION_DEFINITION: ToolDefinition = {
 const RESUME_WORK_SESSION_DEFINITION: ToolDefinition = {
   name: RESUME_WORK_SESSION_TOOL_NAME,
   description:
-    '恢复一条**你自己暂停过 / 你自己开的**会话（复用宿主既有续跑路径，不新造流）。' +
-    'sid 必须来自 list_work_sessions，且该条目的 createdBy 必须是 agent。' +
-    '用户自己建的会话（createdBy=user）不接受代理恢复，返回 E_DENIED；' +
+    '恢复一条**当前仍由代理驱动**的会话（复用宿主既有续跑路径，不新造流）。' +
+    '目标已被用户收回、或本来就是用户自己建的，返回 E_DENIED（判据是当前驱动权，不是出生记录）；' +
     '状态读不到（unreadable）时返回 E_UNREADABLE，不猜着恢复。' +
     'resumed=true 表示续跑已启动；resumed=false 表示目标不在暂停态' +
     '（可能在等用户回答 / 已收场），没有可恢复的活。',
@@ -921,14 +925,14 @@ function readHostedCreatedFacts(deps: WorkSessionToolDeps | undefined): {
 /**
  * 归属门禁的统一话术（stop / pause / resume 三条入口同一套，语义不放宽）
  *
- * @param createdBy 归属裁决结果
+ * 判据是「当前是否由代理驱动」，不是出生记录：用户自己建的、或已被用户收回的会话
+ * 都不再由代理驱动，拒绝理由相同（不再区分「账本没记」这类内部推导）。
+ *
  * @param verb 被拒的动作（停 / 暂停 / 恢复），只影响文案
  * @returns 给模型看的拒绝原因
  */
-function ownershipDeniedMessage(createdBy: AgentCreatedBy, verb: string): string {
-  return createdBy === 'user'
-    ? `这是用户自己建的会话，代理不许${verb}。`
-    : `无法确认这条会话是你开的（账本没记、历史也没扫到），代理不许${verb}。`;
+function agentDrivenDeniedMessage(verb: string): string {
+  return `该会话当前不由代理驱动（用户自己建的，或已被用户收回），代理不许${verb}。`;
 }
 
 /**
@@ -1171,16 +1175,10 @@ export function registerWorkSessionTools(
             2,
           );
         }
-        // ① 归属门禁：只允许停「自己开的活」。用户自己建的 / 无法确认的一律拒绝。
-        const { ledger, historyFacts } = readCreatedFacts();
-        const createdBy = projectCreatedBy(meta, parsed.sid, { ledger, history: historyFacts });
-        if (createdBy !== 'agent') {
+        // ① 归属门禁：只看「当前是否仍由代理驱动」（收回后即拒绝，不看出生账本）
+        if (!deps.isAgentDriven?.(parsed.sid)) {
           return JSON.stringify(
-            {
-              ok: false,
-              code: 'E_DENIED',
-              message: ownershipDeniedMessage(createdBy, '停'),
-            },
+            { ok: false, code: 'E_DENIED', message: agentDrivenDeniedMessage('停') },
             null,
             2,
           );
@@ -1248,11 +1246,10 @@ export function registerWorkSessionTools(
             2,
           );
         }
-        const { ledger, historyFacts } = readCreatedFacts();
-        const createdBy = projectCreatedBy(meta, parsed.sid, { ledger, history: historyFacts });
-        if (createdBy !== 'agent') {
+        // 归属门禁：当前是否由代理驱动（与 stop 同一判据，不看出生账本）
+        if (!deps.isAgentDriven?.(parsed.sid)) {
           return JSON.stringify(
-            { ok: false, code: 'E_DENIED', message: ownershipDeniedMessage(createdBy, '暂停') },
+            { ok: false, code: 'E_DENIED', message: agentDrivenDeniedMessage('暂停') },
             null,
             2,
           );
@@ -1322,11 +1319,10 @@ export function registerWorkSessionTools(
             2,
           );
         }
-        const { ledger, historyFacts } = readCreatedFacts();
-        const createdBy = projectCreatedBy(meta, parsed.sid, { ledger, history: historyFacts });
-        if (createdBy !== 'agent') {
+        // 归属门禁：当前是否由代理驱动（与 stop / pause 同一判据，不看出生账本）
+        if (!deps.isAgentDriven?.(parsed.sid)) {
           return JSON.stringify(
-            { ok: false, code: 'E_DENIED', message: ownershipDeniedMessage(createdBy, '恢复') },
+            { ok: false, code: 'E_DENIED', message: agentDrivenDeniedMessage('恢复') },
             null,
             2,
           );

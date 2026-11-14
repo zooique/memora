@@ -253,6 +253,12 @@ interface AssemblyDeps {
   readHostedStatus: (sessionId: string) => WorkbenchJobStatus;
   /** 主控清单的归属读口（本进程创建者账本，与工作台同一真源） */
   hostedAgentCreated: (orchestratorId: string) => readonly string[];
+  /**
+   * 当前是否由代理驱动的唯一判据（停止 / 暂停 / 恢复、工作台清单、中断通知共用）
+   *
+   * 与出生账本分开：账本只回答「谁开的」；用户收回后本读口即为 false，代理不得再操作。
+   */
+  readHostedAgentDriven: (sessionId: string) => boolean;
   /** 主控清单的历史重建读口（重启后补归属；读盘有 60 轮上限） */
   readHostedHistory: (orchestratorId: string) => WorkbenchHistoryResult;
 }
@@ -369,6 +375,8 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
     // 主控清单看状态 / 归属：与工作台共用同一批读口（不另造第二套判断）
     readHostedStatus: deps.readHostedStatus,
     hostedAgentCreated: deps.hostedAgentCreated,
+    // 当前驱动权（停止 / 暂停 / 恢复的唯一判据）：出生账本只用来回答「谁开的」
+    readHostedAgentDriven: deps.readHostedAgentDriven,
     readHostedHistory: deps.readHostedHistory,
   };
 }
@@ -644,6 +652,8 @@ export function activate(context: vscode.ExtensionContext): void {
     readHostedStatus,
     // 归属真源 = 与工作台同一个创建者账本（仅本进程；重启后由历史重建补）
     hostedAgentCreated: (orchestratorId) => chatProvider.workbench.childrenOf(orchestratorId),
+    // 当前驱动权：与工作台清单 / 中断通知 / 停止暂停恢复同一判据（收回后即 false）
+    readHostedAgentDriven: (sessionId) => sessionModes.isAgentDriven(sessionId),
     readHostedHistory: rebuildWorkbenchHistory,
   };
 
@@ -791,6 +801,8 @@ export function activate(context: vscode.ExtensionContext): void {
             ?.rolePackManager?.listMeta()
             .find((meta) => meta.name === name)?.displayName,
         isManaged: (sessionId) => sessionModes.isManaged(sessionId),
+        // 当前驱动权：收回后即使创建者账本还记着，也不再把这条会话列进清单
+        isAgentDriven: (sessionId) => sessionModes.isAgentDriven(sessionId),
         // 清单真源 = 中断通知器的创建者账本（origin 反推会把用户自己选的托管新建算错）
         childrenOf: (creatorSessionId) => chatProvider.workbench.childrenOf(creatorSessionId),
         // 打开时那次历史重建的缓存结果（重启后账本为空时由它兜底；每次 push 不重读）

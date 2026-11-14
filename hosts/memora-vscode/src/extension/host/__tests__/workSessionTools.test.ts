@@ -135,6 +135,8 @@ interface HostedDeps {
   readStatus?: (sessionId: string) => WorkbenchJobStatus;
   /** 创建者账本（缺省 = 空账本） */
   agentCreated?: (orchestratorId: string) => readonly string[];
+  /** 当前是否由代理驱动（缺省 = 空集，即都已归用户；与生产 SessionModeStore 同形） */
+  isAgentDriven?: (sessionId: string) => boolean;
   /** 历史重建（缺省 = 读全了且没有创建记录） */
   readHistory?: (orchestratorId: string) => SessionHistoryFacts;
 }
@@ -260,6 +262,8 @@ async function assembleProbe(orchestratorSession?: boolean, hosted?: HostedDeps)
           readHostedStatus:
             hosted.readStatus ?? ((): WorkbenchJobStatus => ({ kind: 'completed' })),
           hostedAgentCreated: hosted.agentCreated ?? ((): readonly string[] => []),
+          // 当前驱动权的唯一判据：缺省 = 没有会话由代理驱动（收回后 / 用户自己建的同形）
+          readHostedAgentDriven: hosted.isAgentDriven ?? ((): boolean => false),
           readHostedHistory:
             hosted.readHistory ??
             ((): SessionHistoryFacts => ({
@@ -410,8 +414,10 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
     /** 停止回调收到的 (调用方, 目标) */
     const calls: [string, string][] = [];
     const probe = await assembleProbe(true, {
-      // 账本命中 = 代理开的（与工作台同一真源）
+      // 账本命中 = 代理开的（出生记录，只用于 list 的 createdBy）
       agentCreated: () => [TARGET_SESSION_ID],
+      // 当前仍由代理驱动（停止门禁的唯一判据）
+      isAgentDriven: (sid) => sid === TARGET_SESSION_ID,
       readStatus: () => ({ kind: 'running' }),
       stopSession: async (calling, target) => {
         calls.push([calling, target]);
@@ -460,10 +466,10 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
     }
   }, 120_000);
 
-  it('无法确认归属（托管来源但账本没记）→ E_DENIED，不猜着停', async () => {
+  it('目标当前不由代理驱动（用户自己建的 / 已收回）→ E_DENIED，不猜着停', async () => {
     let stopped = false;
     const probe = await assembleProbe(true, {
-      // 账本为空、历史读全但没有这条创建记录 ⇒ createdBy=unknown
+      // 出生来源 hosted，但当前没有任何会话登记为「由代理驱动」⇒ 拒绝
       stopSession: async () => {
         stopped = true;
         return { ok: true, stopped: true };
@@ -482,12 +488,42 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
     }
   }, 120_000);
 
+  it('收回托管后：出生账本还记着也不放行（判据 = 当前驱动权，不是出生记录）', async () => {
+    let stopped = false;
+    const probe = await assembleProbe(true, {
+      // 出生记录明确是代理开的，但已被用户收回（当前驱动权为 false）
+      agentCreated: () => [TARGET_SESSION_ID],
+      isAgentDriven: () => false,
+      readStatus: () => ({ kind: 'running' }),
+      stopSession: async () => {
+        stopped = true;
+        return { ok: true, stopped: true };
+      },
+    });
+    try {
+      const parsed = JSON.parse(
+        await probe.agent.tools!.execute(
+          STOP_WORK_SESSION_TOOL_NAME,
+          JSON.stringify({ sid: TARGET_SESSION_ID }),
+        ),
+      ) as { ok: boolean; code: string; message: string };
+      expect(parsed.ok).toBe(false);
+      expect(parsed.code).toBe('E_DENIED');
+      // 回执说当前事实，不说「账本没记」这类内部推导
+      expect(parsed.message).toContain('当前不由代理驱动');
+      expect(stopped).toBe(false);
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
   it('状态已收场 / 读不到：不调停止回调（stopped=false 或 E_UNREADABLE）', async () => {
     /** 已收场时是否调用过停止回调 */
     let settledCalls = 0;
     let status: WorkbenchJobStatus = { kind: 'completed' };
     const probe = await assembleProbe(true, {
       agentCreated: () => [TARGET_SESSION_ID],
+      isAgentDriven: (sid) => sid === TARGET_SESSION_ID,
       readStatus: () => status,
       stopSession: async () => {
         settledCalls += 1;
@@ -527,6 +563,7 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
     let stopped = false;
     const probe = await assembleProbe(true, {
       agentCreated: () => [TARGET_SESSION_ID],
+      isAgentDriven: (sid) => sid === TARGET_SESSION_ID,
       readStatus: () => status,
       stopSession: async () => {
         stopped = true;
@@ -1539,7 +1576,7 @@ describe('托管 v0 · pause / resume（判据 6 成对开放）', () => {
     }
   }, 120_000);
 
-  it('归属门禁与 stop 同一套：用户建的会话 / 无法确认 ⇒ E_DENIED，不调宿主回调', async () => {
+  it('归属门禁与 stop 同一套：目标当前不由代理驱动 ⇒ E_DENIED，不调宿主回调', async () => {
     const paused = vi.fn<HostedSessionPauser>(async () => ({
       ok: true,
       paused: true,
@@ -1552,7 +1589,7 @@ describe('托管 v0 · pause / resume（判据 6 成对开放）', () => {
       readStatus: () => ({ kind: 'running' }),
     });
     try {
-      // TARGET 会话 origin=hosted 但账本 / 历史都没有创建记录 ⇒ 归属 unknown，不能放行
+      // TARGET 会话出生来源 hosted，但当前没有登记「由代理驱动」⇒ 不能放行
       for (const tool of [PAUSE_WORK_SESSION_TOOL_NAME, RESUME_WORK_SESSION_TOOL_NAME]) {
         const parsed = JSON.parse(
           await probe.agent.tools!.execute(tool, JSON.stringify({ sid: TARGET_SESSION_ID })),
@@ -1579,8 +1616,10 @@ describe('托管 v0 · pause / resume（判据 6 成对开放）', () => {
     const probe = await assembleProbe(true, {
       pauseSession: paused,
       resumeSession: resumed,
-      // 账本认领：与 workbench.childrenOf 同一真源形态（本进程创建者记录）
+      // 账本认领：出生记录（只用于 list 的 createdBy，不作为停止 / 暂停门禁）
       agentCreated: () => [TARGET_SESSION_ID],
+      // 当前仍由代理驱动：暂停 / 恢复门禁的唯一判据
+      isAgentDriven: (sid) => sid === TARGET_SESSION_ID,
       readStatus: () => (statuses.length > 1 ? statuses.shift()! : statuses[0]!),
     });
     try {
@@ -1620,6 +1659,7 @@ describe('托管 v0 · pause / resume（判据 6 成对开放）', () => {
       pauseSession: paused,
       resumeSession: resumed,
       agentCreated: () => [TARGET_SESSION_ID],
+      isAgentDriven: (sid) => sid === TARGET_SESSION_ID,
       readStatus: () => ({ kind: 'unreadable' }),
     });
     try {
