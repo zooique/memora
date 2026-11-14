@@ -230,6 +230,9 @@ const REGISTER_SOURCES = [
   // 注册点八：commands/revokeManagedSession.ts（2026-11-14 撤销并交还：`memora.revokeManagedSession`
   // 注册随命令外置；命令本身仍只有一处注册）
   resolve(PKG_ROOT, 'src/extension/commands/revokeManagedSession.ts'),
+  // 注册点九：commands/assistantForm.ts（2026-11-15 侧栏形态：`memora.form.self` /
+  // `memora.form.assistant` 两条互斥标题栏命令；id 以常量注册，提取走「注册形态二」）
+  resolve(PKG_ROOT, 'src/extension/commands/assistantForm.ts'),
   // 注册点五（2026-11-09 退役）：host/workProjectionTree.ts 曾注册
   // `memora.refreshWorkProjection`。侧边栏树迁入设置页后该文件与三条树命令一并删除，
   // 动作改由 webview 的 `work_projection` 消息进 `runWorkProjectionAction`，无新注册点。
