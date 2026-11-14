@@ -15,6 +15,7 @@
  *     `unavailable`；不用 `unknown` 当垃圾桶。
  */
 import {
+  getSessionDisplayName,
   isRoundSettled,
   isRoundSuccessful,
   type Round,
@@ -24,11 +25,13 @@ import {
 import { deriveInterruptReason, type InterruptReason } from '../../shared/interruptReason.js';
 import type {
   WorkbenchAgentIdentity,
+  WorkbenchCoverage,
   WorkbenchJob,
   WorkbenchJobStatus,
   WorkbenchSnapshot,
   WorkbenchStopReason,
 } from '../../shared/workbenchDto.js';
+import { WORKBENCH_REBUILD_MAX_ROUNDS, type WorkbenchHistoryResult } from './workbenchHistory.js';
 
 /** 单会话运行态（工作台只需要这两问） */
 export interface WorkbenchActivity {
@@ -58,6 +61,12 @@ export interface WorkbenchSnapshotInputs {
   isManaged: (sessionId: string) => boolean;
   /** 该会话开出去的子会话（真源 = 中断通知器的创建者账本，仅本进程） */
   childrenOf: (creatorSessionId: string) => readonly string[];
+  /**
+   * 打开工作台时从历史重建的结果（重启后账本为空，靠它把清单补回来）
+   *
+   * 调用方只在 `open()` 时重建一次并缓存——不在每次刷新重读（读盘有上限）。
+   */
+  history: WorkbenchHistoryResult;
   /** 单会话运行态读口（运行态表 + ask/confirm + 实例暂停态） */
   peekActivity: (sessionId: string) => WorkbenchActivity;
   /** 会话的轮 id 列表（有序真源） */
@@ -81,20 +90,63 @@ export interface WorkbenchSnapshotInputs {
  */
 export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): WorkbenchSnapshot {
   const orchestrator = buildIdentity(inputs);
-  const jobs: WorkbenchJob[] = [];
+  // 清单 = 历史重建 ∪ 本进程创建者账本：账本更新（刚开出的会话还未落盘事件），
+  // 历史更全（重启后账本为空）。两边都只是既有事实，不是两份状态源。
+  const merged = new Map<string, string | undefined>();
+  for (const child of inputs.history.children) merged.set(child.sessionId, child.title);
   for (const sessionId of inputs.childrenOf(inputs.orchestratorId)) {
+    if (!merged.has(sessionId)) merged.set(sessionId, undefined);
+  }
+  const jobs: WorkbenchJob[] = [];
+  /** 历史里有 sid、但磁盘上已找不到的会话数（跳过并计数，不静默丢） */
+  let missingCount = 0;
+  for (const [sessionId, historyTitle] of merged) {
     const meta = inputs.readMeta(sessionId);
-    // 元数据缺失 = 会话已不存在（/尚未落盘）：不制造「无名行」占据清单
-    if (!meta) continue;
+    // 元数据缺失 = 会话已删除 / 找不到：跳过但计数，界面明说「有 N 条找不到了」
+    if (!meta) {
+      missingCount += 1;
+      continue;
+    }
     jobs.push({
       sessionId,
-      title: inputs.titleOf(sessionId, meta),
+      // 标题口径：会话自己起过名 → 用它（与历史列表一致）；没名字时用创建时给的标题；
+      // 两者都没有才退回占位标题（不把时间占位冒充「它开的活叫什么」）。
+      // ⚠️ 用 `||` 而非 `??`：`getSessionDisplayName` 没名字时返回**空串**，
+      //    `??` 会把空串当有效值，标题就变成空白行（历史标题被吞掉）。
+      title: getSessionDisplayName(meta) || historyTitle || inputs.titleOf(sessionId, meta),
       status: projectStatus(inputs, sessionId),
       updatedAt: meta.updatedAt,
     });
   }
   jobs.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  return { orchestrator, jobs };
+  return {
+    orchestrator,
+    jobs,
+    coverage: resolveCoverage(inputs, missingCount),
+    missingCount,
+    scan: {
+      maxRounds: WORKBENCH_REBUILD_MAX_ROUNDS,
+      totalRounds: inputs.history.totalRounds,
+      scannedRounds: inputs.history.scannedRounds,
+    },
+  };
+}
+
+/**
+ * 解析清单覆盖状态
+ *
+ * 优先级：座位会话本身都读不到 ⇒ `unreadable`（历史无从谈起）；
+ * 历史读不全 / 有会话找不到 ⇒ `partial`；否则 `complete`。
+ *
+ * @param inputs 读口
+ * @param missingCount 找不到的会话数
+ */
+function resolveCoverage(inputs: WorkbenchSnapshotInputs, missingCount: number): WorkbenchCoverage {
+  // 座位会话元数据都没了（会话被删 / 未落盘）：历史读不出来，不能说「一条都没有」
+  if (!inputs.readMeta(inputs.orchestratorId)) return 'unreadable';
+  if (inputs.history.coverage === 'unreadable') return 'unreadable';
+  if (inputs.history.coverage === 'partial' || missingCount > 0) return 'partial';
+  return 'complete';
 }
 
 /**

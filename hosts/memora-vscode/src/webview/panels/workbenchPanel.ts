@@ -16,6 +16,7 @@
 import * as vscode from 'vscode';
 import { buildWorkbenchHtml } from './workbenchHtml.js';
 import { buildWorkbenchSnapshot, type WorkbenchSnapshotInputs } from '../helpers/workbenchModel.js';
+import type { WorkbenchHistoryResult } from '../helpers/workbenchHistory.js';
 import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
@@ -28,8 +29,14 @@ import type {
  * 改写，读口必须按当前 id 现场产出一份全新的 inputs（禁缓存快照——缓存即第二状态源）。
  */
 export interface WorkbenchDataSource {
-  /** 组装一次快照的全部读口 */
-  buildInputs(orchestratorId: string): WorkbenchSnapshotInputs;
+  /**
+   * 打开时从历史重建子会话（**只在该面板 open 时调用**）
+   *
+   * 不在每次刷新 / 插件激活时调用：重建要读盘，代价必须有上限且只在用户看的时候付。
+   */
+  rebuildHistory(orchestratorId: string): WorkbenchHistoryResult;
+  /** 组装一次快照的全部读口（`history` 是 open 时那次重建的缓存结果） */
+  buildInputs(orchestratorId: string, history: WorkbenchHistoryResult): WorkbenchSnapshotInputs;
 }
 
 /** 面板依赖 */
@@ -58,6 +65,8 @@ export class MemoraWorkbenchPanel {
   private _panel: vscode.WebviewPanel | undefined;
   /** 当前绑定的座位会话 id */
   private _orchestratorId = '';
+  /** 当前座位的「打开时历史重建」缓存（undefined = 尚未 open / 需重建） */
+  private _history: WorkbenchHistoryResult | undefined;
   /** 当前 webview 上下文是否已发 ready（隐藏即归零：上下文已销毁） */
   private _ready = false;
   /** 可见期刷新定时器（仅 ready 后存在） */
@@ -82,15 +91,17 @@ export class MemoraWorkbenchPanel {
    * @param orchestratorId 座位会话 id（一条托管会话）
    */
   public open(orchestratorId: string): void {
+    this._orchestratorId = orchestratorId;
+    // 每次「打开」都重建一次历史（换座位 / 重新打开都算）：清单可能来自上一次进程，
+    // 账本是空的；这里读的是既有历史，不新增任何持久化。
+    this._history = this._dataSource.rebuildHistory(orchestratorId);
     if (this._panel) {
-      this._orchestratorId = orchestratorId;
       this._panel.reveal();
       // 已可见时 reveal 不会重载 ⇒ 现场刷新一次；隐藏时上下文已销毁（_ready=false），
       // 由新脚本的 ready 触发全量回放——两条路径都不依赖旧 webview 的内存。
       if (this._ready) this.push();
       return;
     }
-    this._orchestratorId = orchestratorId;
     const panel = vscode.window.createWebviewPanel(
       MemoraWorkbenchPanel.viewType,
       vscode.l10n.t('Workbench'),
@@ -155,8 +166,10 @@ export class MemoraWorkbenchPanel {
    */
   private push(): void {
     const panel = this._panel;
-    if (!panel || !this._ready) return;
-    const snapshot = buildWorkbenchSnapshot(this._dataSource.buildInputs(this._orchestratorId));
+    if (!panel || !this._ready || !this._history) return;
+    const snapshot = buildWorkbenchSnapshot(
+      this._dataSource.buildInputs(this._orchestratorId, this._history),
+    );
     void panel.webview.postMessage({
       type: 'workbench_snapshot',
       snapshot,

@@ -69,6 +69,13 @@ body {
   color: var(--text-secondary);
 }
 
+.wb-jobs__notice {
+  margin: 0 0 var(--sp-3);
+  font-size: 0.9em;
+  color: var(--warn);
+  word-break: break-word;
+}
+
 .wb-jobs__list {
   list-style: none;
   margin: 0;

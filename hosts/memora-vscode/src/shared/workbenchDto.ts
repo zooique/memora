@@ -94,4 +94,31 @@ export interface WorkbenchSnapshot {
   orchestrator: WorkbenchAgentIdentity;
   /** 第二块：在管会话清单（空数组 = 空态，不摆空表格） */
   jobs: WorkbenchJob[];
+  /**
+   * 清单覆盖状态——空清单时区分「一条都没有」与「读不到」
+   *
+   * - `complete`：历史读全了；空 = 确实一条都没开过
+   * - `partial`：读完了一部分（超扫描上限 / 有记录解析失败 / 有会话找不到）
+   * - `unreadable`：历史根本读不出（读盘失败 / 座位会话已不存在）
+   *
+   * ⚠️ `jobs` 为空且 `coverage !== 'complete'` 时**不得**显示「还没有交给助手的活」。
+   */
+  coverage: WorkbenchCoverage;
+  /** 历史里有 sid、但磁盘上已找不到的会话数（跳过并计数，不静默丢弃） */
+  missingCount: number;
+  /** 重建扫描口径（超上限时 webview 说清「只读了多少轮」） */
+  scan: WorkbenchScanInfo;
+}
+
+/** 清单覆盖状态（三态；不是新状态源，只是「这次重建读到哪」的说明） */
+export type WorkbenchCoverage = 'complete' | 'partial' | 'unreadable';
+
+/** 历史重建的扫描口径 */
+export interface WorkbenchScanInfo {
+  /** 单次重建的轮数上限（写死并对外可见） */
+  maxRounds: number;
+  /** 该会话总轮数 */
+  totalRounds: number;
+  /** 本次实际扫描的轮数（= min(totalRounds, maxRounds)） */
+  scannedRounds: number;
 }

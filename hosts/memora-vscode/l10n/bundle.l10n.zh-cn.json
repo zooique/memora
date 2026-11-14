@@ -1454,5 +1454,9 @@
   "Reason unavailable": "原因不可知",
   "Could not open the session: {0}": "无法打开会话：{0}",
   "No managed agent session is running right now": "当前没有在替你安排的代理",
-  "Choose the agent session to inspect": "选择要查看的代理会话"
+  "Choose the agent session to inspect": "选择要查看的代理会话",
+  "History could not be read": "历史读不到",
+  "Some history could not be read": "部分历史读不到",
+  "Older history was not read (only the latest {0} rounds)": "只读了最近 {0} 轮，更早的没读",
+  "{0} session(s) could not be found": "有 {0} 条会话找不到了"
 }

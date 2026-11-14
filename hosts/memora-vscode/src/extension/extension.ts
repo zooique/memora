@@ -45,6 +45,8 @@ import { formatDiagnosticsSnapshot } from '../webview/panels/hostDiagnostics.js'
 import { MemoraSettingsPanel } from '../webview/panels/settingsPanel.js';
 // 工作台面板（编辑器区只读；第三切片/第四切片：座位身份 + 在管会话清单）
 import { MemoraWorkbenchPanel } from '../webview/panels/workbenchPanel.js';
+// 工作台清单的历史重建（读既有过程事件；不落新账、不在启动时扫）
+import { rebuildWorkbenchChildren } from '../webview/helpers/workbenchHistory.js';
 // 「打开工作台」命令（命令面板 + 侧栏标题栏按钮共用）
 import { registerOpenWorkbenchCommand } from './commands/openWorkbench.js';
 // 设置面板 tab 标识的类型真源（`shared/settingsTabs.ts`）：命令参数与 protocol 共用同一联合，
@@ -687,7 +689,14 @@ export function activate(context: vscode.ExtensionContext): void {
   const workbenchPanel = new MemoraWorkbenchPanel({
     extensionUri: context.extensionUri,
     dataSource: {
-      buildInputs: (orchestratorId) => ({
+      // 打开工作台时重建一次（重启后账本为空，靠代理会话历史把清单补回来）：
+      // 只读 create_session 的过程事件，不新增持久化、不在启动时全量扫。
+      rebuildHistory: (orchestratorId) =>
+        rebuildWorkbenchChildren(orchestratorId, {
+          readRoundIds: (sessionId) => sessionStore.getRoundIds(sessionId),
+          readRound: (roundId) => roundStore.getById(roundId) ?? undefined,
+        }),
+      buildInputs: (orchestratorId, history) => ({
         orchestratorId,
         // 代理名只取装配期注入的发送者名（与 RoundMessage.name 同源，不另造「助手昵称」）
         agentName: HOSTED_SENDER_NAME,
@@ -702,6 +711,8 @@ export function activate(context: vscode.ExtensionContext): void {
         isManaged: (sessionId) => sessionModes.isManaged(sessionId),
         // 清单真源 = 中断通知器的创建者账本（origin 反推会把用户自己选的托管新建算错）
         childrenOf: (creatorSessionId) => chatProvider.workbench.childrenOf(creatorSessionId),
+        // 打开时那次历史重建的缓存结果（重启后账本为空时由它兜底；每次 push 不重读）
+        history,
         peekActivity: (sessionId) => chatProvider.workbench.peekActivity(sessionId),
         readRoundIds: (sessionId) => sessionStore.getRoundIds(sessionId),
         readRoundStatus: (roundId) =>

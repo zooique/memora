@@ -41,6 +41,7 @@ export function buildWorkbenchHtml(scriptUri: vscode.Uri, cspSource: string): st
     <section class="wb-jobs" aria-labelledby="jobsTitle">
       <h2 class="wb-jobs__title" id="jobsTitle">${vscode.l10n.t('Recent work')}</h2>
       <div class="wb-jobs__empty" id="jobsEmpty" hidden>${vscode.l10n.t('No work has been handed to the assistant yet')}</div>
+      <div class="wb-jobs__notice" id="jobsNotice" hidden></div>
       <ul class="wb-jobs__list" id="jobsList"></ul>
     </section>
   </main>

@@ -47,6 +47,7 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
   const seatRole = requireElement(document, 'seatRole');
   const seatState = requireElement(document, 'seatState');
   const jobsEmpty = requireElement(document, 'jobsEmpty');
+  const jobsNotice = requireElement(document, 'jobsNotice');
   const jobsList = requireElement(document, 'jobsList');
 
   /**
@@ -74,11 +75,46 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
   /**
    * 渲染第二块：在管会话清单
    *
-   * 空清单只显示空态句，**不摆空表格、不显示 0 或破折号**。
+   * 空清单**不能一律说「还没有」**：历史读不到 / 有会话找不到 / 只读了最近若干轮
+   * 都只说明「没读到」，不说明「没有」。三种情况用不同句子，绝不把读失败渲染成空。
    */
-  const renderJobs = (jobs: readonly WorkbenchJob[]): void => {
+  const renderJobs = (snapshot: WorkbenchSnapshot): void => {
+    const { jobs, coverage, missingCount, scan } = snapshot;
+    /** 是否因超上限只读了一部分（界面必须说清，不能当完整） */
+    const truncated = scan.totalRounds > scan.scannedRounds;
     jobsList.textContent = '';
     jobsEmpty.hidden = jobs.length > 0;
+    if (jobs.length === 0) {
+      // 空态句子按「我们知道多少」分档：读不到 ≠ 没有
+      jobsEmpty.textContent =
+        coverage === 'unreadable'
+          ? l10n.t('History could not be read')
+          : missingCount > 0
+            ? l10n.t('{0} session(s) could not be found', missingCount)
+            : truncated
+              ? l10n.t(
+                  'Older history was not read (only the latest {0} rounds)',
+                  scan.scannedRounds,
+                )
+              : coverage === 'partial'
+                ? l10n.t('Some history could not be read')
+                : l10n.t('No work has been handed to the assistant yet');
+    }
+    // 有清单时的读不全说明（空态已在上面的句子里说清，不重复）
+    const notices: string[] = [];
+    if (jobs.length > 0 && coverage === 'unreadable') {
+      notices.push(l10n.t('Some history could not be read'));
+    }
+    if (jobs.length > 0 && truncated) {
+      notices.push(
+        l10n.t('Older history was not read (only the latest {0} rounds)', scan.scannedRounds),
+      );
+    }
+    if (jobs.length > 0 && missingCount > 0) {
+      notices.push(l10n.t('{0} session(s) could not be found', missingCount));
+    }
+    jobsNotice.textContent = notices.join(' · ');
+    jobsNotice.hidden = notices.length === 0;
     for (const job of jobs) jobsList.appendChild(renderJob(document, deps, job));
   };
 
@@ -86,7 +122,7 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
     ready: () => deps.post({ type: 'ready' }),
     render: (snapshot) => {
       renderSeat(snapshot);
-      renderJobs(snapshot.jobs);
+      renderJobs(snapshot);
     },
   };
 }
@@ -120,10 +156,14 @@ function renderJob(document: Document, deps: WorkbenchViewDeps, job: WorkbenchJo
 
   const side = document.createElement('div');
   side.className = 'wb-job__side';
-  const badge = document.createElement('span');
-  badge.className = 'wb-badge';
-  badge.dataset.kind = job.status.kind;
-  badge.textContent = described.label;
+  // 主标签只允许四档（在跑 / 等你 / 完成 / 被中止）；边缘事实只进副行，不抢主标签
+  if (described.badge) {
+    const badge = document.createElement('span');
+    badge.className = 'wb-badge';
+    badge.dataset.kind = described.badge.kind;
+    badge.textContent = described.badge.label;
+    side.appendChild(badge);
+  }
   const open = document.createElement('button');
   open.type = 'button';
   open.className = 'wb-job__open';
@@ -131,42 +171,47 @@ function renderJob(document: Document, deps: WorkbenchViewDeps, job: WorkbenchJo
   open.addEventListener('click', () => {
     deps.post({ type: 'workbench_open_session', sessionId: job.sessionId });
   });
-  side.append(badge, open);
+  side.appendChild(open);
   item.append(main, side);
   return item;
 }
 
 /**
- * 状态 → 界面文案（唯一映射点）
+ * 状态 → 界面呈现（唯一映射点）
  *
- * 只把宿主给的事实翻成当前语言：`stopped` 的原因逐档如实显示；
- * `unsettled` / `unreadable` 明确说「没有记录 / 读不到」，不冒充被中止、也不冒充完成。
+ * **主标签只四档**：在跑 / 等你 / 完成 / 被中止。`queued`（没开始）、`unsettled`
+ * （没正常结束）、`unreadable`（读不到）这些边缘事实**不给徽记**，只写副行——
+ * 它们不是四档之一，硬并列会让人误读成第五种主状态。
  *
  * @param status 宿主投影的状态
- * @returns 徽记文案与（可选的）明细行
+ * @returns 主标签（可选）与副行明细（可选）
  */
-function describeStatus(status: WorkbenchJobStatus): { label: string; detail?: string } {
+function describeStatus(status: WorkbenchJobStatus): {
+  badge?: { kind: 'running' | 'waiting' | 'completed' | 'stopped'; label: string };
+  detail?: string;
+} {
   switch (status.kind) {
     case 'running':
-      return { label: l10n.t('Running') };
+      return { badge: { kind: 'running', label: l10n.t('Running') } };
     case 'waiting':
-      return { label: l10n.t('Waiting for you') };
+      return { badge: { kind: 'waiting', label: l10n.t('Waiting for you') } };
     case 'completed':
-      return { label: l10n.t('Completed') };
+      return { badge: { kind: 'completed', label: l10n.t('Completed') } };
+    case 'stopped':
+      return {
+        badge: { kind: 'stopped', label: l10n.t('Stopped') },
+        detail: describeStop(status.stop),
+      };
     case 'queued':
-      return { label: l10n.t('Handed over, not started yet') };
+      return { detail: l10n.t('Handed over, not started yet') };
     case 'unsettled':
       return {
-        label: l10n.t('Did not finish last time'),
-        detail: l10n.t('No stop reason was recorded'),
+        detail: `${l10n.t('Did not finish last time')} · ${l10n.t('No stop reason was recorded')}`,
       };
     case 'unreadable':
       return {
-        label: l10n.t('Status unavailable'),
-        detail: l10n.t('The latest turn could not be read'),
+        detail: `${l10n.t('Status unavailable')} · ${l10n.t('The latest turn could not be read')}`,
       };
-    case 'stopped':
-      return { label: l10n.t('Stopped'), detail: describeStop(status.stop) };
   }
 }
 

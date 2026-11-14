@@ -15,6 +15,7 @@ import type { Mock } from 'vitest';
 import type { SessionMeta } from '@zooique/memora';
 import { MemoraWorkbenchPanel } from '../panels/workbenchPanel.js';
 import type { WorkbenchSnapshotInputs } from '../helpers/workbenchModel.js';
+import type { WorkbenchHistoryResult } from '../helpers/workbenchHistory.js';
 
 // vi.mock 工厂被提升到文件顶部：可观测点必须先 hoisted 声明
 const mocks = vi.hoisted(() => ({
@@ -110,8 +111,12 @@ function makePanel(options: unknown): MockPanel {
   return panel;
 }
 
-/** 测试用快照读口：一个座位 + 可变的子会话清单 */
-function makeInputs(children: string[], orchestratorId: string): WorkbenchSnapshotInputs {
+/** 测试用快照读口：一个座位 + 可变的子会话清单 + 空历史 */
+function makeInputs(
+  children: string[],
+  orchestratorId: string,
+  history: WorkbenchHistoryResult,
+): WorkbenchSnapshotInputs {
   const meta = (sessionId: string): SessionMeta =>
     ({
       sessionId,
@@ -127,6 +132,7 @@ function makeInputs(children: string[], orchestratorId: string): WorkbenchSnapsh
     readRolePackDisplayName: () => '程序员',
     isManaged: () => true,
     childrenOf: () => children,
+    history,
     peekActivity: () => ({ running: false, waiting: false }),
     readRoundIds: (sessionId) => (sessionId === 'session-child' ? ['round-1'] : []),
     readRoundStatus: () => 'complete',
@@ -150,6 +156,8 @@ describe('MemoraWorkbenchPanel — 不保活生命周期', () => {
   let panel: MemoraWorkbenchPanel;
   /** 「去这个会话」回调 */
   let openSession: Mock<(sessionId: string) => Promise<void>>;
+  /** 历史重建回调（断言只在 open 时调用一次） */
+  let rebuildHistory: Mock<(sessionId: string) => WorkbenchHistoryResult>;
   /** 当前测试的子会话清单（可变） */
   let children: string[];
 
@@ -163,9 +171,19 @@ describe('MemoraWorkbenchPanel — 不保活生命周期', () => {
       makePanel(options),
     );
     openSession = vi.fn(async () => undefined);
+    rebuildHistory = vi.fn((): WorkbenchHistoryResult => ({
+      children: [],
+      coverage: 'complete',
+      totalRounds: 0,
+      scannedRounds: 0,
+      unreadableRecords: 0,
+    }));
     panel = new MemoraWorkbenchPanel({
       extensionUri: {} as never,
-      dataSource: { buildInputs: (orchestratorId) => makeInputs(children, orchestratorId) },
+      dataSource: {
+        rebuildHistory,
+        buildInputs: (orchestratorId, history) => makeInputs(children, orchestratorId, history),
+      },
       openSession,
     });
   });
@@ -254,6 +272,21 @@ describe('MemoraWorkbenchPanel — 不保活生命周期', () => {
     setPanelVisible?.(false);
     vi.advanceTimersByTime(9000);
     expect(snapshots()).toHaveLength(2);
+  });
+
+  it('历史重建只在打开时做一次（刷新与定时器不重读盘）', () => {
+    vi.useFakeTimers();
+    panel.open('session-agent');
+    expect(rebuildHistory).toHaveBeenCalledTimes(1);
+    receiveMsg?.({ type: 'ready' });
+    vi.advanceTimersByTime(6000);
+    // 三次 push（ready + 两次定时）都不再重建
+    expect(snapshots()).toHaveLength(3);
+    expect(rebuildHistory).toHaveBeenCalledTimes(1);
+    // 重新打开（换座位）才再重建一次
+    panel.open('session-other');
+    expect(rebuildHistory).toHaveBeenCalledTimes(2);
+    expect(rebuildHistory).toHaveBeenLastCalledWith('session-other');
   });
 
   it('「去这个会话」只上报意图，由注入的回调切换会话', () => {

@@ -11,6 +11,19 @@
 import { describe, expect, it } from 'vitest';
 import type { ProcessEvent, Round, RoundStatus, SessionMeta } from '@zooique/memora';
 import { buildWorkbenchSnapshot, type WorkbenchSnapshotInputs } from '../helpers/workbenchModel.js';
+import type { WorkbenchHistoryResult } from '../helpers/workbenchHistory.js';
+
+/** 空历史（本进程账本不为空时的默认：没有历史可补，但也不算读失败） */
+function emptyHistory(overrides: Partial<WorkbenchHistoryResult> = {}): WorkbenchHistoryResult {
+  return {
+    children: [],
+    coverage: 'complete',
+    totalRounds: 0,
+    scannedRounds: 0,
+    unreadableRecords: 0,
+    ...overrides,
+  };
+}
 
 /** 构造一条会话元数据（只填投影会读的字段，其余按类型断言补齐） */
 function meta(sessionId: string, updatedAt: string): SessionMeta {
@@ -42,6 +55,7 @@ function baseInputs(overrides: Partial<WorkbenchSnapshotInputs> = {}): Workbench
     readRolePackDisplayName: () => undefined,
     isManaged: () => true,
     childrenOf: () => [],
+    history: emptyHistory(),
     peekActivity: () => ({ running: false, waiting: false }),
     readRoundIds: () => [],
     readRoundStatus: () => undefined,
@@ -182,7 +196,71 @@ describe('buildWorkbenchSnapshot — 状态投影', () => {
 
 describe('buildWorkbenchSnapshot — 清单口径', () => {
   it('没有子会话 = 空数组（空态由 webview 说清，不摆空表格）', () => {
-    expect(buildWorkbenchSnapshot(baseInputs()).jobs).toEqual([]);
+    const snapshot = buildWorkbenchSnapshot(baseInputs());
+    expect(snapshot.jobs).toEqual([]);
+    expect(snapshot.coverage).toBe('complete');
+    expect(snapshot.missingCount).toBe(0);
+  });
+
+  it('重启后账本为空：历史重建出的子会话照样进清单（标题退创建时给的标题）', () => {
+    const snapshot = buildWorkbenchSnapshot(
+      baseInputs({
+        history: emptyHistory({
+          children: [{ sessionId: 'session-from-history', title: '整理周报' }],
+          totalRounds: 3,
+          scannedRounds: 3,
+        }),
+      }),
+    );
+    expect(snapshot.jobs.map((job) => job.sessionId)).toEqual(['session-from-history']);
+    // 会话元数据没名字 → 用创建时给的标题，而不是时间占位标题
+    expect(snapshot.jobs[0].title).toBe('整理周报');
+  });
+
+  it('历史里有 sid 但会话已删除：跳过并计数，清单不静默少一条', () => {
+    const snapshot = buildWorkbenchSnapshot(
+      baseInputs({
+        readMeta: (sessionId) =>
+          sessionId === 'session-gone' ? undefined : meta(sessionId, '2026-11-14T10:00:00.000Z'),
+        history: emptyHistory({
+          children: [{ sessionId: 'session-gone', title: '旧任务' }],
+          totalRounds: 1,
+          scannedRounds: 1,
+        }),
+      }),
+    );
+    expect(snapshot.jobs).toEqual([]);
+    expect(snapshot.missingCount).toBe(1);
+    // 不是 complete：界面不得用「还没有交给助手的活」盖过去
+    expect(snapshot.coverage).toBe('partial');
+  });
+
+  it('历史读不到 + 账本为空：coverage=unreadable（不是 complete 的空清单）', () => {
+    const snapshot = buildWorkbenchSnapshot(
+      baseInputs({ history: emptyHistory({ coverage: 'unreadable' }) }),
+    );
+    expect(snapshot.jobs).toEqual([]);
+    expect(snapshot.coverage).toBe('unreadable');
+  });
+
+  it('座位会话本身已不存在：清单一律按读不到处理', () => {
+    const snapshot = buildWorkbenchSnapshot(
+      baseInputs({
+        readMeta: (sessionId) =>
+          sessionId === 'session-agent' ? undefined : meta(sessionId, '2026-11-14T10:00:00.000Z'),
+      }),
+    );
+    expect(snapshot.coverage).toBe('unreadable');
+  });
+
+  it('超过扫描上限：扫描口径原样透出（界面据此说读不全）', () => {
+    const snapshot = buildWorkbenchSnapshot(
+      baseInputs({
+        history: emptyHistory({ totalRounds: 120, scannedRounds: 60, coverage: 'partial' }),
+      }),
+    );
+    expect(snapshot.scan).toMatchObject({ totalRounds: 120, scannedRounds: 60 });
+    expect(snapshot.coverage).toBe('partial');
   });
 
   it('已删除会话（读不到元数据）整条跳过，不制造无名行', () => {
@@ -194,6 +272,7 @@ describe('buildWorkbenchSnapshot — 清单口径', () => {
       }),
     );
     expect(snapshot.jobs.map((job) => job.sessionId)).toEqual(['session-live']);
+    expect(snapshot.missingCount).toBe(1);
   });
 
   it('按 updatedAt 降序（最近在办的排最前）', () => {
