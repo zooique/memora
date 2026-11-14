@@ -42,6 +42,8 @@ import { MemoraSettingsPanel } from '../webview/panels/settingsPanel.js';
 import type { SettingsTab } from '../shared/settingsTabs.js';
 import { openChatCommand } from './commands/openChat.js';
 import { registerNewSessionCommand } from './commands/newSession.js';
+// 收回本会话（撤销助手代理）：与「新建会话选模式」对称的退出入口
+import { registerRevokeManagedSessionCommand } from './commands/revokeManagedSession.js';
 import type { HostedInputDispatcher } from './host/workSessionTools.js';
 import { runDemoCommand } from './commands/demo.js';
 import { reloadSkillsCommand } from './commands/reloadSkills.js';
@@ -695,6 +697,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('memora.open', () => openChatCommand(getAgent, chatProvider)),
   );
   registerNewSessionCommand(context, getAgent, chatProvider, sessionModes); // 新建会话（选择模式）
+  // 收回本会话：撤销助手代理（mode → self，强制按自助重装；历史标记不动）
+  registerRevokeManagedSessionCommand(context, chatProvider);
   // 命令：添加图片到对话（IMG-2 Q3）：拾取编排（开框/读盘/落盘/回执）全归 chatPanel.pickAndAttachImages 单点
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.attachImage', () => chatProvider.pickAndAttachImages()),

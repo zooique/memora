@@ -50,6 +50,10 @@
         "icon": "$(add)"
       },
       {
+        "command": "memora.revokeManagedSession",
+        "title": "%command.revokeManagedSession.title%"
+      },
+      {
         "command": "memora.configureModel",
         "title": "%command.configureModel.title%",
         "icon": "$(gear)"

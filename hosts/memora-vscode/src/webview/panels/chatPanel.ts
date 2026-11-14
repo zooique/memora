@@ -2783,6 +2783,63 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * 收回本会话（撤销助手代理，回到「我自己聊」）
+   *
+   * 只改**运行期装配状态**，不改持久事实：
+   *   - mode 置回 `'self'`（容器本就不落盘，重启也是回落 self）；
+   *   - 历史轮次的 `origin: 'hosted'` **一个字节都不动**（历史只读，标记永久保留）；
+   *   - `SessionMeta.origin` 不改——它记的是「这个会话最初由谁建立」，撤销不擦除归属；
+   *   - 用户级「上次模式」不改——撤销这一笔 ≠ 改新建会话的默认值。
+   *
+   * 工具面为什么必须重装：主控工具在**装配期**就注册进实例，改 mode 不会摘掉已有实例
+   * 的工具面 ⇒ 先回收（登记表 unregister + close），再按新 mode 重新装配并换绑显示源。
+   * 会话在跑时拒绝撤销：close 会打断在途流，不能拿用户正在看的回答当代价。
+   *
+   * @param sessionId 目标会话（缺省 = 当前显示会话）
+   * @returns 是否真的撤销并重装（false = 草稿 / 本来就是自助 / 正在运行 / 重装失败）
+   */
+  public async revokeManagedSession(sessionId?: string): Promise<boolean> {
+    const sid = sessionId ?? this._currentSessionId;
+    if (!sid) {
+      void vscode.window.showInformationMessage(l10n.t('Memora: open a session first.'));
+      return false;
+    }
+    if (!this.sessionModes.isManaged(sid)) {
+      void vscode.window.showInformationMessage(l10n.t('Memora: this session is already yours.'));
+      return false;
+    }
+    if (this._runtime.peek(sid)?.streaming === true) {
+      void vscode.window.showWarningMessage(
+        l10n.t('Memora: the session is running; take it back after it finishes.'),
+      );
+      return false;
+    }
+    // 顺序不可换：① 先改 mode，重装才读到 self；② 旧实例必须先摘表再回收，
+    // 否则 agentForSession 命中旧实例，工具面原样保留（mode 变了但模型仍能派发）
+    this.sessionModes.set(sid, 'self');
+    this._sessionAgents.delete(sid);
+    await this._releaseAgent?.(sid);
+    try {
+      const agent = await this.agentForSession(sid);
+      // 只换绑当前显示会话；非显示会话下次切入时自然按新实例绑定
+      // （经 getCurrentSessionId 读，避免直接对 `_currentSessionId` 做比较——那会被
+      //  SESSION-RESUME-1 写点守卫的赋值正则误判成一次收口外的赋值）
+      if (this.getCurrentSessionId() === sid) this.bindAgent(agent);
+    } catch (err) {
+      // 重装失败：旧实例已 close，不能留在 `_agent` 里被当活实例用；
+      // 清空装配缓存让下一次 ensureAgent 重新走装配（对齐 performAgentAssembly 的失败口径）
+      this._agent = undefined;
+      this._agentReady = null;
+      this.post({ type: 'notice', level: 'error', message: toNoticeText(err) });
+      return false;
+    }
+    void vscode.window.showInformationMessage(
+      l10n.t('Memora: the assistant has stepped back; this session is yours again.'),
+    );
+    return true;
+  }
+
+  /**
    * send 意图：按 turn 相位路由到内核 chat / interject / 带文本续跑（判据统一为相位）
    *
    * 插话语义（无缝注入）：生成中用户 Enter 输入补充 → 不中断 loop，调 agent.interject()

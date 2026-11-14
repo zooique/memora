@@ -182,20 +182,28 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
 
   it.each([
     ['缺省', undefined],
-    ['显式 false', false],
+    ['显式 false（撤销后按 self 重装的等效输入）', false],
   ] as const)(
-    '普通会话（%s）的工具面里没有 list_work_sessions',
+    '普通会话（%s）的工具面里没有主控工具（list + send），即使派发依赖齐全',
     async (_label, flag) => {
-      const probe = await assembleProbe(flag);
+      // 依赖齐全也照旧不注册：唯一判据是装配期标记，不靠「依赖缺失」兜底——
+      // 撤销（mode → self）后重装必须让两只工具同时消失，而不是只剩 list
+      const dispatch = vi.fn(async (): Promise<HostedDispatchResult> => ({
+        ok: true,
+        accepted: true,
+      }));
+      const probe = await assembleProbe(flag, dispatch);
       try {
         const tools = probe.agent.tools;
         expect(tools).not.toBeNull();
         // 暴露面没有
-        expect(tools!.list.map((t) => t.name)).not.toContain(LIST_WORK_SESSIONS_TOOL_NAME);
+        const exposed = tools!.list.map((t) => t.name);
+        expect(exposed).not.toContain(LIST_WORK_SESSIONS_TOOL_NAME);
+        expect(exposed).not.toContain(SEND_TO_SESSION_TOOL_NAME);
         // 定义面也没有：证明不是「注册了但被白名单藏起来」
-        expect(tools!.allToolDefinitions.map((t) => t.name)).not.toContain(
-          LIST_WORK_SESSIONS_TOOL_NAME,
-        );
+        const defined = tools!.allToolDefinitions.map((t) => t.name);
+        expect(defined).not.toContain(LIST_WORK_SESSIONS_TOOL_NAME);
+        expect(defined).not.toContain(SEND_TO_SESSION_TOOL_NAME);
       } finally {
         await disposeProbe(probe);
       }

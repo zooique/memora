@@ -24,7 +24,7 @@ import { makeTempDir } from '../../__tests__/helpers/tmpDir.js';
 import { join, relative } from 'node:path';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import type { Agent, BackgroundTask } from '@zooique/memora';
+import type { Agent, BackgroundTask, Round } from '@zooique/memora';
 // 默认包判据真源 = 内核导出常量（装配 §4.1 单链实际生效值）；测试不硬编码包名。
 // RolePackManager = 真实内核实现（草稿未选包的硬判据夹具直接跑它，不用按假设写的桩）
 // formatDateKey = 宿主建会话/分叉 id 的同一真源（fork 用例要按生产 id 形态断言）
@@ -37,11 +37,16 @@ import { workspace as mockedWorkspace } from 'vscode';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
+// 真实视图加载器：本文件默认注入的 `() => []` 桩只能骗过 truthiness 检查，
+// 一旦该会话真有轮次（撤销用例种了历史）就会在 loadView 处抛错刷噪声
+import { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
 import { MemoraChatViewProvider } from '../panels/chatPanel.js';
 import {
   createEphemeralSessionModeStore,
   type SessionModeStore,
 } from '../../extension/host/sessionModeStore.js';
+// Round 文件路径推导单点（测试要按生产同一路径读盘比对「历史一字未动」）
+import { resolveProjectDataDir } from '../../extension/host/projectDataDir.js';
 
 /** l10n.t 替身：{0}/{1} 占位符按参替换（vi.hoisted——mock 工厂先于 import 执行，import 绑定不可用） */
 const tStub = vi.hoisted(() => (msg: string, ...args: unknown[]): string => {
@@ -66,6 +71,8 @@ vi.mock('vscode', async () => ({
     showInputBox: vi.fn(),
     showWarningMessage: vi.fn(),
     showErrorMessage: vi.fn(),
+    // 收回会话的成功/无需撤销提示走信息条（不是错误面）
+    showInformationMessage: vi.fn(),
     // 交互提醒读窗口聚焦态（真实 adapter 会访问 window.state.focused）
     state: { focused: true },
     onDidChangeActiveTextEditor: vi.fn(() => ({ dispose: vi.fn() })),
@@ -156,6 +163,10 @@ interface PanelHandle {
   provider: MemoraChatViewProvider;
   /** 真实会话存储（来源标记 / messageCount 等落盘断言回源它） */
   store: WorkspaceSessionStore;
+  /** 真实轮次存储（历史 origin 断言直接读盘上事实） */
+  roundStore: WorkspaceRoundStore;
+  /** 临时工作区根（按生产路径推导规则定位 Round 文件） */
+  dir: string;
   posted: { type: string; message?: string; state?: unknown; text?: string }[];
   /** 触发当前视图的 onDidDispose（等价 VS Code 关闭/折叠侧边栏视图） */
   disposeView: () => void;
@@ -300,6 +311,8 @@ function setupPanel(
   return {
     provider,
     store,
+    roundStore,
+    dir,
     posted,
     disposeView: () => current.dispose(),
     reopenView,
@@ -333,6 +346,119 @@ describe('会话来源标记 · createSession 按 mode 派生 origin', () => {
     expect(await createSession('2026-11-06-s', undefined, 'self')).toBe(true);
     expect(store.getSessionMeta('2026-11-06-s')?.origin).toBe('user');
     expect(modes.isManaged('2026-11-06-s')).toBe(false);
+  });
+});
+
+describe('撤销并交还 · revokeManagedSession', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('撤销后 mode 回 self 并按新装配重装；历史 hosted 轮字节不变；后续输入仍走用户来源', async () => {
+    const modes = createEphemeralSessionModeStore();
+    const sid = '2026-11-06-m';
+    const oldAgent = sessionAgent(sid);
+    const newAgent = sessionAgent(sid);
+    const { provider, store, roundStore, dir } = setupPanel({ [sid]: oldAgent }, [sid], modes);
+    modes.set(sid, 'managed');
+    // 历史事实：会话由助手建立，且已有一轮 hosted 输入（撤销不得改写）
+    store.updateSessionMeta(sid, { origin: 'hosted' });
+    const roundId = 'round-hosted-history';
+    const round: Round = {
+      id: roundId,
+      userMessage: {
+        id: `${roundId}-user`,
+        role: 'user',
+        content: '助手代发的历史问题',
+        timestamp: '2026-11-06T09:00:00.000Z',
+        name: 'Memora',
+      },
+      assistantMessage: {
+        id: `${roundId}-assistant`,
+        role: 'assistant',
+        content: '助手的历史回答',
+        timestamp: '2026-11-06T09:00:01.000Z',
+      },
+      status: 'complete',
+      createdAt: '2026-11-06T09:00:00.000Z',
+      completedAt: '2026-11-06T09:00:01.000Z',
+      origin: 'hosted',
+    };
+    roundStore.save(round);
+    store.appendRoundId(sid, roundId);
+    const roundFile = join(resolveProjectDataDir(dir), 'rounds', `${roundId}.json`);
+    const before = await readFile(roundFile, 'utf8');
+
+    const release = vi.fn(async () => {});
+    provider.setAgentReleaser(release);
+    /** 装配时读到的 mode（生产 = extension 的 `sessionModes.isManaged` 单点判据） */
+    const seenManaged: boolean[] = [];
+    const factory = vi.fn(async (_projectPath: string, target: string) => {
+      seenManaged.push(modes.isManaged(target));
+      return newAgent;
+    });
+    provider.setAgentFactory(factory);
+
+    expect(await provider.revokeManagedSession()).toBe(true);
+    // ① 模式回自助；旧实例被回收
+    expect(modes.isManaged(sid)).toBe(false);
+    expect(release).toHaveBeenCalledWith(sid);
+    // ② 重装必须发生在 mode 改回 self 之后——否则新实例仍带主控工具面
+    expect(seenManaged).toEqual([false]);
+    expect(provider.getCurrentAgent()).toBe(newAgent);
+    // ③ 历史一字未动（文件字节比对）且 origin 仍是 hosted
+    expect(await readFile(roundFile, 'utf8')).toBe(before);
+    expect(roundStore.getByIdFresh(roundId)?.origin).toBe('hosted');
+
+    // ④ 后续一轮走用户来源（hosted 通道随工具面一起消失）
+    // 该会话真有历史轮，视图加载器必须换成真实实现（默认桩是函数，loadView 会抛）
+    (provider as unknown as { _viewLoader: unknown })._viewLoader = new WorkspaceSessionViewLoader(
+      roundStore,
+      store,
+    );
+    const chatSpy = vi.fn(newAgent.chat.bind(newAgent));
+    newAgent.chat = chatSpy as unknown as SessionAgentStub['chat'];
+    await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput(
+      '撤销后的问题',
+    );
+    expect(chatSpy).toHaveBeenCalledWith(
+      expect.stringContaining('撤销后的问题'),
+      expect.any(AbortSignal),
+      undefined,
+      { origin: 'user' },
+    );
+  });
+
+  it('会话正在跑 ⇒ 拒绝撤销（不关实例、不改 mode，不拿在途回答当代价）', async () => {
+    const modes = createEphemeralSessionModeStore();
+    const sid = '2026-11-06-running';
+    modes.set(sid, 'managed');
+    const { provider, cast } = setupPanel({}, [sid], modes);
+    const release = vi.fn(async () => {});
+    const factory = vi.fn(async () => sessionAgent(sid));
+    provider.setAgentReleaser(release);
+    provider.setAgentFactory(factory);
+    // 真实运行态（SessionRuntimeStates）标记该会话正在跑流
+    cast.runtimeFor(sid).streaming = true;
+
+    expect(await provider.revokeManagedSession()).toBe(false);
+    expect(modes.isManaged(sid)).toBe(true);
+    expect(release).not.toHaveBeenCalled();
+    expect(factory).not.toHaveBeenCalled();
+  });
+
+  it('本来就是自助 ⇒ 空操作（不重装、不发任何动作）', async () => {
+    const modes = createEphemeralSessionModeStore();
+    const sid = '2026-11-06-self';
+    const { provider } = setupPanel({}, [sid], modes);
+    const release = vi.fn(async () => {});
+    const factory = vi.fn(async () => sessionAgent(sid));
+    provider.setAgentReleaser(release);
+    provider.setAgentFactory(factory);
+
+    expect(await provider.revokeManagedSession()).toBe(false);
+    expect(release).not.toHaveBeenCalled();
+    expect(factory).not.toHaveBeenCalled();
   });
 });
 
