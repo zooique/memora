@@ -1,10 +1,12 @@
 # src/webview/helpers/
 
 Webview 渲染层纯函数 / 工具（时间格式化、工具名映射、上下文信封剥离、滚动等），
-无副作用、可独立 vitest 测试。
+多数无副作用、可独立 vitest 测试。
 
 阶段 B（对抗评估 P2-1）后，helpers 统一为**纯函数/纯工具导出**（非「内联脚本字符串」），
-由 webview 运行时脚本（settingsView.js）直接 import，经 esbuild 打包。
+由 webview 运行时脚本（settingsView.js）直接 import，经 esbuild 打包。此后新增的
+`hostedSession*` 等动作域模块带**注入依赖与副作用**（经 deps 建会话 / 投首轮），
+不再都属于纯函数面——能否无副作用复用，看模块自己的头注，不要按目录推。
 
 已实现：
 - `fmtTime.ts` — 时间格式化（ISO → HH:MM），导出 `fmtTime`。
@@ -21,8 +23,9 @@ Webview 渲染层纯函数 / 工具（时间格式化、工具名映射、上下
   `describeStrategyKeys()` **双向锁定**，漏翻译或拼错键名都会红。
 - `strategyForm.ts` — 角色策略键表单的收集语义（`collectStrategyFromForm` + `StrategyFormCell`）：
   空格子 / 空多选 / 未勾开关一律不写入（保持「未声明」语义），键面未覆盖的原文键原样并入。
-  与 `strategyKeyMeta.ts` 分开是因为两者 `kind` 不同源（本文件是 5 值控件形态，元数据表只有
-  `control?: 'switch'` 一个覆盖标记）。
+  与 `strategyKeyMeta.ts` 分开是因为两者 `kind` 不同源（本文件是 5 值控件形态
+  enum/number/text/multi/switch；元数据表没有 `kind`，`control?: 'switch'` 已由 `b3a12a11`
+  删除、改由 `SWITCH_CONTROL_KEYS` 独立判定）。
 - `docContext.ts` — 对话上下文信封的构造与剥离：导出 `buildDocContextBlock` +
   `buildInjectedContextEnvelope` + `stripInjectedContextPrefix`（技能块 / 文档块的
   写入与剥离**同文件对偶**，防两侧格式漂移）。
