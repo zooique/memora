@@ -625,6 +625,9 @@ const BASELINE_TEXT: readonly string[] = [
   'stepUnreportedOutcomes',
   'step_boundary',
   'step_id',
+  // 巡检文档引用收回文案原文「the assistant has stepped back」（`57e276a9` 引入的 l10n），
+  // `stepped` 是动词过去式、非 step 语义；text 层为引用历史，2026-11-15 补基线
+  'stepped',
   'steps',
   'term-unify-turn-step-loop',
   'toolStep',
