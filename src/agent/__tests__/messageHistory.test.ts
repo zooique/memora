@@ -14,7 +14,7 @@ import { ASK_TIMEOUT_NOTICE } from '@/agent/seed/orchestrator.js';
 import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
 import { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
 import { generateRoundId } from '@/memory/roundStore.js';
-import type { RoundMessage } from '@/memory/roundStore.js';
+import type { RoundMessage, Round } from '@/memory/roundStore.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
 import { todayDate } from '@/utils/time.js';
 
@@ -502,6 +502,93 @@ describe('MessageHistory · forkSession', () => {
     const childMeta = updateSessionMeta.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(childMeta).not.toHaveProperty('activeRolePackName');
     expect(result.newSession).toBeTruthy();
+  });
+
+  it('分叉是引用复制：历史轮 origin 原样保留，新会话 origin 取调用方传入值', () => {
+    // 真实内存轮存储：若 fork 走「读轮 → 深拷贝重建」，本用例才会暴露 origin 丢失 / 被改写
+    const roundStore = new InMemoryRoundStore();
+    /** 最小可用轮：只填 Round 必填字段 + 本次要验证的 origin */
+    const makeRound = (id: string, origin: 'user' | 'hosted'): Round => ({
+      id,
+      origin,
+      userMessage: {
+        id: `msg-${id}`,
+        role: 'user',
+        content: id,
+        timestamp: '2000-01-01T00:00:00Z',
+      },
+      status: 'complete',
+      createdAt: '2000-01-01T00:00:00Z',
+    });
+    roundStore.save(makeRound('r1', 'hosted'));
+    roundStore.save(makeRound('r2', 'user'));
+    // 分叉开始后不得再写轮文件：这是「引用复制而非深拷贝重建」的直接机判
+    const saveSpy = vi.spyOn(roundStore, 'save');
+
+    const updateSessionMeta = vi.fn();
+    const store = {
+      loadMessages: () => [],
+      listSessions: () => [],
+      getRoundIds: () => ['r1', 'r2'],
+      setRoundIds: vi.fn(),
+      appendRoundId: () => {},
+      appendRoundIds: () => {},
+      createSession: () => {},
+      deleteSession: () => {},
+      // 父会话来源 = 'user'，与下面传入的 'hosted' 故意不同：证明子会话不抄父会话
+      getSessionMeta: () => ({
+        sessionId: '2000-01-01-main',
+        updatedAt: '2000-01-01T00:00:00Z',
+        messageCount: 4,
+        origin: 'user' as const,
+      }),
+      updateSessionMeta,
+      listSessionMetas: () => [],
+    };
+    const history = new MessageHistory(store, '2000-01-01', 'main', roundStore);
+    const result = history.forkSession('r2', undefined, 'hosted');
+
+    // 1) 历史事实：两轮的 origin 与分叉前逐字一致
+    expect(roundStore.getById('r1')?.origin).toBe('hosted');
+    expect(roundStore.getById('r2')?.origin).toBe('user');
+    // 2) 分叉过程零轮写入（引用复制，不重建 Round）
+    expect(saveSpy).not.toHaveBeenCalled();
+    // 3) 新会话身份：origin = 调用方传入值，不是父会话的 'user'
+    const childId = `${todayDate()}-${result.newSession}`;
+    expect(updateSessionMeta).toHaveBeenCalledWith(
+      childId,
+      expect.objectContaining({ origin: 'hosted' }),
+    );
+    // 4) 子会话 roundIds = 父会话前缀 ID 引用（同一批轮文件，不拷贝正文）
+    expect(store.setRoundIds).toHaveBeenCalledWith(childId, ['r1', 'r2']);
+  });
+
+  it('分叉未传 origin ⇒ 子会话不继承父会话 origin（不伪造来源）', () => {
+    const updateSessionMeta = vi.fn();
+    const store = {
+      loadMessages: () => [],
+      listSessions: () => [],
+      getRoundIds: () => ['r1'],
+      setRoundIds: vi.fn(),
+      appendRoundId: () => {},
+      appendRoundIds: () => {},
+      createSession: () => {},
+      deleteSession: () => {},
+      // 父会话是托管会话；未传 origin 时子会话不得抄成 'hosted'
+      getSessionMeta: () => ({
+        sessionId: '2000-01-01-main',
+        updatedAt: '2000-01-01T00:00:00Z',
+        messageCount: 2,
+        origin: 'hosted' as const,
+      }),
+      updateSessionMeta,
+      listSessionMetas: () => [],
+    };
+    const history = new MessageHistory(store, '2000-01-01', 'main');
+    history.forkSession('r1');
+
+    const childMeta = updateSessionMeta.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(childMeta).not.toHaveProperty('origin');
   });
 });
 
