@@ -1420,6 +1420,6 @@
   "A host orchestrates the session": "由主控编排会话",
   "Used last time": "上次使用",
   "Choose how the new session runs": "选择新会话的运行模式",
-  "Default mode: Managed": "默认模式：托管",
-  "This session is run by a host; its messages will be marked as sent by the host. To switch back to self mode, use the Command Palette's new-session mode picker.": "本会话由主控驱动，消息将标记为由主控发送。要切回自助模式，请使用命令面板的「新建会话（选择运行模式）」。"
+  "This session lets the assistant work for you": "本会话会让助手替你干活",
+  "Messages here are sent by the assistant on your behalf. To chat on your own again, use the Command Palette to choose how a new session runs.": "这里的消息由助手代你发送。想换回我自己聊，请用命令面板重新选择新建会话的方式。"
 }

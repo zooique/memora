@@ -42,8 +42,8 @@ describe('emptyStateView · 草稿默认模式提示', () => {
 
     const hints = document.querySelectorAll('.empty-mode-hint');
     expect(hints).toHaveLength(1);
-    expect(hints[0]?.textContent).toContain('Default mode: Managed');
-    expect(hints[0]?.textContent).toContain('switch back to self mode');
+    expect(hints[0]?.textContent).toContain('This session lets the assistant work for you');
+    expect(hints[0]?.textContent).toContain('chat on your own again');
     // 位置：紧跟在 emptyHint 之后（复用现有空态结构，不新增浮层）
     const hintEl = document.getElementById('emptyHint');
     expect(hintEl?.nextElementSibling?.classList.contains('empty-mode-hint')).toBe(true);

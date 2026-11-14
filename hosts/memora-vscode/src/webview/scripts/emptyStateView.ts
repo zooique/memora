@@ -190,11 +190,11 @@ export function createEmptyStateView(deps: EmptyStateViewDeps): {
     /** 结论行：当前默认模式 */
     const title = document.createElement('div');
     title.className = 'empty-mode-hint-title';
-    title.textContent = l10n.t('Default mode: Managed');
+    title.textContent = l10n.t('This session lets the assistant work for you');
     /** 影响 + 切回路径：textContent 赋值防注入 */
     const detail = document.createElement('div');
     detail.textContent = l10n.t(
-      "This session is run by a host; its messages will be marked as sent by the host. To switch back to self mode, use the Command Palette's new-session mode picker.",
+      'Messages here are sent by the assistant on your behalf. To chat on your own again, use the Command Palette to choose how a new session runs.',
     );
     hint.append(title, detail);
     emptyHint.insertAdjacentElement('afterend', hint);

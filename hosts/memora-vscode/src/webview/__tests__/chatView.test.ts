@@ -13955,9 +13955,9 @@ describe('草稿页 = 角色显示内核兜底包，其余四项会话级投影�
 
     const hint = document.querySelector('.empty-mode-hint');
     expect(hint).not.toBeNull();
-    expect(hint?.textContent).toContain('Default mode: Managed');
-    // 提示必须说明可切回自助（不是只报状态）
-    expect(hint?.textContent).toContain('switch back to self mode');
+    expect(hint?.textContent).toContain('This session lets the assistant work for you');
+    // 提示必须说明可切回自己聊（不是只报状态）
+    expect(hint?.textContent).toContain('chat on your own again');
 
     // 自助草稿：不打扰
     dispatch({ type: 'session_title', title: '新会话', draft: true });
