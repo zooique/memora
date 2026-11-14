@@ -17,7 +17,8 @@ import { assembleAgent } from '../assemble.js';
 import { createHostMemoryStorage } from '../memoryStorage.js';
 import { WorkspaceSessionStore } from '../sessionStore.js';
 import { WorkspaceRoundStore } from '../workspaceRoundStore.js';
-import { LIST_WORK_SESSIONS_TOOL_NAME } from '../workSessionTools.js';
+import { LIST_WORK_SESSIONS_TOOL_NAME, SEND_TO_SESSION_TOOL_NAME } from '../workSessionTools.js';
+import type { HostedInputDispatcher, SendToSessionResult } from '../workSessionTools.js';
 import { makeTempDir } from '../../../__tests__/helpers/tmpDir.js';
 
 // 装配链间接 import 了 tracer / searchEngines（模块级 import vscode），本测试不触真实 VS Code API：
@@ -39,6 +40,10 @@ const SESSION_ID = '2026-11-14-orchestrator-probe';
 const SESSION_TITLE = '主控探针会话';
 /** 播种的最后更新时间（固定值，避免依赖当前时钟） */
 const SESSION_UPDATED_AT = '2026-11-14T08:00:00.000Z';
+/** 播种的「目标会话」标识（派发用例的目标；与主控自身区分开） */
+const TARGET_SESSION_ID = '2026-11-14-target-probe';
+/** 装配期注入的发送者名（断言工具原样交给派发回调，而不是自造字面量） */
+const SENDER_NAME = '派发探针';
 
 /**
  * 播种角色包目录（真实 `assembleAgent` 的 init 必须能扫描到角色包）
@@ -78,9 +83,13 @@ interface Probe {
  * 起一个真实装配的探针 Agent
  *
  * @param orchestratorSession 主控标记（undefined = 调用方完全不传该键）
+ * @param dispatch 派发回调（传入 = 连同调用方 id / 发送者名一起注入，send_to_session 才注册）
  * @returns 探针（Agent + 存储）
  */
-async function assembleProbe(orchestratorSession?: boolean): Promise<Probe> {
+async function assembleProbe(
+  orchestratorSession?: boolean,
+  dispatch?: HostedInputDispatcher,
+): Promise<Probe> {
   const projectPath = makeTempDir('memora-work-session-');
   const configDir = seedConfigDir(projectPath);
   const roundStore = new WorkspaceRoundStore(projectPath);
@@ -91,6 +100,13 @@ async function assembleProbe(orchestratorSession?: boolean): Promise<Probe> {
   sessionStore.createSession({
     sessionId: SESSION_ID,
     displayName: SESSION_TITLE,
+    updatedAt: SESSION_UPDATED_AT,
+    messageCount: 0,
+  });
+  // 再播种一个目标会话：派发用例的 sid 必须真实存在（存在性判据走 listSessionMetas）
+  sessionStore.createSession({
+    sessionId: TARGET_SESSION_ID,
+    displayName: '目标探针会话',
     updatedAt: SESSION_UPDATED_AT,
     messageCount: 0,
   });
@@ -111,6 +127,14 @@ async function assembleProbe(orchestratorSession?: boolean): Promise<Probe> {
       MEMORA_API_KEY: 'work-session-probe',
     } as NodeJS.ProcessEnv,
     ...(orchestratorSession === undefined ? {} : { orchestratorSession }),
+    // 派发依赖三件套同批注入：只传其中一部分时装配层按「依赖不全」不注册 send_to_session
+    ...(dispatch === undefined
+      ? {}
+      : {
+          orchestratorSessionId: SESSION_ID,
+          orchestratorSenderName: SENDER_NAME,
+          dispatchHostedInput: dispatch,
+        }),
   });
   return { agent, storage };
 }
@@ -174,4 +198,130 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
     },
     120_000,
   );
+});
+
+/** 工具返回信封（E_ARGS 是工具层自判，其余码集见 `SendToSessionResult`） */
+type SendEnvelope = SendToSessionResult | { ok: false; code: 'E_ARGS'; message: string };
+
+/**
+ * 调一次 `send_to_session` 并解析返回 JSON
+ *
+ * @param probe 探针（真实装配的 Agent）
+ * @param args 工具参数对象（按执行器契约序列化成 JSON 字符串）
+ * @returns 解析后的结果信封
+ */
+async function executeSend(probe: Probe, args: Record<string, unknown>): Promise<SendEnvelope> {
+  const raw = await probe.agent.tools!.execute(SEND_TO_SESSION_TOOL_NAME, JSON.stringify(args));
+  return JSON.parse(raw) as SendEnvelope;
+}
+
+describe('托管 v0 · send_to_session 最小闭环（工具层）', () => {
+  it('参数只认 { sid, text }：未知键 / 空白串一律 E_ARGS，且不触派发', async () => {
+    // 派发回调不应被调用：参数不合法时必须在工具层就返回，不能把脏载荷交给宿主
+    const dispatch = vi.fn(async (): Promise<SendToSessionResult> => ({
+      ok: true,
+      accepted: true,
+    }));
+    const probe = await assembleProbe(true, dispatch);
+    try {
+      // 未知键：键集必须恰好两枚（缺必填键由内核执行器按 schema 先拦，到不了本 handler）
+      expect(
+        await executeSend(probe, { sid: TARGET_SESSION_ID, text: 'hi', extra: 1 }),
+      ).toMatchObject({ ok: false, code: 'E_ARGS' });
+      // text 只有空白：trim 后为空，同样不收
+      expect(await executeSend(probe, { sid: TARGET_SESSION_ID, text: '   ' })).toMatchObject({
+        ok: false,
+        code: 'E_ARGS',
+      });
+      expect(dispatch).not.toHaveBeenCalled();
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('未知会话 ⇒ E_NOT_FOUND，且不触派发（存在性在工具层先判）', async () => {
+    const dispatch = vi.fn(async (): Promise<SendToSessionResult> => ({
+      ok: true,
+      accepted: true,
+    }));
+    const probe = await assembleProbe(true, dispatch);
+    try {
+      expect(await executeSend(probe, { sid: '2026-11-14-not-exist', text: 'hi' })).toMatchObject({
+        ok: false,
+        code: 'E_NOT_FOUND',
+      });
+      expect(dispatch).not.toHaveBeenCalled();
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('受理：调用方 id / 目标 sid / 原文 / 注入的发送者名四件原样交给派发回调', async () => {
+    const dispatch = vi.fn(async (): Promise<SendToSessionResult> => ({
+      ok: true,
+      accepted: true,
+    }));
+    const probe = await assembleProbe(true, dispatch);
+    try {
+      expect(await executeSend(probe, { sid: TARGET_SESSION_ID, text: '请看这个任务' })).toEqual({
+        ok: true,
+        accepted: true,
+      });
+      expect(dispatch).toHaveBeenCalledTimes(1);
+      // 发送者名必须是装配期注入值：工具内写死字面量会让本断言转红
+      expect(dispatch).toHaveBeenCalledWith(
+        SESSION_ID,
+        TARGET_SESSION_ID,
+        '请看这个任务',
+        SENDER_NAME,
+      );
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('派发层的业务失败码原样透传（工具层不改写 E_BUSY）', async () => {
+    const dispatch = vi.fn(async (): Promise<SendToSessionResult> => ({
+      ok: false,
+      code: 'E_BUSY',
+      message: '目标会话正在运行，本条输入未发送。',
+    }));
+    const probe = await assembleProbe(true, dispatch);
+    try {
+      expect(await executeSend(probe, { sid: TARGET_SESSION_ID, text: 'hi' })).toMatchObject({
+        ok: false,
+        code: 'E_BUSY',
+      });
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('派发回调抛错 ⇒ 工具不抛，回 { ok:false }（模型读得到码而不是工具异常）', async () => {
+    const dispatch = vi.fn(async (): Promise<SendToSessionResult> => {
+      throw new Error('装配失败');
+    });
+    const probe = await assembleProbe(true, dispatch);
+    try {
+      expect(await executeSend(probe, { sid: TARGET_SESSION_ID, text: 'hi' })).toMatchObject({
+        ok: false,
+        code: 'E_NOT_FOUND',
+      });
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('主控但缺派发依赖 ⇒ send_to_session 根本不注册（list 仍在）', async () => {
+    // 只传主控标记、不传派发三件套：宁可不注册，也不注册一个永远失败的空壳
+    const probe = await assembleProbe(true);
+    try {
+      const tools = probe.agent.tools;
+      expect(tools!.list.map((t) => t.name)).toContain(LIST_WORK_SESSIONS_TOOL_NAME);
+      expect(tools!.list.map((t) => t.name)).not.toContain(SEND_TO_SESSION_TOOL_NAME);
+      expect(tools!.allToolDefinitions.map((t) => t.name)).not.toContain(SEND_TO_SESSION_TOOL_NAME);
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
 });

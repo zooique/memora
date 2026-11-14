@@ -42,6 +42,7 @@ import { MemoraSettingsPanel } from '../webview/panels/settingsPanel.js';
 import type { SettingsTab } from '../shared/settingsTabs.js';
 import { openChatCommand } from './commands/openChat.js';
 import { registerNewSessionCommand } from './commands/newSession.js';
+import type { HostedInputDispatcher } from './host/workSessionTools.js';
 import { runDemoCommand } from './commands/demo.js';
 import { reloadSkillsCommand } from './commands/reloadSkills.js';
 import { cleanupMemoriesCommand, memoryStatsCommand, runGcCommand } from './commands/memory.js';
@@ -206,7 +207,19 @@ interface AssemblyDeps {
   /** 记忆存储单例（懒建；所有会话 Agent 共用此同一对象，所有权归宿主） */
   storage: () => IMemoryStorage;
   sessionModes: SessionModeStore; // 会话模式容器（§14.21.4）：Map 不落盘；「上次模式」只作新建默认值
+  /** 托管输入的发送者名（装配期注入；v0 无用户配置，集中在此一处，工具 handler 不自带字面量） */
+  orchestratorSenderName: string;
+  /** 托管派发回调（工具 handler → 面板；装配层不反向依赖面板实例） */
+  dispatchHostedInput: HostedInputDispatcher;
 }
+
+/**
+ * 托管输入的发送者名（v0 唯一注入点）
+ *
+ * 当前没有「助手名」用户配置；先集中在此常量，接入配置后只改这一处。
+ * `send_to_session` 的 handler 不得再写字面量（否则就是第二份真源）。
+ */
+const HOSTED_SENDER_NAME = 'Memora';
 
 /**
  * 唯一的装配选项构建点
@@ -297,6 +310,10 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
     outputChannel: deps.outputChannel,
     // 记忆存储单例（多 Agent 共享同一对象；所有权归宿主，close 单个实例不关它）
     storage: deps.storage(),
+    // 主控会话工具（托管模式 v0）：发送者名与派发回调均装配期注入；
+    // 工具 handler 不持有面板实例，也不自带名字字面量（由 session 级装配补 sessionId）
+    orchestratorSenderName: deps.orchestratorSenderName,
+    dispatchHostedInput: deps.dispatchHostedInput,
   };
 }
 
@@ -340,6 +357,8 @@ async function assembleAgentForSession(
   options.activeRolePack = readSessionRolePackName(deps.sessionStore, sessionId);
   // mode 是装配期输入（重启回落 self）；origin 是持久事实，两者不同步是设计允许的。
   options.orchestratorSession = deps.sessionModes.isManaged(sessionId);
+  // 主控工具的调用方身份：E_DENIED 判据靠它，不能从 agent 反推（装配层不持有会话映射）
+  options.orchestratorSessionId = sessionId;
   const agent = await assembleAgent(options);
   try {
     // getter 类型为可空（未初始化时 null）；此处刚装配完成，为空即内部状态异常
@@ -516,6 +535,10 @@ export function activate(context: vscode.ExtensionContext): void {
     // 未信任 ⇒ 返回空目录对，装配不注入项目级；授予信任后由监听器补注入。
     readProjectDirs: readProjectAssetDirs,
     storage: getMemoryStorage,
+    orchestratorSenderName: HOSTED_SENDER_NAME,
+    // 面板在 deps 之后创建（与 peekAgent 同一手法）：闭包延迟取，调用时面板必已就绪
+    dispatchHostedInput: (calling, target, text, sender) =>
+      chatProvider.dispatchHostedInput(calling, target, text, sender),
   };
 
   // 会话 → Agent 登记表（E4 批 2：生产唯一取用面）。构造参数强制传入

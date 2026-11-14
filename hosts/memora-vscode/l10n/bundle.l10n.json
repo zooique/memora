@@ -78,6 +78,8 @@
   "Memora: Agent is not ready; retry shortly": "",
   "Open the Memora chat view first": "",
   "Memora: images go with a new message": "",
+  "Memora: only managed sessions can call send_to_session.": "",
+  "Memora: the target session is running; the input was not sent.": "",
   "Memora: {0}": "",
   "Memora: answer the question card above": "",
   "Memora memory search failed: {0}": "",

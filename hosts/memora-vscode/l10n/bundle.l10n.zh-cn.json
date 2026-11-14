@@ -77,6 +77,8 @@
   "Memora: Agent is not ready; retry shortly": "Memora：Agent 尚未就绪，请稍候再试",
   "Open the Memora chat view first": "请先打开 Memora 对话面板",
   "Memora: images go with a new message": "Memora：图片只能随新消息发送",
+  "Memora: only managed sessions can call send_to_session.": "Memora：只有托管会话可以调用 send_to_session。",
+  "Memora: the target session is running; the input was not sent.": "Memora：目标会话正在运行，本条输入未发送。",
   "Memora: {0}": "Memora：{0}",
   "Memora: answer the question card above": "Memora：请在上方提问卡作答",
   "Memora memory search failed: {0}": "Memora 记忆搜索失败：{0}",

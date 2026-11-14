@@ -170,6 +170,8 @@ import {
 } from '../../extension/host/newSessionRolePack.js';
 // 引用发送前存在性核实（HOST-CTX-9 发送侧）：解析器复用 refPath（首根 SSOT），不由本文件另写
 import { collectMissingFileRefPaths } from '../../extension/host/refProbe.js';
+// 托管派发结果信封：工具面（workSessionTools）与面板实现共用同一联合类型，避免各写一套码集
+import type { SendToSessionResult } from '../../extension/host/workSessionTools.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createProvider } from '../../extension/host/llmConfig.js';
 import {
@@ -2692,6 +2694,87 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 是否处于等待暂停恢复的相位（waiting/pause，含 pausePending 在途申请） */
   private isPauseWaiting(): boolean {
     return this._turnState.phase === 'waiting' && this._turnState.reason === 'pause';
+  }
+
+  /**
+   * 托管派发入口（`send_to_session` 的宿主实现，装配期以回调注入工具面）
+   *
+   * 三条硬约束（与 `workSessionTools.ts` 头注释同源，改这里前先读那份）：
+   *   ① **不注入用户上下文**：只投递调用方给的原文，绝不套 `sendInput` 的信封
+   *      （当前编辑器 / problems / git 改动一律不取——目标会话要的是这条输入，不是主控那边的现场）；
+   *   ② **不绕过并发闸**：目标会话在跑就回 `E_BUSY`（真实运行态，见 `SessionRuntimeStates`），不排队；
+   *   ③ **工具 handler 不持有面板实例**：它只拿到装配期注入的本方法回调。
+   *
+   * 失败语义：`E_DENIED` = 调用方不是托管会话（防御纵深，工具面本不该出现在 self 会话）；
+   * `E_BUSY` = 目标会话正在跑，装配 await 后再判一次防竞态；未知异常不在此吞，交给工具层
+   * 统一映射为 `{ ok:false }`（模型读到错误码，而不是工具抛错）。
+   *
+   * @param callingSessionId 发起派发的会话（判 `E_DENIED`）
+   * @param targetSessionId 目标会话（判 `E_BUSY`、定流归属）
+   * @param text 要投递的原始输入（不夹带任何宿主上下文）
+   * @param senderName 落 `RoundMessage.name` 的发送者名（装配期传入，本方法不自造）
+   * @returns `{ok:true,accepted:true}` = 已受理（不代表目标轮一定成功）；业务失败带错误码
+   */
+  public async dispatchHostedInput(
+    callingSessionId: string,
+    targetSessionId: string,
+    text: string,
+    senderName: string,
+  ): Promise<SendToSessionResult> {
+    // ① 调用方身份：mode 是装配期事实，重启回落 self（此时工具面本就不存在，这里只是防御）
+    if (!this.sessionModes.isManaged(callingSessionId)) {
+      return {
+        ok: false,
+        code: 'E_DENIED',
+        message: l10n.t('Memora: only managed sessions can call send_to_session.'),
+      };
+    }
+    // ② 前置判忙：peek 不建记录（读操作不产生写副作用），值就是该会话的真实 stream 运行态
+    if (this._runtime.peek(targetSessionId)?.streaming === true) {
+      return {
+        ok: false,
+        code: 'E_BUSY',
+        message: l10n.t('Memora: the target session is running; the input was not sent.'),
+      };
+    }
+    // ③ 取（或建）目标会话实例：装配可能在途，期间目标会话或已被别的入口开跑 ⇒ 落地前再判一次
+    const agent = await this.agentForSession(targetSessionId);
+    // 与 sendInput 同一对齐判据：内核 appendUser 写的是 agent 当前会话，错位会写进别的会话；
+    // 只在错位时切，且**不改面板显示源**（后台派发不得把用户界面拽到目标会话）
+    const sessionManager = agent.sessionManager;
+    if (sessionManager) {
+      const info = sessionManager.getCurrentSessionInfo();
+      if (info && `${info.date}-${info.session}` !== targetSessionId) {
+        await sessionManager.switchToSession(targetSessionId);
+      }
+    }
+    if (this._runtime.peek(targetSessionId)?.streaming === true) {
+      return {
+        ok: false,
+        code: 'E_BUSY',
+        message: l10n.t('Memora: the target session is running; the input was not sent.'),
+      };
+    }
+    const now = new Date().toISOString();
+    // ④ 走既有 runFlow 通路（不另造流）：归属显式传目标会话，后台流投递由 BackgroundFlowGate 整批丢弃；
+    //    `void` 不等待——工具要的是「已受理」，目标轮的结果由其自己的收场事件/历史承载
+    void this.runFlow(
+      // attachments 不传（派发通道不收图）；opts 让内核把本轮 origin 落 'hosted'、消息名落 senderName
+      (signal) => agent.chat(text, signal, undefined, { origin: 'hosted', senderName }),
+      {
+        // seed = 上屏与 live 投影用的裸输入：**没有**注入信封，与落盘原文同值（重放剥信封后仍是这一条）
+        userMessage: {
+          id: `live-hosted-${now}`,
+          role: 'user',
+          content: text,
+          timestamp: now,
+          name: senderName,
+        },
+        origin: 'hosted',
+      },
+      targetSessionId,
+    );
+    return { ok: true, accepted: true };
   }
 
   /**

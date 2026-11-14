@@ -171,7 +171,13 @@ interface PanelHandle {
     runtimeFor(sessionId?: string): {
       streaming: boolean;
       abortController?: AbortController;
-      liveBuffer?: { textByRound: Map<string, string> };
+      liveBuffer?: {
+        textByRound: Map<string, string>;
+        /** 开轮用户输入（派发用例据此断言「原文直投 + 发送者名」） */
+        seedUserMessage?: { content?: string; name?: string };
+        /** 开轮来源标记（派发用例必须是 'hosted'） */
+        seedOrigin?: string;
+      };
     };
     runFlow(
       factory: (signal: AbortSignal) => AsyncGenerator<Chunk>,
@@ -1612,5 +1618,212 @@ describe('#13 · 结构写窗口锁的重建回放（只回放锁、不碰导航
         .slice(beforeReady)
         .filter((m) => m.type === 'status' && (m.state === 'thinking' || m.state === 'paused')),
     ).toHaveLength(0);
+  });
+});
+
+/**
+ * 托管派发 · `send_to_session` 的宿主派发口（v0）
+ *
+ * 面板侧的三条判据（工具层用例在 `extension/host/__tests__/workSessionTools.test.ts`）：
+ *  ① `E_DENIED`：调用方不是托管会话 ⇒ 直接拒，且不取 / 不建目标实例；
+ *  ② 受理路径：**原文直投**（不套 sendInput 的编辑器 / problems / git 信封），
+ *    来源 `'hosted'`、发送者名随 seed 与内核 opts 双通道落地，面板显示会话不被拽走；
+ *  ③ `E_BUSY`：目标会话真在跑（`SessionRuntimeStates.streaming`）⇒ 拒收；装配等待期内被开跑
+ *     也要在落地前复判到（防「判完再装配，装完已经跑起来了」的窗口）。
+ */
+describe('托管派发 · send_to_session 的宿主派发口', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('调用方不是托管会话 ⇒ E_DENIED，且不取 / 不建目标实例', async () => {
+    // 空模式容器：未知 sid 一律按 self 解释
+    const modes = createEphemeralSessionModeStore();
+    const { provider } = setupPanel({}, [], modes);
+    const factory = vi.fn(async (_projectPath: string, sessionId: string) =>
+      sessionAgent(sessionId),
+    );
+    provider.setAgentFactory(factory);
+
+    const result = await provider.dispatchHostedInput(
+      '2026-11-06-a',
+      '2026-11-06-b',
+      'hi',
+      '派发探针',
+    );
+    expect(result).toMatchObject({ ok: false, code: 'E_DENIED' });
+    // 身份判不过就止步：不为一次注定被拒的派发付装配成本
+    expect(factory).not.toHaveBeenCalled();
+  });
+
+  it('受理：原文直投、seed 带 origin=hosted 与发送者名，且不改面板显示会话', async () => {
+    // 门闩流：停在 gate 上，便于读该轮 live 种子与运行态
+    let reachedGate!: () => void;
+    const atGate = new Promise<void>((resolve) => {
+      reachedGate = resolve;
+    });
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    const roundId = 'round-hosted';
+    const flow = (): AsyncGenerator<Chunk> => {
+      return (async function* () {
+        yield { type: 'thinking', phase: 'processing', roundId };
+        reachedGate();
+        await gate;
+        yield { type: 'text', content: '目标会话在干活', roundId };
+        yield { type: 'step_boundary', roundId };
+      })();
+    };
+    const target = sessionAgent('2026-11-06-b', flow);
+    // chat 入参是本用例的核心证据：套壳/错位都会让断言转红
+    const chatSpy = vi.fn(target.chat.bind(target));
+    target.chat = chatSpy as unknown as SessionAgentStub['chat'];
+
+    const modes = createEphemeralSessionModeStore();
+    modes.set('2026-11-06-a', 'managed');
+    const { provider, cast } = setupPanel({ '2026-11-06-b': target }, [], modes);
+    cast._currentSessionId = '2026-11-06-a';
+    const factory = vi.fn(async (_projectPath: string, sessionId: string) =>
+      sessionAgent(sessionId),
+    );
+    provider.setAgentFactory(factory);
+
+    const result = await provider.dispatchHostedInput(
+      '2026-11-06-a',
+      '2026-11-06-b',
+      '原始需求',
+      '派发探针',
+    );
+    expect(result).toEqual({ ok: true, accepted: true });
+    await atGate;
+
+    // ① 原文直投：没有「用户请求：」之类的注入信封（第二个参数 = signal，第三个 = 无附件）
+    expect(chatSpy).toHaveBeenCalledTimes(1);
+    expect(chatSpy).toHaveBeenCalledWith('原始需求', expect.any(AbortSignal), undefined, {
+      origin: 'hosted',
+      senderName: '派发探针',
+    });
+    // ② live 投影种子：来源 + 发送者名（页面重放与运行时同一份事实）
+    const runtime = cast.runtimeFor('2026-11-06-b');
+    expect(runtime.streaming).toBe(true);
+    expect(runtime.liveBuffer?.seedOrigin).toBe('hosted');
+    expect(runtime.liveBuffer?.seedUserMessage).toMatchObject({
+      content: '原始需求',
+      name: '派发探针',
+    });
+    // ③ 面板显示会话不被派发拽走（目标实例已在投影表里，也不该走工厂）
+    expect(provider.getCurrentSessionId()).toBe('2026-11-06-a');
+    expect(factory).not.toHaveBeenCalled();
+
+    releaseGate();
+    await vi.waitFor(() => expect(cast.runtimeFor('2026-11-06-b').streaming).toBe(false), {
+      timeout: 5000,
+    });
+  });
+
+  it('目标会话真在跑 ⇒ E_BUSY（真实运行态判据，不排队、不双开流）', async () => {
+    let reachedGate!: () => void;
+    const atGate = new Promise<void>((resolve) => {
+      reachedGate = resolve;
+    });
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    const roundId = 'round-busy';
+    const flow = (): AsyncGenerator<Chunk> => {
+      return (async function* () {
+        yield { type: 'thinking', phase: 'processing', roundId };
+        reachedGate();
+        await gate;
+        yield { type: 'text', content: '跑完了', roundId };
+        yield { type: 'step_boundary', roundId };
+      })();
+    };
+    const target = sessionAgent('2026-11-06-b', flow);
+    const chatSpy = vi.fn(target.chat.bind(target));
+    target.chat = chatSpy as unknown as SessionAgentStub['chat'];
+
+    const modes = createEphemeralSessionModeStore();
+    modes.set('2026-11-06-a', 'managed');
+    const { provider, cast } = setupPanel({ '2026-11-06-b': target }, [], modes);
+    cast._currentSessionId = '2026-11-06-a';
+    const factory = vi.fn(async (_projectPath: string, sessionId: string) =>
+      sessionAgent(sessionId),
+    );
+    provider.setAgentFactory(factory);
+
+    // 真的把目标会话跑起来（不是手工置 streaming 位）
+    const running = cast.runFlow(() => flow(), undefined, '2026-11-06-b');
+    await atGate;
+    expect(cast.runtimeFor('2026-11-06-b').streaming).toBe(true);
+
+    const result = await provider.dispatchHostedInput(
+      '2026-11-06-a',
+      '2026-11-06-b',
+      '再来一条',
+      '派发探针',
+    );
+    expect(result).toMatchObject({ ok: false, code: 'E_BUSY' });
+    // 判忙先于取实例：既没有第二次 chat，也没有为派发重新装配
+    expect(chatSpy).not.toHaveBeenCalled();
+    expect(factory).not.toHaveBeenCalled();
+
+    releaseGate();
+    await running;
+  });
+
+  it('装配等待期内目标会话被开跑 ⇒ 落地前复判到 E_BUSY', async () => {
+    let reachedGate!: () => void;
+    const atGate = new Promise<void>((resolve) => {
+      reachedGate = resolve;
+    });
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    const roundId = 'round-race';
+    const flow = (): AsyncGenerator<Chunk> => {
+      return (async function* () {
+        yield { type: 'thinking', phase: 'processing', roundId };
+        reachedGate();
+        await gate;
+        yield { type: 'step_boundary', roundId };
+      })();
+    };
+    const target = sessionAgent('2026-11-06-b', flow);
+    const chatSpy = vi.fn(target.chat.bind(target));
+    target.chat = chatSpy as unknown as SessionAgentStub['chat'];
+
+    const modes = createEphemeralSessionModeStore();
+    modes.set('2026-11-06-a', 'managed');
+    const { provider, cast } = setupPanel({}, [], modes);
+    cast._currentSessionId = '2026-11-06-a';
+    // consumeFlow 需要该会话的运行实例可解析：预置当前实例（生产由 agentForSession 保证）
+    cast._agent = target;
+    let running: Promise<void> | undefined;
+    provider.setAgentFactory(
+      vi.fn(async (_projectPath: string, sessionId: string) => {
+        // 模拟真实竞态：装配在途时，该会话被别的入口开跑
+        running = cast.runFlow(() => flow(), undefined, sessionId);
+        await atGate;
+        return target;
+      }),
+    );
+
+    const result = await provider.dispatchHostedInput(
+      '2026-11-06-a',
+      '2026-11-06-b',
+      '撞车输入',
+      '派发探针',
+    );
+    expect(result).toMatchObject({ ok: false, code: 'E_BUSY' });
+    // 复判拦住了第二条流：派发通道一次 chat 都没发
+    expect(chatSpy).not.toHaveBeenCalled();
+
+    releaseGate();
+    await running;
   });
 });

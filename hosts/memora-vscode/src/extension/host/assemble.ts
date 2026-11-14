@@ -47,7 +47,7 @@ import { WorkspaceSessionStore } from './sessionStore.js';
 import { vscodeTracer } from './tracer.js';
 import { startMcpServers } from './mcp/runtime.js';
 import type { McpServerConfig } from './mcp/connectionManager.js';
-import { registerWorkSessionTools } from './workSessionTools.js';
+import { registerWorkSessionTools, type HostedInputDispatcher } from './workSessionTools.js';
 
 import type { ProviderStore } from '../providers/providerStore.js';
 
@@ -368,6 +368,25 @@ export interface AssembleOptions {
    * 托管会话重启后不再以主控身份运行，但历史会话 / 历史轮仍标记为 `'hosted'`；两者不同步是刻意的。
    */
   orchestratorSession?: boolean;
+  /**
+   * 本次装配归属的会话 id（主控工具判 `E_DENIED` 用）
+   *
+   * 由 `assembleAgentForSession` 与 `orchestratorSession` 同批写入；直接调 `assembleAgent`
+   * 且未传 ⇒ 主控派发工具因依赖不全而不注册（装配层记警告）。
+   */
+  orchestratorSessionId?: string;
+  /**
+   * 托管输入的发送者名（装配期注入，落 `RoundMessage.name`）
+   *
+   * 工具 handler **不得**自带字面量：名字可能来自用户配置，写死在工具里就是第二份真源。
+   */
+  orchestratorSenderName?: string;
+  /**
+   * 派发回调（装配层 → 宿主面板，工具 handler 不持有面板实例）
+   *
+   * 只负责「把 text 交给目标会话跑一轮」，不注入当前编辑器 / problems / git。
+   */
+  dispatchHostedInput?: HostedInputDispatcher;
   /** 环境变量（默认 process.env，便于测试注入） */
   env?: NodeJS.ProcessEnv;
 }
@@ -422,6 +441,9 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     imageResolver,
     imageReadPort,
     orchestratorSession,
+    orchestratorSessionId,
+    orchestratorSenderName,
+    dispatchHostedInput,
   } = options;
 
   // 日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核；
@@ -582,16 +604,28 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   // 不中断当前 loop 执行——无需再 setInputInterrupt('block')（API 已删除），
   // 默认行为即「申请 → 气口生效」。
 
-  // 4.2 主控会话工具（托管模式 v0 · 切片 0：只接线，不做功能）
+  // 4.2 主控会话工具（托管模式 v0）
   //
   // 工具面判据 = 装配期标记 `orchestratorSession`（不落盘）：它跨窗口 / 重启归零，
   // 只回答「这一次装配注不注册会话工具」，不承担来源归属——来源已按 §14.21.8 D-1
   // 落 `SessionMeta.origin` / `Round.origin`（02f09445 已实现），「由 X 发送」复用 `RoundMessage.name`。
   // 普通会话**不注册** ⇒ 模型侧「工具不存在」（而不是注册一个会抛错的占位工具）。
   // 注册点在 init 之后：工具面需要已初始化的执行器，且注册即触发 onToolsChanged。
-  // 本片数据真源 = 注入的会话存储（listSessionMetas）；切片 1 改为扫盘时只换 handler。
+  // send_to_session 只拿到面板注入的派发回调，不反向依赖面板实例（见 WorkSessionToolDeps）。
   if (orchestratorSession) {
-    const registered = registerWorkSessionTools(agent, store);
+    const dispatchDeps =
+      orchestratorSessionId && orchestratorSenderName && dispatchHostedInput
+        ? {
+            callingSessionId: orchestratorSessionId,
+            senderName: orchestratorSenderName,
+            dispatch: dispatchHostedInput,
+          }
+        : undefined;
+    if (!dispatchDeps) {
+      // 依赖不全时 list 工具仍可用；派发工具宁可不注册，也不注册一个永远 E_NOT_FOUND 的空壳
+      logger?.warn('[work-session] 主控派发依赖缺失，send_to_session 未注册');
+    }
+    const registered = registerWorkSessionTools(agent, store, dispatchDeps);
     if (!registered) {
       logger?.warn('[work-session] Agent 工具执行器不可用，主控会话工具未注册');
     }
