@@ -62,7 +62,11 @@ import { openChatCommand } from './commands/openChat.js';
 import { registerNewSessionCommand } from './commands/newSession.js';
 // 收回本会话（撤销助手代理）：与「新建会话选模式」对称的退出入口
 import { registerRevokeManagedSessionCommand } from './commands/revokeManagedSession.js';
-import type { HostedInputDispatcher, HostedSessionCreator } from './host/workSessionTools.js';
+import type {
+  HostedInputDispatcher,
+  HostedSessionCreator,
+  HostedSessionStopper,
+} from './host/workSessionTools.js';
 import { runDemoCommand } from './commands/demo.js';
 import { reloadSkillsCommand } from './commands/reloadSkills.js';
 import { cleanupMemoriesCommand, memoryStatsCommand, runGcCommand } from './commands/memory.js';
@@ -233,6 +237,8 @@ interface AssemblyDeps {
   dispatchHostedInput: HostedInputDispatcher;
   /** 托管建会话回调（工具 handler → 面板；创建走面板既有新建路径） */
   createHostedSession: HostedSessionCreator;
+  /** 托管停止回调（工具 handler → 面板；复用用户停止的同一条路径） */
+  stopHostedSession: HostedSessionStopper;
   /** 主控清单的状态读口（与工作台共用 `shared/sessionStatus` 的同一投影） */
   readHostedStatus: (sessionId: string) => WorkbenchJobStatus;
   /** 主控清单的归属读口（本进程创建者账本，与工作台同一真源） */
@@ -343,6 +349,8 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
     orchestratorSenderName: deps.orchestratorSenderName,
     dispatchHostedInput: deps.dispatchHostedInput,
     createHostedSession: deps.createHostedSession,
+    // 停止走用户停止的同一条实现（面板内 _runOps.handleStop），不另造一套
+    stopHostedSession: deps.stopHostedSession,
     // 主控清单看状态 / 归属：与工作台共用同一批读口（不另造第二套判断）
     readHostedStatus: deps.readHostedStatus,
     hostedAgentCreated: deps.hostedAgentCreated,
@@ -606,6 +614,8 @@ export function activate(context: vscode.ExtensionContext): void {
     // 建会话同法：工具 handler → 面板既有新建路径（角色包校验与来源落盘都在面板内）
     createHostedSession: (calling, rolePack, title, text, sender) =>
       chatProvider.createHostedSession(calling, rolePack, title, text, sender),
+    // 停止同法：工具 handler → 面板的 `_runOps.handleStop`（与用户点停止完全同一条路）
+    stopHostedSession: (calling, target) => chatProvider.stopHostedSession(calling, target),
     readHostedStatus,
     // 归属真源 = 与工作台同一个创建者账本（仅本进程；重启后由历史重建补）
     hostedAgentCreated: (orchestratorId) => chatProvider.workbench.childrenOf(orchestratorId),

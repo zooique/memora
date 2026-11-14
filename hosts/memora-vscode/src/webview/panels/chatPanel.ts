@@ -14,9 +14,7 @@
  *   - 面板为通用对话宿主，功能定位由内核同步的内置角色包承载，
  *     角色名在 AI 消息头部标签 + 空状态标题展示（角色切换入口在独立的「角色」视图）。
  *
- * ⚠️ 行数逼近 eslint `max-lines` 上限（2026-11-12 实测本文件 3695 / 基线 4242，余 547）：新增逻辑先外置到
- *    `helpers/` / 独立模块，本文件只留接线。真正贴死的是 `chatView.ts`（4122 / 4200，余 78）——搬迁对象
- *    以台账 `CHATPANEL-MARGIN-1` 为准；行数余额一律现测，不认任何写死的数字（上面两处只是时点快照）。
+ * ⚠️ 本文件贴 `max-lines` 上限：新增逻辑先外置到 `helpers/` / 独立模块，本文件只留接线，行数余额一律现测。
  */
 import * as vscode from 'vscode';
 
@@ -389,22 +387,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private readonly _runOps = createChatRunControlOps({
     post: (msg) => this.post(msg),
     postTurnUpdate: () => this.postTurnUpdate(),
-    runtimeFor: () => this.runtimeFor(),
-    askFor: () => this.askFor(),
-    getAgent: () => this._agent,
+    runtimeFor: (sessionId) => this.runtimeFor(sessionId),
+    askFor: (sessionId) => this.askFor(sessionId),
+    getAgent: (sessionId) =>
+      this._sessionAgents.get(sessionId) ??
+      (sessionId === this._currentSessionId ? this._agent : undefined),
+    currentSessionId: () => this.getCurrentSessionId(),
+    isManaged: (id) => this.sessionModes.isManaged(id),
     runFlow: (factory) => this.runFlow(factory),
     syncPendingQueue: (force) => this.syncPendingQueue(force),
     postPendingDiscarded: (items) => this.postPendingDiscarded(items),
-    // paused 态用户停止：轮 id 已在 abandon 前取好，这里只回盘上读轮（不另造一份事件）
-    onUserStopped: (_agent, roundId) =>
-      this._hostedNotifier.notePausedStop(this.getCurrentSessionId(), roundId),
+    onUserStopped: (_agent, roundId, sessionId) =>
+      this._hostedNotifier.notePausedStop(sessionId, roundId),
   });
-  /**
-   * 托管子会话中断通知器（第三切片）
-   *
-   * 依赖全是延迟闭包（本字段初始化早于 `_sessionAgents`）；创建者关系只在进程内有效，
-   * 不落盘、不进 `SessionMeta`。
-   */
+  /** 主控停止入口（实现在运行控制域：与用户点停止同一条 handleStop，只多一层调用方门禁） */
+  public stopHostedSession = this._runOps.stopHostedSession;
+  /** 托管子会话中断通知器（第三切片）：延迟闭包；创建者关系仅进程内，不落盘、不进 meta */
   private readonly _hostedNotifier = new HostedSessionNotifier({
     readSessionMeta: (sid) => this.sessionStore.getSessionMeta(sid),
     isManaged: (sid) => this.sessionModes.isManaged(sid),
@@ -3232,12 +3230,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 停止生成 —— 实现已按 op 组外置到 `chatRunControlOps.ts`（B9-D-6）
    *
-   * 三种运行态（thinking / paused / done）的分支与「paused 必须以中断收场」的理由都在
-   * 该模块内（ADR-044 决策 3）；本处只留转发口。
+   * 三种运行态（thinking / paused / done）的分支与「paused 必须以中断收场」的理由都在该模块内
+   * （ADR-044 决策 3）；本处只留转发口（一行式字段，省下的行数留给面板既有注释）。
    */
-  private async handleStop(): Promise<void> {
-    await this._runOps.handleStop();
-  }
+  private readonly handleStop = () => this._runOps.handleStop();
 
   /**
    * 插话丢弃信号唯一发点（吸收时上屏机制的宿主侧一半）

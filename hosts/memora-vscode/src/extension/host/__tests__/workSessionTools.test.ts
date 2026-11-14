@@ -22,12 +22,14 @@ import {
   LIST_ROLE_PACKS_TOOL_NAME,
   LIST_WORK_SESSIONS_TOOL_NAME,
   SEND_TO_SESSION_TOOL_NAME,
+  STOP_WORK_SESSION_TOOL_NAME,
 } from '../workSessionTools.js';
 import type {
   CreateSessionResult,
   HostedDispatchResult,
   HostedInputDispatcher,
   HostedSessionCreator,
+  HostedSessionStopper,
   SendToSessionResult,
   SessionHistoryFacts,
 } from '../workSessionTools.js';
@@ -104,6 +106,8 @@ interface HostedDeps {
   dispatch?: HostedInputDispatcher;
   /** 建会话回调（缺省 = 返回固定 sid/title） */
   createSession?: HostedSessionCreator;
+  /** 停止回调（缺省 = 报告停到了活） */
+  stopSession?: HostedSessionStopper;
   /** 状态读口（缺省 = 一律 completed，便于断言清单形态） */
   readStatus?: (sessionId: string) => WorkbenchJobStatus;
   /** 创建者账本（缺省 = 空账本） */
@@ -207,6 +211,9 @@ async function assembleProbe(orchestratorSession?: boolean, hosted?: HostedDeps)
           createHostedSession:
             hosted.createSession ??
             (async (_calling, _rolePack, title) => ({ ok: true, sid: '2026-11-14-new', title })),
+          stopHostedSession:
+            hosted.stopSession ??
+            (async (): Promise<{ ok: true; stopped: boolean }> => ({ ok: true, stopped: true })),
           readHostedStatus:
             hosted.readStatus ?? ((): WorkbenchJobStatus => ({ kind: 'completed' })),
           hostedAgentCreated: hosted.agentCreated ?? ((): readonly string[] => []),
@@ -320,6 +327,160 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
       expect(parsed.sessions.find((s) => s.sid === TARGET_SESSION_ID)?.createdBy).toBe('unknown');
       // 用户来源（无 hosted 标记）不依赖历史，仍可确定
       expect(parsed.sessions.find((s) => s.sid === SESSION_ID)?.createdBy).toBe('user');
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('停自己开的活：走注入的停止回调，并回传停止前的真实状态', async () => {
+    /** 停止回调收到的 (调用方, 目标) */
+    const calls: [string, string][] = [];
+    const probe = await assembleProbe(true, {
+      // 账本命中 = 代理开的（与工作台同一真源）
+      agentCreated: () => [TARGET_SESSION_ID],
+      readStatus: () => ({ kind: 'running' }),
+      stopSession: async (calling, target) => {
+        calls.push([calling, target]);
+        return { ok: true, stopped: true };
+      },
+    });
+    try {
+      const raw = await probe.agent.tools!.execute(
+        STOP_WORK_SESSION_TOOL_NAME,
+        JSON.stringify({ sid: TARGET_SESSION_ID }),
+      );
+      const parsed = JSON.parse(raw) as {
+        ok: boolean;
+        stopped: boolean;
+        status: WorkbenchJobStatus;
+      };
+      expect(parsed).toEqual({ ok: true, stopped: true, status: { kind: 'running' } });
+      // 停止只传会话 id；不传轮 id ⇒ 停止前由面板实时读实例，不存在「拿过期轮去停」
+      expect(calls).toEqual([[SESSION_ID, TARGET_SESSION_ID]]);
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('用户自己建的会话：代理不许停（E_DENIED，且不触发停止回调）', async () => {
+    /** 是否调用过停止回调 */
+    let stopped = false;
+    const probe = await assembleProbe(true, {
+      // SESSION_ID 无 hosted 标记 = 用户自己建的
+      stopSession: async () => {
+        stopped = true;
+        return { ok: true, stopped: true };
+      },
+    });
+    try {
+      const raw = await probe.agent.tools!.execute(
+        STOP_WORK_SESSION_TOOL_NAME,
+        JSON.stringify({ sid: SESSION_ID }),
+      );
+      const parsed = JSON.parse(raw) as { ok: boolean; code: string };
+      expect(parsed.ok).toBe(false);
+      expect(parsed.code).toBe('E_DENIED');
+      expect(stopped).toBe(false);
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('无法确认归属（托管来源但账本没记）→ E_DENIED，不猜着停', async () => {
+    let stopped = false;
+    const probe = await assembleProbe(true, {
+      // 账本为空、历史读全但没有这条创建记录 ⇒ createdBy=unknown
+      stopSession: async () => {
+        stopped = true;
+        return { ok: true, stopped: true };
+      },
+    });
+    try {
+      const raw = await probe.agent.tools!.execute(
+        STOP_WORK_SESSION_TOOL_NAME,
+        JSON.stringify({ sid: TARGET_SESSION_ID }),
+      );
+      const parsed = JSON.parse(raw) as { ok: boolean; code: string };
+      expect(parsed.code).toBe('E_DENIED');
+      expect(stopped).toBe(false);
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('状态已收场 / 读不到：不调停止回调（stopped=false 或 E_UNREADABLE）', async () => {
+    /** 已收场时是否调用过停止回调 */
+    let settledCalls = 0;
+    let status: WorkbenchJobStatus = { kind: 'completed' };
+    const probe = await assembleProbe(true, {
+      agentCreated: () => [TARGET_SESSION_ID],
+      readStatus: () => status,
+      stopSession: async () => {
+        settledCalls += 1;
+        return { ok: true, stopped: true };
+      },
+    });
+    try {
+      // 已收场：如实说没停到，不调停止回调
+      const settled = JSON.parse(
+        await probe.agent.tools!.execute(
+          STOP_WORK_SESSION_TOOL_NAME,
+          JSON.stringify({ sid: TARGET_SESSION_ID }),
+        ),
+      ) as { ok: boolean; stopped: boolean; status: WorkbenchJobStatus };
+      expect(settled).toEqual({ ok: true, stopped: false, status: { kind: 'completed' } });
+      expect(settledCalls).toBe(0);
+      // 读不到：拒绝停止，绝不猜「它没在跑」
+      status = { kind: 'unreadable' };
+      const unreadable = JSON.parse(
+        await probe.agent.tools!.execute(
+          STOP_WORK_SESSION_TOOL_NAME,
+          JSON.stringify({ sid: TARGET_SESSION_ID }),
+        ),
+      ) as { ok: boolean; code: string };
+      expect(unreadable.ok).toBe(false);
+      expect(unreadable.code).toBe('E_UNREADABLE');
+      expect(settledCalls).toBe(0);
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('停止前的状态是当场重读的，不复用清单里的旧快照', async () => {
+    /** 可变状态（模拟清单之后活又跑起来了） */
+    let status: WorkbenchJobStatus = { kind: 'completed' };
+    /** 是否真的调用停止 */
+    let stopped = false;
+    const probe = await assembleProbe(true, {
+      agentCreated: () => [TARGET_SESSION_ID],
+      readStatus: () => status,
+      stopSession: async () => {
+        stopped = true;
+        return { ok: true, stopped: true };
+      },
+    });
+    try {
+      // 先 list：此时快照里是 completed
+      const list = JSON.parse(
+        await probe.agent.tools!.execute(LIST_WORK_SESSIONS_TOOL_NAME, '{}'),
+      ) as { sessions: { sid: string; status: WorkbenchJobStatus }[] };
+      expect(list.sessions.find((s) => s.sid === TARGET_SESSION_ID)?.status).toEqual({
+        kind: 'completed',
+      });
+      // 之后目标又跑起来了：stop 必须按**当下**状态判，而不是拿清单旧快照说「已收场」
+      status = { kind: 'running' };
+      const stoppedRaw = JSON.parse(
+        await probe.agent.tools!.execute(
+          STOP_WORK_SESSION_TOOL_NAME,
+          JSON.stringify({ sid: TARGET_SESSION_ID }),
+        ),
+      ) as { ok: boolean; stopped: boolean; status: WorkbenchJobStatus };
+      expect(stoppedRaw).toEqual({
+        ok: true,
+        stopped: true,
+        status: { kind: 'running' },
+      });
+      expect(stopped).toBe(true);
     } finally {
       await disposeProbe(probe);
     }

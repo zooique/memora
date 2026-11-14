@@ -47,6 +47,15 @@ export const SEND_TO_SESSION_TOOL_NAME = 'send_to_session';
 export const CREATE_SESSION_TOOL_NAME = 'create_session';
 
 /**
+ * 停止会话工具名（台账 HOST-MANAGED-MODE-V0-1 判据 6 的「停止」半）
+ *
+ * 只允许停调用方自己开的活（创建者账本 ∪ 历史重建判归 `agent`）；
+ * 用户自己建的会话一律 E_DENIED。停止复用用户停止的同一条实现，
+ * 终态与原因仍由既有轮投影给出，不新增通知类型。
+ */
+export const STOP_WORK_SESSION_TOOL_NAME = 'stop_work_session';
+
+/**
  * 角色包只读清单工具名
  *
  * 为什么要单独一个出口：主控要「按名选包」，就得先知道有哪些名字；
@@ -105,6 +114,8 @@ export interface WorkSessionToolDeps {
   dispatch?: HostedInputDispatcher;
   /** 新建会话并投递首轮（由宿主面板提供；缺省 ⇒ 不注册 create 工具） */
   createSession?: HostedSessionCreator;
+  /** 停止目标会话的当前轮（由宿主面板提供；缺省 ⇒ 不注册 stop 工具） */
+  stopSession?: HostedSessionStopper;
   /** 角色包只读清单（装配期从内核 `listMeta()` 单点取，带来源标记） */
   listRolePacks: () => RolePackBrief[];
   /**
@@ -189,6 +200,26 @@ export type HostedSessionCreator = (
 ) => Promise<CreateSessionResult>;
 
 /**
+ * 停止会话的宿主结果（工具 `stop_work_session` 的末段返回值）
+ *
+ * `stopped:false` 不是错误：目标当前没有流 / 不是 paused，说明活已经收场或无活可停。
+ * 归属裁决不在这里做（面板只判托管门禁），由工具层用创建者账本 + 历史判。
+ */
+export type HostedStopResult =
+  { ok: true; stopped: boolean } | { ok: false; code: 'E_DENIED' | 'E_HOST'; message: string };
+
+/**
+ * 停止会话回调（面板实现；工具 handler 不持有面板实例）
+ *
+ * 实现必须复用用户停止的同一条路径（`_runOps.handleStop(sessionId)`），
+ * 不许为工具另造一套 abort / 收场逻辑。
+ */
+export type HostedSessionStopper = (
+  callingSessionId: string,
+  targetSessionId: string,
+) => Promise<HostedStopResult>;
+
+/**
  * 单个会话的对外摘要（代理判断「该复用还是该新开」的最小字段集）
  *
  * 四个事实：标识、标题、最后更新时间、**当前状态**，外加**归属**（谁开的）。
@@ -265,6 +296,36 @@ const SEND_TO_SESSION_DEFINITION: ToolDefinition = {
       text: { type: 'string', description: '要发送的输入文本' },
     },
     required: ['sid', 'text'],
+  },
+  readonly: false,
+  diskWrite: 'none',
+  confirmPolicy: 'audit',
+};
+
+/**
+ * 停止会话工具定义（声明面）
+ *
+ * - `readonly: false`：会中断目标会话的当前轮，属于会改变状态的动作；
+ * - `diskWrite: 'none'`：工具本身不写项目磁盘（落盘发生在目标会话自己的内核收场里）；
+ * - `confirmPolicy: 'audit'`：与 list / send / create 同档（免弹窗但留审计）。
+ *
+ * 参数封闭：只有 sid；未知键在 handler 判 `E_ARGS`。
+ */
+const STOP_WORK_SESSION_DEFINITION: ToolDefinition = {
+  name: STOP_WORK_SESSION_TOOL_NAME,
+  description:
+    '停止一条**你自己开的**会话当前正在跑的活（复用用户停止的同一条路径）。' +
+    'sid 必须来自 list_work_sessions，且该条目的 createdBy 必须是 agent。' +
+    '用户自己建的会话（createdBy=user）不接受代理停止，返回 E_DENIED；' +
+    '状态读不到（unreadable）时返回 E_UNREADABLE，不猜着停。' +
+    '返回 stopped=true 表示停止信号已发出；stopped=false 表示目标已收场 / 本来没跑。' +
+    '终态与原因用 list_work_sessions 再看（completed / stopped + stop）。',
+  parameters: {
+    type: 'object',
+    properties: {
+      sid: { type: 'string', description: '目标会话标识（list_work_sessions 返回的 sid）' },
+    },
+    required: ['sid'],
   },
   readonly: false,
   diskWrite: 'none',
@@ -365,6 +426,21 @@ function parseSendArgs(args: Record<string, unknown>): { sid: string; text: stri
 }
 
 /**
+ * 校验 `stop_work_session` 的参数（只接受 { sid }，且 sid 非空）
+ *
+ * @param args 工具执行器传入的已解析参数
+ * @returns 合法载荷；undefined = 未知键 / 缺键 / 类型不对（调用方统一回 `E_ARGS`）
+ */
+function parseStopArgs(args: Record<string, unknown>): { sid: string } | undefined {
+  const keys = Object.keys(args);
+  // 键集必须恰好是 {sid}：多一个未知键就拒（不忽略、不透传）
+  if (keys.length !== 1 || keys[0] !== 'sid') return undefined;
+  const { sid } = args;
+  if (typeof sid !== 'string' || sid.trim() === '') return undefined;
+  return { sid };
+}
+
+/**
  * 校验 `create_session` 的参数（rolePack 可省；title / text 必填且非空）
  *
  * @param args 工具执行器传入的已解析参数
@@ -429,9 +505,17 @@ export function registerWorkSessionTools(
   const tools = agent.tools;
   // 未初始化时 getter 返回 null：本片不抛错（装配层继续跑，调用方记一条警告即可）
   if (!tools) return false;
-  tools.registerTool(LIST_WORK_SESSIONS_DEFINITION, async () => {
-    // 结果形态对齐设计文档的 `{ ok, sessions }` 信封；本片不含 workspaceRoot（未到需要时）
-    const metas = sessionStore.listSessionMetas();
+  /**
+   * 读「这条会话是不是调用方开的」所需的既有事实
+   *
+   * 账本 = 本进程创建者记录（重启后为空）；历史 = 每次按需重建（有上限）。
+   * 两处都读不到时返回 unreadable / 空集，由 `projectCreatedBy` 判 unknown，不猜。
+   */
+  const readCreatedFacts = (): {
+    history?: SessionHistoryFacts;
+    ledger: readonly string[];
+    historyFacts: SessionHistoryFacts;
+  } => {
     const callingSessionId = deps?.callingSessionId;
     // 历史重建每次调用做一次（读盘有上限，结果自带覆盖状态）；没有读口 ⇒ 如实 unreadable
     const history =
@@ -439,15 +523,28 @@ export function registerWorkSessionTools(
     // 创建者账本仅本进程（重启后为空），与历史并集由 `projectCreatedBy` 判归属
     const ledger =
       callingSessionId && deps?.agentCreated ? deps.agentCreated(callingSessionId) : [];
+    return {
+      history,
+      ledger,
+      historyFacts: history ?? {
+        coverage: 'unreadable',
+        children: [],
+        totalRounds: 0,
+        scannedRounds: 0,
+      },
+    };
+  };
+  tools.registerTool(LIST_WORK_SESSIONS_DEFINITION, async () => {
+    // 结果形态对齐设计文档的 `{ ok, sessions }` 信封；本片不含 workspaceRoot（未到需要时）
+    const metas = sessionStore.listSessionMetas();
+    const callingSessionId = deps?.callingSessionId;
+    const { history, ledger, historyFacts } = readCreatedFacts();
     const sessions = metas.map((meta) =>
       toWorkSessionBrief(
         meta,
         // 缺读口 = 不知道，绝不写成 queued / completed（那会让代理以为可以再开一个）
         deps?.readStatus?.(meta.sessionId) ?? { kind: 'unreadable' },
-        projectCreatedBy(meta, meta.sessionId, {
-          ledger,
-          history: history ?? { coverage: 'unreadable', children: [] },
-        }),
+        projectCreatedBy(meta, meta.sessionId, { ledger, history: historyFacts }),
       ),
     );
     const coverage = resolveListCoverage({
@@ -560,6 +657,90 @@ export function registerWorkSessionTools(
               ok: false,
               code: 'E_HOST',
               message: `宿主建会话失败：${err instanceof Error ? err.message : String(err)}`,
+            },
+            null,
+            2,
+          );
+        }
+      });
+    }
+    if (deps.stopSession) {
+      const stopSession = deps.stopSession;
+      tools.registerTool(STOP_WORK_SESSION_DEFINITION, async (args) => {
+        const parsed = parseStopArgs(args);
+        if (!parsed) {
+          return JSON.stringify(
+            { ok: false, code: 'E_ARGS', message: '参数必须且只能是 { sid }，sid 为非空字符串。' },
+            null,
+            2,
+          );
+        }
+        const meta = sessionStore.listSessionMetas().find((m) => m.sessionId === parsed.sid);
+        if (!meta) {
+          return JSON.stringify(
+            { ok: false, code: 'E_NOT_FOUND', message: `未知会话：${parsed.sid}` },
+            null,
+            2,
+          );
+        }
+        // ① 归属门禁：只允许停「自己开的活」。用户自己建的 / 无法确认的一律拒绝。
+        const { ledger, historyFacts } = readCreatedFacts();
+        const createdBy = projectCreatedBy(meta, parsed.sid, { ledger, history: historyFacts });
+        if (createdBy !== 'agent') {
+          return JSON.stringify(
+            {
+              ok: false,
+              code: 'E_DENIED',
+              message:
+                createdBy === 'user'
+                  ? '这是用户自己建的会话，代理不许停。'
+                  : '无法确认这条会话是你开的（账本没记、历史也没扫到），代理不许停。',
+            },
+            null,
+            2,
+          );
+        }
+        // ② 真实状态：读当前轮（索引优先、整轮兜底），不拿清单快照停一个已经收场的轮
+        const status = deps.readStatus?.(parsed.sid) ?? { kind: 'unreadable' as const };
+        if (status.kind === 'unreadable') {
+          // 读不到 ≠ 空闲：不敢停，先让调用方确认，避免误杀或误判「已收场」
+          return JSON.stringify(
+            {
+              ok: false,
+              code: 'E_UNREADABLE',
+              message: '该会话的状态读不到，未执行停止；请稍后重试或让用户处理。',
+            },
+            null,
+            2,
+          );
+        }
+        // 已经收场 / 从没跑起来：没有活可停，如实回 stopped=false（不是错误）
+        if (
+          status.kind === 'completed' ||
+          status.kind === 'stopped' ||
+          status.kind === 'unsettled' ||
+          status.kind === 'queued'
+        ) {
+          return JSON.stringify({ ok: true, stopped: false, status }, null, 2);
+        }
+        try {
+          // ③ 复用用户停止的同一条路径（面板内 _runOps.handleStop），不另造 abort / 收场
+          const result = await stopSession(deps.callingSessionId, parsed.sid);
+          if (!result.ok) return JSON.stringify(result, null, 2);
+          // 面板没停到（如检查与执行之间刚好收场）→ 重读真实状态，不拿停前快照回话
+          const finalStatus = result.stopped ? status : (deps.readStatus?.(parsed.sid) ?? status);
+          return JSON.stringify(
+            { ok: true, stopped: result.stopped, status: finalStatus },
+            null,
+            2,
+          );
+        } catch (err) {
+          // 业务契约：不 throw；宿主侧异常单独一码，与「没有这条会话」分开
+          return JSON.stringify(
+            {
+              ok: false,
+              code: 'E_HOST',
+              message: `宿主停止失败：${err instanceof Error ? err.message : String(err)}`,
             },
             null,
             2,

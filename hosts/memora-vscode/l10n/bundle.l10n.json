@@ -1458,5 +1458,7 @@
   "History could not be read": "",
   "Some history could not be read": "",
   "Older history was not read (only the latest {0} rounds)": "",
-  "{0} session(s) could not be found": ""
+  "{0} session(s) could not be found": "",
+  "Memora: only managed sessions can stop other sessions.": "",
+  "Memora: failed to stop the session.": ""
 }

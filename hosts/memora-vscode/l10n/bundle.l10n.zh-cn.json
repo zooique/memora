@@ -1458,5 +1458,7 @@
   "History could not be read": "历史读不到",
   "Some history could not be read": "部分历史读不到",
   "Older history was not read (only the latest {0} rounds)": "只读了最近 {0} 轮，更早的没读",
-  "{0} session(s) could not be found": "有 {0} 条会话找不到了"
+  "{0} session(s) could not be found": "有 {0} 条会话找不到了",
+  "Memora: only managed sessions can stop other sessions.": "Memora：只有托管会话可以停止其他会话。",
+  "Memora: failed to stop the session.": "Memora：停止会话失败。"
 }

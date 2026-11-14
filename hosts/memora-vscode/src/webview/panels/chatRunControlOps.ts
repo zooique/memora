@@ -14,6 +14,9 @@ import * as vscode from 'vscode';
 import type { Agent, AgentChunk } from '@zooique/memora';
 import { toNoticeText } from '../../extension/host/noticeText.js';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
+import type { HostedStopResult } from '../../extension/host/workSessionTools.js';
+// 主控停止复用本域 handleStop 的同一条实现（门禁 → 停止 → 结果信封），见 helpers 模块头
+import { stopHostedSession } from '../helpers/hostedSessionStop.js';
 
 /** 本域读到的会话级运行态（`runtimeFor()` 的窄投影，只读本域需要的两个字段） */
 export interface RunControlRuntime {
@@ -35,12 +38,16 @@ export interface ChatRunControlOpsDeps {
   post: (msg: ExtensionToWebviewMessage) => void;
   /** 推送 turn_update（骨架真源 = `turn_update.state`，暂停申请在途变化必须同步补推） */
   postTurnUpdate: () => void;
-  /** 取当前**显示会话**的运行态 */
-  runtimeFor: () => RunControlRuntime;
-  /** 取当前**显示会话**的提问协调器 */
-  askFor: () => RunControlAsk;
-  /** 当前显示会话实例（停止/暂停的目标；未就绪时静默返回） */
-  getAgent: () => Agent | undefined;
+  /** 取**指定会话**的运行态（缺省由调用方传当前显示会话） */
+  runtimeFor: (sessionId: string) => RunControlRuntime;
+  /** 取**指定会话**的提问协调器 */
+  askFor: (sessionId: string) => RunControlAsk;
+  /** 取**指定会话**的实例（停止/暂停的目标；未就绪时静默返回） */
+  getAgent: (sessionId: string) => Agent | undefined;
+  /** 当前**显示会话**（用于把后台会话的停止副作用挡在界面外） */
+  currentSessionId: () => string;
+  /** 调用方是否托管（主控停止的纵深防守；归属裁决不在本域，见 helpers 模块头） */
+  isManaged: (sessionId: string) => boolean;
   /** 跑一轮 Agent 流（恢复复用 sendInput 的同一条 runFlow 通路） */
   runFlow: (
     factory: (signal: AbortSignal) => AsyncGenerator<AgentChunk, void, unknown>,
@@ -50,19 +57,27 @@ export interface ChatRunControlOpsDeps {
   /** 丢弃排队插话的可见信号（先读后丢，由面板提供） */
   postPendingDiscarded: (items: readonly string[]) => void;
   /**
-   * paused 态用户停止已收场后的回调（本切片：托管子会话中断通知）
+   * paused 态停止已收场后的回调（本切片：托管子会话中断通知）
    *
    * `roundId` 由本域在 `abandonOnStop()` **之前**取好——内核收场后当前轮标识可能已变，
    * 晚取会与流尾的轮 id 对不上、造成重复通知。
+   *
+   * ⚠️ 必须带上**被停的会话 id**：面板显示可能停在别的会话，读当前会话会把通知记到错的人头上。
    */
-  onUserStopped?: (agent: Agent, roundId: string) => void;
+  onUserStopped?: (agent: Agent, roundId: string, sessionId: string) => void;
 }
 
 /** 运行控制域对外方法（与面板私有方法一一对应） */
 export interface ChatRunControlOps {
-  handleStop(): Promise<void>;
+  /** 停止指定会话（缺省 = 当前显示会话）；返回是否真的停到了活 */
+  handleStop(sessionId?: string): Promise<boolean>;
   handlePause(): void;
   resumeInput(): Promise<void>;
+  /** 主控停止入口（工具 `stop_work_session`）：与用户点停止同一条路径，只多一层调用方门禁 */
+  stopHostedSession: (
+    callingSessionId: string,
+    targetSessionId: string,
+  ) => Promise<HostedStopResult>;
 }
 
 /**
@@ -71,43 +86,55 @@ export interface ChatRunControlOps {
  * @param deps 面板注入的窄接口（见 {@link ChatRunControlOpsDeps}）
  */
 export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunControlOps {
-  return {
+  // 先落对象再返回：stopHostedSession 要复用同一个 handleStop（自引用只在调用期解引用，安全）
+  const ops: ChatRunControlOps = {
     /**
-     * 停止生成：用户主动中断执行（暂停/恢复能力下的硬停止对齐）
+     * 停止生成：中断指定会话的执行（暂停/恢复能力下的硬停止对齐）
      *
-     * 三种运行态行为：
+     * 用户点停止与主控 `stop_work_session` **走同一条路**：前者不传 sessionId（= 当前显示会话），
+     * 后者传目标子会话 id。三种运行态行为：
      *   - thinking（runtime.streaming=true）→ abort() 当前流，内核在下一 await 点退出 yield aborted
      *   - paused（status=paused, runtime.streaming=false）→ **以中断收场**：`abandonOnStop`
      *     （对称语义：pause=想继续；stop=彻底放弃——用户说过的话必须留下痕迹）
-     *   - done 态无停止按钮（UI 隐藏）。
+     *   - done 态 → 什么也不做（返回 false）
      *
      * ⚠️ paused 分支不能只 `discardCurrentCheckpoint`（ADR-044 决策 3）：ask 挂起轮无正文
      * ⇒ 内核 `appendAssistant` 空正文守卫直接返回 ⇒ 该轮**没有任何收场调用点**。只弃检查点会
      * 留下 pending 僵尸轮，且宿主 pending 未清 ⇒ 相位恒 waiting/ask ⇒ 用户下一条输入被路由成
      * 「回答一个已死的提问」（内核内存消费、不落盘）。
+     *
+     * ⚠️ 后台会话（sessionId ≠ 当前显示）只执行停止本身：状态 / 提示 / 队列重投影**一律不投递**，
+     * 否则会把 A 的停止画到 B 的界面上（跨会话串台）。
+     *
+     * @param sessionId 目标会话（缺省 = 当前显示会话）
+     * @returns 是否真的停到了活（false = 目标已收场 / 无流）
      */
-    async handleStop(): Promise<void> {
-      // 停止按钮只作用于当前可见会话：取当前会话的运行态与 ask 协调器
-      const runtime = deps.runtimeFor();
-      const ask = deps.askFor();
+    async handleStop(sessionId?: string): Promise<boolean> {
+      const targetId = sessionId ?? deps.currentSessionId();
+      // 停止按钮只作用于目标会话：运行态与 ask 协调器都按会话取
+      const runtime = deps.runtimeFor(targetId);
+      const ask = deps.askFor(targetId);
+      // 界面副作用只对当前显示会话发生（后台停止不重绘用户正在看的页面）
+      const visible = targetId === deps.currentSessionId();
       // thinking 态：已有路径
       if (runtime.streaming && runtime.abortController) {
         runtime.abortController.abort();
-        return;
+        return true;
       }
       // paused 态：收场 + 彻底放弃暂停检查点（对称 pause 语义）
-      const agent = deps.getAgent();
+      const agent = deps.getAgent(targetId);
       if (agent?.sessionManager?.status === 'paused') {
         // 先读后弃：abandonTurn 协同清理排队插话（内核 agent.ts 单点），
         // 被弃条目 = 丢弃（蒸发不落盘）→ 必须发丢弃信号，否则 webview diff 误判「消费」误上屏
         const before = agent.getPendingInterjections?.() ?? [];
         const hadAsk = ask.pendingQuestions().length > 0;
-        // 轮 id 必须在 abandon 之前取（收场后当前轮标识可能已变，见 onUserStopped 注释）
+        // 轮 id 必须在 abandon 之前取（收场后当前轮标识可能已变，见 onUserStopped 注释）。
+        // 这是**实时读实例**，不是清单快照——避免拿过期轮去停一个已经收场的轮。
         const roundId = agent.currentRoundId();
         // ask 域先清宿主镜像 + 逐条透出「未回答」行（与盘面同文案、同题身份），再走内核收场
         const checkpointDiscarded = await ask.abandonOnStop();
-        deps.post({ type: 'status', state: 'done' });
-        if (checkpointDiscarded) {
+        if (visible) deps.post({ type: 'status', state: 'done' });
+        if (checkpointDiscarded && visible) {
           // 有提问时已由 ask 域给出「N 个提问未回答」，此处只补纯暂停态的旧提示
           if (!hadAsk) {
             deps.post({
@@ -124,10 +151,13 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
         // 「信号先于新快照」；② 无条件——队列本就为空或未弃检查点时长度不变，守卫会吞掉这一帧，
         // 而 `_turnState` 是快照、不重算就停在 waiting/ask ⇒ 下一条输入被当成「回答死提问」
         // 由内核内存消费、不落盘（用户输入凭空蒸发）。
-        deps.syncPendingQueue(true);
-        // 收场完成后再通知（失败/异常由调用方自己兜，本域不吞）：此时盘上是 interrupted
-        deps.onUserStopped?.(agent, roundId);
+        if (visible) deps.syncPendingQueue(true);
+        // 收场完成后再通知（失败/异常由调用方自己兜，本域不吞）：此时盘上是 interrupted；
+        // 通知对象是**被停的那个会话**（创建者通知按会话归属，不能读当前显示会话）
+        deps.onUserStopped?.(agent, roundId, targetId);
+        return true;
       }
+      return false;
     },
 
     /**
@@ -143,7 +173,8 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
      * 不再对 requestPause 返回值保持沉默——「有按钮就有反馈」。
      */
     handlePause(): void {
-      const agent = deps.getAgent();
+      // 暂停 / 恢复只作用于当前显示会话（与用户点击的按钮一致）
+      const agent = deps.getAgent(deps.currentSessionId());
       if (!agent) return;
       if (agent.isPausePending()) {
         agent.cancelPauseRequest();
@@ -191,7 +222,8 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
      * 此处仅保证相位为 waiting/pause（路由层已校验）。
      */
     async resumeInput(): Promise<void> {
-      const agent = deps.getAgent(); // handleInput 守卫保证非空
+      // 恢复只作用于当前显示会话（handleInput 守卫保证非空）
+      const agent = deps.getAgent(deps.currentSessionId());
       try {
         await deps.runFlow((signal) => agent!.resumeExecution(undefined, signal));
       } catch (err) {
@@ -202,5 +234,19 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
         });
       }
     },
+
+    /**
+     * 主控停止：门禁 → 复用 `handleStop` → 结果信封（实现与文案见 helpers/hostedSessionStop.ts）
+     *
+     * 停止动作本身与用户点停止**同一条实现**，本处只补「谁能停」的调用方门禁；
+     * 目标归属（只能停自己开的活）由工具层按创建者账本 + 历史判，这里不重判（见模块头）。
+     */
+    stopHostedSession: (callingSessionId, targetSessionId) =>
+      stopHostedSession(
+        { isManaged: deps.isManaged, handleStop: (id) => ops.handleStop(id) },
+        callingSessionId,
+        targetSessionId,
+      ),
   };
+  return ops;
 }

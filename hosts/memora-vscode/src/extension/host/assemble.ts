@@ -51,6 +51,7 @@ import {
   registerWorkSessionTools,
   type HostedInputDispatcher,
   type HostedSessionCreator,
+  type HostedSessionStopper,
   type RolePackBrief,
   type SessionHistoryFacts,
   type WorkSessionToolDeps,
@@ -404,6 +405,8 @@ export interface AssembleOptions {
    * 走宿主既有新建路径（createSession）并投递首轮；角色包校验与来源落盘都在面板内完成。
    */
   createHostedSession?: HostedSessionCreator;
+  /** 停止回调（工具 handler → 面板；复用用户停止的同一条路径） */
+  stopHostedSession?: HostedSessionStopper;
   /** 单会话状态读口（与工作台共用同一投影；缺省 ⇒ list 项标 unreadable） */
   readHostedStatus?: (sessionId: string) => WorkbenchJobStatus;
   /** 本进程创建者账本读口（与工作台同一真源；缺省 ⇒ 归属 unknown） */
@@ -468,6 +471,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     orchestratorSenderName,
     dispatchHostedInput,
     createHostedSession,
+    stopHostedSession,
     readHostedStatus,
     hostedAgentCreated,
     readHostedHistory,
@@ -670,6 +674,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
             senderName: orchestratorSenderName,
             ...(dispatchHostedInput ? { dispatch: dispatchHostedInput } : {}),
             ...(createHostedSession ? { createSession: createHostedSession } : {}),
+            ...(stopHostedSession ? { stopSession: stopHostedSession } : {}),
             listRolePacks,
             ...(readHostedStatus ? { readStatus: readHostedStatus } : {}),
             ...(hostedAgentCreated ? { agentCreated: hostedAgentCreated } : {}),
