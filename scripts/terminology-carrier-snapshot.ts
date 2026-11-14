@@ -512,6 +512,10 @@ const BASELINE_CODE: readonly string[] = [
   'stepCount',
   'stepIndex',
   'step_boundary',
+  // 收回托管会话的英文 UI 文案「the assistant has stepped back; this session is yours again.」
+  // （`chatPanel.ts` l10n，`57e276a9` 引入）：`stepped` 是动词过去式，与 loop 迭代 / 任务表
+  // 语义无关（判据层面假阳性），2026-11-15 补基线
+  'stepped',
   'steps',
   'toolIdsInStep',
   'toolStepLimit',
