@@ -16,30 +16,25 @@
  */
 import {
   getSessionDisplayName,
-  isRoundSettled,
-  isRoundSuccessful,
   type Round,
   type RoundStatus,
   type SessionMeta,
 } from '@zooique/memora';
-import { deriveInterruptReason, type InterruptReason } from '../../shared/interruptReason.js';
+import {
+  projectSessionStatus,
+  resolveListCoverage,
+  type SessionActivity,
+} from '../../shared/sessionStatus.js';
 import type {
   WorkbenchAgentIdentity,
   WorkbenchCoverage,
   WorkbenchJob,
-  WorkbenchJobStatus,
   WorkbenchSnapshot,
-  WorkbenchStopReason,
 } from '../../shared/workbenchDto.js';
 import { WORKBENCH_REBUILD_MAX_ROUNDS, type WorkbenchHistoryResult } from './workbenchHistory.js';
 
-/** 单会话运行态（工作台只需要这两问） */
-export interface WorkbenchActivity {
-  /** 正在流式生成 */
-  running: boolean;
-  /** 在等用户（待答提问 / 待确认 / 已软暂停） */
-  waiting: boolean;
-}
+/** 单会话运行态（工作台只需要这两问；与主控工具共用同一形状） */
+export type WorkbenchActivity = SessionActivity;
 
 /**
  * 快照投影的全部读口（由面板注入；本模块不持有任何实例）
@@ -114,7 +109,8 @@ export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): Workben
       // ⚠️ 用 `||` 而非 `??`：`getSessionDisplayName` 没名字时返回**空串**，
       //    `??` 会把空串当有效值，标题就变成空白行（历史标题被吞掉）。
       title: getSessionDisplayName(meta) || historyTitle || inputs.titleOf(sessionId, meta),
-      status: projectStatus(inputs, sessionId),
+      // 状态判断只此一处（shared/sessionStatus）：主控工具调的是同一函数，防两处漂移
+      status: projectSessionStatus(inputs, sessionId),
       updatedAt: meta.updatedAt,
     });
   }
@@ -135,18 +131,19 @@ export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): Workben
 /**
  * 解析清单覆盖状态
  *
- * 优先级：座位会话本身都读不到 ⇒ `unreadable`（历史无从谈起）；
- * 历史读不全 / 有会话找不到 ⇒ `partial`；否则 `complete`。
+ * 口径已外置到 `shared/sessionStatus.resolveListCoverage`：主控工具与工作台共用同一判据，
+ * 避免「工作台说读不到、工具说一条都没有」这种两套答案。
  *
  * @param inputs 读口
  * @param missingCount 找不到的会话数
  */
 function resolveCoverage(inputs: WorkbenchSnapshotInputs, missingCount: number): WorkbenchCoverage {
-  // 座位会话元数据都没了（会话被删 / 未落盘）：历史读不出来，不能说「一条都没有」
-  if (!inputs.readMeta(inputs.orchestratorId)) return 'unreadable';
-  if (inputs.history.coverage === 'unreadable') return 'unreadable';
-  if (inputs.history.coverage === 'partial' || missingCount > 0) return 'partial';
-  return 'complete';
+  return resolveListCoverage({
+    history: inputs.history,
+    // 座位会话元数据都没了（会话被删 / 未落盘）：历史读不出来，不能说「一条都没有」
+    seatExists: Boolean(inputs.readMeta(inputs.orchestratorId)),
+    missingCount,
+  });
 }
 
 /**
@@ -169,56 +166,4 @@ function buildIdentity(inputs: WorkbenchSnapshotInputs): WorkbenchAgentIdentity 
     ...(rolePackName ? { rolePackName } : {}),
     ...(displayName ? { rolePackDisplayName: displayName } : {}),
   };
-}
-
-/**
- * 单会话状态投影（优先级：等你 > 在跑 > 终态）
- *
- * 为什么「等你」优先：会话在等用户拍板时才是可行动的；此时即使运行态表还残留
- * `streaming === true`（暂停收尾的时序窗口），展示「在跑」会让用户以为它在自己推进。
- */
-function projectStatus(inputs: WorkbenchSnapshotInputs, sessionId: string): WorkbenchJobStatus {
-  const activity = inputs.peekActivity(sessionId);
-  if (activity.waiting) return { kind: 'waiting' };
-  if (activity.running) return { kind: 'running' };
-
-  const roundIds = inputs.readRoundIds(sessionId);
-  const lastRoundId = roundIds[roundIds.length - 1];
-  // 一轮都没有：已交给助手但还没开始（不冒充在跑 / 完成）
-  if (!lastRoundId) return { kind: 'queued' };
-
-  // 状态优先读索引（不读盘）；索引缺失时退回整轮读取；两者都拿不到 = 如实不可知
-  const status = inputs.readRoundStatus(lastRoundId) ?? inputs.readRound(lastRoundId)?.status;
-  if (!status) return { kind: 'unreadable' };
-
-  if (isRoundSuccessful(status)) return { kind: 'completed' };
-  if (!isRoundSettled(status)) return { kind: 'unsettled' };
-
-  // 已收场且未成功 = interrupted：原因取该轮已落地的 processEvents（读不到整轮就如实 unavailable）
-  const round = inputs.readRound(lastRoundId);
-  const derived = deriveInterruptReason(round?.processEvents ?? []);
-  return { kind: 'stopped', stop: toStopReason(derived) };
-}
-
-/**
- * 中断原因投影 → 跨进程分档
- *
- * 只搬运事实：`error` 带原始错误文本（webview 按语言拼文案），其余档不带额外字段。
- */
-function toStopReason(derived: InterruptReason): WorkbenchStopReason {
-  switch (derived.stopper) {
-    case 'user':
-      return { kind: 'user' };
-    case 'timeout':
-      return { kind: 'timeout' };
-    case 'error':
-      return {
-        kind: 'error',
-        // error 分支必有 error 事件；缺失文本时不编造（webview 只显示「异常终止」）
-        ...(derived.source?.type === 'error' ? { message: derived.source.payload.message } : {}),
-      };
-    case 'unavailable':
-      // 取不到原因就如实标取不到：不回落「用户停止」
-      return { kind: 'unavailable' };
-  }
 }

@@ -46,7 +46,13 @@ import { MemoraSettingsPanel } from '../webview/panels/settingsPanel.js';
 // 工作台面板（编辑器区只读；第三切片/第四切片：座位身份 + 在管会话清单）
 import { MemoraWorkbenchPanel } from '../webview/panels/workbenchPanel.js';
 // 工作台清单的历史重建（读既有过程事件；不落新账、不在启动时扫）
-import { rebuildWorkbenchChildren } from '../webview/helpers/workbenchHistory.js';
+import {
+  rebuildWorkbenchChildren,
+  type WorkbenchHistoryResult,
+} from '../webview/helpers/workbenchHistory.js';
+// 会话状态投影（工作台与主控工具共用同一份判断，防两处漂移）
+import { projectSessionStatus } from '../shared/sessionStatus.js';
+import type { WorkbenchJobStatus } from '../shared/workbenchDto.js';
 // 「打开工作台」命令（命令面板 + 侧栏标题栏按钮共用）
 import { registerOpenWorkbenchCommand } from './commands/openWorkbench.js';
 // 设置面板 tab 标识的类型真源（`shared/settingsTabs.ts`）：命令参数与 protocol 共用同一联合，
@@ -227,6 +233,12 @@ interface AssemblyDeps {
   dispatchHostedInput: HostedInputDispatcher;
   /** 托管建会话回调（工具 handler → 面板；创建走面板既有新建路径） */
   createHostedSession: HostedSessionCreator;
+  /** 主控清单的状态读口（与工作台共用 `shared/sessionStatus` 的同一投影） */
+  readHostedStatus: (sessionId: string) => WorkbenchJobStatus;
+  /** 主控清单的归属读口（本进程创建者账本，与工作台同一真源） */
+  hostedAgentCreated: (orchestratorId: string) => readonly string[];
+  /** 主控清单的历史重建读口（重启后补归属；读盘有 60 轮上限） */
+  readHostedHistory: (orchestratorId: string) => WorkbenchHistoryResult;
 }
 
 /**
@@ -331,6 +343,10 @@ function buildAssembleOptions(projectPath: string, deps: AssemblyDeps): Assemble
     orchestratorSenderName: deps.orchestratorSenderName,
     dispatchHostedInput: deps.dispatchHostedInput,
     createHostedSession: deps.createHostedSession,
+    // 主控清单看状态 / 归属：与工作台共用同一批读口（不另造第二套判断）
+    readHostedStatus: deps.readHostedStatus,
+    hostedAgentCreated: deps.hostedAgentCreated,
+    readHostedHistory: deps.readHostedHistory,
   };
 }
 
@@ -537,6 +553,37 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // 装配期稳定依赖：单实例路径与按会话路径共用同一份（选项唯一构建点 = buildAssembleOptions）
   const sessionModes = new SessionModeStore(context.globalState); // 会话运行模式容器（Map 不落盘）
+
+  /**
+   * 从代理会话历史重建「它开过哪些会话」
+   *
+   * 工作台打开时与主控 `list_work_sessions` 共用同一读法：只读 `create_session` 的过程事件，
+   * 单次最多扫最近 60 轮（上限在 `workbenchHistory` 里），不落新账、不在启动时扫。
+   */
+  const rebuildWorkbenchHistory = (orchestratorId: string): WorkbenchHistoryResult =>
+    rebuildWorkbenchChildren(orchestratorId, {
+      readRoundIds: (sessionId) => sessionStore.getRoundIds(sessionId),
+      readRound: (roundId) => roundStore.getById(roundId) ?? undefined,
+    });
+
+  /**
+   * 主控清单的状态读口
+   *
+   * 与工作台调用**同一个** `projectSessionStatus`：运行态交给面板的只读端口，轮状态交给
+   * 同一对存储单例。这里不复制任何判断，避免「工作台说在跑、工具说空闲」的两套答案。
+   */
+  const readHostedStatus = (sessionId: string): WorkbenchJobStatus =>
+    projectSessionStatus(
+      {
+        peekActivity: (id) => chatProvider.workbench.peekActivity(id),
+        readRoundIds: (id) => sessionStore.getRoundIds(id),
+        readRoundStatus: (roundId) =>
+          hasRoundStatusIndex(roundStore) ? roundStore.getStatus(roundId) : undefined,
+        readRound: (roundId) => roundStore.getById(roundId) ?? undefined,
+      },
+      sessionId,
+    );
+
   const assemblyDeps: AssemblyDeps = {
     providerStore,
     sessionStore,
@@ -559,6 +606,10 @@ export function activate(context: vscode.ExtensionContext): void {
     // 建会话同法：工具 handler → 面板既有新建路径（角色包校验与来源落盘都在面板内）
     createHostedSession: (calling, rolePack, title, text, sender) =>
       chatProvider.createHostedSession(calling, rolePack, title, text, sender),
+    readHostedStatus,
+    // 归属真源 = 与工作台同一个创建者账本（仅本进程；重启后由历史重建补）
+    hostedAgentCreated: (orchestratorId) => chatProvider.workbench.childrenOf(orchestratorId),
+    readHostedHistory: rebuildWorkbenchHistory,
   };
 
   // 会话 → Agent 登记表（E4 批 2：生产唯一取用面）。构造参数强制传入
@@ -690,12 +741,8 @@ export function activate(context: vscode.ExtensionContext): void {
     extensionUri: context.extensionUri,
     dataSource: {
       // 打开工作台时重建一次（重启后账本为空，靠代理会话历史把清单补回来）：
-      // 只读 create_session 的过程事件，不新增持久化、不在启动时全量扫。
-      rebuildHistory: (orchestratorId) =>
-        rebuildWorkbenchChildren(orchestratorId, {
-          readRoundIds: (sessionId) => sessionStore.getRoundIds(sessionId),
-          readRound: (roundId) => roundStore.getById(roundId) ?? undefined,
-        }),
+      // 与主控工具共用同一读法，不新增持久化、不在启动时全量扫。
+      rebuildHistory: rebuildWorkbenchHistory,
       buildInputs: (orchestratorId, history) => ({
         orchestratorId,
         // 代理名只取装配期注入的发送者名（与 RoundMessage.name 同源，不另造「助手昵称」）

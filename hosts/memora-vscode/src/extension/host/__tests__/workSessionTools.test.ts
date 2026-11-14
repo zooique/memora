@@ -29,7 +29,10 @@ import type {
   HostedInputDispatcher,
   HostedSessionCreator,
   SendToSessionResult,
+  SessionHistoryFacts,
 } from '../workSessionTools.js';
+// 状态判别联合与生产同源（清单项断言不手抄字符串）
+import type { WorkbenchJobStatus } from '../../../shared/workbenchDto.js';
 import { makeTempDir } from '../../../__tests__/helpers/tmpDir.js';
 
 // 装配链间接 import 了 tracer / searchEngines（模块级 import vscode），本测试不触真实 VS Code API：
@@ -93,14 +96,20 @@ interface Probe {
 /**
  * 主控工具依赖（可只覆盖其中一项，其余给最小可用替身）
  *
- * 装配层要求「四件齐全」才注册 send / create：任一缺失都按依赖不全降级，
- * 所以用例必须显式给出整体依赖盒，而不是逐个塞第二个参数。
+ * 装配层要求「调用方 id + 发送者名」才注册 list：缺项时 list 仍在，但状态 / 归属
+ * 只能是 unreadable / unknown（宁可说不知道，也不冒充空闲）。
  */
 interface HostedDeps {
   /** 派发回调（缺省 = 直接受理） */
   dispatch?: HostedInputDispatcher;
   /** 建会话回调（缺省 = 返回固定 sid/title） */
   createSession?: HostedSessionCreator;
+  /** 状态读口（缺省 = 一律 completed，便于断言清单形态） */
+  readStatus?: (sessionId: string) => WorkbenchJobStatus;
+  /** 创建者账本（缺省 = 空账本） */
+  agentCreated?: (orchestratorId: string) => readonly string[];
+  /** 历史重建（缺省 = 读全了且没有创建记录） */
+  readHistory?: (orchestratorId: string) => SessionHistoryFacts;
 }
 
 /**
@@ -163,6 +172,8 @@ async function assembleProbe(orchestratorSession?: boolean, hosted?: HostedDeps)
     displayName: '目标探针会话',
     updatedAt: SESSION_UPDATED_AT,
     messageCount: 0,
+    // 托管来源：与代理开的子会话同形（归属判定不能只看 origin，见 projectCreatedBy）
+    origin: 'hosted',
   });
   const storage = createHostMemoryStorage(projectPath);
   const agent = await assembleAgent({
@@ -184,7 +195,7 @@ async function assembleProbe(orchestratorSession?: boolean, hosted?: HostedDeps)
       MEMORA_API_KEY: 'work-session-probe',
     } as NodeJS.ProcessEnv,
     ...(orchestratorSession === undefined ? {} : { orchestratorSession }),
-    // 四件套同批注入：只传其中一部分时装配层按「依赖不全」不注册 send / create
+    // 依赖盒：调用方 id / 发送者名 + 状态归属读口；派发 / 建会话缺项时装配层降级
     ...(hosted === undefined
       ? {}
       : {
@@ -196,6 +207,17 @@ async function assembleProbe(orchestratorSession?: boolean, hosted?: HostedDeps)
           createHostedSession:
             hosted.createSession ??
             (async (_calling, _rolePack, title) => ({ ok: true, sid: '2026-11-14-new', title })),
+          readHostedStatus:
+            hosted.readStatus ?? ((): WorkbenchJobStatus => ({ kind: 'completed' })),
+          hostedAgentCreated: hosted.agentCreated ?? ((): readonly string[] => []),
+          readHostedHistory:
+            hosted.readHistory ??
+            ((): SessionHistoryFacts => ({
+              coverage: 'complete',
+              children: [],
+              totalRounds: 0,
+              scannedRounds: 0,
+            })),
         }),
   });
   return { agent, storage };
@@ -214,25 +236,90 @@ async function disposeProbe(probe: Probe): Promise<void> {
 
 describe('托管 v0 · 切片 0：主控会话工具接线', () => {
   it('主控会话能调到 list_work_sessions，并拿到自身元数据', async () => {
-    const probe = await assembleProbe(true);
+    // 传空依赖盒 = 装配层注入完整读口（状态 / 归属），与生产同形
+    const probe = await assembleProbe(true, {});
     try {
       const tools = probe.agent.tools;
       expect(tools).not.toBeNull();
       // ① 工具面真的多了一个（模型可见）
       expect(tools!.list.map((t) => t.name)).toContain(LIST_WORK_SESSIONS_TOOL_NAME);
 
-      // ② 真的能跑：返回 JSON 信封，且包含播种的自身元数据
+      // ② 真的能跑：返回 JSON 信封，且包含播种的自身元数据（状态 + 归属）
       const raw = await tools!.execute(LIST_WORK_SESSIONS_TOOL_NAME, '{}');
       const parsed = JSON.parse(raw) as {
         ok: boolean;
-        sessions: { sid: string; title: string; updatedAt: string }[];
+        coverage: string;
+        scan: { totalRounds: number; scannedRounds: number; truncated: boolean };
+        sessions: {
+          sid: string;
+          title: string;
+          updatedAt: string;
+          status: WorkbenchJobStatus;
+          createdBy: string;
+        }[];
       };
       expect(parsed.ok).toBe(true);
+      // 历史读全、调用方在清单里 ⇒ 覆盖状态不能含糊
+      expect(parsed.coverage).toBe('complete');
+      expect(parsed.scan).toEqual({ totalRounds: 0, scannedRounds: 0, truncated: false });
       expect(parsed.sessions).toContainEqual({
         sid: SESSION_ID,
         title: SESSION_TITLE,
         updatedAt: SESSION_UPDATED_AT,
+        // 缺省读口 = completed（用例只验接线；状态推导由 shared/sessionStatus 单测覆盖）
+        status: { kind: 'completed' },
+        // 普通会话（无 hosted 来源标记）= 用户自己建的
+        createdBy: 'user',
       });
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('状态读不到时如实标 unreadable，绝不当成空闲（不是 queued / completed）', async () => {
+    // 最危险的一条：读不到若表现成「没在跑」，代理会重复派活、重复花钱。
+    const probe = await assembleProbe(true, {
+      readStatus: () => ({ kind: 'unreadable' }),
+    });
+    try {
+      const raw = await probe.agent.tools!.execute(LIST_WORK_SESSIONS_TOOL_NAME, '{}');
+      const parsed = JSON.parse(raw) as {
+        sessions: { sid: string; status: WorkbenchJobStatus }[];
+      };
+      const own = parsed.sessions.find((session) => session.sid === SESSION_ID);
+      expect(own?.status).toEqual({ kind: 'unreadable' });
+      // 明确钉住「不能冒充」的两个空闲语义
+      expect(own?.status.kind).not.toBe('queued');
+      expect(own?.status.kind).not.toBe('completed');
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('历史只读了一部分时，覆盖状态如实降级，来源不明标 unknown', async () => {
+    const probe = await assembleProbe(true, {
+      // 账本为空（模拟重启后）+ 历史截断：托管来源的目标会话无法确认是谁开的
+      agentCreated: () => [],
+      readHistory: () => ({
+        coverage: 'partial',
+        children: [],
+        totalRounds: 120,
+        scannedRounds: 60,
+      }),
+    });
+    try {
+      const raw = await probe.agent.tools!.execute(LIST_WORK_SESSIONS_TOOL_NAME, '{}');
+      const parsed = JSON.parse(raw) as {
+        coverage: string;
+        scan: { totalRounds: number; scannedRounds: number; truncated: boolean };
+        sessions: { sid: string; createdBy: string }[];
+      };
+      expect(parsed.coverage).toBe('partial');
+      expect(parsed.scan).toEqual({ totalRounds: 120, scannedRounds: 60, truncated: true });
+      // 托管来源 + 账本没记 + 历史没扫到 ⇒ 不知道，不猜「用户」也不猜「代理」
+      expect(parsed.sessions.find((s) => s.sid === TARGET_SESSION_ID)?.createdBy).toBe('unknown');
+      // 用户来源（无 hosted 标记）不依赖历史，仍可确定
+      expect(parsed.sessions.find((s) => s.sid === SESSION_ID)?.createdBy).toBe('user');
     } finally {
       await disposeProbe(probe);
     }

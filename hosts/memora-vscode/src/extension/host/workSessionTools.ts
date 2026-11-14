@@ -18,6 +18,12 @@
  */
 import type { Agent, ISessionStore, SessionMeta, ToolDefinition } from '@zooique/memora';
 import { getSessionDisplayName } from '@zooique/memora';
+import {
+  projectCreatedBy,
+  resolveListCoverage,
+  type AgentCreatedBy,
+} from '../../shared/sessionStatus.js';
+import type { WorkbenchJobStatus } from '../../shared/workbenchDto.js';
 
 /**
  * 会话清单工具名（装配点、单测、后续切片共用的唯一字面量）
@@ -95,12 +101,38 @@ export interface WorkSessionToolDeps {
   callingSessionId: string;
   /** 装配期确定的发送者名（不是工具内字面量） */
   senderName: string;
-  /** 派发到目标会话的实现（由宿主面板提供） */
-  dispatch: HostedInputDispatcher;
-  /** 新建会话并投递首轮（由宿主面板提供；创建走既有新建路径） */
-  createSession: HostedSessionCreator;
+  /** 派发到目标会话的实现（由宿主面板提供；缺省 ⇒ 不注册 send 工具） */
+  dispatch?: HostedInputDispatcher;
+  /** 新建会话并投递首轮（由宿主面板提供；缺省 ⇒ 不注册 create 工具） */
+  createSession?: HostedSessionCreator;
   /** 角色包只读清单（装配期从内核 `listMeta()` 单点取，带来源标记） */
   listRolePacks: () => RolePackBrief[];
+  /**
+   * 单会话状态读口（**必须**与工作台共用 `shared/sessionStatus.projectSessionStatus`）
+   *
+   * 缺省时清单项一律标 `unreadable`——宁可说「不知道」，也不让代理把没读到当成空闲。
+   */
+  readStatus?: (sessionId: string) => WorkbenchJobStatus;
+  /** 本进程创建者账本（与工作台同一真源 `HostedSessionNotifier`；重启后为空） */
+  agentCreated?: (orchestratorId: string) => readonly string[];
+  /** 调用方历史重建（重启后账本为空时补来源归属；读盘有上限，结果自带覆盖状态） */
+  readHistory?: (orchestratorId: string) => SessionHistoryFacts;
+}
+
+/**
+ * 调用方历史重建的消费形状（`WorkbenchHistoryResult` 结构上直接满足）
+ *
+ * 只取工具要用的四件事：覆盖状态、创建记录、总轮数、实扫轮数。
+ */
+export interface SessionHistoryFacts {
+  /** complete / partial / unreadable（`partial` = 超上限或有记录读不到） */
+  coverage: 'complete' | 'partial' | 'unreadable';
+  /** 历史里的 `create_session` 记录（sid + 创建时标题） */
+  children: readonly { sessionId: string; title?: string }[];
+  /** 代理会话总轮数 */
+  totalRounds: number;
+  /** 本次实际扫描的轮数（< total 即「上限截断」） */
+  scannedRounds: number;
 }
 
 /** 角色包来源层（与角色页 / 设置页同一口径：内置 < 用户 < 项目） */
@@ -157,10 +189,10 @@ export type HostedSessionCreator = (
 ) => Promise<CreateSessionResult>;
 
 /**
- * 单个会话的对外摘要（本片最小字段集）
+ * 单个会话的对外摘要（代理判断「该复用还是该新开」的最小字段集）
  *
- * 只给「认会话」所需的三个事实：标识、标题、最后更新时间。
- * 进度 / 待批 / 父子关系等字段留给后续切片（需要宿主运行态，不在本片射程）。
+ * 四个事实：标识、标题、最后更新时间、**当前状态**，外加**归属**（谁开的）。
+ * 状态与归属全部来自既有事实的读侧投影，不新增持久化、不建关系表。
  */
 export interface WorkSessionBrief {
   /** 会话标识（YYYY-MM-DD-sessionName，与 sessionStore 同口径） */
@@ -169,6 +201,18 @@ export interface WorkSessionBrief {
   title: string;
   /** 最后更新时间（ISO 8601，排序依据；store 已按此降序） */
   updatedAt: string;
+  /**
+   * 状态（与工作台同一投影：在跑 / 等你 / 完成 / 被中止 + 边缘事实）
+   *
+   * ⚠️ `unreadable` = 读不到，**不是**空闲；调用方不得据此判断「可以再开一个」。
+   */
+  status: WorkbenchJobStatus;
+  /**
+   * 归属：`agent` = 你开的 / `user` = 用户自己建的 / `unknown` = 无法确认
+   *
+   * ⚠️ `unknown` 不等于「不是你的」；只表示现有事实不足以判定。
+   */
+  createdBy: AgentCreatedBy;
 }
 
 /**
@@ -181,8 +225,12 @@ export interface WorkSessionBrief {
 const LIST_WORK_SESSIONS_DEFINITION: ToolDefinition = {
   name: LIST_WORK_SESSIONS_TOOL_NAME,
   description:
-    '列出当前工作区已知的会话（会话标识、标题、最后更新时间），用于判断是否已有相关会话、避免重复新建。' +
-    '只返回元数据，不含对话正文。',
+    '列出当前工作区已知的会话（sid、标题、最后更新时间、状态、归属），用于判断是否已有相关会话、避免重复新建。' +
+    '不含对话正文。status.kind：running 在跑 / waiting 等你（用户要先处理）/ completed 已完成 / ' +
+    'stopped 被中止（stop 给原因）/ unsettled 上次未正常结束 / queued 尚未开始 / unreadable 状态读不到。' +
+    'createdBy：agent = 你开的 / user = 用户自己建的 / unknown = 无法确认。' +
+    '⚠️ unreadable、unknown、或顶层 coverage 不为 complete 都表示「不确定」，' +
+    '不得当成「这条活没在跑、可以再开一个」；不确定时先向用户确认，不要盲目新建或派活。',
   parameters: {
     type: 'object',
     // 本片无参数：切片 1 接入扫盘后再按需扩展（不预留空壳参数）
@@ -282,13 +330,21 @@ const LIST_ROLE_PACKS_DEFINITION: ToolDefinition = {
  * 两者皆空时退回会话标识——列表里不能出现「无名行」。
  *
  * @param meta 会话元数据（store 真源）
+ * @param status 状态投影（缺读口时由调用方传 `unreadable`，不猜空闲）
+ * @param createdBy 归属三档（缺事实时 `unknown`）
  * @returns 对外摘要
  */
-export function toWorkSessionBrief(meta: SessionMeta): WorkSessionBrief {
+export function toWorkSessionBrief(
+  meta: SessionMeta,
+  status: WorkbenchJobStatus,
+  createdBy: AgentCreatedBy,
+): WorkSessionBrief {
   return {
     sid: meta.sessionId,
     title: getSessionDisplayName(meta) || meta.sessionId,
     updatedAt: meta.updatedAt,
+    status,
+    createdBy,
   };
 }
 
@@ -375,93 +431,142 @@ export function registerWorkSessionTools(
   if (!tools) return false;
   tools.registerTool(LIST_WORK_SESSIONS_DEFINITION, async () => {
     // 结果形态对齐设计文档的 `{ ok, sessions }` 信封；本片不含 workspaceRoot（未到需要时）
-    const sessions = sessionStore.listSessionMetas().map(toWorkSessionBrief);
-    return JSON.stringify({ ok: true, sessions }, null, 2);
+    const metas = sessionStore.listSessionMetas();
+    const callingSessionId = deps?.callingSessionId;
+    // 历史重建每次调用做一次（读盘有上限，结果自带覆盖状态）；没有读口 ⇒ 如实 unreadable
+    const history =
+      callingSessionId && deps?.readHistory ? deps.readHistory(callingSessionId) : undefined;
+    // 创建者账本仅本进程（重启后为空），与历史并集由 `projectCreatedBy` 判归属
+    const ledger =
+      callingSessionId && deps?.agentCreated ? deps.agentCreated(callingSessionId) : [];
+    const sessions = metas.map((meta) =>
+      toWorkSessionBrief(
+        meta,
+        // 缺读口 = 不知道，绝不写成 queued / completed（那会让代理以为可以再开一个）
+        deps?.readStatus?.(meta.sessionId) ?? { kind: 'unreadable' },
+        projectCreatedBy(meta, meta.sessionId, {
+          ledger,
+          history: history ?? { coverage: 'unreadable', children: [] },
+        }),
+      ),
+    );
+    const coverage = resolveListCoverage({
+      history: history ?? { coverage: 'unreadable' },
+      // 调用方自己都不在清单里 ⇒ 清单不可信（会话被删 / 存储加载失败），不能说「一条都没有」
+      seatExists: callingSessionId
+        ? metas.some((meta) => meta.sessionId === callingSessionId)
+        : false,
+    });
+    return JSON.stringify(
+      {
+        ok: true,
+        coverage,
+        // 扫描口径：scannedRounds < totalRounds 即「上限截断」，来源归属可能因此为 unknown
+        ...(history
+          ? {
+              scan: {
+                totalRounds: history.totalRounds,
+                scannedRounds: history.scannedRounds,
+                truncated: history.scannedRounds < history.totalRounds,
+              },
+            }
+          : {}),
+        sessions,
+      },
+      null,
+      2,
+    );
   });
   if (deps) {
-    tools.registerTool(SEND_TO_SESSION_DEFINITION, async (args) => {
-      const parsed = parseSendArgs(args);
-      if (!parsed) {
-        return JSON.stringify(
-          {
-            ok: false,
-            code: 'E_ARGS',
-            message: '参数必须且只能是 { sid, text }，两者均为非空字符串。',
-          },
-          null,
-          2,
-        );
-      }
-      // 存在性用会话清单判（含老数据占位补全），不用 getSessionMeta——后者对未写 meta 的旧会话会误判缺失
-      if (!sessionStore.listSessionMetas().some((meta) => meta.sessionId === parsed.sid)) {
-        return JSON.stringify(
-          { ok: false, code: 'E_NOT_FOUND', message: `未知会话：${parsed.sid}` },
-          null,
-          2,
-        );
-      }
-      try {
-        // E_DENIED / E_BUSY 由派发回调按真实运行态与调用方身份判；工具层不自造判据
-        const result = await deps.dispatch(
-          deps.callingSessionId,
-          parsed.sid,
-          parsed.text,
-          deps.senderName,
-        );
-        return JSON.stringify(result, null, 2);
-      } catch (err) {
-        // 业务契约：不 throw（throw 会让模型只看到工具失败，读不到可判读的错误码）。
-        // 码 = E_HOST：装配 / 面板等**宿主侧**异常，与「sid 不存在」是两回事，
-        // 不许冒名 E_NOT_FOUND——那会让模型误以为换一个 sid 就能成功。
-        return JSON.stringify(
-          {
-            ok: false,
-            code: 'E_HOST',
-            message: `宿主派发失败：${err instanceof Error ? err.message : String(err)}`,
-          },
-          null,
-          2,
-        );
-      }
-    });
-    tools.registerTool(CREATE_SESSION_DEFINITION, async (args) => {
-      const parsed = parseCreateArgs(args);
-      if (!parsed) {
-        return JSON.stringify(
-          {
-            ok: false,
-            code: 'E_ARGS',
-            message: '参数只能是 { rolePack?, title, text }；title / text 必须是非空字符串。',
-          },
-          null,
-          2,
-        );
-      }
-      try {
-        // E_DENIED / E_ROLE_PACK 由创建回调按调用方身份与角色包编目判；工具层不自造判据。
-        // 角色包缺失**绝不**折算成 E_NOT_FOUND：那是「会话不存在」的语义，混用会让模型换 sid。
-        const result = await deps.createSession(
-          deps.callingSessionId,
-          parsed.rolePack,
-          parsed.title,
-          parsed.text,
-          deps.senderName,
-        );
-        // 文本形态只有一个产生点（工作台重建依赖它的前缀，见 serializeCreateSessionResult 的互锁注释）
-        return serializeCreateSessionResult(result);
-      } catch (err) {
-        // 业务契约：不 throw；宿主侧异常单独一码，与角色包 / 会话语义分开
-        return JSON.stringify(
-          {
-            ok: false,
-            code: 'E_HOST',
-            message: `宿主建会话失败：${err instanceof Error ? err.message : String(err)}`,
-          },
-          null,
-          2,
-        );
-      }
-    });
+    if (deps.dispatch) {
+      const dispatch = deps.dispatch;
+      tools.registerTool(SEND_TO_SESSION_DEFINITION, async (args) => {
+        const parsed = parseSendArgs(args);
+        if (!parsed) {
+          return JSON.stringify(
+            {
+              ok: false,
+              code: 'E_ARGS',
+              message: '参数必须且只能是 { sid, text }，两者均为非空字符串。',
+            },
+            null,
+            2,
+          );
+        }
+        // 存在性用会话清单判（含老数据占位补全），不用 getSessionMeta——后者对未写 meta 的旧会话会误判缺失
+        if (!sessionStore.listSessionMetas().some((meta) => meta.sessionId === parsed.sid)) {
+          return JSON.stringify(
+            { ok: false, code: 'E_NOT_FOUND', message: `未知会话：${parsed.sid}` },
+            null,
+            2,
+          );
+        }
+        try {
+          // E_DENIED / E_BUSY 由派发回调按真实运行态与调用方身份判；工具层不自造判据
+          const result = await dispatch(
+            deps.callingSessionId,
+            parsed.sid,
+            parsed.text,
+            deps.senderName,
+          );
+          return JSON.stringify(result, null, 2);
+        } catch (err) {
+          // 业务契约：不 throw（throw 会让模型只看到工具失败，读不到可判读的错误码）。
+          // 码 = E_HOST：装配 / 面板等**宿主侧**异常，与「sid 不存在」是两回事，
+          // 不许冒名 E_NOT_FOUND——那会让模型误以为换一个 sid 就能成功。
+          return JSON.stringify(
+            {
+              ok: false,
+              code: 'E_HOST',
+              message: `宿主派发失败：${err instanceof Error ? err.message : String(err)}`,
+            },
+            null,
+            2,
+          );
+        }
+      });
+    }
+    if (deps.createSession) {
+      const createSession = deps.createSession;
+      tools.registerTool(CREATE_SESSION_DEFINITION, async (args) => {
+        const parsed = parseCreateArgs(args);
+        if (!parsed) {
+          return JSON.stringify(
+            {
+              ok: false,
+              code: 'E_ARGS',
+              message: '参数只能是 { rolePack?, title, text }；title / text 必须是非空字符串。',
+            },
+            null,
+            2,
+          );
+        }
+        try {
+          // E_DENIED / E_ROLE_PACK 由创建回调按调用方身份与角色包编目判；工具层不自造判据。
+          // 角色包缺失**绝不**折算成 E_NOT_FOUND：那是「会话不存在」的语义，混用会让模型换 sid。
+          const result = await createSession(
+            deps.callingSessionId,
+            parsed.rolePack,
+            parsed.title,
+            parsed.text,
+            deps.senderName,
+          );
+          // 文本形态只有一个产生点（工作台重建依赖它的前缀，见 serializeCreateSessionResult 的互锁注释）
+          return serializeCreateSessionResult(result);
+        } catch (err) {
+          // 业务契约：不 throw；宿主侧异常单独一码，与角色包 / 会话语义分开
+          return JSON.stringify(
+            {
+              ok: false,
+              code: 'E_HOST',
+              message: `宿主建会话失败：${err instanceof Error ? err.message : String(err)}`,
+            },
+            null,
+            2,
+          );
+        }
+      });
+    }
     tools.registerTool(LIST_ROLE_PACKS_DEFINITION, async () => {
       // 只读透传装配期注入的清单（内核 listMeta 单点），不在这里二次过滤 / 加缓存
       return JSON.stringify({ ok: true, packs: deps.listRolePacks() }, null, 2);

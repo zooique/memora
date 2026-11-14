@@ -52,7 +52,11 @@ import {
   type HostedInputDispatcher,
   type HostedSessionCreator,
   type RolePackBrief,
+  type SessionHistoryFacts,
+  type WorkSessionToolDeps,
 } from './workSessionTools.js';
+// 状态判别联合与工作台同源（读口返回它，装配层只透传）
+import type { WorkbenchJobStatus } from '../../shared/workbenchDto.js';
 // 角色包来源层单点判定（与设置页「内置包只读」同一判据）
 import { rolePackSourceOf } from './rolePackCatalog.js';
 
@@ -400,6 +404,12 @@ export interface AssembleOptions {
    * 走宿主既有新建路径（createSession）并投递首轮；角色包校验与来源落盘都在面板内完成。
    */
   createHostedSession?: HostedSessionCreator;
+  /** 单会话状态读口（与工作台共用同一投影；缺省 ⇒ list 项标 unreadable） */
+  readHostedStatus?: (sessionId: string) => WorkbenchJobStatus;
+  /** 本进程创建者账本读口（与工作台同一真源；缺省 ⇒ 归属 unknown） */
+  hostedAgentCreated?: (orchestratorId: string) => readonly string[];
+  /** 调用方历史重建（重启后账本为空时补归属；缺省 ⇒ 覆盖状态 unreadable） */
+  readHostedHistory?: (orchestratorId: string) => SessionHistoryFacts;
   /** 环境变量（默认 process.env，便于测试注入） */
   env?: NodeJS.ProcessEnv;
 }
@@ -458,6 +468,9 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     orchestratorSenderName,
     dispatchHostedInput,
     createHostedSession,
+    readHostedStatus,
+    hostedAgentCreated,
+    readHostedHistory,
   } = options;
 
   // 日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核；
@@ -647,18 +660,23 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
         };
       });
     };
-    const toolDeps =
-      orchestratorSessionId && orchestratorSenderName && dispatchHostedInput && createHostedSession
+    // 依赖面：调用方 id / 发送者名是「注册清单工具」的最低要求；派发 / 建会话只在回调
+    // 到位时注册（宁可不注册，也不注册永远失败的空壳）。状态 / 归属读口独立于这两者，
+    // 缺省时 list 项如实标 unreadable / unknown，不冒充空闲。
+    const toolDeps: WorkSessionToolDeps | undefined =
+      orchestratorSessionId && orchestratorSenderName
         ? {
             callingSessionId: orchestratorSessionId,
             senderName: orchestratorSenderName,
-            dispatch: dispatchHostedInput,
-            createSession: createHostedSession,
+            ...(dispatchHostedInput ? { dispatch: dispatchHostedInput } : {}),
+            ...(createHostedSession ? { createSession: createHostedSession } : {}),
             listRolePacks,
+            ...(readHostedStatus ? { readStatus: readHostedStatus } : {}),
+            ...(hostedAgentCreated ? { agentCreated: hostedAgentCreated } : {}),
+            ...(readHostedHistory ? { readHistory: readHostedHistory } : {}),
           }
         : undefined;
-    if (!toolDeps) {
-      // 依赖不全时 list 工具仍可用；派发 / 建会话宁可不注册，也不注册永远失败的空壳
+    if (toolDeps && (!dispatchHostedInput || !createHostedSession)) {
       logger?.warn(
         '[work-session] 主控派发或建会话依赖缺失，send_to_session / create_session 未注册',
       );
