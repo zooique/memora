@@ -26,6 +26,8 @@ import {
 import type { WorkbenchJobStatus } from '../../shared/workbenchDto.js';
 // 角色包名的读侧归一化与「会话记录的角色包」同一判据（不在这里另写 trim / 空串判断）
 import { normalizeRolePackName } from './rolePackName.js';
+// 开活范围声明（判据 4）：规范化与重叠判定的单点实现（纯函数，无锁）
+import { findScopeOverlap, normalizeScopePaths } from './sessionScope.js';
 
 /**
  * 会话清单工具名（装配点、单测、后续切片共用的唯一字面量）
@@ -130,18 +132,28 @@ export interface WorkSessionToolDeps {
   agentCreated?: (orchestratorId: string) => readonly string[];
   /** 调用方历史重建（重启后账本为空时补来源归属；读盘有上限，结果自带覆盖状态） */
   readHistory?: (orchestratorId: string) => SessionHistoryFacts;
+  /**
+   * 工作区根绝对路径（把 `paths` 里的绝对路径截成相对；缺省时只按原样规范化）
+   *
+   * 只用于比较，不写盘、不建索引。
+   */
+  workspaceRoot?: string;
 }
 
 /**
  * 调用方历史重建的消费形状（`WorkbenchHistoryResult` 结构上直接满足）
  *
- * 只取工具要用的四件事：覆盖状态、创建记录、总轮数、实扫轮数。
+ * 只取工具要用的五件事：覆盖状态、创建记录、总轮数、实扫轮数。
  */
 export interface SessionHistoryFacts {
   /** complete / partial / unreadable（`partial` = 超上限或有记录读不到） */
   coverage: 'complete' | 'partial' | 'unreadable';
-  /** 历史里的 `create_session` 记录（sid + 创建时标题） */
-  children: readonly { sessionId: string; title?: string }[];
+  /**
+   * 历史里的 `create_session` 记录（sid + 创建时标题 + 声明范围）
+   *
+   * `paths` 缺省 = 该次创建发生在范围声明上线之前（老记录），不参与重叠判定。
+   */
+  children: readonly { sessionId: string; title?: string; paths?: readonly string[] }[];
   /** 代理会话总轮数 */
   totalRounds: number;
   /** 本次实际扫描的轮数（< total 即「上限截断」） */
@@ -172,7 +184,8 @@ export interface RolePackBrief {
  * 建会话结果（业务失败一律 `{ ok:false }`，不 throw）
  *
  * 码集按产生位置：
- *   - 工具层：`E_ARGS`（未知键 / 缺键 / 空白串）；
+ *   - 工具层：`E_ARGS`（未知键 / 缺键 / 空白串 / paths 非法）；
+ *   - 工具层（范围门禁）：`E_SCOPE_CONFLICT` 声明范围与在跑的活有交集（专门码，不复用其它码）；
  *   - 面板业务判定：`E_DENIED` 调用方非托管 / `E_ROLE_PACK` 角色包不存在或编目不可用；
  *   - 宿主兜底：`E_HOST`（拿锁失败 / 装配失败等），**不得**冒名 `E_NOT_FOUND`。
  */
@@ -182,7 +195,30 @@ export type CreateSessionResult =
       ok: false;
       code: 'E_DENIED' | 'E_ROLE_PACK' | 'E_HOST';
       message: string;
+    }
+  | {
+      ok: false;
+      code: 'E_SCOPE_CONFLICT';
+      message: string;
+      /** 撞上了哪些活、各撞在哪（按发现顺序；同一会话只报第一处交集） */
+      conflicts: readonly ScopeConflict[];
     };
+
+/**
+ * 一次范围冲突（回给代理的「撞上哪条活、撞在哪」）
+ *
+ * 只放可执行信息，不放宿主的内部判断：代理据此决定「等它收场」还是「缩小 paths」。
+ */
+export interface ScopeConflict {
+  /** 占着这条范围的在跑活（列表 / 历史里的 sid） */
+  sid: string;
+  /** 该活的标题（取不到就省略，不编一个） */
+  title?: string;
+  /** 对方声明的路径（规范化后；整仓显示为 `.`） */
+  declared: string;
+  /** 本次想动的路径（规范化后；整仓显示为 `.`） */
+  requested: string;
+}
 
 /**
  * 建会话回调（装配期注入，工具 handler 不持有面板实例）
@@ -350,14 +386,18 @@ const STOP_WORK_SESSION_DEFINITION: ToolDefinition = {
  *   真正落盘发生在新建会话自己的内核流程里，不能按 `'opaque'` 与一切写互斥；
  * - `confirmPolicy: 'audit'`：与 list / send 同档（免弹窗但留审计）。
  *
- * 参数封闭：rolePack / title / text；`rolePack` 可省（走宿主既有解析链），
- * 未知键在 handler 判 `E_ARGS`（schema 不支持 additionalProperties）。
+ * 参数封闭：rolePack / title / text / paths；`rolePack` 可省（走宿主既有解析链），
+ * `paths` **必填**（开活前必须声明打算动哪些路径），未知键在 handler 判 `E_ARGS`
+ * （schema 不支持 additionalProperties）。
  */
 const CREATE_SESSION_DEFINITION: ToolDefinition = {
   name: CREATE_SESSION_TOOL_NAME,
   description:
     '创建一个新会话，并让它开始处理第一轮任务。rolePack 可选（可先用 list_role_packs 查名字；' +
     '省略则按用户默认角色解析），title 是给用户看的会话标题，text 是第一轮输入。' +
+    'paths **必填**：声明这条活打算动的文件或目录（相对工作区根；传 ["."] 表示整个工作区，' +
+    '等于自愿独占）。与当前在跑的活的声明范围有交集时返回 E_SCOPE_CONFLICT，' +
+    '并告诉你撞上哪条活、撞在哪，你可决定等它收场或缩小 paths。' +
     '返回新会话的 sid 与 title；角色包不存在或不可用时返回 E_ROLE_PACK。',
   parameters: {
     type: 'object',
@@ -365,8 +405,16 @@ const CREATE_SESSION_DEFINITION: ToolDefinition = {
       rolePack: { type: 'string', description: '角色包名（list_role_packs 返回的 name）' },
       title: { type: 'string', description: '会话标题（展示给用户，不是会话标识）' },
       text: { type: 'string', description: '要交给新会话处理的第一轮输入' },
+      paths: {
+        type: 'array',
+        // 内核 ToolDefinition 的 items 形参要求带 properties / required（历史形态），照填空壳
+        items: { type: 'string', properties: {}, required: [] },
+        description:
+          '这条活打算动的文件或目录（相对工作区根，如 ["src/agent", "docs/a.md"]）；' +
+          '传 ["."] 表示整个工作区（自愿独占）。必填，不能为空。',
+      },
     },
-    required: ['title', 'text'],
+    required: ['title', 'text', 'paths'],
   },
   readonly: false,
   diskWrite: 'none',
@@ -460,18 +508,37 @@ function parseStopArgs(args: Record<string, unknown>): { sid: string } | undefin
  */
 function parseCreateArgs(
   args: Record<string, unknown>,
-): { rolePack?: string; title: string; text: string } | undefined {
+): { rolePack?: string; title: string; text: string; paths: string[] } | undefined {
   const keys = Object.keys(args);
-  // 键集只允许这三键；多一个未知键就拒（不忽略、不透传）
-  const allowed = new Set(['rolePack', 'title', 'text']);
+  // 键集只允许这四键；多一个未知键就拒（不忽略、不透传）
+  const allowed = new Set(['rolePack', 'title', 'text', 'paths']);
   if (keys.some((key) => !allowed.has(key))) return undefined;
-  const { rolePack, title, text } = args;
+  const { rolePack, title, text, paths } = args;
   if (typeof title !== 'string' || typeof text !== 'string') return undefined;
   if (title.trim() === '' || text.trim() === '') return undefined;
   if (rolePack !== undefined) {
     if (typeof rolePack !== 'string' || rolePack.trim() === '') return undefined;
   }
-  return rolePack === undefined ? { title, text } : { rolePack, title, text };
+  // paths 必填：声明范围是开活的前置条件，不许省（省了就无法判重叠）
+  if (!Array.isArray(paths) || paths.length === 0) return undefined;
+  if (paths.some((item) => typeof item !== 'string' || item.trim() === '')) return undefined;
+  const normalizedPaths = paths as string[];
+  return rolePack === undefined
+    ? { title, text, paths: normalizedPaths }
+    : { rolePack, title, text, paths: normalizedPaths };
+}
+
+/**
+ * 这条活是否「占着声明的写面」（判据 4 的重叠对象）
+ *
+ * - 占着：running（正在跑）/ waiting（等用户拍板，随时继续）/ queued（已派发、还没开始跑）
+ *   / unreadable（读不到——**不得**当成空闲，否则会在可能正写的时候放行第二条活）；
+ * - 不占：completed / stopped（已收场）/ unsettled（崩溃未打捞：进程已死，不会再写）。
+ *
+ * @param kind 状态投影的判别式
+ */
+function occupiesScope(kind: WorkbenchJobStatus['kind']): boolean {
+  return kind === 'running' || kind === 'waiting' || kind === 'queued' || kind === 'unreadable';
 }
 
 /**
@@ -517,6 +584,34 @@ export function registerWorkSessionTools(
   const tools = agent.tools;
   // 未初始化时 getter 返回 null：本片不抛错（装配层继续跑，调用方记一条警告即可）
   if (!tools) return false;
+  /**
+   * 本进程已声明的开活范围（sid → 规范化路径 + 标题）
+   *
+   * 为什么还要内存一份：同一轮里刚开的活，它的 `tool_start` 可能还没落盘，只读历史会漏；
+   * 重启后由历史重建补齐（同一份 60 轮上限）。**不落盘、不领锁、不管生命周期**。
+   */
+  const declaredScopes = new Map<string, { paths: readonly string[]; title?: string }>();
+  /**
+   * 当前还在占写面的活（内存声明 ∪ 历史声明）
+   *
+   * 历史只取带 `paths` 的创建记录（范围声明上线前的旧记录不参与，不猜）。
+   */
+  const collectActiveScopes = (): { sid: string; title?: string; paths: readonly string[] }[] => {
+    const merged = new Map<string, { sid: string; title?: string; paths: readonly string[] }>();
+    for (const [sid, entry] of declaredScopes) merged.set(sid, { sid, ...entry });
+    const history = deps?.callingSessionId ? deps.readHistory?.(deps.callingSessionId) : undefined;
+    for (const child of history?.children ?? []) {
+      if (!child.paths || child.paths.length === 0) continue;
+      if (merged.has(child.sessionId)) continue;
+      merged.set(child.sessionId, {
+        sid: child.sessionId,
+        ...(child.title ? { title: child.title } : {}),
+        // 历史里是**原始**入参：比较前必须与本进程同一套规范化（含工作区根截断）
+        paths: normalizeScopePaths(child.paths, deps?.workspaceRoot),
+      });
+    }
+    return [...merged.values()];
+  };
   /**
    * 读「这条会话是不是调用方开的」所需的既有事实
    *
@@ -644,7 +739,43 @@ export function registerWorkSessionTools(
             {
               ok: false,
               code: 'E_ARGS',
-              message: '参数只能是 { rolePack?, title, text }；title / text 必须是非空字符串。',
+              message:
+                '参数只能是 { rolePack?, title, text, paths }；title / text 必须是非空字符串，' +
+                'paths 必须是非空字符串数组（传 ["."] 表示整个工作区）。',
+            },
+            null,
+            2,
+          );
+        }
+        // ① 范围门禁（判据 4）：规范化本次声明，与当前占写面的活逐条比交集
+        const requested = normalizeScopePaths(parsed.paths, deps.workspaceRoot);
+        const conflicts: ScopeConflict[] = [];
+        for (const active of collectActiveScopes()) {
+          // 主控自己不是被派发的活，不占写面
+          if (active.sid === deps.callingSessionId) continue;
+          // 状态读不到时按「占着」处理（读不到 ≠ 空闲，不能拿未知状态放行第二条活）
+          const status = deps.readStatus?.(active.sid) ?? { kind: 'unreadable' as const };
+          if (!occupiesScope(status.kind)) continue;
+          const overlap = findScopeOverlap(requested, active.paths);
+          if (!overlap) continue;
+          conflicts.push({
+            sid: active.sid,
+            ...(active.title ? { title: active.title } : {}),
+            declared: overlap.declared,
+            requested: overlap.requested,
+          });
+        }
+        if (conflicts.length > 0) {
+          // 专门码：不排队、不自动重试（排队会替代理做决定；缩小范围也可能同样是代理该拍的板）
+          return JSON.stringify(
+            {
+              ok: false,
+              code: 'E_SCOPE_CONFLICT',
+              message:
+                `声明范围与 ${conflicts.length} 条在跑的活重叠，未开新会话。` +
+                '可等它收场后重试（用 list_work_sessions 看状态），或缩小 paths 再试；' +
+                '若这条活确实要独占整个工作区，可显式传 ["."]。',
+              conflicts,
             },
             null,
             2,
@@ -660,6 +791,13 @@ export function registerWorkSessionTools(
             parsed.text,
             deps.senderName,
           );
+          // 成功即登记本进程声明范围：同一轮里后续 create 立刻能判重叠（不等落盘）
+          if (result.ok) {
+            declaredScopes.set(result.sid, {
+              paths: requested,
+              ...(result.title ? { title: result.title } : {}),
+            });
+          }
           // 文本形态只有一个产生点（工作台重建依赖它的前缀，见 serializeCreateSessionResult 的互锁注释）
           return serializeCreateSessionResult(result);
         } catch (err) {

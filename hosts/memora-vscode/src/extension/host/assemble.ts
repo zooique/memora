@@ -679,6 +679,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
             ...(readHostedStatus ? { readStatus: readHostedStatus } : {}),
             ...(hostedAgentCreated ? { agentCreated: hostedAgentCreated } : {}),
             ...(readHostedHistory ? { readHistory: readHostedHistory } : {}),
+            // 范围声明（判据 4）的规范化基准：把绝对路径截成相对，只用于比较
+            workspaceRoot: projectPath,
           }
         : undefined;
     if (toolDeps && (!dispatchHostedInput || !createHostedSession)) {

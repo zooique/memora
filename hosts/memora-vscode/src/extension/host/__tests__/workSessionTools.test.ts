@@ -682,7 +682,7 @@ async function executeCreate(
 }
 
 describe('托管 v0 · create_session（工具层）', () => {
-  it('参数只认 { rolePack?, title, text }：未知键 / 空白标题一律 E_ARGS，且不触建会话', async () => {
+  it('参数只认 { rolePack?, title, text, paths }：未知键 / 空白标题一律 E_ARGS，且不触建会话', async () => {
     const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
       ok: true,
       sid: '2026-11-14-new',
@@ -690,17 +690,47 @@ describe('托管 v0 · create_session（工具层）', () => {
     }));
     const probe = await assembleProbe(true, { createSession });
     try {
-      // 未知键：键集只允许三枚（缺 title / text 由内核执行器按 schema 先拦）
-      expect(await executeCreate(probe, { title: 't', text: 'x', mode: 'managed' })).toMatchObject({
+      // 未知键：键集只允许四枚（缺 title / text / paths 由内核执行器按 schema 先拦）
+      expect(
+        await executeCreate(probe, {
+          title: 't',
+          text: 'x',
+          mode: 'managed',
+          paths: ['docs'],
+        }),
+      ).toMatchObject({
         ok: false,
         code: 'E_ARGS',
       });
       // 空白标题：trim 后为空，不收
-      expect(await executeCreate(probe, { title: '   ', text: 'x' })).toMatchObject({
+      expect(
+        await executeCreate(probe, { title: '   ', text: 'x', paths: ['docs'] }),
+      ).toMatchObject({
+        ok: false,
+        code: 'E_ARGS',
+      });
+      // paths 给空数组 = 没声明范围：同样拒（范围是开活前置，不许省）
+      expect(await executeCreate(probe, { title: 't', text: 'x', paths: [] })).toMatchObject({
         ok: false,
         code: 'E_ARGS',
       });
       expect(createSession).not.toHaveBeenCalled();
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('paths 在 schema 里是必填项（不能靠 handler 兜：执行器先按 schema 拦）', async () => {
+    const probe = await assembleProbe(true, {});
+    try {
+      // 从运行时定义面读（与模型看到的是同一份），不复制一份字面量在本文件里
+      const definition = probe.agent.tools!.allToolDefinitions.find(
+        (entry) => entry.name === CREATE_SESSION_TOOL_NAME,
+      );
+      expect(definition).toBeDefined();
+      expect(definition?.parameters.required).toContain('paths');
+      const paths = (definition?.parameters.properties as Record<string, { type?: string }>).paths;
+      expect(paths?.type).toBe('array');
     } finally {
       await disposeProbe(probe);
     }
@@ -718,6 +748,7 @@ describe('托管 v0 · create_session（工具层）', () => {
         rolePack: '不存在的包',
         title: '调研',
         text: '读一下仓库',
+        paths: ['docs'],
       });
       expect(result).toMatchObject({ ok: false, code: 'E_ROLE_PACK' });
       // 语义分离：模型看到 E_NOT_FOUND 会去换 sid，而这里该换的是角色包名
@@ -736,7 +767,12 @@ describe('托管 v0 · create_session（工具层）', () => {
     const probe = await assembleProbe(true, { createSession });
     try {
       expect(
-        await executeCreate(probe, { rolePack: '资料员', title: '调研会话', text: '先读 README' }),
+        await executeCreate(probe, {
+          rolePack: '资料员',
+          title: '调研会话',
+          text: '先读 README',
+          paths: ['docs'],
+        }),
       ).toEqual({ ok: true, sid: '2026-11-14-created', title: '调研会话' });
       // 发送者名必须是装配期注入值：工具内写死字面量会让本断言转红
       expect(createSession).toHaveBeenCalledWith(
@@ -759,7 +795,7 @@ describe('托管 v0 · create_session（工具层）', () => {
     }));
     const probe = await assembleProbe(true, { createSession });
     try {
-      await executeCreate(probe, { title: '默认包会话', text: '开始' });
+      await executeCreate(probe, { title: '默认包会话', text: '开始', paths: ['docs'] });
       expect(createSession).toHaveBeenCalledWith(
         SESSION_ID,
         undefined,
@@ -778,10 +814,141 @@ describe('托管 v0 · create_session（工具层）', () => {
     });
     const probe = await assembleProbe(true, { createSession });
     try {
-      expect(await executeCreate(probe, { title: 't', text: 'x' })).toMatchObject({
+      expect(await executeCreate(probe, { title: 't', text: 'x', paths: ['docs'] })).toMatchObject({
         ok: false,
         code: 'E_HOST',
       });
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+});
+
+describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
+  it('与在跑的活的声明范围重叠 ⇒ E_SCOPE_CONFLICT，回 sid + 撞在哪，且不触建会话', async () => {
+    const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
+      ok: true,
+      sid: '2026-11-14-blocked',
+      title: '不该出现',
+    }));
+    const probe = await assembleProbe(true, {
+      createSession,
+      // 历史里的在跑活：声明 src/agent（原始入参带 ./ 与反斜杠，验证规范化）
+      readHistory: () => ({
+        coverage: 'complete',
+        children: [{ sessionId: '2026-11-14-old', title: '改内核', paths: ['./SRC\\agent'] }],
+        totalRounds: 1,
+        scannedRounds: 1,
+      }),
+      readStatus: (sid) => (sid === '2026-11-14-old' ? { kind: 'running' } : { kind: 'completed' }),
+    });
+    try {
+      const result = await executeCreate(probe, {
+        title: '新活',
+        text: '也改内核',
+        // 目录祖先关系：src/agent 与 src/agent/loop.ts 重叠
+        paths: ['src/agent/loop.ts'],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'E_SCOPE_CONFLICT',
+        conflicts: [
+          {
+            sid: '2026-11-14-old',
+            title: '改内核',
+            declared: 'src/agent',
+            requested: 'src/agent/loop.ts',
+          },
+        ],
+      });
+      expect(createSession).not.toHaveBeenCalled();
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('声明整仓（["."]）与任何在跑活都算重叠；不重叠则放行并登记本进程范围', async () => {
+    const createSession = vi
+      .fn<() => Promise<CreateSessionResult>>()
+      .mockResolvedValueOnce({ ok: true, sid: '2026-11-14-first', title: '第一条' })
+      .mockResolvedValueOnce({ ok: true, sid: '2026-11-14-second', title: '第二条' });
+    const probe = await assembleProbe(true, {
+      createSession,
+      // 第一条开出来即被视作在跑（状态读口真实回 running）
+      readStatus: (sid) =>
+        sid === '2026-11-14-first' ? { kind: 'running' } : { kind: 'completed' },
+    });
+    try {
+      // 第一条声明 docs 并成功（登记进内存范围表）
+      expect(
+        await executeCreate(probe, { title: '第一条', text: '写文档', paths: ['docs'] }),
+      ).toMatchObject({ ok: true, sid: '2026-11-14-first' });
+      // 第二条与 docs 重叠 ⇒ 拒
+      expect(
+        await executeCreate(probe, { title: '第二条', text: '也写文档', paths: ['./docs/a.md'] }),
+      ).toMatchObject({ ok: false, code: 'E_SCOPE_CONFLICT' });
+      // 整仓声明与任何在跑活都重叠 ⇒ 拒（等价于自愿独占）
+      expect(
+        await executeCreate(probe, { title: '第三条', text: '全仓', paths: ['.'] }),
+      ).toMatchObject({
+        ok: false,
+        code: 'E_SCOPE_CONFLICT',
+        conflicts: [{ sid: '2026-11-14-first', declared: 'docs', requested: '.' }],
+      });
+      expect(createSession).toHaveBeenCalledTimes(1);
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('不重叠放行；已收场的活不占范围（completed 不拦新活）', async () => {
+    const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
+      ok: true,
+      sid: '2026-11-14-fresh',
+      title: '新活',
+    }));
+    const probe = await assembleProbe(true, {
+      createSession,
+      readHistory: () => ({
+        coverage: 'complete',
+        children: [{ sessionId: '2026-11-14-done', title: '旧活', paths: ['src/agent'] }],
+        totalRounds: 1,
+        scannedRounds: 1,
+      }),
+      // 旧活已收场 ⇒ 不占写面，放行
+      readStatus: () => ({ kind: 'completed' }),
+    });
+    try {
+      expect(
+        await executeCreate(probe, { title: '新活', text: '改文档', paths: ['docs'] }),
+      ).toMatchObject({ ok: true, sid: '2026-11-14-fresh' });
+      expect(createSession).toHaveBeenCalledTimes(1);
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('状态读不到不算空闲：unknown 状态按「占着」处理，拒绝同范围开活', async () => {
+    const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
+      ok: true,
+      sid: '2026-11-14-should-not-exist',
+      title: '不该出现',
+    }));
+    const probe = await assembleProbe(true, {
+      createSession,
+      readHistory: () => ({
+        coverage: 'complete',
+        children: [{ sessionId: '2026-11-14-unknown', title: '状态不明', paths: ['docs'] }],
+        totalRounds: 1,
+        scannedRounds: 1,
+      }),
+      readStatus: () => ({ kind: 'unreadable' }),
+    });
+    try {
+      expect(
+        await executeCreate(probe, { title: '新活', text: '改文档', paths: ['docs/b.md'] }),
+      ).toMatchObject({ ok: false, code: 'E_SCOPE_CONFLICT' });
+      expect(createSession).not.toHaveBeenCalled();
     } finally {
       await disposeProbe(probe);
     }

@@ -44,6 +44,13 @@ export interface WorkbenchHistoryChild {
   sessionId: string;
   /** 创建时给的标题（`tool_start.args.title`；可能缺省） */
   title?: string;
+  /**
+   * 创建时声明的开活范围（`tool_start.args.paths` 原样）
+   *
+   * 缺省 = 该次创建发生在范围声明上线之前（老记录），调用方不得据此判「没有范围」；
+   * 规范化与重叠判断在消费方（`extension/host/sessionScope.ts`）统一做。
+   */
+  paths?: readonly string[];
 }
 
 /** 重建结果 */
@@ -128,11 +135,11 @@ function collectFromRound(
   byId: Map<string, WorkbenchHistoryChild>,
   noteUnreadable: () => void,
 ): void {
-  /** 本轮的调用 → 标题（args 完整；解析失败为 undefined，不阻断 sid 提取） */
-  const titles = new Map<string, string | undefined>();
+  /** 本轮的调用 → 创建时元信息（args 完整；解析失败为 undefined，不阻断 sid 提取） */
+  const created = new Map<string, { title?: string; paths?: readonly string[] }>();
   for (const event of round.processEvents ?? []) {
     if (event.type === 'tool_start' && event.payload.name === CREATE_SESSION_TOOL_NAME) {
-      titles.set(event.payload.toolCallId, parseTitle(event.payload.args));
+      created.set(event.payload.toolCallId, parseCreateArgsMeta(event.payload.args));
       continue;
     }
     if (
@@ -149,7 +156,7 @@ function collectFromRound(
       continue;
     }
     if (!byId.has(sid)) {
-      byId.set(sid, { sessionId: sid, title: titles.get(event.payload.toolCallId) });
+      byId.set(sid, { sessionId: sid, ...(created.get(event.payload.toolCallId) ?? {}) });
     }
   }
 }
@@ -176,17 +183,32 @@ export function parseCreateSessionSid(summary: string): string | undefined {
 }
 
 /**
- * 从 `tool_start.args` 里提取创建时给的标题
+ * 从 `tool_start.args` 里提取创建时的标题与声明范围
  *
- * @param args 工具入参 JSON 文本（完整；可能非法）
- * @returns 标题；未给 / 解析失败返回 undefined（由元数据标题兜底）
+ * 两个字段都只做**形态**校验（标题非空字符串、paths 为字符串数组），不做路径规范化
+ * ——规范化属 `extension/host/sessionScope.ts` 的单点判据，这里只负责读回原样事实。
+ *
+ * @param args 工具入参 JSON 文本（完整；可能非法 / 缺字段）
+ * @returns 标题与声明范围；缺省字段 omission（由调用方决定如何展示）
  */
-function parseTitle(args: string | undefined): string | undefined {
-  if (!args) return undefined;
+function parseCreateArgsMeta(args: string | undefined): {
+  title?: string;
+  paths?: readonly string[];
+} {
+  if (!args) return {};
   try {
-    const parsed = JSON.parse(args) as { title?: unknown };
-    return typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title : undefined;
+    const parsed = JSON.parse(args) as { title?: unknown; paths?: unknown };
+    const meta: { title?: string; paths?: readonly string[] } = {};
+    if (typeof parsed.title === 'string' && parsed.title.trim()) meta.title = parsed.title;
+    if (Array.isArray(parsed.paths)) {
+      const paths = parsed.paths.filter(
+        (item): item is string => typeof item === 'string' && item.trim() !== '',
+      );
+      // 声明过（数组非空）才带回；空数组按「没有声明」处理，不伪造范围
+      if (paths.length > 0) meta.paths = paths;
+    }
+    return meta;
   } catch {
-    return undefined;
+    return {};
   }
 }
