@@ -118,6 +118,8 @@ const ROUND_PERSISTED_KEYS: Record<keyof Round, true> = {
   createdAt: true,
   completedAt: true,
   processEvents: true,
+  // 输入来源标记：不登记即编译红；登记错/漏登记则 save() 静默丢字段
+  origin: true,
 };
 
 /**

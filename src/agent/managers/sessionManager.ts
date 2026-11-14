@@ -11,6 +11,7 @@ import { isValidSessionId, splitSessionId } from '@/utils/time.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { MessageHistory, ForkResult } from '@/agent/messageHistory.js';
 import type { ISessionStore, SessionMeta, SessionMessage } from '@/memory/sessionStore.js';
+import type { Round } from '@/memory/roundStore.js';
 import type { Message } from '@/llm/provider.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { type AgentEventName } from '@/utils/eventEmitter.js';
@@ -252,8 +253,9 @@ export class SessionManager {
    *
    * @param roundId - 分叉点的 Round ID（可选；不传默认使用最后一个 Round）
    * @param targetSession - 可选，自定义新会话名；不传则自动生成
+   * @param origin - 可选，新会话自身的来源标记（由发起分叉的调用方传入）
    */
-  forkSession(roundId?: string, targetSession?: string): AgentForkResult {
+  forkSession(roundId?: string, targetSession?: string, origin?: Round['origin']): AgentForkResult {
     // 替换工作记忆前置闸（SSOT：与 switch/load 共用断言）
     this.assertSessionReplaceable('分叉');
 
@@ -263,7 +265,10 @@ export class SessionManager {
     const sourceSessionName = history.currentSessionName;
 
     // 委托 MessageHistory 完成分叉（round-based：复制 Round ID 列表）
-    const result = history.forkSession(roundId, targetSession);
+    // 条件传参：无来源标记时调用形状与升级前完全一致（既有契约按双参验收）
+    const result = origin
+      ? history.forkSession(roundId, targetSession, origin)
+      : history.forkSession(roundId, targetSession);
 
     // 将新会话的问答闭环加载到 AgentLoop 工作记忆
     // round-based 模式：通过 roundIds 加载消息并应用到 loop

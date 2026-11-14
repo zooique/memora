@@ -11,6 +11,7 @@
 
 import type { AgentChunk } from '@/agent/types.js';
 import type { ImageRef } from '@/llm/provider.js';
+import type { Round } from '@/memory/roundStore.js';
 import { logger } from '@/logging/logger.js';
 import { resolveL2Strategy, resolveActiveStrategy } from '@/role-pack/strategyResolver.js';
 import { buildMeetingPlanSkeleton } from '@/role-pack/rolePackManager.js';
@@ -36,12 +37,14 @@ export class SeedPrepare {
    * @param input 用户输入
    * @param signal 中止信号（回答前中断则在技能注入前返回 aborted）
    * @param attachments 图片附件（可选，多模态输入）；透传到 `history.appendUser` 落盘（方案 §7 P0-12）
+   * @param opts 输入来源标记（origin）与发送者名称（senderName）；不传 = 历史行为
    * @returns 回答前结果（input + aborted；round 归属见 SeedPrepareResult）
    */
   async *run(
     input: string,
     signal: AbortSignal,
     attachments?: readonly ImageRef[],
+    opts?: { origin?: Round['origin']; senderName?: string },
   ): AsyncGenerator<AgentChunk, SeedPrepareResult, unknown> {
     const { loop, history, sessionManager, rolePackManager, contextPreparer, sessionNamer } =
       this.deps.getParts() as SeedParts;
@@ -111,10 +114,15 @@ export class SeedPrepare {
     // 技能按渐进披露 L1 清单常驻 system prompt，正文由模型按需 read_skill，回答前不预注入
     yield { type: 'thinking', phase: 'processing', roundId };
 
-    // 无附件时调用形状与升级前**完全一致**（不传第 3 参）：prepare / orchestrator 的
+    // 无附件、无来源标记时调用形状与升级前**完全一致**（不传第 3 参）：prepare / orchestrator 的
     // `appendUser` 断言按双参验收，无条件多出一个 `{}` 属行为变更（务必带条件传参）。
-    if (attachments) {
-      await history.appendUser(input, roundId, { attachments });
+    const userMessageOpts = {
+      ...(attachments ? { attachments } : {}),
+      ...(opts?.origin ? { origin: opts.origin } : {}),
+      ...(opts?.senderName ? { senderName: opts.senderName } : {}),
+    };
+    if (Object.keys(userMessageOpts).length > 0) {
+      await history.appendUser(input, roundId, userMessageOpts);
     } else {
       await history.appendUser(input, roundId);
     }

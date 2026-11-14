@@ -50,6 +50,8 @@ export interface SessionSummaryDto {
    * 终态是盘上投影；正在跑 / 等答时不能拿旧终态盖住当前状态。
    */
   lastOutcome?: 'completed' | 'interrupted' | 'unsettled';
+  /** 会话来源标记（缺省 = 旧数据，按用户会话解释；本片只走数据层，不渲染图标） */
+  origin?: 'user' | 'hosted';
 }
 
 /** 本域经 postMessage 发出的消息型（窄联合：历史菜单的全部出口动作） */

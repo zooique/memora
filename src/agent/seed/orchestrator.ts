@@ -12,7 +12,7 @@
  */
 
 import type { AgentChunk } from '@/agent/types.js';
-import type { InteractiveInputKind } from '@/memory/roundStore.js';
+import type { InteractiveInputKind, Round } from '@/memory/roundStore.js';
 import type { ImageRef } from '@/llm/provider.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
@@ -68,15 +68,17 @@ export class SeedOrchestrator {
    *
    * @param input 用户输入
    * @param signal 中止信号
+   * @param opts 输入来源标记（origin）与发送者名称（senderName）；不传 = 历史行为
    * @yields AgentChunk 事件流（thinking / 透传 loop 执行流 chunk）
    */
   async *runChat(
     input: string,
     signal: AbortSignal,
     attachments?: readonly ImageRef[],
+    opts?: { origin?: Round['origin']; senderName?: string },
   ): AsyncGenerator<AgentChunk, void, unknown> {
     // 回答前：装配上下文 + 召回记忆
-    const prepared = yield* this.prepare.run(input, signal, attachments);
+    const prepared = yield* this.prepare.run(input, signal, attachments, opts);
     if (prepared.aborted) {
       yield {
         type: 'aborted',

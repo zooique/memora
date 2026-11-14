@@ -738,8 +738,9 @@ describe('草稿态 · 「＋」不再立刻落空会话（首次发送才建会
     expect(newId).toMatch(/^\d{4}-\d{2}-\d{2}-s[0-9a-z]+$/);
     expect(factory).toHaveBeenCalledTimes(1);
     expect(factory.mock.calls[0]?.[1]).toBe(newId);
-    // 建会话只切换显示源；**没有空壳记录落盘**（round 尚未写入 ⇒ 文件不存在）
-    expect(store.getSessionMeta(newId)).toBeUndefined();
+    // 建会话只切换显示源 + 写来源标记；**没有空壳角色包记录**（未选/失效时 activeRolePackName 不写）
+    expect(store.getSessionMeta(newId)?.origin).toBe('user');
+    expect(store.getSessionMeta(newId)?.activeRolePackName).toBeUndefined();
     // 标题不再是草稿态（改名笔恢复可用）
     expect(lastTitle(posted).draft).toBeUndefined();
     expect(lastTitle(posted).title).toMatch(/^New session \d{2}:\d{2}$/);
@@ -1183,25 +1184,29 @@ describe('新建会话默认角色包 · 用户级默认 → 会话快照', () =
     expect(lastRolePack(ctx.posted).rolePack).toBe('代码助手');
   });
 
-  it('全局默认未设置（空串）⇒ 走现状：不写 meta，装配落兜底包', async () => {
+  it('全局默认未设置（空串）⇒ 走现状：不写角色包 meta，装配落兜底包', async () => {
     stubDefaultRolePack('');
     const ctx = await enterDraft(new Set());
 
     const newId = await sendFirst(ctx);
 
-    expect(ctx.store.getSessionMeta(newId)).toBeUndefined();
+    // 角色包未定 ⇒ 不写 activeRolePackName（不造假选择）；来源标记仍由唯一创建入口显式写入
+    expect(ctx.store.getSessionMeta(newId)?.activeRolePackName).toBeUndefined();
+    expect(ctx.store.getSessionMeta(newId)?.origin).toBe('user');
     const assembled = ctx.cast._sessionAgents.get(newId) as Agent;
     expect(assembled.rolePackManager?.activeName).toBe(BUILTIN_FALLBACK_PACK);
     expect(lastRolePack(ctx.posted).rolePack).toBe(BUILTIN_FALLBACK_PACK);
   });
 
-  it('全局默认指向已删包 ⇒ 不写 meta、回落兜底、弹「默认角色包不可用」', async () => {
+  it('全局默认指向已删包 ⇒ 不写角色包 meta、回落兜底、弹「默认角色包不可用」', async () => {
     stubDefaultRolePack('幽灵角色');
     const ctx = await enterDraft(new Set()); // 目录里没有「幽灵角色」
 
     const newId = await sendFirst(ctx);
 
-    expect(ctx.store.getSessionMeta(newId)).toBeUndefined();
+    // 失效包不写 activeRolePackName（不造假选择）；来源标记仍由唯一创建入口显式写入
+    expect(ctx.store.getSessionMeta(newId)?.activeRolePackName).toBeUndefined();
+    expect(ctx.store.getSessionMeta(newId)?.origin).toBe('user');
     const assembled = ctx.cast._sessionAgents.get(newId) as Agent;
     expect(assembled.rolePackManager?.activeName).toBe(BUILTIN_FALLBACK_PACK);
     const defaultNotice = ctx.posted

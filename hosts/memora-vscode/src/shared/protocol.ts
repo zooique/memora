@@ -1027,6 +1027,15 @@ export type ExtensionToWebviewMessage =
       question?: string;
       options?: string[];
       /**
+       * 输入来源标记（平铺；缺省 = 旧宿主 / 旧数据，读侧按 `'user'` 解释）
+       *
+       * `'hosted'` 时与 `senderName` 配合表达「由 X 发送」；气泡标签渲染属下一片，
+       * 本片只把字段打通到数据层。
+       */
+      origin?: 'user' | 'hosted';
+      /** 发送者名称（仅 `'hosted'` 有值；用户输入恒缺省，不写空串占位） */
+      senderName?: string;
+      /**
        * 交互输入条目身份（批内唯一；去重键真源——ts 只作归位键）。
        *
        * 多问批次逐条 post 共享同一 ms 级 ts，重建去重若按 ts 会把第 2..N 条当
@@ -1349,6 +1358,13 @@ export type ExtensionToWebviewMessage =
          * 的整对象合并长期漂移。
          */
         lastOutcome?: 'completed' | 'interrupted' | 'unsettled';
+        /**
+         * 会话来源标记（缺省 = 旧数据，读侧按 `'user'` 解释）
+         *
+         * 本片只让它通过数据层（列表图标渲染属下一片）；不得在宿主侧另立一份真源，
+         * 值直取 `SessionMeta.origin`。
+         */
+        origin?: 'user' | 'hosted';
       }[];
       /** 属于留存区（视图分组标签）的会话 id；**不是**状态字段，会话本身与近期条目无任何差别 */
       archivedIds: string[];
@@ -1985,6 +2001,8 @@ export type RoundView = Pick<
   | 'createdAt'
   | 'completedAt'
   | 'evidence'
+  // 输入来源标记（缺省 = 旧数据，读侧按 'user' 解释）；本片只透出数据，渲染属下一片
+  | 'origin'
 > & {
   /** 末段回答（pending 轮无值）；跨暂停-续跑的前序段在 assistantLog */
   assistantMessage?: RoundMessage;

@@ -562,6 +562,19 @@ export interface Round {
 
   userMessage: RoundMessage;
 
+  /**
+   * 本轮输入的来源标记（二值；缺省 `undefined` = 旧数据，读侧按 `'user'` 解释）
+   *
+   * - `'user'`：用户在宿主界面里发起；
+   * - `'hosted'`：由托管通道发起（他人 / 服务端代发）。
+   *
+   * 为什么不放进 `RoundMessage`：一个 Round = 一次输入，origin 描述「这次输入由谁发起」；
+   * 而 `RoundMessage` 还被 `interactiveInputs` 复用（同一轮内的补充 / 作答不是独立输入）。
+   *
+   * 零迁移：历史轮没有本字段，`undefined` 本身就是「用户输入」的事实，回填等于伪造。
+   */
+  origin?: 'user' | 'hosted';
+
   /** AI 消息（pending 状态时可能为空） */
   assistantMessage?: RoundMessage;
 

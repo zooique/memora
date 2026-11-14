@@ -24,6 +24,12 @@ import type { PendingQuestionDto, RoundView, TurnState } from './protocol.js';
 export interface LiveRoundState {
   /** 本轮 roundId（内核 chunk 携带，与落盘 Round.id 同源） */
   roundId: string;
+  /**
+   * 本轮输入来源标记（宿主发送时即已知；缺省 = 用户输入）
+   *
+   * 必须随 live 一起透出：否则 resume 合并时 live 缺 origin 会把盘上的 origin 抹掉。
+   */
+  origin?: RoundView['origin'];
   /** 本轮用户输入（宿主在发送时即已知，无需等内核回传） */
   userMessage: RoundView['userMessage'];
   /** 问答闭环内交互输入（补充 / 提问回答，按时间序追加） */
@@ -44,6 +50,8 @@ export function toRoundView(live: LiveRoundState, status: RoundStatus = 'pending
   const hasText = (live.streamingText ?? '').length > 0;
   return {
     id: live.roundId,
+    // 来源标记条件展开：缺省时不多出一个 `origin: undefined` 键（全等断言按形状对拍）
+    ...(live.origin ? { origin: live.origin } : {}),
     userMessage: live.userMessage,
     interactiveInputs: live.interactiveInputs,
     assistantLog: undefined,
@@ -164,7 +172,12 @@ export function mergeLiveRound(history: RoundView[], live?: PendingLiveRound): R
   const existing = idx >= 0 ? history[idx] : undefined;
   const userMessage = live.userMessage ?? existing?.userMessage;
   if (!userMessage) return history;
-  const view = toRoundView({ ...live, userMessage }, existing?.status ?? 'pending');
+  // 来源标记合并：live 未带时沿用盘上值（resume 续跑轮不带 seed，不能让合并抹掉 origin）
+  const origin = live.origin ?? existing?.origin;
+  const view = toRoundView(
+    { ...live, userMessage, ...(origin ? { origin } : {}) },
+    existing?.status ?? 'pending',
+  );
   if (idx < 0) return [...history, view];
   const next = [...history];
   next[idx] = view;

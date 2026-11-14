@@ -712,12 +712,11 @@ export class WorkspaceSessionStore implements ISessionStore {
    * （`messageHistory.forkSession` 内的 `updateSessionMeta(newSessionId, { createdAt })`），
    * 丢一次即永久不可恢复（本文件是落盘真相源）。
    *
-   * 末位显式覆盖三项（不用纯 spread 的理由与语义）：
-   *   - autoName/displayName/keyTopics/summary：调用方可传显式 `undefined`（`Partial` 允许）
+   * 末位显式覆盖（不用纯 spread 的理由与语义）：
+   *   - autoName/displayName/keyTopics/summary/origin：调用方可传显式 `undefined`（`Partial` 允许）
    *     → 语义是「缺省 = 保留既有」，`?? existing` 才是该语义；纯 spread 会把既有值抹掉
    *   - updatedAt：改名/命名都不是活跃事件 → 保留既有，不刷新
-   *   - messageCount：命名不重置计数 → 保留既有；**无既有 meta 时由
-   *     `deriveMessageCount` 派生，禁写 0**
+   *   - messageCount：命名不重置计数 → 保留既有；**无既有 meta 时由 `deriveMessageCount` 派生，禁写 0**
    *
    * ⚠️ 无既有 meta 分支为何必须派生：内核
    * `messageHistory.forkSession` 是「先 `setRoundIds(newSessionId, ...)` 再
@@ -743,6 +742,7 @@ export class WorkspaceSessionStore implements ISessionStore {
       archivedMessageCount: meta.archivedMessageCount ?? existing?.archivedMessageCount,
       // 会话级角色包名（同族保护，显式 undefined 不抹既有）：被抹 = 重启回兜底包，只读变可写且无人察觉
       activeRolePackName: meta.activeRolePackName ?? existing?.activeRolePackName,
+      origin: meta.origin ?? existing?.origin, // 同族保护：显式 undefined 不抹既有（来源标记不静默丢失）
       pinnedItems: meta.pinnedItems ?? existing?.pinnedItems, // 同族保护：undefined 不抹，清空传 `[]` 仍覆盖
       // 改名/命名非活跃事件：不重置 updatedAt 与计数
       updatedAt: existing?.updatedAt ?? new Date().toISOString(),

@@ -267,6 +267,13 @@ interface FlowSeed {
    * 与 `toRoundView` 的 `assistantMessage.id = live-{roundId}` 同一范式。
    */
   userMessage?: RoundView['userMessage'];
+  /**
+   * 本轮输入来源标记（当前宿主入口恒为 `'user'`；托管通道接入后由调用方传 `'hosted'`）。
+   *
+   * 与 `userMessage` 同批传：live 轮投影要靠它把 origin 带给 `RoundView`，
+   * 否则 mergeLiveRound 会按缺省处理。
+   */
+  origin?: RoundView['origin'];
 }
 
 // 本流 live 缓冲形状已随会话级运行态迁至 `helpers/sessionRuntime.ts`（LiveFlowBuffer）。
@@ -1691,12 +1698,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.setCurrentSessionId(sessionId);
       // 角色来源：草稿显式选择 > 用户级默认 > 兜底包；校验真源 = 角色包目录编目（冷启动亦可读）
       const roleDecision = await decideNewSessionRolePack(rolePackName, this._readRolePackCatalog);
-      // 角色名的**唯一落盘点**（必须早于装配：装配经 readSessionRolePackName 读回）；未选/失效不写
-      if (roleDecision.rolePackName) {
-        this.sessionStore.updateSessionMeta(sessionId, {
-          activeRolePackName: roleDecision.rolePackName,
-        });
-      }
+      // 会话来源标记：当前唯一创建入口 = 用户主动新建 ⇒ 显式写 'user'（不留 undefined 让语义悬空）；
+      // 角色名的**唯一落盘点**与此同批写入（必须早于装配：装配经 readSessionRolePackName 读回），未选/失效不写
+      this.sessionStore.updateSessionMeta(sessionId, {
+        origin: 'user',
+        ...(roleDecision.rolePackName ? { activeRolePackName: roleDecision.rolePackName } : {}),
+      });
       const agent = await this.agentForSession(sessionId);
       this.bindAgent(agent);
       // 默认包失效 / 无法校验：meta 未写 ⇒ 既有「原角色包」提示不会触发，用独立文案如实告知
@@ -2497,6 +2504,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const merged = prior.length > 0 ? mergeProcessEvents(prior, buffered) : buffered;
     return {
       roundId,
+      // 来源标记与开轮输入同源入 live 投影（resume 轮无 seed ⇒ 缺省，由 mergeLiveRound 沿用盘上值）
+      origin: buf.seedOrigin,
       userMessage: buf.seedUserMessage,
       processEvents: merged.length > 0 ? merged : undefined,
       streamingText: buf.textByRound.get(roundId),
@@ -2759,7 +2768,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     // 用户消息持久化由内核 chat() → appendUser 完成（写入当前会话 _currentSessionId），
     // 此处不再 persist，避免与内核双写同一条消息（SSOT 单一真理源）。
-    this.post(userEcho(input, now, attachments, this.workspacePath, (f) => this.toWebviewUri(f)));
+    this.post(
+      userEcho(input, now, attachments, this.workspacePath, (f) => this.toWebviewUri(f), 'user'),
+    );
 
     // 注入选中技能提示（SSOT：技能名 → 内核技能正文，前端不硬编码 systemPrompt）
     let skillBlock = '';
@@ -2869,16 +2880,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // runFlow 统一管理 AbortController + consumeFlow + 同步抛错兜底
     // seed：开轮用户文本交给 live 轮投影。只放**上屏裸输入**——注入信封仅进 `chatInput`（内核
     // appendUser 落盘原文）；历史重放读的是 `stripInjectedContextPrefix(落盘原文)`，两者必须同值。
-    await this.runFlow((signal) => this._agent!.chat(chatInput, signal, attachments), {
-      userMessage: {
-        id: `live-user-${now}`,
-        role: 'user',
-        content: input,
-        timestamp: now,
-        // 图片随行（IMG-2）：live 投影必须与重放读到的落盘版本同形，否则同一轮两种 user 内容
-        ...(attachments ? { attachments } : {}),
+    await this.runFlow(
+      (signal) => this._agent!.chat(chatInput, signal, attachments, { origin: 'user' }),
+      {
+        userMessage: {
+          id: `live-user-${now}`,
+          role: 'user',
+          content: input,
+          timestamp: now,
+          // 图片随行（IMG-2）：live 投影必须与重放读到的落盘版本同形，否则同一轮两种 user 内容
+          ...(attachments ? { attachments } : {}),
+        },
+        // 来源标记随 seed 进 live 投影：当前宿主唯一生产者为用户输入，显式传 'user'
+        origin: 'user',
       },
-    });
+    );
   }
 
   /**
@@ -3120,6 +3136,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       eventsByRound: new Map<string, ProcessEvent[]>(),
       textByRound: new Map<string, string>(),
       seedUserMessage: seed?.userMessage,
+      seedOrigin: seed?.origin,
     };
     runtime.liveBuffer = liveBuffer;
     // 局部别名保持闭包引用简洁（emitEvent / 正文分桶沿用原名）

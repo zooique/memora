@@ -102,7 +102,9 @@ export function createChatSessionNavOps(deps: ChatSessionNavOpsDeps): ChatSessio
         }
 
         // round-based 分叉：从指定 Round 位置创建新会话
-        const { newSession, roundCount } = agent.forkSession(forkRoundId);
+        // 第三个参数 = 新会话自身的来源；当前宿主唯一发起方是用户点击 ⇒ 显式传 'user'
+        // （历史轮各自的 origin 随 Round ID 指针复制天然保留，不从源会话抄）
+        const { newSession, roundCount } = agent.forkSession(forkRoundId, undefined, 'user');
         const forkedId = `${formatDateKey(new Date())}-${newSession}`;
         // 内核分叉已在同步调用里写好了新会话文件（无锁创建豁免）；此处接管锁并重读，
         // 之后对它的写入必须有归属——拿不到说明有第三方在写这个 id（极罕见），拒绝并保持原会话

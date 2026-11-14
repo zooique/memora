@@ -226,10 +226,11 @@ export class MessageHistory {
    *
    * @param roundId - 分叉点的 Round ID（必须存在于当前会话）
    * @param targetSession - 可选，自定义新会话名；不传则自动生成
+   * @param origin - 可选，新会话自身的来源标记（由发起分叉的调用方传入，**不从源会话抄**）
    * @returns 分叉结果（含新会话 ID 和 roundIds）
    * @throws 会话不存在 / Round 不存在 / 对话繁忙时抛错
    */
-  forkSession(roundId?: string, targetSession?: string): ForkResult {
+  forkSession(roundId?: string, targetSession?: string, origin?: Round['origin']): ForkResult {
     if (!this.sessionStore) {
       throw configError('无法分叉会话', 'ISessionStore 未注入', [
         '在创建 Agent 时注入 sessionStore 参数',
@@ -259,6 +260,7 @@ export class MessageHistory {
     }
 
     // 4. 截取到分叉点的 ID 列表（包含分叉点）
+    //    只复制 ID 指针、不重写轮文件 ⇒ 每一轮自己的 `origin` 作为历史事实原样保留。
     const newRoundIds = currentRoundIds.slice(0, forkIdx + 1);
 
     // 5. 生成新会话名（平等普通会话，无分叉标记）
@@ -286,6 +288,8 @@ export class MessageHistory {
     // 保存会话元数据
     store.updateSessionMeta(newSessionId, {
       createdAt: new Date().toISOString(),
+      // 新会话自身的来源由发起分叉的调用方传入，**不从源会话抄**（抄 = 伪造事实）
+      ...(origin ? { origin } : {}),
       // 分叉继承父会话的角色包名（「从这一支长出来」⇒ 能力不应突然变回默认）；
       // undefined 不写，避免给「从未选过角色」的会话造出假选择记录
       ...(currentSession.activeRolePackName
@@ -343,6 +347,10 @@ export class MessageHistory {
       group?: ReadonlyArray<InteractiveInputDraft>;
       /** 图片附件（可选，多模态输入）；须显式透传到 `userMessage` 白名单与 SessionMessage，否则重启 / 切会话后图静默消失（方案 §7 P0-12） */
       attachments?: readonly ImageRef[];
+      /** 本轮输入来源标记（透传到 `Round.origin`；缺省 = 不写，读侧按 `'user'` 解释） */
+      origin?: Round['origin'];
+      /** 发送者名称（复用 `RoundMessage.name`；缺省 = 不写） */
+      senderName?: string;
     },
   ): Promise<AppendUserOutcome> {
     // E2 会话漂移判据：用户消息的轮归属依赖当前会话，漂移时拒绝写入（防旧轮记入新会话）
@@ -421,11 +429,15 @@ export class MessageHistory {
         }
         const pendingRound: Round = {
           id: roundId,
+          // 来源标记是「这一轮输入」的属性，落在 Round 上（不进 userMessage，后者被交互输入复用）
+          ...(opts?.origin ? { origin: opts.origin } : {}),
           userMessage: {
             id: `msg-${roundId}-user`,
             role: 'user',
             content,
             timestamp: message.timestamp,
+            // 发送者名称复用 RoundMessage.name（不新造字段）
+            ...(opts?.senderName ? { name: opts.senderName } : {}),
             ...(opts?.attachments ? { attachments: opts.attachments } : {}),
           } as RoundMessage,
           status: 'pending',

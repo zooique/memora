@@ -37,6 +37,8 @@ export interface LiveFlowBuffer {
   currentRoundKey?: string;
   /** 开轮用户输入（仅 chat 开新轮路径有；resume 续跑轮由 mergeLiveRound 从落盘历史补） */
   seedUserMessage?: RoundView['userMessage'];
+  /** 开轮输入来源标记（与 seedUserMessage 同生命周期；resume 轮缺省） */
+  seedOrigin?: RoundView['origin'];
 }
 
 /** 单会话流运行态（字段沿用重构前 chatPanel 的对应单份字段，命名去掉下划线） */

@@ -103,8 +103,9 @@ export async function runDemoCommand(configDir: string): Promise<void> {
   output.appendLine('');
 
   // 消费 chat() 流，按 chunk 类型格式化写入 output channel
+  // 来源标记显式传 'user'：演示由用户手动触发，不留 undefined 让语义悬空
   try {
-    for await (const chunk of agent.chat(DEMO_PROMPT)) {
+    for await (const chunk of agent.chat(DEMO_PROMPT, undefined, undefined, { origin: 'user' })) {
       appendChunk(output, chunk);
     }
   } catch (err) {

@@ -109,6 +109,8 @@ function toSessionSummary(
     // 角色包名同样走单点判据（缺字段 / 已卸载未知）→ undefined，旧会话保持零差异；
     // 这里只给名字快照，不判断包是否仍装着（可用性判断会造第二份状态源）
     activeRolePackName: readSessionRolePackName(store, meta.sessionId),
+    // 会话来源标记（缺省 = 旧会话，按用户会话解释；本片只走数据层，不渲染图标）
+    origin: meta.origin,
     // 终态同样是「有则投影、无则缺省」：索引查不到该轮 / 未注入读取口 ⇒ undefined
     lastOutcome: lastStatus ? toLastOutcome(lastStatus) : undefined,
   };

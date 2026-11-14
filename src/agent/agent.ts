@@ -15,7 +15,7 @@ import type {
   AgentConfig,
   SessionCheckpoint,
 } from '@/agent/types.js';
-import type { InteractiveInputKind } from '@/memory/roundStore.js';
+import type { InteractiveInputKind, Round } from '@/memory/roundStore.js';
 import type { BackgroundTask } from '@/agent/backgroundTasks.js';
 import type { ToolExecutor } from '@/agent/toolExecutor.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
@@ -546,11 +546,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * @param attachments 图片附件（可选，多模态输入）；透传到种子编排器 → 装配两跳 → 持久化（方案 §7 P0）。
    *   不传 = 纯文本输入，行为与历史完全一致（零兼容回归）。
+   * @param opts 输入来源标记（`origin`）与发送者名称（`senderName`，落 `RoundMessage.name`）。
+   *   不传 = 历史行为（origin 缺省，读侧按 `'user'` 解释）。
    */
   async *chat(
     input: string,
     signal?: AbortSignal,
     attachments?: readonly ImageRef[],
+    opts?: { origin?: Round['origin']; senderName?: string },
   ): AsyncGenerator<AgentChunk, void, unknown> {
     this.assertInitialized('chat');
     this.validateChatInput(input);
@@ -576,7 +579,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this._lastInteractionAt = new Date();
 
       // 委托种子编排器：对话路径完整闭环（prepare → act → reflect）
-      yield* this.internals.seedOrchestrator!.runChat(input, combinedSignal, attachments);
+      yield* this.internals.seedOrchestrator!.runChat(input, combinedSignal, attachments, opts);
     } finally {
       // 流已退出：清除活跃标志（与置位对称；无论正常/异常退出都复位）
       this._flowActive = false;
@@ -1259,10 +1262,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * @param roundId - 分叉点的 Round ID（可选；不传默认使用最后一个 Round）
    * @param targetSession - 可选，自定义新会话名
+   * @param origin - 可选，新会话自身的来源标记（由发起分叉的调用方传入，不从源会话抄）
    */
-  forkSession(roundId?: string, targetSession?: string): AgentForkResult {
+  forkSession(roundId?: string, targetSession?: string, origin?: Round['origin']): AgentForkResult {
     this.assertInitialized('forkSession');
-    const result = this.requireSessionManager.forkSession(roundId, targetSession);
+    const result = this.requireSessionManager.forkSession(roundId, targetSession, origin);
 
     // 分叉会话首轮命名：仅自动命名（未传 targetSession）时触发，
     // 以分叉点首轮用户消息为标题依据（与新会话首次问答命名同源语义）

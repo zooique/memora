@@ -949,6 +949,8 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'displayName',
       'keyTopics',
       'messageCount',
+      // 2026-11-14 新增（定性见下方 ⑯）：输入来源标记，可选字段、非破坏
+      'origin',
       // 2026-11-08 新增（定性见下方 ⑬）：会话级钉住清单（只存指针），可选字段、非破坏
       'pinnedItems',
       'sessionId',
@@ -966,6 +968,8 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'evidence',
       'id',
       'interactiveInputs',
+      // 2026-11-14 新增（定性见下方 ⑰）：本轮输入来源标记，可选字段、非破坏
+      'origin',
       'pendingAsk', // E2E-ASK-LOSS-1：在途提问快照（挂起前落盘；收场转化 unanswered 并清）
       'processEvents',
       'status',
@@ -1507,7 +1511,19 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    两个方法早已是 no-op、字段冻结为存在性标记，任何读取方都得不到真实引用数；\n` +
       `    format() 是**展示面渲染器**，按「展示面归消费者」归还所有权（宿主与 mcp 各自拼接）。\n` +
       `    旧档相容：带 refCount 的旧 rounds/*.json 反序列化时未知键被忽略（实测，非注释推断）。\n` +
-      `    代价：7.x 升级者失去上述四个成员（CHANGELOG Breaking 段明示）。`;
+      `    代价：7.x 升级者失去上述四个成员（CHANGELOG Breaking 段明示）。` +
+      `\n  ⑯ Round.origin 新增（2026-11-14 · 输入来源标记，非 Breaking）：\n` +
+      `    定性 = **真能力**（非 no-op 谎报）：二值 \`'user' | 'hosted'\`，区分真人输入与托管通道输入；\n` +
+      `    零迁移不回填——缺省 \`undefined\` 本身就是「用户输入」的事实，回填等于伪造历史。\n` +
+      `    真消费者 = 宿主 \`historyLoad.loadRoundBasedHistory\` / \`turnProjection\` 投影到 \`RoundView\`\n` +
+      `    （气泡标签渲染属下一片，本片只打通数据层）；内核写入 = \`appendUser\`，\`forkSession\` 只复制\n` +
+      `    Round ID 指针、不重写轮文件 ⇒ 每轮 origin 作为历史事实天然保留。\n` +
+      `    代价 = 零（可选字段：老轮次读不到 ⇒ 按用户输入解释，无 deprecation 需求）。` +
+      `\n  ⑰ SessionMeta.origin 新增（2026-11-14 · 会话来源标记，非 Breaking）：\n` +
+      `    定性 = **真能力**（非 no-op 谎报）：二值 \`'user' | 'hosted'\`，供会话列表区分来源。\n` +
+      `    真消费者 = 宿主 \`sessionList.toSessionSummary\` → \`session_list_data.origin\`（本片只走数据层，\n` +
+      `    不渲染图标）；写入方 = 宿主 \`createSession\` / \`forkSession\` 调用方显式传值，**不从父会话继承**。\n` +
+      `    代价 = 零（可选字段：老会话读不到 ⇒ 按用户会话解释，无 deprecation 需求）。`;
     expect(
       issues,
       `\n成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,

@@ -8,12 +8,13 @@
 >
 > 本文件 2026-10-19 起按 `CHLOG-TRIM-1` 精简：只记「改了什么 + 为什么 + 对消费者的影响」；逐批拍板过程、变异验证收据、台账叙事的 SSOT 在仓库台账 `tasks/待完成任务.md` 对应 ID 条目（npm 包不含），此处只留 ID 锚保交叉引用。
 
-## [Unreleased]
+## [7.3.0] · 2026-11-14
 
-> 收 **7.2.0（2026-11-12）之后**尚未发版的内核变更；发版时改为带日期的版本标题。
+> 收 **7.2.0（2026-11-12）之后**的内核变更。本版新增「会话与输入的来源标记」：`Round.origin` / `SessionMeta.origin`（二值、可选、零迁移），并让 `Agent.chat()` 与 `forkSession()` 能把来源透传到落盘与视图投影。本片只打通数据层，界面渲染属后续版本。
 
 ### Added（内核）
 
+- **`Round.origin` / `SessionMeta.origin` 新增 `'user' | 'hosted'` 来源标记**（`origin` · **消费者可感知 · 数据模型扩张**）：把「这次输入 / 这个会话由谁发起」变成一等字段，供宿主区分真人输入与托管通道输入。`Agent.chat()` 新增可选第 4 参 `{ origin, senderName }`，经 `runChat → prepare → appendUser` 写入 `Round.origin` 与 `RoundMessage.name`；`forkSession()` 新增可选第 3 参传入新会话自身来源（**不从父会话继承**），历史轮的 origin 随 Round ID 指针复制天然保留。零迁移：旧数据的 `undefined` 就地解释为 `'user'`，不回填（回填等于伪造历史）。**对消费者**：两字段均可选，不传或旧数据读取行为逐字不变；`loadRoundBasedMessages` 仍只取 `role/content/attachments`，模型面零影响。
 - **`metrics.plan` 新增 `taskTableUpdateCount`**（`5da524cf` · **消费者可感知 · 观测面扩张**）：plan 指标此前只有建表次数（`taskTableWriteCount`），`task_table_update` 的触发率只能人工核对，「建了表却从不推进」判不出来。现按工具名分列累加，一次 update 不虚增 write；不改事件流、不改工具契约，宿主侧零消费方。**对消费者**：`agent.getMetrics().plan` 多出 `taskTableUpdateCount`，既有字段值与含义不变。
 
 ### Fixed（内核）
@@ -26,6 +27,10 @@
 ## [Unreleased] · 宿主
 
 > 收 `vscode@0.10.0`（2026-11-12）之后尚未发版的**宿主**变更；发版时改为带日期的版本标题。
+
+### Added（宿主）
+
+- **会话与输入来源标记打通数据层**（`origin` · **消费者可感知 · 数据模型扩张**）：新建会话、分叉会话、发送输入三处显式写 `'user'`；轮次持久化白名单登记 `origin`（漏登记会静默丢字段），历史加载 / 运行时 live 轮投影 / 会话列表均透出该字段。`mergeSessionMeta` 按既有「显式 undefined 不抹既有」口径保护它，改名 / 归档等旁路写入不会把它抹掉。**本版只打通数据层**：气泡标签与会话列表图标渲染属下一片，现有界面逐字不变。
 
 ### Fixed（宿主）
 

@@ -64,6 +64,8 @@ export function loadRoundBasedHistory(
         interactiveInputs: round.interactiveInputs,
         assistantLog: round.assistantLog,
         status: round.status,
+        // 输入来源标记：显式逐字段挑出（缺省 = 旧轮，按用户输入解释）
+        origin: round.origin,
         createdAt: round.createdAt,
         completedAt: round.completedAt,
         // 过程事件与证据同源同轮：view.rounds 即 roundStore.getByIds 返回的完整 Round
