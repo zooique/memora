@@ -445,6 +445,10 @@ export const chatStyles = `
   }
   .empty-title { font-size: var(--font-lg, 14px); color: var(--text-primary, #cccccc); font-weight: 600; margin-bottom: var(--sp-2, 6px); }
   .empty-hint { font-size: var(--font-md, 12px); margin-bottom: var(--sp-5, 12px); }
+  /* 草稿默认模式提示：仅「本次草稿将按托管运行」时插入；普通文本行，不新增浮层。
+     不设 max-width / line-height：宽度继承空态容器（避免新增 --dim- / --lh- 令牌消费触发布局守卫）。 */
+  .empty-mode-hint { margin: 0 0 var(--sp-4, 10px); font-size: var(--font-md, 12px); }
+  .empty-mode-hint-title { color: var(--text-primary, #cccccc); font-weight: 600; }
   /* 示例提问 chips：点击填入输入框，主动引导新用户 */
   .empty-suggestions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2, 6px); }
   .suggestion-chip {

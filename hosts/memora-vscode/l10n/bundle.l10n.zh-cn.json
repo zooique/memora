@@ -1419,5 +1419,7 @@
   "You drive the session": "由你直接驱动会话",
   "A host orchestrates the session": "由主控编排会话",
   "Used last time": "上次使用",
-  "Choose how the new session runs": "选择新会话的运行模式"
+  "Choose how the new session runs": "选择新会话的运行模式",
+  "Default mode: Managed": "默认模式：托管",
+  "This session is run by a host; its messages will be marked as sent by the host. To switch back to self mode, use the Command Palette's new-session mode picker.": "本会话由主控驱动，消息将标记为由主控发送。要切回自助模式，请使用命令面板的「新建会话（选择运行模式）」。"
 }

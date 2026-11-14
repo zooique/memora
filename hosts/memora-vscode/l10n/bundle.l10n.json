@@ -1419,5 +1419,7 @@
   "You drive the session": "",
   "A host orchestrates the session": "",
   "Used last time": "",
-  "Choose how the new session runs": ""
+  "Choose how the new session runs": "",
+  "Default mode: Managed": "",
+  "This session is run by a host; its messages will be marked as sent by the host. To switch back to self mode, use the Command Palette's new-session mode picker.": ""
 }

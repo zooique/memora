@@ -13947,4 +13947,24 @@ describe('草稿页 = 角色显示内核兜底包，其余四项会话级投影�
     // 占用环复位而非被隐藏：草稿页仍有「当前模型容量」可展示，空环才是空态（隐藏会丢容量事实）
     expect((document.getElementById('contextOccupancy') as HTMLElement).hidden).toBe(false);
   });
+
+  it('草稿默认托管：空态页出现切回提示；self / 真实会话一律清除', () => {
+    mountChatView();
+    dispatch({ type: 'clear_ok' });
+    dispatch({ type: 'session_title', title: '新会话', draft: true, defaultMode: 'managed' });
+
+    const hint = document.querySelector('.empty-mode-hint');
+    expect(hint).not.toBeNull();
+    expect(hint?.textContent).toContain('Default mode: Managed');
+    // 提示必须说明可切回自助（不是只报状态）
+    expect(hint?.textContent).toContain('switch back to self mode');
+
+    // 自助草稿：不打扰
+    dispatch({ type: 'session_title', title: '新会话', draft: true });
+    expect(document.querySelector('.empty-mode-hint')).toBeNull();
+
+    // 真实会话即使误带 defaultMode 也不显示（只认 draft）
+    dispatch({ type: 'session_title', title: '旧会话', draft: false, defaultMode: 'managed' });
+    expect(document.querySelector('.empty-mode-hint')).toBeNull();
+  });
 });

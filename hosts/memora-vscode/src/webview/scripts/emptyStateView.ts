@@ -100,6 +100,13 @@ export function createEmptyStateView(deps: EmptyStateViewDeps): {
   onboarding(): void;
   /** onboarding 按钮移除（配置就绪恢复普通空态，幂等） */
   clearOnboardBtn(): void;
+  /**
+   * 草稿默认模式提示（仅 `'managed'` 时出现）
+   *
+   * 位置 = 空态描述下方的普通文本行，不新增浮层 / 弹窗 / 页面；
+   * `'self'` / undefined ⇒ 移除元素（默认自助时不打扰），重复投影幂等。
+   */
+  setDefaultMode(mode?: 'self' | 'managed'): void;
 } {
   const { document, emptyState, emptyTitle, emptyHint, emptySuggestions, messages } = deps;
 
@@ -166,6 +173,34 @@ export function createEmptyStateView(deps: EmptyStateViewDeps): {
   }
 
   /**
+   * 草稿默认模式提示：只在「本次草稿会以托管身份运行」时出现
+   *
+   * 复用现有空态结构（描述下方一行文本），不新增浮层；文案说明影响面与切回自助的路径。
+   * 必须在调用时经 `l10n.t` 取译文（模块加载早于语言包就绪）。
+   */
+  function setDefaultMode(mode?: 'self' | 'managed'): void {
+    const existing = emptyState.querySelector<HTMLElement>('.empty-mode-hint');
+    if (mode !== 'managed') {
+      existing?.remove(); // self / 真实会话：清掉上一次草稿的提示，防残留
+      return;
+    }
+    if (existing) return; // 重复投影（进入 / 重建 / 建会话失败回滚）不叠加
+    const hint = document.createElement('div');
+    hint.className = 'empty-mode-hint';
+    /** 结论行：当前默认模式 */
+    const title = document.createElement('div');
+    title.className = 'empty-mode-hint-title';
+    title.textContent = l10n.t('Default mode: Managed');
+    /** 影响 + 切回路径：textContent 赋值防注入 */
+    const detail = document.createElement('div');
+    detail.textContent = l10n.t(
+      "This session is run by a host; its messages will be marked as sent by the host. To switch back to self mode, use the Command Palette's new-session mode picker.",
+    );
+    hint.append(title, detail);
+    emptyHint.insertAdjacentElement('afterend', hint);
+  }
+
+  /**
    * 空状态示例提问 Chips：随激活角色动态渲染（SSOT，事件委托兼容动态元素）。
    *
    * 命中 ROLE_SUGGESTION_SETS 的角色展示专属示例（showcase，如白话方案设计师的"种子收敛"
@@ -187,5 +222,5 @@ export function createEmptyStateView(deps: EmptyStateViewDeps): {
     });
   }
 
-  return { update, updateRole, onboarding, clearOnboardBtn };
+  return { update, updateRole, onboarding, clearOnboardBtn, setDefaultMode };
 }

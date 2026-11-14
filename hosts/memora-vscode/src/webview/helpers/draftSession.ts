@@ -154,7 +154,13 @@ export class DraftSessionController {
     //     （无会话 ⇒ 不得保留上一会话的能力面与占用；不为此新增消息类型）
     // 草稿页标题：草稿没有会话 id ⇒ 没有创建时间可言，恒显示「新会话」（不带时间）。
     // 取调用时译文：模块顶层求值会把默认语言写死（与 errorText 同纪律）
-    this.deps.post({ type: 'session_title', title: vscode.l10n.t('New session'), draft: true });
+    this.deps.post({
+      type: 'session_title',
+      title: vscode.l10n.t('New session'),
+      draft: true,
+      // 默认托管才下发：空态页据此提示「可切回自助」；self / 缺省不发，避免无意义打扰
+      ...(this._mode === 'managed' ? { defaultMode: 'managed' as const } : {}),
+    });
     // 草稿没有 Agent ⇒ 后台任务 / 看板投影一律空（看板由 clear_ok 的 DOM 复位承担），
     // 不把上一个会话的投影留在屏上；角色徽章例外——草稿期显示「即将生效」的包（见 postRolePack）
     this.postRolePack();

@@ -3405,6 +3405,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         roleBadgeView.hideCapabilityBadge();
         occupancyView.renderLimit(currentProviders, currentActive, true);
       }
+      // 草稿默认模式提示：只认 draft + managed；真实会话 / self 清除，空态页不残留
+      emptyStateView.setDefaultMode(msg.draft === true ? msg.defaultMode : undefined);
     } else if (msg.type === 'session_list_data') {
       // 历史会话列表：渲染到 treedd 历史下拉（全量 + 留存区标记，前端过滤分两组）
       historyMenuApi.renderMenu(msg.sessions, msg.archivedIds ?? []);

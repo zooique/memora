@@ -1316,6 +1316,12 @@ export type ExtensionToWebviewMessage =
        * webview 据此禁用标题条改名笔；普通会话不传该字段（语义不变）。
        */
       draft?: boolean;
+      /**
+       * 草稿默认运行模式（可选，复用现有 DTO，不新增消息类型）：
+       * 仅 `'managed'` 时下发，webview 在空态页提示「默认托管 + 可切回自助」；
+       * `'self'` / 缺省不传——普通用户不受打扰。真实会话不传。
+       */
+      defaultMode?: 'self' | 'managed';
     }
   /**
    * 历史会话列表（对 session_list 的应答）
