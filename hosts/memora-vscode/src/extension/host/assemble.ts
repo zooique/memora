@@ -47,6 +47,7 @@ import { WorkspaceSessionStore } from './sessionStore.js';
 import { vscodeTracer } from './tracer.js';
 import { startMcpServers } from './mcp/runtime.js';
 import type { McpServerConfig } from './mcp/connectionManager.js';
+import { registerWorkSessionTools } from './workSessionTools.js';
 
 import type { ProviderStore } from '../providers/providerStore.js';
 
@@ -354,6 +355,17 @@ export interface AssembleOptions {
    * ProviderStore 视觉位」构造。未注入 ⇒ 内核不暴露 `read_image`（暴露面按端口存在性裁剪）。
    */
   imageReadPort?: ImageReadPort;
+  /**
+   * 该 Agent 是否为**主控**（托管模式 v0 · 切片 0：只接线，不落盘）
+   *
+   * 由调用方在装配时传入（**当前尚无生产调用方**：extension.ts 的 `buildAssembleOptions`
+   * 不传该键，主控会话的创建入口属于后续切片）。为 true 时多注册一个会话工具
+   * `list_work_sessions`；为 false / 缺省则完全不注册（普通会话里该工具**不存在**）。
+   *
+   * ⚠️ 刻意不写进 `SessionMeta`、不加任何持久化字段——`SessionMeta.mode` 已于 2026 年作废，
+   * 主控身份不是会话的持久属性（v0 定案：主控 = 普通 Agent 会话 + 装配期标记 + prompt 常量）。
+   */
+  orchestratorSession?: boolean;
   /** 环境变量（默认 process.env，便于测试注入） */
   env?: NodeJS.ProcessEnv;
 }
@@ -407,6 +419,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     extensionVersion,
     imageResolver,
     imageReadPort,
+    orchestratorSession,
   } = options;
 
   // 日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核；
@@ -566,6 +579,19 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   // 单一模式：interject 一律排队、在下一 step 边界并入，
   // 不中断当前 loop 执行——无需再 setInputInterrupt('block')（API 已删除），
   // 默认行为即「申请 → 气口生效」。
+
+  // 4.2 主控会话工具（托管模式 v0 · 切片 0：只接线，不做功能）
+  //
+  // 判据唯一 = 装配期标记 `orchestratorSession`（不落盘、不进 SessionMeta）。
+  // 普通会话**不注册** ⇒ 模型侧「工具不存在」（而不是注册一个会抛错的占位工具）。
+  // 注册点在 init 之后：工具面需要已初始化的执行器，且注册即触发 onToolsChanged。
+  // 本片数据真源 = 注入的会话存储（listSessionMetas）；切片 1 改为扫盘时只换 handler。
+  if (orchestratorSession) {
+    const registered = registerWorkSessionTools(agent, store);
+    if (!registered) {
+      logger?.warn('[work-session] Agent 工具执行器不可用，主控会话工具未注册');
+    }
+  }
 
   // 5. 加载用户技能（可选，宿主扩展内置技能池）
   // 用户技能与内置技能分离：内置从 configDir/skills/ 扫描，用户从 userSkillsDir 扫描
