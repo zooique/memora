@@ -356,17 +356,16 @@ export interface AssembleOptions {
    */
   imageReadPort?: ImageReadPort;
   /**
-   * 该 Agent 是否为**主控**（托管模式 v0 · 切片 0：只接线，不落盘）
+   * 该 Agent 是否为**主控**（托管模式 v0 · 装配期标记，不落盘）
    *
-   * 由调用方在装配时传入（**当前尚无生产调用方**：extension.ts 的 `buildAssembleOptions`
-   * 不传该键，主控会话的创建入口属于后续切片）。为 true 时多注册一个会话工具
-   * `list_work_sessions`；为 false / 缺省则完全不注册（普通会话里该工具**不存在**）。
+   * 由宿主装配入口按会话运行模式传入（真源 = `SessionModeStore` 的 `Map<sid, mode>`）：
+   * `managed` ⇒ `true`，多注册会话编排工具；`self` / 缺省 ⇒ `false`，工具**不存在**。
    *
    * 作用域只有**这一次装配的工具面**：本进程、本窗口有效，跨窗口与重启都会归零。
-   * **主控工具面判据不是会话的持久属性**（mode 仍落宿主会话级运行时容器，§14.21.4）；但**来源归属是**——
-   * 「这条会话 / 这一轮是谁创建的」是读侧事实，跨窗口、跨进程都要成立，按
-   * docs/评估-子会话与目标模式路线-20261108.md §14.21.8 D-1 落内核一等字段
-   * `SessionMeta.origin` / `Round.origin`（待实现）；「由 X 发送」复用 `RoundMessage.name`。
+   *
+   * ⚠️ 设计允许的张力（不要当 bug 修）：装配期 mode 重启回落 `self`，而来源归属是**持久事实**——
+   * `SessionMeta.origin` / `Round.origin` 已落内核；「由 X 发送」复用 `RoundMessage.name`。
+   * 托管会话重启后不再以主控身份运行，但历史会话 / 历史轮仍标记为 `'hosted'`；两者不同步是刻意的。
    */
   orchestratorSession?: boolean;
   /** 环境变量（默认 process.env，便于测试注入） */
@@ -586,8 +585,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   // 4.2 主控会话工具（托管模式 v0 · 切片 0：只接线，不做功能）
   //
   // 工具面判据 = 装配期标记 `orchestratorSession`（不落盘）：它跨窗口 / 重启归零，
-  // 只回答「这一次装配注不注册会话工具」，不承担来源归属——来源按 §14.21.8 D-1 落
-  // `SessionMeta.origin` / `Round.origin`（待实现），「由 X 发送」复用 `RoundMessage.name`。
+  // 只回答「这一次装配注不注册会话工具」，不承担来源归属——来源已按 §14.21.8 D-1
+  // 落 `SessionMeta.origin` / `Round.origin`（02f09445 已实现），「由 X 发送」复用 `RoundMessage.name`。
   // 普通会话**不注册** ⇒ 模型侧「工具不存在」（而不是注册一个会抛错的占位工具）。
   // 注册点在 init 之后：工具面需要已初始化的执行器，且注册即触发 onToolsChanged。
   // 本片数据真源 = 注入的会话存储（listSessionMetas）；切片 1 改为扫盘时只换 handler。

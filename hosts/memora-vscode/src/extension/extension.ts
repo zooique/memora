@@ -23,6 +23,7 @@ import { assembleAgent, createVscodeLogger, type AssembleOptions } from './host/
 import { createHostMemoryStorage } from './host/memoryStorage.js';
 import { resolveProjectDataDir } from './host/projectDataDir.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
+import { SessionModeStore } from './host/sessionModeStore.js';
 import { readSessionRolePackName } from './host/sessionRolePack.js';
 import { WorkspaceRoundStore, DEFAULT_SWEEP_MIN_AGE_MS } from './host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
@@ -179,10 +180,7 @@ function runOnAssembledAgent(
   });
 }
 
-/**
- * 装配期稳定依赖（activate 内采样一次）：只服务按会话装配（`assembleAgentForSession`），
- * 杜绝「每处各写一套选项」导致行为漂移（E4 验收判据「选项键快照」）。
- */
+/** 装配期稳定依赖（activate 内采样一次，杜绝每处各写一套选项；只服务按会话装配） */
 interface AssemblyDeps {
   /** 大模型配置存储 */
   providerStore: ProviderStore;
@@ -206,6 +204,7 @@ interface AssemblyDeps {
   readProjectDirs: () => ProjectAssetDirs;
   /** 记忆存储单例（懒建；所有会话 Agent 共用此同一对象，所有权归宿主） */
   storage: () => IMemoryStorage;
+  sessionModes: SessionModeStore; // 会话模式容器（§14.21.4）：Map 不落盘；「上次模式」只作新建默认值
 }
 
 /**
@@ -213,8 +212,7 @@ interface AssemblyDeps {
  *
  * 所有装配入口（单实例 / 按会话）都经此函数产出 `AssembleOptions`：**静态选项键**只在此处
  * 写一次，新增字段不会漏传某一路（防「单实例能用、会话实例少注入」）。会话级的
- * `activeRolePack` 需 sessionId，由 `assembleAgentForSession` 装配前注入。
- *
+ * `activeRolePack` / `orchestratorSession` 需 sessionId，由 `assembleAgentForSession` 装配前注入。
  * @param projectPath 工作区路径
  * @param deps 装配期稳定依赖
  */
@@ -339,6 +337,8 @@ async function assembleAgentForSession(
   // 宿主侧由 chatPanel.bindAgent 读同一份 meta 发可见提示（不许静默回落）。
   const options = buildAssembleOptions(projectPath, deps);
   options.activeRolePack = readSessionRolePackName(deps.sessionStore, sessionId);
+  // mode 是装配期输入（重启回落 self）；origin 是持久事实，两者不同步是设计允许的。
+  options.orchestratorSession = deps.sessionModes.isManaged(sessionId);
   const agent = await assembleAgent(options);
   try {
     // getter 类型为可空（未初始化时 null）；此处刚装配完成，为空即内部状态异常
@@ -499,11 +499,13 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   // 装配期稳定依赖：单实例路径与按会话路径共用同一份（选项唯一构建点 = buildAssembleOptions）
+  const sessionModes = new SessionModeStore(context.globalState); // 会话运行模式容器（Map 不落盘）
   const assemblyDeps: AssemblyDeps = {
     providerStore,
     sessionStore,
     roundStore,
     globalState: context.globalState,
+    sessionModes,
     configDir,
     imageCache,
     userSkillsDir,
