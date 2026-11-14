@@ -15,6 +15,7 @@ import type {
   InjectionSource,
   PendingQuestionDto,
   RoundView,
+  UiForm,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 // 引用身份键与去重判据：**必须**与宿主缓冲共用同一实现——同文件不同选区是两条引用，
@@ -201,6 +202,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const historySearch = document.getElementById('historySearch') as HTMLInputElement;
   const input = document.getElementById('input') as HTMLTextAreaElement;
   const send = document.getElementById('send') as HTMLButtonElement;
+  // 助手形态输入区（ASSISTANT-FORM）：标识条 + 输入框左图标 + 工作台入口。
+  // 自助形态三者恒 hidden（无显隐切换成本，也不参与任何布局） ⇒ 自助面零影响。
+  const assistantModeBar = document.getElementById('assistantModeBar') as HTMLElement;
+  const assistantModeIcon = document.getElementById('assistantModeIcon') as HTMLElement;
+  const assistantWorkbenchBtn = document.getElementById(
+    'assistantWorkbenchBtn',
+  ) as HTMLButtonElement;
+  /**
+   * 自助形态的输入占位原文（**只在这里取一次**）
+   *
+   * 真源 = HTML 里那一份（l10n 在宿主侧已翻好）；切到助手形态前记下，切回时逐字还原。
+   * 任何「在脚本里再写一份自助占位文案」的做法都会立刻产生第二语言真源并漂移。
+   */
+  const selfPlaceholder = input.placeholder;
   // 暂停按钮（Gap A：用户主动暂停入口，仅生成中可见，与「停止」并列的软暂停控制）
   const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement | null;
   // 润色按钮（输入框旁，对当前输入内容进行润色）
@@ -3560,6 +3575,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'write_confirm_closed') {
       // 请求已终结（裁决 / 超时自动拒绝）→ 收卡；requestId 不匹配即丢弃（当前卡可能已切到更新的请求）
       writeConfirmView.closeIfMatches(msg.requestId);
+    } else if (msg.type === 'ui_form') {
+      // 侧栏形态（宿主是真源）：只落表现。宿主在 ready 时必推一次 ⇒ 视图重建后形态不会丢。
+      applyForm(msg.form);
     }
   }
 
@@ -3588,11 +3606,34 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   window.addEventListener('message', onMessage);
+  // 首帧形态：骨架里的 body[data-form] 已由宿主渲染时写入（视图重建不必等 ui_form 才纠正），
+  // 这里补齐同一形态的其余表现（占位原文来自 HTML，故自助形态下本调用是幂等的）。
+  applyForm(document.body.dataset.form === 'assistant' ? 'assistant' : 'self');
 
   // 选区复制兜底（Layer A）：挂一次即可，幂等。修复「选中对话记录后 Ctrl+C /
   // 右键 Copy 复制不出」——原生复制在 WebviewView 不可靠，本 guard 在 copy 事件
   // 同步写盘；输入区 <textarea> 选区不计入 getSelection ⇒ 自动放行原生复制。
   installSelectionCopyGuard();
+
+  /**
+   * 侧栏形态的唯一落点（自助 ⇄ 助手）
+   *
+   * 三条纪律：
+   * - **表现层单点**：body[data-form] + 两处 hidden + 占位文字，全在这里翻；别在消息分支里
+   *   各翻一处（形态一改就要改 N 处，漏一处即半套形态）。
+   * - **占位原值只认 HTML**：切走前已由 `selfPlaceholder` 记下，切回逐字还原。
+   * - **不持有形态**：本函数纯写入；当前形态由宿主 `ui_form` 决定（webview 不记、不猜、不落
+   *   本地存储——否则重启后剩一个「假助手形态」，与「形态不记住」拍板相反）。
+   */
+  function applyForm(form: UiForm): void {
+    const assistant = form === 'assistant';
+    document.body.dataset.form = form;
+    input.placeholder = assistant
+      ? l10n.t('Tell the assistant what you want done')
+      : selfPlaceholder;
+    assistantModeBar.hidden = !assistant;
+    assistantModeIcon.hidden = !assistant;
+  }
 
   // textarea 自适应高度（Enter 发送 / Shift+Enter 换行）
   // SSOT：高度上限单一真理源 — 从 CSS 令牌(--input-max-h)的计算值读取，
@@ -3821,6 +3862,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 标题条按钮：改名笔 / 新建「＋」（分叉统一收敛到消息底部——任意 LLM 回答处可分叉，标题条不再冗余入口）
   renameSessionBtn.addEventListener('click', () => vscode.postMessage({ type: 'rename_request' }));
   newSessionBtn.addEventListener('click', () => vscode.postMessage({ type: 'new_session' }));
+  // 助手形态标识条上的工作台入口：只转达点击——「看哪一条会话」的选座判据全在宿主
+  // memora.openWorkbench（webview 不得自己挑会话，否则是第二真理源）
+  assistantWorkbenchBtn.addEventListener('click', () =>
+    vscode.postMessage({ type: 'assistant_open_workbench' }),
+  );
   // 历史按钮：开合由 treedd 管理（initDropdowns），本层只负责「打开时重置浏览态并请求最新列表」
   //（动作体收口于容器 openFresh；「视图重置挂打开时机、不挂数据下发」的论证见容器模块头 ②）
   historyBtn.addEventListener('click', () => {

@@ -109,7 +109,17 @@ const HTML = `
       <div id="skillChips" class="skill-chip-row" hidden></div>
       <!-- 附件行：活动文件 / 注入 / 图片 / 引用回复 / 引用 chip 单点渲染（图片行已并入，2026-11-11） -->
       <div id="refChips" class="skill-chip-row" hidden></div>
-      <textarea id="input"></textarea>
+      <!-- 助手形态标识条（ASSISTANT-FORM）：与生产骨架同步——默认 hidden，形态由 body[data-form]
+           与 applyForm 决定；#assistantWorkbenchBtn 是工作台的唯一侧栏入口 -->
+      <div id="assistantModeBar" class="assistant-mode-bar" hidden>
+        <span class="assistant-mode-bar__text">Assistant mode · it arranges sessions for you</span>
+        <button id="assistantWorkbenchBtn" class="assistant-mode-bar__link" type="button">Workbench</button>
+      </div>
+      <!-- 输入框包裹层 + 左侧助手图标（生产同构：默认 display:contents / 图标 hidden） -->
+      <div id="inputBox" class="input-box">
+        <span id="assistantModeIcon" class="assistant-mode-icon" aria-hidden="true" hidden><span data-icon="assistant"></span></span>
+        <textarea id="input" placeholder="@ to reference files, / to pick a skill; Enter to send, Shift+Enter for newline"></textarea>
+      </div>
       <div id="inputFooter">
         <div class="composer-row composer-row--actions">
           <div class="composer-actions">

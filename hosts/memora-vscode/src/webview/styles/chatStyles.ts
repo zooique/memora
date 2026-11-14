@@ -1584,6 +1584,71 @@ export const chatStyles = `
   #inputWrap:has(.skill-chip-row:not([hidden])) #input {
     padding-top: var(--sp-2, 6px);
   }
+  /* ═══ 助手形态输入区（ASSISTANT-FORM）════════════════════════════════════
+   * 形态的**唯一载体**是 body[data-form]（宿主下发，脚本只写这一个属性）。
+   * 硬纪律一：本段每条规则都必须带 body[data-form='assistant'] 前缀——漏前缀即漏到自助形态。
+   * 唯一例外是下面那条 #inputBox 基线（display:contents = 不生成盒子，等价于「没有这个
+   * 包裹层」）；守卫用例 assistantFormView 逐条校验「除基线外全部带前缀」。
+   * 硬纪律二（用户拍板）：助手形态的输入区除发送键外不许有第二个控件——运行控制那排
+   * （技能 / 模型 / 润色 / 图片、暂停、状态行）在自助形态一个不少，这里只**不显示**、
+   * 不删 DOM：能力（内部停止 / 暂停）照旧可达，只是不给这个形态摆按钮。 */
+  /* 基线：包裹层不生成盒子 ⇒ 自助形态的输入区布局与加入本层之前逐像素一致 */
+  #inputBox { display: contents; }
+  /* 标识条：输入框上方一行小字 + 工作台入口（hidden 属性由脚本按形态翻） */
+  body[data-form='assistant'] .assistant-mode-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 6px);
+    padding: var(--sp-3, 8px) var(--sp-6, 16px) 0;
+    font-size: var(--font-sm, 12px);
+    line-height: var(--lh-normal);
+    color: var(--text-secondary);
+  }
+  body[data-form='assistant'] .assistant-mode-bar__text { flex: 1 1 auto; min-width: 0; }
+  body[data-form='assistant'] .assistant-mode-bar__link {
+    flex: 0 0 auto;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--accent, #0e639c);
+    font: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  /* 卡片本体：品牌色描边 + 淡底，与自助形态的中性描边一眼可辨 */
+  body[data-form='assistant'] #inputWrap {
+    border-color: var(--accent, #0e639c);
+    background: var(--accent-soft, rgba(14, 99, 156, 0.12));
+  }
+  /* 包裹层改横排：图标落到文字左缘（左内距由包裹层给，textarea 自身左内距归零） */
+  body[data-form='assistant'] #inputBox {
+    display: flex;
+    align-items: flex-start;
+    padding-left: var(--sp-6, 16px);
+  }
+  /* ⚠ 主轴改横 ⇒ 这里的 flex 控的是**宽度**：高度仍由 autoResize 写 style.height
+   * （见上方 #input 的高度纪律注释，两者不冲突） */
+  body[data-form='assistant'] #inputBox #input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-left: 0;
+  }
+  body[data-form='assistant'] .assistant-mode-icon {
+    display: flex;
+    flex: 0 0 auto;
+    padding-top: var(--sp-6, 16px);
+    color: var(--accent, #0e639c);
+  }
+  /* 附件行在场时 textarea 顶距收到 sp-2（见上方 :has 规则）⇒ 图标同刻度跟随，避免错行 */
+  body[data-form='assistant'] #inputWrap:has(.skill-chip-row:not([hidden])) .assistant-mode-icon {
+    padding-top: var(--sp-2, 6px);
+  }
+  /* 运行控制排：自助形态一个不少，助手形态一个不留（发送键自身三态保留） */
+  body[data-form='assistant'] .composer-left,
+  body[data-form='assistant'] #pauseBtn,
+  body[data-form='assistant'] .composer-row--status { display: none !important; }
+  /* 左侧清空后 space-between 会把发送键甩到最左；改右对齐，与自助形态同一视觉落点 */
+  body[data-form='assistant'] .composer-row--main { justify-content: flex-end; }
   /* 输入区布局：左侧功能群 + 右侧发送按钮 + 状态行
    * 对齐 visual-design-philosopher：发送按钮突出化（最大最亮），其他功能弱化。 */
   #inputFooter {
