@@ -95,6 +95,8 @@ interface Probe {
   agent: Agent;
   /** 注入的记忆存储（所有权归本测试，收尾显式 close） */
   storage: ReturnType<typeof createHostMemoryStorage>;
+  /** 探针会话库（范围声明用例直接播种 `declaredPaths`） */
+  sessionStore: WorkspaceSessionStore;
 }
 
 /**
@@ -231,7 +233,7 @@ async function assembleProbe(orchestratorSession?: boolean, hosted?: HostedDeps)
             })),
         }),
   });
-  return { agent, storage };
+  return { agent, storage, sessionStore };
 }
 
 /**
@@ -775,16 +777,18 @@ describe('托管 v0 · create_session（工具层）', () => {
       // 成功回执必须带「核清了多少」：本例历史读口是空账本且读全 ⇒ complete、无 note
       expect(accepted).toMatchObject({ ok: true, sid: '2026-11-14-created', title: '调研会话' });
       expect(accepted).toMatchObject({
-        scopeCheck: { coverage: 'complete', scannedRounds: 0, totalRounds: 0, unscopedRunning: 0 },
+        scopeCheck: { coverage: 'complete', unscopedRunning: 0 },
       });
       expect((accepted as { scopeCheck: { note?: string } }).scopeCheck.note).toBeUndefined();
-      // 发送者名必须是装配期注入值：工具内写死字面量会让本断言转红
+      // 发送者名必须是装配期注入值：工具内写死字面量会让本断言转红。
+      // 第六参 = 已规范化的范围声明（随创建写进会话元数据）
       expect(createSession).toHaveBeenCalledWith(
         SESSION_ID,
         '资料员',
         '调研会话',
         '先读 README',
         SENDER_NAME,
+        ['docs'],
       );
     } finally {
       await disposeProbe(probe);
@@ -806,6 +810,7 @@ describe('托管 v0 · create_session（工具层）', () => {
         '默认包会话',
         '开始',
         SENDER_NAME,
+        ['docs'],
       );
     } finally {
       await disposeProbe(probe);
@@ -829,7 +834,7 @@ describe('托管 v0 · create_session（工具层）', () => {
 });
 
 describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
-  it('与在跑的活的声明范围重叠 ⇒ E_SCOPE_CONFLICT，回 sid + 撞在哪，且不触建会话', async () => {
+  it('与元数据里在跑活的声明重叠 ⇒ E_SCOPE_CONFLICT，回 sid + 撞在哪，且不触建会话', async () => {
     const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
       ok: true,
       sid: '2026-11-14-blocked',
@@ -837,16 +842,19 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
     }));
     const probe = await assembleProbe(true, {
       createSession,
-      // 历史里的在跑活：声明 src/agent（原始入参带 ./ 与反斜杠，验证规范化）
-      readHistory: () => ({
-        coverage: 'complete',
-        children: [{ sessionId: '2026-11-14-old', title: '改内核', paths: ['./SRC\\agent'] }],
-        totalRounds: 1,
-        scannedRounds: 1,
-      }),
-      readStatus: (sid) => (sid === '2026-11-14-old' ? { kind: 'running' } : { kind: 'completed' }),
+      readStatus: (sid) =>
+        sid === '2026-11-14-scoped' ? { kind: 'running' } : { kind: 'completed' },
     });
     try {
+      // 声明真源 = 会话元数据（不是历史轮次）：播种一条带声明且在跑的活
+      probe.sessionStore.createSession({
+        sessionId: '2026-11-14-scoped',
+        displayName: '改内核',
+        updatedAt: SESSION_UPDATED_AT,
+        messageCount: 0,
+        origin: 'hosted',
+        declaredPaths: ['src/agent'],
+      });
       const result = await executeCreate(probe, {
         title: '新活',
         text: '也改内核',
@@ -858,7 +866,7 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
         code: 'E_SCOPE_CONFLICT',
         conflicts: [
           {
-            sid: '2026-11-14-old',
+            sid: '2026-11-14-scoped',
             title: '改内核',
             declared: 'src/agent',
             requested: 'src/agent/loop.ts',
@@ -871,41 +879,7 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
     }
   }, 120_000);
 
-  it('声明整仓（["."]）与任何在跑活都算重叠；不重叠则放行并登记本进程范围', async () => {
-    const createSession = vi
-      .fn<() => Promise<CreateSessionResult>>()
-      .mockResolvedValueOnce({ ok: true, sid: '2026-11-14-first', title: '第一条' })
-      .mockResolvedValueOnce({ ok: true, sid: '2026-11-14-second', title: '第二条' });
-    const probe = await assembleProbe(true, {
-      createSession,
-      // 第一条开出来即被视作在跑（状态读口真实回 running）
-      readStatus: (sid) =>
-        sid === '2026-11-14-first' ? { kind: 'running' } : { kind: 'completed' },
-    });
-    try {
-      // 第一条声明 docs 并成功（登记进内存范围表）
-      expect(
-        await executeCreate(probe, { title: '第一条', text: '写文档', paths: ['docs'] }),
-      ).toMatchObject({ ok: true, sid: '2026-11-14-first' });
-      // 第二条与 docs 重叠 ⇒ 拒
-      expect(
-        await executeCreate(probe, { title: '第二条', text: '也写文档', paths: ['./docs/a.md'] }),
-      ).toMatchObject({ ok: false, code: 'E_SCOPE_CONFLICT' });
-      // 整仓声明与任何在跑活都重叠 ⇒ 拒（等价于自愿独占）
-      expect(
-        await executeCreate(probe, { title: '第三条', text: '全仓', paths: ['.'] }),
-      ).toMatchObject({
-        ok: false,
-        code: 'E_SCOPE_CONFLICT',
-        conflicts: [{ sid: '2026-11-14-first', declared: 'docs', requested: '.' }],
-      });
-      expect(createSession).toHaveBeenCalledTimes(1);
-    } finally {
-      await disposeProbe(probe);
-    }
-  }, 120_000);
-
-  it('不重叠放行；已收场的活不占范围（completed 不拦新活）', async () => {
+  it('声明整仓撞上在跑活即拒；核得清时回执 complete 且不带 note', async () => {
     const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
       ok: true,
       sid: '2026-11-14-fresh',
@@ -913,16 +887,59 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
     }));
     const probe = await assembleProbe(true, {
       createSession,
-      readHistory: () => ({
-        coverage: 'complete',
-        children: [{ sessionId: '2026-11-14-done', title: '旧活', paths: ['src/agent'] }],
-        totalRounds: 1,
-        scannedRounds: 1,
-      }),
-      // 旧活已收场 ⇒ 不占写面，放行
+      readStatus: (sid) =>
+        sid === '2026-11-14-scoped' ? { kind: 'running' } : { kind: 'completed' },
+    });
+    try {
+      probe.sessionStore.createSession({
+        sessionId: '2026-11-14-scoped',
+        displayName: '写文档',
+        updatedAt: SESSION_UPDATED_AT,
+        messageCount: 0,
+        origin: 'hosted',
+        declaredPaths: ['docs'],
+      });
+      // 整仓声明与任何在跑活都重叠 ⇒ 拒（整仓 = 自愿独占）
+      expect(
+        await executeCreate(probe, { title: '第三条', text: '全仓', paths: ['.'] }),
+      ).toMatchObject({
+        ok: false,
+        code: 'E_SCOPE_CONFLICT',
+        conflicts: [{ sid: '2026-11-14-scoped', declared: 'docs', requested: '.' }],
+      });
+      // 不重叠：放行，回执写清「核清了」（无 note）
+      const accepted = (await executeCreate(probe, {
+        title: '另一块',
+        text: '改别的',
+        paths: ['src/other'],
+      })) as { ok: boolean; scopeCheck: { coverage: string; note?: string } };
+      expect(accepted.ok).toBe(true);
+      expect(accepted.scopeCheck.coverage).toBe('complete');
+      expect(accepted.scopeCheck.note).toBeUndefined();
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('已收场的活不占范围（completed 不拦新活）', async () => {
+    const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
+      ok: true,
+      sid: '2026-11-14-fresh',
+      title: '新活',
+    }));
+    const probe = await assembleProbe(true, {
+      createSession,
       readStatus: () => ({ kind: 'completed' }),
     });
     try {
+      probe.sessionStore.createSession({
+        sessionId: '2026-11-14-done',
+        displayName: '旧活',
+        updatedAt: SESSION_UPDATED_AT,
+        messageCount: 0,
+        origin: 'hosted',
+        declaredPaths: ['src/agent'],
+      });
       expect(
         await executeCreate(probe, { title: '新活', text: '改文档', paths: ['docs'] }),
       ).toMatchObject({ ok: true, sid: '2026-11-14-fresh' });
@@ -940,15 +957,17 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
     }));
     const probe = await assembleProbe(true, {
       createSession,
-      readHistory: () => ({
-        coverage: 'complete',
-        children: [{ sessionId: '2026-11-14-unknown', title: '状态不明', paths: ['docs'] }],
-        totalRounds: 1,
-        scannedRounds: 1,
-      }),
       readStatus: () => ({ kind: 'unreadable' }),
     });
     try {
+      probe.sessionStore.createSession({
+        sessionId: '2026-11-14-unknown',
+        displayName: '状态不明',
+        updatedAt: SESSION_UPDATED_AT,
+        messageCount: 0,
+        origin: 'hosted',
+        declaredPaths: ['docs'],
+      });
       expect(
         await executeCreate(probe, { title: '新活', text: '改文档', paths: ['docs/b.md'] }),
       ).toMatchObject({ ok: false, code: 'E_SCOPE_CONFLICT' });
@@ -958,7 +977,7 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
     }
   }, 120_000);
 
-  it('历史被 60 轮截断 ⇒ 照派但回执必须带「只核了最近 N 轮」（不许给「无冲突」结论）', async () => {
+  it('范围上线前开的老活在跑 ⇒ partial + note 说清「核不清」，且不把整仓包装成安全建议', async () => {
     const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
       ok: true,
       sid: '2026-11-14-partial',
@@ -966,78 +985,15 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
     }));
     const probe = await assembleProbe(true, {
       createSession,
-      // 总 80 轮、只扫最近 60 轮：更早开的活完全可能还在跑
-      readHistory: () => ({
-        coverage: 'partial',
-        children: [],
-        totalRounds: 80,
-        scannedRounds: 60,
-      }),
-      readStatus: () => ({ kind: 'running' }),
-    });
-    try {
-      const result = (await executeCreate(probe, {
-        title: '新活',
-        text: '改文档',
-        paths: ['docs'],
-      })) as { ok: boolean; scopeCheck: { coverage: string; note?: string } };
-      expect(result.ok).toBe(true);
-      expect(result.scopeCheck.coverage).toBe('partial');
-      expect(result.scopeCheck.note).toContain('最近 60 轮');
-      expect(result.scopeCheck.note).toContain('核不清');
-      // 降级告知 ≠ 撞上了：不能被读成冲突码
-      expect(result).not.toHaveProperty('code');
-    } finally {
-      await disposeProbe(probe);
-    }
-  }, 120_000);
-
-  it('历史读不到 ⇒ 照派但回执明说「没核到」，且不与冲突码混用', async () => {
-    const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
-      ok: true,
-      sid: '2026-11-14-unreadable',
-      title: '新活',
-    }));
-    const probe = await assembleProbe(true, {
-      createSession,
-      readHistory: () => ({
-        coverage: 'unreadable',
-        children: [],
-        totalRounds: 0,
-        scannedRounds: 0,
-      }),
-      readStatus: () => ({ kind: 'running' }),
-    });
-    try {
-      const result = (await executeCreate(probe, {
-        title: '新活',
-        text: '改文档',
-        paths: ['docs'],
-      })) as { ok: boolean; scopeCheck: { coverage: string; note?: string } };
-      expect(result.ok).toBe(true);
-      expect(result.scopeCheck.coverage).toBe('unreadable');
-      expect(result.scopeCheck.note).toContain('历史读不到');
-    } finally {
-      await disposeProbe(probe);
-    }
-  }, 120_000);
-
-  it('在跑的活没有声明记录 ⇒ 计入 unscopedRunning 并降级为 partial', async () => {
-    const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
-      ok: true,
-      sid: '2026-11-14-legacy',
-      title: '新活',
-    }));
-    const probe = await assembleProbe(true, {
-      createSession,
-      // 范围上线前的旧记录：查得到会话、查不到声明
+      // 老会话：历史里认得出是主控开的，但元数据没有声明（范围功能上线前创建）
       readHistory: () => ({
         coverage: 'complete',
         children: [{ sessionId: '2026-11-13-legacy', title: '旧活' }],
         totalRounds: 3,
         scannedRounds: 3,
       }),
-      readStatus: () => ({ kind: 'running' }),
+      readStatus: (sid) =>
+        sid === '2026-11-13-legacy' ? { kind: 'running' } : { kind: 'completed' },
     });
     try {
       const result = (await executeCreate(probe, {
@@ -1052,26 +1008,30 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
       expect(result.scopeCheck.coverage).toBe('partial');
       expect(result.scopeCheck.unscopedRunning).toBe(1);
       expect(result.scopeCheck.note).toContain('没有声明记录');
+      // 整仓只作为「自愿独占」的事实出现，不作为「安全做法」推荐
+      expect(result.scopeCheck.note).toContain('自愿独占');
+      expect(result.scopeCheck.note).not.toContain('绝对安全');
+      // 降级告知 ≠ 撞上了：不能被读成冲突码
+      expect(result).not.toHaveProperty('code');
     } finally {
       await disposeProbe(probe);
     }
   }, 120_000);
 
-  it('核清了（历史读全 + 无未声明在跑活）⇒ scopeCheck 不带 note', async () => {
+  it('历史读不到 ⇒ 无法确认有没有老活在跑，回执明说「核不清」', async () => {
     const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
       ok: true,
-      sid: '2026-11-14-clean',
+      sid: '2026-11-14-unreadable',
       title: '新活',
     }));
     const probe = await assembleProbe(true, {
       createSession,
       readHistory: () => ({
-        coverage: 'complete',
-        children: [{ sessionId: '2026-11-14-done', paths: ['src/agent'] }],
-        totalRounds: 2,
-        scannedRounds: 2,
+        coverage: 'unreadable',
+        children: [],
+        totalRounds: 0,
+        scannedRounds: 0,
       }),
-      // 旧活已收场：既不参与冲突，也不算「未声明在跑活」
       readStatus: () => ({ kind: 'completed' }),
     });
     try {
@@ -1080,8 +1040,9 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
         text: '改文档',
         paths: ['docs'],
       })) as { ok: boolean; scopeCheck: { coverage: string; note?: string } };
-      expect(result.scopeCheck.coverage).toBe('complete');
-      expect(result.scopeCheck.note).toBeUndefined();
+      expect(result.ok).toBe(true);
+      expect(result.scopeCheck.coverage).toBe('unreadable');
+      expect(result.scopeCheck.note).toContain('历史读不到');
     } finally {
       await disposeProbe(probe);
     }

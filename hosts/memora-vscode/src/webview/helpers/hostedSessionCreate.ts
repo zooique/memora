@@ -28,11 +28,13 @@ export interface HostedSessionCreateDeps {
    * 按既有新建路径**后台**建会话
    *
    * 后台 = 不切显示源、不写用户级「上次模式」；只落 meta / 装配 / 刷会话清单。
+   * `declaredPaths` 随标题同批写入 `SessionMeta.declaredPaths`（范围门禁的读侧真源）。
    */
   createBackgroundSession: (
     sessionId: string,
     rolePackName: string | undefined,
     title: string,
+    declaredPaths: readonly string[],
   ) => Promise<boolean>;
   /** 取已装配实例（建会话链路内已装配；只取不建） */
   getAgent: (sessionId: string) => Promise<Agent>;
@@ -66,6 +68,7 @@ export interface HostedSessionCreateDeps {
  * @param title 会话标题（落 displayName，并原样返回给模型跟用户说话）
  * @param text 首轮输入
  * @param senderName 首轮发送者名（装配期注入）
+ * @param declaredPaths 已规范化的开活范围声明（创建时与标题同批写入会话元数据）
  * @returns 成功 = sid + title；失败一律 `{ ok:false }`，不 throw
  */
 export async function createHostedSessionWith(
@@ -75,6 +78,7 @@ export async function createHostedSessionWith(
   title: string,
   text: string,
   senderName: string,
+  declaredPaths: readonly string[],
 ): Promise<CreateSessionResult> {
   if (!deps.isManaged(callingSessionId)) {
     return {
@@ -95,7 +99,7 @@ export async function createHostedSessionWith(
     }
   }
   const sessionId = deps.nextSessionId();
-  const created = await deps.createBackgroundSession(sessionId, rolePackName, title);
+  const created = await deps.createBackgroundSession(sessionId, rolePackName, title, declaredPaths);
   if (!created) {
     return {
       ok: false,

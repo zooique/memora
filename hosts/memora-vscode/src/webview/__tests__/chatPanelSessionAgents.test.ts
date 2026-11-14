@@ -494,6 +494,7 @@ describe('代理能开会话 · createHostedSession', () => {
       '调研会话',
       '先读 README',
       'Memora',
+      ['docs'],
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -502,6 +503,8 @@ describe('代理能开会话 · createHostedSession', () => {
     const meta = store.getSessionMeta(result.sid);
     expect(meta?.origin).toBe('hosted');
     expect(meta?.displayName).toBe('调研会话');
+    // 开活范围声明随标题同批落元数据（读侧真源，不靠历史轮次反推）
+    expect(meta?.declaredPaths).toEqual(['docs']);
     // 会话模式 = managed（装配期据此注入主控工具面；撤销入口可再收回）
     expect(modes.isManaged(result.sid)).toBe(true);
     // ② 会话清单可见（用户能在列表里看到它）
@@ -532,6 +535,7 @@ describe('代理能开会话 · createHostedSession', () => {
       '调研会话',
       '先读 README',
       'Memora',
+      ['docs'],
     );
     expect(result).toMatchObject({ ok: false, code: 'E_ROLE_PACK' });
     expect((result as { code: string }).code).not.toBe('E_NOT_FOUND');
@@ -548,7 +552,7 @@ describe('代理能开会话 · createHostedSession', () => {
     const before = store.listSessionMetas().length;
 
     expect(
-      await provider.createHostedSession(callerId, '资料员', 't', 'x', 'Memora'),
+      await provider.createHostedSession(callerId, '资料员', 't', 'x', 'Memora', ['docs']),
     ).toMatchObject({ ok: false, code: 'E_ROLE_PACK' });
     expect(store.listSessionMetas().length).toBe(before);
   });
@@ -562,7 +566,7 @@ describe('代理能开会话 · createHostedSession', () => {
     const before = store.listSessionMetas().length;
 
     expect(
-      await provider.createHostedSession(callerId, undefined, 't', 'x', 'Memora'),
+      await provider.createHostedSession(callerId, undefined, 't', 'x', 'Memora', ['docs']),
     ).toMatchObject({ ok: false, code: 'E_DENIED' });
     expect(store.listSessionMetas().length).toBe(before);
   });

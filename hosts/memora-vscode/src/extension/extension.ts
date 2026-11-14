@@ -611,9 +611,9 @@ export function activate(context: vscode.ExtensionContext): void {
     // 面板在 deps 之后创建（与 peekAgent 同一手法）：闭包延迟取，调用时面板必已就绪
     dispatchHostedInput: (calling, target, text, sender) =>
       chatProvider.dispatchHostedInput(calling, target, text, sender),
-    // 建会话同法：工具 handler → 面板既有新建路径（角色包校验与来源落盘都在面板内）
-    createHostedSession: (calling, rolePack, title, text, sender) =>
-      chatProvider.createHostedSession(calling, rolePack, title, text, sender),
+    // 建会话同法：工具 handler → 面板既有新建路径（角色包校验、标题与范围声明落盘都在面板内）
+    createHostedSession: (calling, rolePack, title, text, sender, paths) =>
+      chatProvider.createHostedSession(calling, rolePack, title, text, sender, paths),
     // 停止同法：工具 handler → 面板的 `_runOps.handleStop`（与用户点停止完全同一条路）
     stopHostedSession: (calling, target) => chatProvider.stopHostedSession(calling, target),
     readHostedStatus,

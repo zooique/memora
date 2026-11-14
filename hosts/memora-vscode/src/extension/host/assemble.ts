@@ -681,6 +681,15 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
             ...(readHostedHistory ? { readHistory: readHostedHistory } : {}),
             // 范围声明（判据 4）的规范化基准：把绝对路径截成相对，只用于比较
             workspaceRoot: projectPath,
+            // 声明真源 = 会话元数据（创建时写入）：读侧直接列，不反推历史轮次
+            readDeclaredScopes: () =>
+              store.listSessionMetas().map((meta) => ({
+                sid: meta.sessionId,
+                ...(meta.displayName ? { title: meta.displayName } : {}),
+                ...(meta.declaredPaths && meta.declaredPaths.length > 0
+                  ? { paths: meta.declaredPaths }
+                  : {}),
+              })),
           }
         : undefined;
     if (toolDeps && (!dispatchHostedInput || !createHostedSession)) {

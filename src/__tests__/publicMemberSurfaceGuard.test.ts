@@ -946,6 +946,8 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'archivedMessageCount',
       'autoName',
       'createdAt',
+      // 2026-11-14 新增（定性见下方 ⑱）：托管开活范围声明，可选字段、非破坏
+      'declaredPaths',
       'displayName',
       'keyTopics',
       'messageCount',
@@ -1523,7 +1525,14 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    定性 = **真能力**（非 no-op 谎报）：二值 \`'user' | 'hosted'\`，供会话列表区分来源。\n` +
       `    真消费者 = 宿主 \`sessionList.toSessionSummary\` → \`session_list_data.origin\`（本片只走数据层，\n` +
       `    不渲染图标）；写入方 = 宿主 \`createSession\` / \`forkSession\` 调用方显式传值，**不从父会话继承**。\n` +
-      `    代价 = 零（可选字段：老会话读不到 ⇒ 按用户会话解释，无 deprecation 需求）。`;
+      `    代价 = 零（可选字段：老会话读不到 ⇒ 按用户会话解释，无 deprecation 需求）。` +
+      `\n  ⑱ SessionMeta.declaredPaths 新增（2026-11-14 · 托管开活范围声明，非 Breaking）：\n` +
+      `    定性 = **真能力**（非 no-op 谎报）：记录这条活声明要动哪块，供主控范围门禁判重叠；\n` +
+      `    真消费者 = 宿主 \`workSessionTools\` 的 \`readDeclaredScopes\`（读侧直接读元数据，\n` +
+      `    不反推历史轮次——历史有 60 轮上限，窗口一满声明就查不到）；写入方 = 宿主 \`createSession\`\n` +
+      `    （创建时与标题同批），\`forkSession\` 不复制（分叉是另一条活，范围须重声明）。\n` +
+      `    语义 = **记录不是权限**：不表达父子关系，不当门禁授权依据。\n` +
+      `    代价 = 零（可选字段：老会话读不到 ⇒ 按「没有声明」如实降级，不猜范围）。`;
     expect(
       issues,
       `\n成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,

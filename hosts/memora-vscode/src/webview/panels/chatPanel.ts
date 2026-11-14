@@ -1756,7 +1756,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     sessionId: string,
     rolePackName?: string,
     mode: SessionMode = this.sessionModes.getLastMode(),
-    opts: { title?: string; background?: boolean } = {},
+    opts: { title?: string; background?: boolean; declaredPaths?: readonly string[] } = {},
   ): Promise<boolean> {
     // 新会话 id 由时间戳/随机后缀生成，跨进程不会撞；拿锁只为让后续写盘有归属
     if (!(await this._lockFinalizer.acquire(sessionId))) {
@@ -1780,6 +1780,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         origin: originForMode(mode),
         ...(opts.title ? { displayName: opts.title } : {}),
         ...(roleDecision.rolePackName ? { activeRolePackName: roleDecision.rolePackName } : {}),
+        // 开活范围声明（主控建会话时给）：与标题同批落元数据，读侧直接读、不反推历史
+        ...(opts.declaredPaths?.length ? { declaredPaths: [...opts.declaredPaths] } : {}),
       });
       const agent = await this.agentForSession(sessionId);
       if (opts.background) {
@@ -2651,7 +2653,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         if (answers.length === 0 || answers.every((a) => a === '')) return;
         // 错位（迟到回答：提问已超时自动续跑 / 流异常结束）→ 丢弃，不污染进行中的轮。
         // 留痕（T2 观测）：对用户仍静默，但「答了没反应」的排障线索必须在日志可查
-        if (!this.isAskWaiting()) {
+        if (!this.isWaiting('ask')) {
           const reason = 'reason' in this._turnState ? this._turnState.reason : '—';
           console.warn('错位回答已丢弃', this._turnState.phase, reason, answers.length);
           return;
@@ -2681,7 +2683,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 错位（非暂停态收到继续）→ 丢弃并留痕。按钮语义已在 waiting(ask) 空输入时不宣告
         // 纯续跑（deriveButtonSemantics 死键不渲染），正常操作流不可达此守卫——只兜
         // 跨消息竞态残留（如提问超时续跑后迟到的 resume），保留「不污染进行中的轮」语义
-        if (!this.isPauseWaiting()) {
+        if (!this.isWaiting('pause')) {
           const reason = 'reason' in this._turnState ? this._turnState.reason : '—';
           console.warn(`Memora：错位续跑已丢弃（当前相位=${this._turnState.phase}/${reason}）`);
           return;
@@ -2726,34 +2728,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** 是否处于等待主动提问回答的相位（waiting/ask） */
-  private isAskWaiting(): boolean {
-    return this._turnState.phase === 'waiting' && this._turnState.reason === 'ask';
-  }
-
-  /** 是否处于等待暂停恢复的相位（waiting/pause，含 pausePending 在途申请） */
-  private isPauseWaiting(): boolean {
-    return this._turnState.phase === 'waiting' && this._turnState.reason === 'pause';
+  /** 是否处于指定原因的等待相位（ask 等回答 / pause 等继续，含 pausePending 在途申请） */
+  private isWaiting(reason: 'ask' | 'pause'): boolean {
+    return this._turnState.phase === 'waiting' && this._turnState.reason === reason;
   }
 
   /**
    * 托管派发入口（`send_to_session` 的宿主实现，装配期以回调注入工具面）
    *
-   * 三条硬约束（与 `workSessionTools.ts` 头注释同源，改这里前先读那份）：
-   *   ① **不注入用户上下文**：只投递调用方给的原文，绝不套 `sendInput` 的信封
-   *      （当前编辑器 / problems / git 改动一律不取——目标会话要的是这条输入，不是主控那边的现场）；
-   *   ② **不绕过并发闸**：目标会话在跑就回 `E_BUSY`（真实运行态，见 `SessionRuntimeStates`），不排队；
-   *   ③ **工具 handler 不持有面板实例**：它只拿到装配期注入的本方法回调。
-   *
-   * 失败语义：`E_DENIED` = 调用方不是托管会话（防御纵深，工具面本不该出现在 self 会话）；
-   * `E_BUSY` = 目标会话正在跑，装配 await 后再判一次防竞态；未知异常不在此吞，交给工具层
-   * 统一映射为 `{ ok:false }`（模型读到错误码，而不是工具抛错）。
+   * 三条硬约束（与 `workSessionTools.ts` 头注释同源）：① **不注入用户上下文**，只投调用方给的原文；② **不绕过并发闸**，目标是跑就回 `E_BUSY`，不排队；③ handler 不持有面板实例，只拿注入回调。
+   * 失败语义：`E_DENIED` = 调用方非托管（防御纵深）；`E_BUSY` = 目标在跑（await 后再判一次防竞态）；未知异常交给工具层统一映射。
    *
    * @param callingSessionId 发起派发的会话（判 `E_DENIED`）
    * @param targetSessionId 目标会话（判 `E_BUSY`、定流归属）
    * @param text 要投递的原始输入（不夹带任何宿主上下文）
-   * @param senderName 落 `RoundMessage.name` 的发送者名（装配期传入，本方法不自造）
-   * @returns `{ok:true,accepted:true}` = 已受理（不代表目标轮一定成功）；业务失败带错误码
+   * @param senderName 落 `RoundMessage.name` 的发送者名（装配期传入）
+   * @returns `{ok:true,accepted:true}` = 已受理；业务失败带错误码
    */
   public async dispatchHostedInput(
     callingSessionId: string,
@@ -2769,13 +2759,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         message: l10n.t('Memora: only managed sessions can call send_to_session.'),
       };
     }
+    // 前置判忙的同一份信封（两处判据必须同文案，抽一份防漂移）
+    const busy: HostedDispatchResult = {
+      ok: false,
+      code: 'E_BUSY',
+      message: l10n.t('Memora: the target session is running; the input was not sent.'),
+    };
     // ② 前置判忙：peek 不建记录（读操作不产生写副作用），值就是该会话的真实 stream 运行态
     if (this._runtime.peek(targetSessionId)?.streaming === true) {
-      return {
-        ok: false,
-        code: 'E_BUSY',
-        message: l10n.t('Memora: the target session is running; the input was not sent.'),
-      };
+      return busy;
     }
     // ③ 取（或建）目标会话实例：装配可能在途，期间目标会话或已被别的入口开跑 ⇒ 落地前再判一次
     const agent = await this.agentForSession(targetSessionId);
@@ -2789,11 +2781,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       }
     }
     if (this._runtime.peek(targetSessionId)?.streaming === true) {
-      return {
-        ok: false,
-        code: 'E_BUSY',
-        message: l10n.t('Memora: the target session is running; the input was not sent.'),
-      };
+      return busy;
     }
     const now = new Date().toISOString();
     // ④ 走既有 runFlow 通路（不另造流）：归属显式传目标会话，后台流投递由 BackgroundFlowGate 整批丢弃；
@@ -2820,8 +2808,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 主控建会话（工具 `create_session` 的薄壳）
    *
-   * 实现见 `helpers/hostedSessionCreate.ts`（校验 / 后台建会话 / 首轮投递的完整闭环）；
-   * 本方法只把面板私有能力以窄依赖注入，避免把装配与流控制外泄。
+   * 实现见 `helpers/hostedSessionCreate.ts`（校验 / 后台建 / 首轮投递闭环）；本方法只注入窄依赖，不外泄装配与流控制。
    *
    * @param callingSessionId 调用方（非托管 = E_DENIED）
    * @param rolePackName 角色包名（undefined = 宿主既有解析链）
@@ -2835,14 +2822,19 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     title: string,
     text: string,
     senderName: string,
+    declaredPaths: readonly string[],
   ): Promise<CreateSessionResult> {
     return createHostedSessionWith(
       {
         isManaged: (sid) => this.sessionModes.isManaged(sid),
         readRolePackCatalog: this._readRolePackCatalog,
-        // 后台建：不切显示源、不写「上次模式」，标题由调用方给
-        createBackgroundSession: (sid, rolePack, sessionTitle) =>
-          this.createSession(sid, rolePack, 'managed', { title: sessionTitle, background: true }),
+        // 后台建：不切显示源、不写「上次模式」，标题与范围声明由调用方给
+        createBackgroundSession: (sid, rolePack, sessionTitle, paths) =>
+          this.createSession(sid, rolePack, 'managed', {
+            title: sessionTitle,
+            background: true,
+            declaredPaths: paths,
+          }),
         // 实例已由建会话链路装配；这里只取（不建），再走既有 runFlow 通路
         getAgent: (sid) => this.agentForSession(sid),
         startFlow: (sid, factory, seed) => this.runFlow(factory, seed, sid),
@@ -2855,6 +2847,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       title,
       text,
       senderName,
+      declaredPaths,
     );
   }
 
@@ -2941,7 +2934,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // webview 已前置拦（保留输入框），此处防竞态漏网；拒收必须可见（webview 清框后才 post，
     // 静默丢整条 = 背刺）。窗口从 providerStore 真源取（不信 webview 传值）。
     if (attachments?.length) {
-      if (this.runtimeFor().streaming || this.isAskWaiting() || this.isPauseWaiting()) {
+      if (this.runtimeFor().streaming || this.isWaiting('ask') || this.isWaiting('pause')) {
         void vscode.window.showWarningMessage(l10n.t('Memora: images go with a new message'));
         return;
       }
@@ -2984,14 +2977,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 单条只能配第 1 题、其余题落 [ASK_ABORTED]；一条文本也无法定位到具体哪一题。
     // 故拒收（不改写成 answer、不发起新轮）：答题唯一入口 = 内联提问卡（逐题承载 askCallId）。
     // webview sendMessage 已同判据前置拦截，此处为宿主兜底（旧 bundle / 竞态漏网）。
-    if (this.isAskWaiting()) {
+    if (this.isWaiting('ask')) {
       void vscode.window.showWarningMessage(l10n.t('Memora: answer the question card above'));
       return;
     }
     // 暂停态补充输入（waiting/pause，相位判据）→ 不发起新 chat()
     // → 走 resumeExecution 路由（保留闭环节点归属，不分裂）
     const now = new Date().toISOString();
-    if (this.isPauseWaiting()) {
+    if (this.isWaiting('pause')) {
       this.askFor().clearAskTimeout(); // 暂停态补充 = 已响应当前等待，关闭超时保底
       this.post({ type: 'user', text: input, ts: now, kind: 'supplement' });
       await this.runFlow((signal) => agent.resumeExecution(input, signal, 'supplement'));
