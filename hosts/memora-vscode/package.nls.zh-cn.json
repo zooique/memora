@@ -1,6 +1,7 @@
 {
   "description": "侧边栏 AI 助手：跨会话记忆、关键节点主动提问、角色包定位（出厂自带文档打磨角色），云端 / 本地模型均可",
   "command.open.title": "Memora: 打开对话面板",
+  "command.newSession.title": "Memora: 新建会话（选择运行模式）",
   "command.configureModel.title": "Memora: 配置大模型",
   "command.openRoles.title": "Memora: 管理角色包",
   "command.openSettings.title": "Memora: 打开设置面板",

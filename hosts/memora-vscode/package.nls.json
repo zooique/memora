@@ -1,6 +1,7 @@
 {
   "description": "Sidebar AI assistant with cross-session memory, proactive questions at key moments, and role-pack grounding (ships with a documentation-polishing role). Works with cloud and local models.",
   "command.open.title": "Memora: Open Chat Panel",
+  "command.newSession.title": "Memora: New Session (Choose Mode)",
   "command.configureModel.title": "Memora: Configure Model",
   "command.openRoles.title": "Memora: Manage Role Packs",
   "command.openSettings.title": "Memora: Open Settings Panel",

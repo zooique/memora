@@ -24,6 +24,12 @@ import * as vscode from 'vscode';
 const { l10n } = vscode;
 import { diffWorkspaceSnapshots } from '../../extension/host/fileChangeTracker.js';
 import type { HostSessionStore } from '../../extension/host/sessionStore.js';
+import {
+  createEphemeralSessionModeStore,
+  originForMode,
+  type SessionMode,
+  type SessionModeStore,
+} from '../../extension/host/sessionModeStore.js';
 import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
 import { salvageInterruptedRounds } from '../../extension/host/interruptedSalvage.js';
 import { hasRoundStatusIndex } from '../../extension/host/workspaceRoundStore.js';
@@ -636,6 +642,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     /** 工作区根（extension.ts 单点传入，本类不自算——防回退规则出第二真源）；附件目录由此推导 */
     private readonly workspacePath: string,
     private readonly imageCache?: ImageCache, // 图片字节缓存（extension 单例；回放前预读窗口内附件）
+    /**
+     * 会话模式容器（extension 注入；缺省 = 进程内实例，仅「上次模式」不跨重启）。
+     *
+     * ⚠️ 与来源标记的张力：mode 不落盘、重启回落 `'self'`；而 `origin` 是持久事实。
+     * 托管会话重启后不再以主控身份运行，但历史仍标记 `'hosted'`——两者不同步是设计允许的。
+     */
+    private readonly sessionModes: SessionModeStore = createEphemeralSessionModeStore(),
   ) {
     this._providerStore = providerStore;
     // 初始会话 = **上次停留的会话**（导航指针），不可用时退回最近写入的会话；
@@ -650,7 +663,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         setConfirmForeground: (id) => this._confirm.setForeground(id),
         pushSessionList: () => this.pushSessionList(),
         refreshActivity: () => this.refreshSessionActivity(),
-        createSession: (id, rolePackName) => this.createSession(id, rolePackName),
+        createSession: (id, rolePackName, mode) => this.createSession(id, rolePackName, mode),
         // 草稿未选角色时的「即将生效」角色 = 用户级默认；未设置则内核兜底契约包
         getDefaultRolePackName: resolveDraftRolePackName,
       },
@@ -1649,9 +1662,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._memoryOps.softDeleteSessionMemories(removedIds);
   }
 
-  /** 进入草稿态（标题条「＋」/ 无会话启动兜底）：展示面归零，不产生会话状态 */
-  public async newSessionFromCommand(): Promise<void> {
-    this._draft.enter();
+  /**
+   * 进入草稿态（标题条「＋」/ 命令面板 / 无会话启动兜底）：展示面归零，不产生会话状态
+   *
+   * 「＋」不传 mode ⇒ 沿用用户级「上次模式」（新建会话的唯一默认值来源）；
+   * 命令面板显式传 mode ⇒ 选择结果优先。真正落 origin 在 `createSession`。
+   */
+  public async newSessionFromCommand(mode?: SessionMode): Promise<void> {
+    this._draft.enter(mode ?? this.sessionModes.getLastMode());
   }
 
   /**
@@ -1686,7 +1704,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * @param sessionId 目标会话 id（date-name 格式）
    * @returns 是否切入成功
    */
-  private async createSession(sessionId: string, rolePackName?: string): Promise<boolean> {
+  private async createSession(
+    sessionId: string,
+    rolePackName?: string,
+    mode: SessionMode = this.sessionModes.getLastMode(),
+  ): Promise<boolean> {
     // 新会话 id 由时间戳/随机后缀生成，跨进程不会撞；拿锁只为让后续写盘有归属
     if (!(await this._lockFinalizer.acquire(sessionId))) {
       this.post({ type: 'notice', level: 'info', message: sessionHeldNotice() });
@@ -1698,10 +1720,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.setCurrentSessionId(sessionId);
       // 角色来源：草稿显式选择 > 用户级默认 > 兜底包；校验真源 = 角色包目录编目（冷启动亦可读）
       const roleDecision = await decideNewSessionRolePack(rolePackName, this._readRolePackCatalog);
-      // 会话来源标记：当前唯一创建入口 = 用户主动新建 ⇒ 显式写 'user'（不留 undefined 让语义悬空）；
+      // 会话运行模式先入 Map：装配链（assembleAgentForSession）读它决定是否注入主控工具面，
+      // 必须早于 agentForSession。mode 不落盘、重启回落 'self'；origin 是持久事实，二者不同步是设计允许的。
+      this.sessionModes.set(sessionId, mode);
+      // 会话来源标记由 mode 唯一映射（managed ⇒ 'hosted'，self ⇒ 'user'），不留 undefined 悬空；
       // 角色名的**唯一落盘点**与此同批写入（必须早于装配：装配经 readSessionRolePackName 读回），未选/失效不写
       this.sessionStore.updateSessionMeta(sessionId, {
-        origin: 'user',
+        origin: originForMode(mode),
         ...(roleDecision.rolePackName ? { activeRolePackName: roleDecision.rolePackName } : {}),
       });
       const agent = await this.agentForSession(sessionId);
@@ -1712,11 +1737,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.replaySession();
       // 会话视图入口（新建）：任务条按「显示会话」投影，必须显式 force（不赌后续事件到来，否则串台）
       this.postBackgroundTasks('force');
+      // 记住用户级「上次模式」：只影响下一次新建的默认值；未落成会话前不写，避免失败污染
+      void this.sessionModes.setLastMode(mode);
       return true;
     } catch (err) {
       // 没切成就把新锁还回去，并把显示源退回旧会话（旧实例仍在本地投影表里，直接重绑）
       this._lockFinalizer.releaseOne(sessionId);
       this._sessionAgents.delete(sessionId);
+      // 建会话失败：Map 里刚登记的 mode 一并回滚，避免「未落成会话」在装配链留下主控身份
+      this.sessionModes.delete(sessionId);
       if (previous) {
         this.setCurrentSessionId(previous);
         const previousAgent = this._sessionAgents.get(previous);

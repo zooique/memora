@@ -38,6 +38,10 @@ import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
 import { MemoraChatViewProvider } from '../panels/chatPanel.js';
+import {
+  createEphemeralSessionModeStore,
+  type SessionModeStore,
+} from '../../extension/host/sessionModeStore.js';
 
 /** l10n.t 替身：{0}/{1} 占位符按参替换（vi.hoisted——mock 工厂先于 import 执行，import 绑定不可用） */
 const tStub = vi.hoisted(() => (msg: string, ...args: unknown[]): string => {
@@ -150,6 +154,8 @@ function sessionAgent(
 /** 面板句柄：真实 provider + 捕获的投递列表 + 私有面入口 */
 interface PanelHandle {
   provider: MemoraChatViewProvider;
+  /** 真实会话存储（来源标记 / messageCount 等落盘断言回源它） */
+  store: WorkspaceSessionStore;
   posted: { type: string; message?: string; state?: unknown; text?: string }[];
   /** 触发当前视图的 onDidDispose（等价 VS Code 关闭/折叠侧边栏视图） */
   disposeView: () => void;
@@ -192,6 +198,7 @@ interface PanelHandle {
 function setupPanel(
   agents: Record<string, Agent> = {},
   seedSessionIds: readonly string[] = [],
+  sessionModes?: SessionModeStore,
 ): PanelHandle {
   const dir = makeTempDir('memora-e4-b2-');
   const roundStore = new WorkspaceRoundStore(dir);
@@ -219,6 +226,8 @@ function setupPanel(
     store,
     new ProviderStore(secrets) as never,
     '/mock/workspace',
+    undefined,
+    sessionModes,
   );
   const posted: PanelHandle['posted'] = [];
   /**
@@ -284,6 +293,7 @@ function setupPanel(
   }
   return {
     provider,
+    store,
     posted,
     disposeView: () => current.dispose(),
     reopenView,
@@ -291,6 +301,34 @@ function setupPanel(
     cast,
   };
 }
+
+describe('会话来源标记 · createSession 按 mode 派生 origin', () => {
+  it('managed ⇒ hosted 且登记进模式容器；self ⇒ user', async () => {
+    const modes = createEphemeralSessionModeStore();
+    const { provider, store } = setupPanel({}, [], modes);
+    // 装配走面板注入的工厂：本用例只关心 createSession 的落盘与容器登记
+    provider.setAgentFactory(async (_projectPath, sessionId) => sessionAgent(sessionId));
+
+    /** 生产私有面：直接驱动唯一建会话路径（等价草稿首次发送 flush） */
+    const createSession = (
+      provider as unknown as {
+        createSession(
+          id: string,
+          rolePackName?: string,
+          mode?: 'self' | 'managed',
+        ): Promise<boolean>;
+      }
+    ).createSession.bind(provider);
+
+    expect(await createSession('2026-11-06-m', undefined, 'managed')).toBe(true);
+    expect(store.getSessionMeta('2026-11-06-m')?.origin).toBe('hosted');
+    expect(modes.isManaged('2026-11-06-m')).toBe(true);
+
+    expect(await createSession('2026-11-06-s', undefined, 'self')).toBe(true);
+    expect(store.getSessionMeta('2026-11-06-s')?.origin).toBe('user');
+    expect(modes.isManaged('2026-11-06-s')).toBe(false);
+  });
+});
 
 describe('E4 批 2 · 切换 = 换绑显示源（不换实例、不关闭旧实例）', () => {
   beforeEach(() => {

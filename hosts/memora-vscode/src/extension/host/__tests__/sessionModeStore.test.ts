@@ -7,7 +7,7 @@
  * ③ 「上次模式」只给新建当默认值，非法值回落 self。
  */
 import { describe, it, expect, vi } from 'vitest';
-import { LAST_SESSION_MODE_KEY, SessionModeStore } from '../sessionModeStore.js';
+import { LAST_SESSION_MODE_KEY, SessionModeStore, originForMode } from '../sessionModeStore.js';
 
 /** 最小 Memento 假件：只实现容器用到的 get / update */
 function makeMemento(initial?: unknown) {
@@ -29,6 +29,10 @@ function makeStore(memento: ReturnType<typeof makeMemento>): SessionModeStore {
 }
 
 describe('SessionModeStore · 会话级 mode 容器', () => {
+  it('mode → origin 只有一处映射：managed ⇒ hosted，self ⇒ user', () => {
+    expect(originForMode('managed')).toBe('hosted');
+    expect(originForMode('self')).toBe('user');
+  });
   it('未知会话一律回落 self，不猜托管', () => {
     const store = makeStore(makeMemento());
     expect(store.get('never-created')).toBe('self');

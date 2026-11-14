@@ -41,6 +41,7 @@ import { MemoraSettingsPanel } from '../webview/panels/settingsPanel.js';
 // 本文件不手写字面量清单（加一页不必回来补签名）
 import type { SettingsTab } from '../shared/settingsTabs.js';
 import { openChatCommand } from './commands/openChat.js';
+import { registerNewSessionCommand } from './commands/newSession.js';
 import { runDemoCommand } from './commands/demo.js';
 import { reloadSkillsCommand } from './commands/reloadSkills.js';
 import { cleanupMemoriesCommand, memoryStatsCommand, runGcCommand } from './commands/memory.js';
@@ -562,6 +563,7 @@ export function activate(context: vscode.ExtensionContext): void {
     workspacePath,
     // 图片缓存（会话回放前预读窗口内附件字节；与 Agent 的 imageResolver 同一实例）
     imageCache,
+    sessionModes, // 与 assemblyDeps 同一实例（命令入口与装配链共读一份 Map<sid, mode>）
   );
   // 注入 Round-based 视图加载器（用于加载 round-based 会话的历史消息）
   // 未注入时 chatPanel 仅支持 legacy 模式（向后兼容）
@@ -665,17 +667,15 @@ export function activate(context: vscode.ExtensionContext): void {
   settingsProvider.setUserRolePacksDir(userRolePacksDir);
   // 注入对话面板提供者：角色 handoff 预填需从设置面板跨 webview 投递到对话视图
   settingsProvider.setChatProvider(chatProvider);
-
   // 命令：打开对话面板（聚焦侧边栏视图）
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.open', () => openChatCommand(getAgent, chatProvider)),
   );
-
+  registerNewSessionCommand(context, getAgent, chatProvider, sessionModes); // 新建会话（选择模式）
   // 命令：添加图片到对话（IMG-2 Q3）：拾取编排（开框/读盘/落盘/回执）全归 chatPanel.pickAndAttachImages 单点
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.attachImage', () => chatProvider.pickAndAttachImages()),
   );
-
   // 设置面板打开入口的**唯一实现**（下面三个命令都是它的薄包装）。
   // 为什么收成一个本地函数而不是各写一遍：
   //   ① `switchTab` 必须在 `open` **之前**——先缓存待切页再打开，面板未就绪时由 ready 握手

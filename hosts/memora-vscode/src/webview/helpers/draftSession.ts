@@ -18,6 +18,7 @@
 import * as vscode from 'vscode';
 import { formatDateKey } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
+import type { SessionMode } from '../../extension/host/sessionModeStore.js';
 
 /** 草稿控制器依赖：全部由面板注入，模块自身不反向持有面板实例 */
 export interface DraftSessionDeps {
@@ -38,7 +39,7 @@ export interface DraftSessionDeps {
    */
   getDefaultRolePackName: () => string;
   /** 面板唯一的建会话路径（拿锁 / 装配 / 回放全在它里面；角色包名随 meta 一次性落盘） */
-  createSession: (sessionId: string, rolePackName?: string) => Promise<boolean>;
+  createSession: (sessionId: string, rolePackName?: string, mode?: SessionMode) => Promise<boolean>;
 }
 
 /**
@@ -54,6 +55,9 @@ export class DraftSessionController {
 
   /** 草稿期用户选择的角色包名（undefined = 未选，投影回落内核兜底包名） */
   private _rolePackName: string | undefined;
+
+  /** 草稿期选定的运行模式（决定 createSession 写 'hosted' 还是 'user'） */
+  private _mode: SessionMode = 'self';
 
   constructor(
     private readonly deps: DraftSessionDeps,
@@ -72,6 +76,7 @@ export class DraftSessionController {
     this._draft = false;
     // 草稿选择随草稿一起消失：会话一旦建立，角色已落在该会话 meta 上（不把选择带进下一个草稿）
     this._rolePackName = undefined;
+    this._mode = 'self';
   }
 
   /** 草稿期当前角色名（undefined = 未选；设置页据此高亮「当前」，真实会话不读它） */
@@ -95,10 +100,11 @@ export class DraftSessionController {
    *
    * 只做「展示面归零」，**不产生任何会话状态**。
    */
-  enter(): void {
+  enter(mode: SessionMode = 'self'): void {
     this._draft = true;
     // 新草稿从「未选」起：不继承上一个会话 / 上一个草稿的角色选择
     this._rolePackName = undefined;
+    this._mode = mode;
     this.deps.clearSessionId();
     this.deps.setConfirmForeground('');
     this.project(false);
@@ -123,8 +129,8 @@ export class DraftSessionController {
    */
   async flush(): Promise<boolean> {
     const sessionId = `${formatDateKey(new Date())}-s${Date.now().toString(36)}`;
-    // 角色选择在建会话前一刻捕获：createSession 会把会话 id 写进面板（随即 exit 清空草稿选择）
-    const created = await this.deps.createSession(sessionId, this._rolePackName);
+    // 角色选择与运行模式在建会话前一刻捕获：createSession 会把会话 id 写进面板（随即 exit 清空草稿态）
+    const created = await this.deps.createSession(sessionId, this._rolePackName, this._mode);
     if (!created) this.project(false);
     return created;
   }

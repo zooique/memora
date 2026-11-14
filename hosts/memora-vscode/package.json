@@ -45,6 +45,11 @@
         "icon": "$(comment-discussion)"
       },
       {
+        "command": "memora.newSession",
+        "title": "%command.newSession.title%",
+        "icon": "$(add)"
+      },
+      {
         "command": "memora.configureModel",
         "title": "%command.configureModel.title%",
         "icon": "$(gear)"

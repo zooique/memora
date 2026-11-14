@@ -221,6 +221,9 @@ const REGISTER_SOURCES = [
   // 注册点六：commands/addToChat.ts（2026-11-09 切片 2：`memora.addToChat` 注册随命令外置 +
   // 标题同源解析下沉，extension.ts 行数闸；命令本身仍只有一处注册）
   resolve(PKG_ROOT, 'src/extension/commands/addToChat.ts'),
+  // 注册点七：commands/newSession.ts（2026-11-14 托管模式 v0：`memora.newSession` 注册随命令外置，
+  // extension.ts 已贴 max-lines 上限；命令本身仍只有一处注册）
+  resolve(PKG_ROOT, 'src/extension/commands/newSession.ts'),
   // 注册点五（2026-11-09 退役）：host/workProjectionTree.ts 曾注册
   // `memora.refreshWorkProjection`。侧边栏树迁入设置页后该文件与三条树命令一并删除，
   // 动作改由 webview 的 `work_projection` 消息进 `runWorkProjectionAction`，无新注册点。

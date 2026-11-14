@@ -18,6 +18,16 @@ import type { Memento } from 'vscode';
 /** 会话运行模式：`self` = 用户自助；`managed` = 主控（托管）装配 */
 export type SessionMode = 'self' | 'managed';
 
+/**
+ * mode → 持久来源（`Round.origin` / `SessionMeta.origin`）
+ *
+ * 只有 `managed` 产生的会话 / 输入才标记 `'hosted'`；`self` 与缺省一律 `'user'`。
+ * 这是 mode → origin 的**唯一映射点**：调用方不得各写一份三元表达式（防两处判据漂移）。
+ */
+export function originForMode(mode: SessionMode): 'user' | 'hosted' {
+  return mode === 'managed' ? 'hosted' : 'user';
+}
+
 /** 用户级「上次使用的模式」在 globalState 里的键（只作新建会话默认值） */
 export const LAST_SESSION_MODE_KEY = 'memora.lastSessionMode';
 
@@ -67,4 +77,31 @@ export class SessionModeStore {
   async setLastMode(mode: SessionMode): Promise<void> {
     await this.globalState.update(LAST_SESSION_MODE_KEY, mode);
   }
+}
+
+/** 进程内 Memento：未注入 globalState 时（测试 / 嵌入宿主）的默认持久层，不跨重启 */
+class EphemeralMemento implements Memento {
+  private readonly data = new Map<string, unknown>();
+
+  keys(): readonly string[] {
+    return [...this.data.keys()];
+  }
+
+  get<T>(key: string): T | undefined {
+    return this.data.get(key) as T | undefined;
+  }
+
+  async update(key: string, value: unknown): Promise<void> {
+    this.data.set(key, value);
+  }
+}
+
+/**
+ * 进程内默认容器（仅用于未注入 globalState 的宿主 / 测试）
+ *
+ * 语义与生产一致（Map 不落盘），差别只有「上次模式」不跨重启——mode 本来就不持久；
+ * 生产 activate 必须注入基于 `context.globalState` 的实例。
+ */
+export function createEphemeralSessionModeStore(): SessionModeStore {
+  return new SessionModeStore(new EphemeralMemento());
 }

@@ -1413,5 +1413,11 @@
   "   Suggestions:": "   建议：",
   "Sent by {0}": "由 {0} 发送",
   "Sent from a hosted session": "由托管会话发送",
-  "Hosted session": "托管会话"
+  "Hosted session": "托管会话",
+  "Self mode": "自助模式",
+  "Managed mode": "托管模式",
+  "You drive the session": "由你直接驱动会话",
+  "A host orchestrates the session": "由主控编排会话",
+  "Used last time": "上次使用",
+  "Choose how the new session runs": "选择新会话的运行模式"
 }
