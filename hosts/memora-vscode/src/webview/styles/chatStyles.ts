@@ -350,6 +350,11 @@ export const chatStyles = `
   .session-history__item-state.is-completed { color: var(--text-secondary, #9aa0a6); }
   .session-history__item-state.is-interrupted { color: var(--text-secondary, #9aa0a6); }
   .session-history__item-state.is-unsettled { color: var(--warn, #d7ba7d); }
+  /* 托管会话标识：仅 origin === 'hosted' 插入的小图标（纯展示，不参与下拉选择委托） */
+  .session-history__item-origin {
+    display: inline-flex; align-items: center; justify-content: center;
+    flex: 0 0 auto; color: var(--text-secondary, #9aa0a6);
+  }
   /* 历史入口角标：绝对定位在 trigger 右上角（数字 = 待处理会话数；0 时 hidden）。
      尺寸用 em 相对父级字号（角标是字号的派生刻度，不引入一次性 px 裸值）。 */
   #historyBtn { position: relative; }
@@ -480,6 +485,19 @@ export const chatStyles = `
     color: var(--text-primary, #cccccc);
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     border-radius: var(--radius-lg, 8px) var(--radius-lg, 8px) var(--radius-sm, 2px) var(--radius-lg, 8px);
+  }
+  /* 托管输入来源标签：气泡右上角（flex 行首 + align-self 右对齐），不参与正文排版；
+     仅 origin === 'hosted' 由脚本插入，用户输入 / 旧数据无此元素。 */
+  .msg-origin-tag {
+    align-self: flex-end;
+    margin-bottom: var(--sp-1, 4px);
+    padding: 0 var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+    /* 边框用 currentColor：不新增 --line-* 令牌消费（tokensClosure 对 --line- 精确计数，见其守卫） */
+    border: 1px solid currentColor;
+    border-radius: var(--radius-pill);
+    user-select: none;
   }
   /* 用户消息 hover 操作区：气泡外底部，默认隐藏，hover 显示 */
   .msg-user-actions {

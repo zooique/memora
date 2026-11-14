@@ -129,3 +129,42 @@ describe('历史菜单会话活跃度标识（E4 批 4）', () => {
     expect(stateLabel('2026-11-06-a')).toBe('Last run did not finish normally');
   });
 });
+
+describe('历史菜单会话来源图标（origin）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('仅 hosted 显示图标；user / undefined 不显示任何标记', () => {
+    const { view } = mount();
+    view.renderMenu(
+      [
+        {
+          sessionId: '2026-11-06-h',
+          title: '托管会话',
+          updatedAt: '2026-11-06T10:00:00.000Z',
+          origin: 'hosted',
+        },
+        {
+          sessionId: '2026-11-06-u',
+          title: '用户会话',
+          updatedAt: '2026-11-06T09:00:00.000Z',
+          origin: 'user',
+        },
+        // 旧数据：无 origin 键
+        { sessionId: '2026-11-06-o', title: '旧会话', updatedAt: '2026-11-06T08:00:00.000Z' },
+      ],
+      [],
+    );
+
+    /** 取某会话条目的来源图标（不存在返回 null） */
+    const originIcon = (id: string): Element | null =>
+      document.querySelector(`[data-treedd-id="${id}"] .session-history__item-origin`);
+
+    expect(originIcon('2026-11-06-h')).not.toBeNull();
+    expect(originIcon('2026-11-06-h')?.getAttribute('aria-label')).toBe('Hosted session');
+    // 用户会话与旧数据：不造「用户」标记，也不留空 span（空 span 会多占 flex gap）
+    expect(originIcon('2026-11-06-u')).toBeNull();
+    expect(originIcon('2026-11-06-o')).toBeNull();
+  });
+});

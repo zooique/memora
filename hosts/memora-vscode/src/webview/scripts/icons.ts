@@ -60,7 +60,10 @@ export type IconName =
   | 'restore'
   // 「导入压缩包」（托盘 + 下沉箭头）：技能 / 角色包区的「导入 .zip」按钮。
   // 语义提示：箭头向托盘内落，表达「把外部内容收进来」，与「导出」相反。
-  | 'import';
+  | 'import'
+  // 「托管会话」来源标（广播信号：中心点 + 两道弧）——会话列表右侧的小图标。
+  // 只表达「不是本机用户输入」，不绑定任何具体助手名（名字可配置）。
+  | 'broadcast';
 
 /** SVG 路径集合（viewBox 0 0 16 16）— Trae 柔和线条风格 */
 const ICON_PATHS: Record<IconName, string> = {
@@ -152,6 +155,9 @@ const ICON_PATHS: Record<IconName, string> = {
   // 16px 网格下描边小点会糊成环）
   warning:
     '<path d="M2.2 12.8L8 3.2l5.8 9.6z"/><path d="M8 6.8v2.6"/><circle cx="8" cy="11.4" r="0.9" fill="currentColor" stroke="none"/>',
+  // 托管会话：广播信号（中心点用填充圆，两道同心弧向外扩散）
+  broadcast:
+    '<circle cx="8" cy="10.4" r="1" fill="currentColor" stroke="none"/><path d="M5.6 8.3a3.4 3.4 0 0 1 4.8 0"/><path d="M3.6 6.2a6.3 6.3 0 0 1 8.8 0"/>',
 };
 
 /** SVG 通用属性（Trae 柔和风格） */

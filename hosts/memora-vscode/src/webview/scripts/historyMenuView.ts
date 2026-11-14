@@ -290,6 +290,16 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
             ? l10n.t('Stopped')
             : l10n.t('Last run did not finish normally');
     }
+    // 托管会话标识：仅 origin === 'hosted' 才插入小图标；
+    // 'user' / undefined（旧数据）不显示任何东西——不造「用户会话」标记。
+    const originEl = document.createElement('span');
+    if (s.origin === 'hosted') {
+      originEl.className = 'session-history__item-origin';
+      originEl.title = l10n.t('Hosted session');
+      originEl.setAttribute('role', 'img');
+      originEl.setAttribute('aria-label', l10n.t('Hosted session'));
+      originEl.innerHTML = getIconSvg('broadcast', 14, 14);
+    }
     // 分组动作：会话记录 → 移入留存区；留存区 → 移回会话记录。
     // 两者都**不是删除**（数据一字不动），故图标与文案都不用删除类语言。
     // 用 span 而非 button：treedd__item 本身是 button，HTML 规范 button 内不可嵌套 button
@@ -330,7 +340,10 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
     // 无活跃度时不 append（空 span 仍占 flex gap，会凭空多出两段间距）
     item.append(titleEl);
     if (stateEl.className) item.append(stateEl);
-    item.append(timeEl, keepBtn, delBtn);
+    item.append(timeEl);
+    // 来源图标在时间之后、动作按钮之前：用户/旧数据时该 span 无 className → 不 append
+    if (originEl.className) item.append(originEl);
+    item.append(keepBtn, delBtn);
     menuEl.appendChild(item);
   }
 

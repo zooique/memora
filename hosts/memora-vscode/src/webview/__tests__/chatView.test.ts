@@ -61,6 +61,10 @@ import { BUILTIN_FALLBACK_PACK } from '@zooique/memora';
 function makeRound(over: {
   id?: string;
   user?: { content: string; ts?: string };
+  /** 本轮输入来源（缺省 = 旧数据，渲染侧不显示任何标记） */
+  origin?: RoundView['origin'];
+  /** 发送者名称（仅 hosted 有值；挂到 userMessage.name） */
+  senderName?: string;
   assistantLog?: { content: string; ts?: string }[];
   interactiveInputs?: {
     content: string;
@@ -85,8 +89,12 @@ function makeRound(over: {
           role: 'user',
           content: over.user.content,
           timestamp: over.user.ts ?? '',
+          // 发送者名称复用 RoundMessage.name（历史重放据此渲染「由 X 发送」）
+          ...(over.senderName ? { name: over.senderName } : {}),
         }
       : { id: `${roundId}-placeholder-user`, role: 'user', content: '', timestamp: '' },
+    // 来源标记：缺省不展开，保持旧数据形状（无 origin 键）
+    ...(over.origin ? { origin: over.origin } : {}),
     ...(over.assistantLog
       ? {
           // 前序 assistant 段数组（UI 上与 final 区分，同 roundId 同容器）
@@ -769,6 +777,54 @@ describe('chatView clear_ok 消息区清理', () => {
       '昨天的回答',
     );
     expect(emptyState.hidden).toBe(true);
+  });
+
+  it('托管输入气泡：hosted 显示「由 X 发送」，senderName 缺失走中性文案，user/undefined 不显示', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+
+    // ① hosted + senderName ② hosted 无 senderName ③ 用户输入 ④ 旧数据（undefined）
+    dispatch({
+      type: 'user',
+      text: '代发一',
+      ts: '2026-08-14T10:00:00.000Z',
+      origin: 'hosted',
+      senderName: '运营助手',
+    });
+    dispatch({ type: 'user', text: '代发二', ts: '2026-08-14T10:01:00.000Z', origin: 'hosted' });
+    dispatch({ type: 'user', text: '我自己', ts: '2026-08-14T10:02:00.000Z', origin: 'user' });
+    dispatch({ type: 'user', text: '旧数据', ts: '2026-08-14T10:03:00.000Z' });
+
+    const tags = messages.querySelectorAll('.msg-origin-tag');
+    expect(tags).toHaveLength(2); // 仅两条 hosted 有标签
+    expect(tags[0]?.textContent).toBe('Sent by 运营助手');
+    // senderName 缺失 ⇒ 中性文案，不得写死任何具体助手名（名字可配置）
+    expect(tags[1]?.textContent).toBe('Sent from a hosted session');
+
+    // 用户输入 / 旧数据：气泡存在但零标记（不造「用户」第二语义）
+    const wrappers = messages.querySelectorAll('.msg-wrapper');
+    expect(wrappers[2]?.querySelector('.msg-origin-tag')).toBeNull();
+    expect(wrappers[3]?.querySelector('.msg-origin-tag')).toBeNull();
+  });
+
+  it('历史重放同样渲染托管标签：origin + userMessage.name（重开窗口不消失）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+
+    dispatchReplay(
+      makeRound({
+        id: 'round-hosted',
+        user: { content: '托管历史输入', ts: '2026-08-14T09:00:00.000Z' },
+        origin: 'hosted',
+        senderName: '运营助手',
+        status: 'complete',
+      }),
+    );
+
+    expect(messages.querySelector('.msg.user .msg-body')?.textContent).toBe('托管历史输入');
+    expect(messages.querySelector('.msg.user .msg-origin-tag')?.textContent).toBe(
+      'Sent by 运营助手',
+    );
   });
 
   it('thinking 过程事件：流式中进入 round-block 实时相位行（进行中展开），收尾后归档 § 过程轨迹', () => {

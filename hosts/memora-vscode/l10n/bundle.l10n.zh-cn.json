@@ -1410,5 +1410,8 @@
   "Memora: this addition took effect (you will see it this round), but it could not be written to history — this round record no longer exists, so it will not appear when reviewing history. No need to resend.": "Memora：这条补充已生效（本轮会看到），但未能写入历史——本轮记录已不存在，回看历史时不会出现它。无需重发。",
   "❌ Error: {0}": "❌ {0}",
   "   Reason: {0}": "   原因：{0}",
-  "   Suggestions:": "   建议："
+  "   Suggestions:": "   建议：",
+  "Sent by {0}": "由 {0} 发送",
+  "Sent from a hosted session": "由托管会话发送",
+  "Hosted session": "托管会话"
 }

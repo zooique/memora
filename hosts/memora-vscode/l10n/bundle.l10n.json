@@ -1410,5 +1410,8 @@
   "Memora: this addition took effect (you will see it this round), but it could not be written to history — this round record no longer exists, so it will not appear when reviewing history. No need to resend.": "",
   "❌ Error: {0}": "",
   "   Reason: {0}": "",
-  "   Suggestions:": ""
+  "   Suggestions:": "",
+  "Sent by {0}": "",
+  "Sent from a hosted session": "",
+  "Hosted session": ""
 }

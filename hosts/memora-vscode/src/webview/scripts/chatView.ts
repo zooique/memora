@@ -1867,6 +1867,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     ts?: string,
     roundId?: string,
     att?: UserAttachmentView,
+    /**
+     * 输入来源标记（仅用户气泡消费）：
+     * - `origin === 'hosted'` 才渲染「由 X 发送」标签；`'user'` / `undefined` 不造任何标记
+     * - `senderName` 缺省时用中性文案——助手名可配置，写死具体名字会变成第二份真源
+     */
+    originMeta?: { origin?: RoundView['origin']; senderName?: string },
   ): HTMLElement {
     // 日期分隔线：仅日期交界插入，先于本条消息（textContent 构建防注入）
     renderDateDivider(ts);
@@ -1906,6 +1912,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 不在 user 条开第二入口——用户 2026-10-31 定案）。
       div.dataset.ts = ts ?? '';
       if (roundId) div.dataset.roundId = roundId;
+      // 托管输入来源标签：气泡右上角（flex 行首 + align-self:flex-end），不参与正文排版。
+      // 仅 hosted 渲染；用户输入与旧数据（undefined）零标记——不造「用户」第二语义。
+      if (originMeta?.origin === 'hosted') {
+        const tag = document.createElement('span');
+        tag.className = 'msg-origin-tag';
+        tag.textContent = originMeta.senderName
+          ? l10n.t('Sent by {0}', originMeta.senderName)
+          : l10n.t('Sent from a hosted session');
+        div.appendChild(tag);
+      }
       const body = document.createElement('div');
       body.className = 'msg-body';
       body.textContent = text;
@@ -2740,7 +2756,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (r.userMessage?.content) {
       try {
         const att = { attachments: r.userMessage.attachments, attachmentUris: r.attachmentUris };
-        append('user', r.userMessage.content, r.userMessage.timestamp, r.id, att);
+        append('user', r.userMessage.content, r.userMessage.timestamp, r.id, att, {
+          // 重放路径：origin 来自 Round，senderName 复用 RoundMessage.name（历史标签不能只在实时出现）
+          origin: r.origin,
+          senderName: r.userMessage.name,
+        });
         if (r.userMessage.timestamp) lastUserTs = r.userMessage.timestamp;
       } catch (err) {
         ensureUserInputVisible(r.userMessage.content, err);
@@ -3086,7 +3106,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 异常不再静默——console.warn 暴露堆栈（复制发现场 Console 即可定位），且以最小文本块
         // 降级渲染保证用户输入恒可见（与带 kind 交互行共用 ensureUserInputVisible 单实现）。
         try {
-          append('user', msg.text, msg.ts, msg.roundId, msg);
+          append('user', msg.text, msg.ts, msg.roundId, msg, {
+            // 实时路径：protocol user 事件已平铺 origin / senderName
+            origin: msg.origin,
+            senderName: msg.senderName,
+          });
           // 记录本轮用户输入 ts（底栏时间戳显示回填源，commitTurnTs 消费）
           if (msg.ts) lastUserTs = msg.ts;
         } catch (err) {
