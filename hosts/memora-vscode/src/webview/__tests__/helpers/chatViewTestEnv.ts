@@ -190,6 +190,9 @@ export function mountChatView(): { postMessage: ReturnType<typeof vi.fn> } {
   // fresh page 语义 = body 无任何类（真实 webview 每次 getHtml 重建 body）。
   // 与 _dockExpanded / 定时器等同类：凡「挂在全局宿主上的态」，mount 必须重置到初值。
   document.body.className = '';
+  // 形态同理：`data-form` 也是挂在 body 上的全局态，innerHTML 重置不到它
+  // （2026-11-15 ASSISTANT-FORM：不重置 ⇒ 上一用例的 assistant 形态会漏进下一用例的「默认自助」断言）
+  document.body.dataset.form = 'self';
   document.body.innerHTML = HTML;
   const postMessage = vi.fn();
   const view = createChatView({
