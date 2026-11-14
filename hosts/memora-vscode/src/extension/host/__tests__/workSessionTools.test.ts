@@ -1145,6 +1145,73 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
     }
   }, 120_000);
 
+  it('调用方自己正在跑且没有声明 ⇒ 不参与计数，回执是「核全」不是「部分」', async () => {
+    const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
+      ok: true,
+      sid: '2026-11-14-fresh',
+      title: '新活',
+    }));
+    const probe = await assembleProbe(true, {
+      createSession,
+      // 与生产同形：调用方执行工具时必然在跑，且通常没有范围声明
+      readStatus: (sid) => {
+        if (sid === SESSION_ID) return { kind: 'running' };
+        if (sid === '2026-11-14-queued') return { kind: 'queued' };
+        return { kind: 'completed' };
+      },
+    });
+    try {
+      // ① 只有调用方在跑：它不占写面，不能被算成「一条没有声明的活」
+      const complete = (await executeCreate(probe, {
+        rolePack: '资料员',
+        title: '新活',
+        text: '改文档',
+        paths: ['docs'],
+      })) as {
+        ok: boolean;
+        scopeCheck: {
+          coverage: string;
+          unscopedRunning: number;
+          unscopedQueued: number;
+          note?: string;
+        };
+      };
+      expect(complete.ok).toBe(true);
+      expect(complete.scopeCheck.coverage).toBe('complete');
+      expect(complete.scopeCheck.unscopedRunning).toBe(0);
+      expect(complete.scopeCheck.note).toBeUndefined();
+
+      // ② 已派发未开跑的单列：只算进 unscopedQueued，不混进「在跑的活」
+      probe.sessionStore.createSession({
+        sessionId: '2026-11-14-queued',
+        displayName: '排队中',
+        updatedAt: SESSION_UPDATED_AT,
+        messageCount: 0,
+      });
+      const partial = (await executeCreate(probe, {
+        rolePack: '资料员',
+        title: '又一条',
+        text: '改文档',
+        paths: ['docs'],
+      })) as {
+        ok: boolean;
+        scopeCheck: {
+          coverage: string;
+          unscopedRunning: number;
+          unscopedQueued: number;
+          note?: string;
+        };
+      };
+      expect(partial.ok).toBe(true);
+      expect(partial.scopeCheck.coverage).toBe('partial');
+      expect(partial.scopeCheck.unscopedRunning).toBe(0);
+      expect(partial.scopeCheck.unscopedQueued).toBe(1);
+      expect(partial.scopeCheck.note).toContain('已派发、还没开始跑');
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
   it('已收场的活不占范围（completed 不拦新活）', async () => {
     const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
       ok: true,
@@ -1242,7 +1309,7 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
       expect(result.ok).toBe(true);
       expect(result.scopeCheck.coverage).toBe('partial');
       expect(result.scopeCheck.unscopedRunning).toBe(1);
-      expect(result.scopeCheck.note).toContain('没有声明记录');
+      expect(result.scopeCheck.note).toContain('没有范围声明');
       // 整仓只作为「自愿独占」的事实出现，不作为「安全做法」推荐
       expect(result.scopeCheck.note).toContain('自愿独占');
       expect(result.scopeCheck.note).not.toContain('绝对安全');
