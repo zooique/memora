@@ -46,6 +46,31 @@ function placeholderTitle(createdAt: Date | string | number, l10n: SessionTitleL
   return `${l10n.t('New session')} ${hh}:${mm}`;
 }
 
+/** 会话存储的读面（只取元数据；避免本模块耦合宿主的具体实现类） */
+export interface SessionTitleStore {
+  /** 按 id 取会话元数据（不存在返回 undefined） */
+  getSessionMeta(sessionId: string): SessionMeta | undefined;
+}
+
+/**
+ * 取「当前会话」的展示标题
+ *
+ * 等价于 `sessionDisplayTitle(sessionId, store.getSessionMeta(sessionId), l10n)`。
+ * 单独成一个语义入口，是因为聊天面板有多处需要「按当前会话 id 取标题」，
+ * 每处各拼一次三元兜底就会漂移；本函数把「按 id 读 meta」这一步固定在同一处。
+ *
+ * @param store 会话存储读面
+ * @param sessionId 会话 id（调用方保证非空）
+ * @param l10n 本地化注入面（生产传 `vscode.l10n`）
+ */
+export function sessionTitleFor(
+  store: SessionTitleStore,
+  sessionId: string,
+  l10n: SessionTitleL10n,
+): string {
+  return sessionDisplayTitle(sessionId, store.getSessionMeta(sessionId), l10n);
+}
+
 /**
  * 取会话展示标题（meta 为空 / 两个名字都空时返回创建时刻占位名）
  *

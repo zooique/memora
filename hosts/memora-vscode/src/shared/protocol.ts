@@ -13,6 +13,8 @@ import type {
 import type { SettingsTab } from './settingsTabs.js';
 // 作品投影 DTO 与动作名（type-only；形状定义在 shared/workProjectionDto.ts，不进通道计数）
 import type { WorkProjectionAction, WorkProjectionViewState } from './workProjectionDto.js';
+// 工作台快照 DTO（type-only；形状定义在 shared/workbenchDto.ts，不进通道计数）
+import type { WorkbenchSnapshot } from './workbenchDto.js';
 
 /**
  * 消息协议 — extension host ↔ Webview 通信契约
@@ -926,7 +928,15 @@ export type WebviewToExtensionMessage =
    * ⚠️ `source` 由 webview 回传 = 一条「打开任意文件」的上行通道，host 侧**必须**先与内核
    * 清单对拍、再走 `refPath.resolveUnderPrimaryRoot`；详见 `workProjectionBridge.ts` 头注释。
    */
-  | { type: 'work_projection'; action: WorkProjectionAction; source?: string };
+  | { type: 'work_projection'; action: WorkProjectionAction; source?: string }
+  /**
+   * 工作台「去这个会话」（W→E）
+   *
+   * 语义 = 切换聊天面板的显示会话并聚焦侧栏；**不发送任何消息**，也不在工作台里
+   * 开对话线（工作台只读，不是第二个聊天对象）。会话存在性 / 锁 / 装配全部由
+   * 聊天面板既有的 `switchToSession` 链路裁决，webview 只上报意图。
+   */
+  | { type: 'workbench_open_session'; sessionId: string };
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
@@ -1946,7 +1956,15 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'pending_discarded'; items: string[] }
   /** 作品投影视图状态（对 work_projection(load) 的应答，也是四个重推面的统一推送格式） */
-  | { type: 'work_projection'; state: WorkProjectionViewState };
+  | { type: 'work_projection'; state: WorkProjectionViewState }
+  /**
+   * 工作台全量快照（E→W）
+   *
+   * 只在 `ready` 握手与可见期刷新时整份重发：工作台面板**不保活**（隐藏即销毁
+   * webview 上下文），任何增量 / 补发机制都会与「重建后全量回放」形成第二套状态。
+   * `jobs` 为空数组 = 空态（webview 显示「还没有交给助手的活」，不摆空表格）。
+   */
+  | { type: 'workbench_snapshot'; snapshot: WorkbenchSnapshot };
 
 /**
  * 后台任务 UI 投影（**Pick 约束**——改内核字段名即编译报错，禁另立第二套字段）

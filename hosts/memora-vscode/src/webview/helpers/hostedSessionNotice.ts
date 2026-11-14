@@ -108,6 +108,23 @@ export class HostedSessionNotifier {
   }
 
   /**
+   * 列出「某主控会话开出去的子会话」（只读创建者账本）
+   *
+   * 工作台的「最近在办什么」直接用这份账本：`SessionMeta.origin === 'hosted'` 只说明
+   * 「托管通道出生」，区分不了代理开的会话与用户自己选的托管新建，不能当清单判据。
+   *
+   * @param creatorSessionId 主控会话 id
+   * @returns 子会话 id（按登记顺序；账本仅本进程有效，重启后为空）
+   */
+  childrenOf(creatorSessionId: string): string[] {
+    const children: string[] = [];
+    for (const [child, creator] of this.childToCreator) {
+      if (creator === creatorSessionId) children.push(child);
+    }
+    return children;
+  }
+
+  /**
    * 流通用收尾：若本会话是代理开的且本轮非正常收场，通知创建者
    *
    * @param input 流尾素材（会话 / 轮 / 事件 / 是否宿主 abort）

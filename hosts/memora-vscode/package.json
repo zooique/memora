@@ -69,6 +69,11 @@
         "icon": "$(settings-gear)"
       },
       {
+        "command": "memora.openWorkbench",
+        "title": "%command.openWorkbench.title%",
+        "icon": "$(briefcase)"
+      },
+      {
         "command": "memora.attachImage",
         "title": "%command.attachImage.title%"
       },
@@ -369,6 +374,11 @@
           "command": "memora.openSettings",
           "when": "view == memora.chat",
           "group": "navigation"
+        },
+        {
+          "command": "memora.openWorkbench",
+          "when": "view == memora.chat",
+          "group": "navigation@9"
         }
       ],
       "explorer/context": [

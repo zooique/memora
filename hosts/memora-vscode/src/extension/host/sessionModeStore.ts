@@ -52,6 +52,23 @@ export class SessionModeStore {
     return this.get(sessionId) === 'managed';
   }
 
+  /**
+   * 列出本进程内按托管装配的会话 id
+   *
+   * 只读同一条 `Map`（不新增状态、不落盘）：工作台的命令入口用它决定「打开哪一条座位」。
+   * 注意：代理开出的子会话同样是 `managed`（v0 允许嵌套），故本方法只回答
+   * 「哪些是本进程的托管会话」，**不**回答「哪一条是顶层代理」——那个问题没有既有事实可答。
+   *
+   * @returns 托管会话 id 列表（按登记顺序；无托管会话时为空数组）
+   */
+  listManagedSessionIds(): string[] {
+    const ids: string[] = [];
+    for (const [sessionId, mode] of this.modes) {
+      if (mode === 'managed') ids.push(sessionId);
+    }
+    return ids;
+  }
+
   /** 登记会话模式（新建会话 / 切换时写；仅进程内有效） */
   set(sessionId: string, mode: SessionMode): void {
     this.modes.set(sessionId, mode);

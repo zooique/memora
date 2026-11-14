@@ -166,6 +166,8 @@ async function main() {
   const webviewScripts = [
     { entry: 'chatViewMain.ts', out: 'chatView.js' },
     { entry: 'settingsViewMain.ts', out: 'settingsView.js' },
+    // 工作台 v0：编辑器区只读面板的运行时入口（不保活，ready 后全量渲染快照）
+    { entry: 'workbenchViewMain.ts', out: 'workbenchView.js' },
   ];
   for (const { entry, out } of webviewScripts) {
     await esbuild.build({

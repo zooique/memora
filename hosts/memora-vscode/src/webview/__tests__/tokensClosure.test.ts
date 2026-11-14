@@ -612,7 +612,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // WORK-PROJECTION-MOVE-1；实数经 scripts/count-token-refs.mjs 实锤同步）。
     // 58：同日第二批 UI 反馈订正，worksStyles 补页级说明 / 页尾脚注 / 卡片简介三处
     // var(--lh-relaxed) +3（55→58；实数经 scripts/count-token-refs.mjs 实锤同步）。
-    'lh-': 58, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1；
+    // 59：工作台 v0（workbenchStyles）正文 line-height 引 var(--lh-snug) +1（2026-11-14；
+    // 实数经 scripts/count-token-refs.mjs 实锤同步）。
+    'lh-': 59, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1；
     //             MCP 页级说明段落改 var(--lh-relaxed) +1（2026-10-24）
     //             MCP 隐藏条目解释行 var(--lh-relaxed) +1（2026-10-24）
     // 18：回到原值。中途曾 +2（🔒 未钉态 / ✕ 弱化态各用 opacity: var(--op-6)），后经真机
@@ -630,7 +632,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // 两处 var(--line-solid) +2（82→84；实数经 scripts/count-token-refs.mjs 实锤同步）。
     // 85：同日第三批收口存量共享类缺口，skillsStyles 页尾脚注 border-top
     // var(--line-solid) +1（84→85；实数经 scripts/count-token-refs.mjs 实锤同步）。
-    'line-': 85, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
+    // 88：工作台 v0（workbenchStyles）座位卡 / 会话行 / 「去这个会话」按钮三处描边
+    // 引 var(--line-solid) +3（2026-11-14；实数经 scripts/count-token-refs.mjs 实锤同步）。
+    'line-': 88, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
     //             var(--line-solid) +1 ⇒ 79→80（UI-STATUS-DIVIDE-1，与
     //             `.context-ring__injection` 同一既有令牌，未新造颜色）；
     //             实数经 scripts/count-token-refs.mjs 实锤同步。

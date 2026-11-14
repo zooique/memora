@@ -221,6 +221,9 @@ const REGISTER_SOURCES = [
   // 注册点六：commands/addToChat.ts（2026-11-09 切片 2：`memora.addToChat` 注册随命令外置 +
   // 标题同源解析下沉，extension.ts 行数闸；命令本身仍只有一处注册）
   resolve(PKG_ROOT, 'src/extension/commands/addToChat.ts'),
+  // 注册点七：commands/openWorkbench.ts（2026-11-14 工作台 v0：`memora.openWorkbench`
+  // 注册随命令外置，extension.ts 行数闸；命令本身仍只有一处注册）
+  resolve(PKG_ROOT, 'src/extension/commands/openWorkbench.ts'),
   // 注册点七：commands/newSession.ts（2026-11-14 托管模式 v0：`memora.newSession` 注册随命令外置，
   // extension.ts 已贴 max-lines 上限；命令本身仍只有一处注册）
   resolve(PKG_ROOT, 'src/extension/commands/newSession.ts'),

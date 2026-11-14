@@ -6,6 +6,7 @@
   "command.configureModel.title": "Memora: 配置大模型",
   "command.openRoles.title": "Memora: 管理角色包",
   "command.openSettings.title": "Memora: 打开设置面板",
+  "command.openWorkbench.title": "Memora: 打开工作台",
   "command.attachImage.title": "Memora: 添加图片到对话",
   "command.memoryStats.title": "Memora: 查看记忆统计",
   "command.cleanupMemories.title": "Memora: 清理过期记忆",

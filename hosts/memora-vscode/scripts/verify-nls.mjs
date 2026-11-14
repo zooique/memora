@@ -700,6 +700,15 @@ const WEBVIEW_PANELS = {
       // 按钮文本 / 下拉触发器名）全部改走 `vscode.l10n.t`；空状态「标题 + 提示」两处**删默认值**
       // 而非翻译——运行期由 emptyStateView.updateRole 同步填充，留默认值等于第二套语言真源。
       'webview/panels/chatPanelHtml.ts',
+      // 工作台 v0（第四切片）：编辑器区只读面板。可见文案全部走 l10n（含精确空态句），
+      // 状态枚举的文案只在 webview 侧映射一次；不新增 panel id（仍归 chat 面板的判据面）。
+      'webview/panels/workbenchPanel.ts',
+      'webview/panels/workbenchHtml.ts',
+      'webview/scripts/workbenchView.ts',
+      'webview/scripts/workbenchViewMain.ts',
+      'webview/styles/workbenchStyles.ts',
+      'webview/helpers/workbenchModel.ts',
+      'webview/helpers/workbenchReadPorts.ts',
     ],
   },
   // 记忆页（B2）：骨架 / 运行时脚本 / 样式全部迁完，判据⑰ 生效。

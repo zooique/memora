@@ -50,8 +50,12 @@ import { join } from 'node:path';
  *  去重口径只占 1 条，未给每个按钮 / 每个触发面单开通道 ⇒ 实测 137 ⇒ 138，
  *  阈值按「当前计数 + 1 余量」重算 139。载荷判别字段一律叫 `kind` / `action`，
  *  禁叫 `type`——本守卫按 `type: '...'` 字面量计数，DTO 里多一个同名字段即被误计。
+ *  2026-11-14 工作台 v0 +2（`WORKBENCH-V0`）：新增 `workbench_snapshot`（E→W 全量
+ *  快照）与 `workbench_open_session`（W→E 切会话）；握手复用既有 `ready`，不另开通道。
+ *  两条语义不可合并（一条是下行快照、一条是上行动作）⇒ 实测 140，阈值按同一口径
+ *  重算 141（当前计数 + 1 余量）。
  */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 139;
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 141;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {

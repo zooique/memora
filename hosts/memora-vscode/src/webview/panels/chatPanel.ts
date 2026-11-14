@@ -125,7 +125,7 @@ import { dedupeRefs } from '../../shared/refKey.js'; // 引用去重判据单点
 // 面板内不嵌字面量：那里是窗口提示的单一真源（常量形态会在模块求值时定稿语言，故用函数）。
 
 // 会话标题读侧兜底（列表 / 面板标题条 / 占位 meta 三处同一口径）
-import { sessionDisplayTitle } from '../../extension/host/sessionTitle.js';
+import { sessionTitleFor } from '../../extension/host/sessionTitle.js';
 // 历史会话列表投影（store → DTO 纯映射，外置于 max-lines TARGET 文件）
 import { buildSessionListMessage } from '../helpers/sessionList.js';
 // 会话历史读取（round-based 投影 / legacy 回退）——纯数据逻辑外置，面板只消费结果
@@ -211,6 +211,12 @@ import { createChatTurnStructureOps, truncateFailNotice } from './chatTurnStruct
 import { createChatSessionNavOps } from './chatSessionNavOps.js';
 // 主控建会话实现域（B9-D 拆法：完整闭环外置，面板只留注入依赖的薄壳）
 import { createHostedSessionWith } from '../helpers/hostedSessionCreate.js';
+// 会话活跃度纯计算（与工作台共用同一份判据；外置防两处各写一套 Set 遍历）
+import { runSessionActivityPush } from '../helpers/sessionActivity.js';
+// 工作台只读端口（一扇只读窗：运行态 / 待答 / 创建者账本；不投消息、不改布局）
+import { createWorkbenchReadPorts } from '../helpers/workbenchReadPorts.js';
+// Agent 就绪守卫（取实例 + 懒装配 + 提示；外置守面板有效行上限）
+import { requireAgent } from '../helpers/requireAgent.js';
 // 托管子会话中断通知器（第三切片）：只投系统事件队列，不写历史、不落盘
 import { HostedSessionNotifier } from '../helpers/hostedSessionNotice.js';
 // 记忆软删域（B9-D-5 按 op 组外置）：单条反馈删除 + 会话删除联动软删，同一套降级口径
@@ -350,7 +356,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     getCurrentSessionId: () => this._currentSessionId,
     setCurrentSessionId: (sessionId) => this.setCurrentSessionId(sessionId),
     clearSessionId: () => this._sessionIdAccess.clearSessionId(),
-    currentTitle: () => this.currentSessionTitle(),
+    currentTitle: () => sessionTitleFor(this.sessionStore, this._currentSessionId, vscode.l10n),
     getAgent: () => this._agent,
     getAgentOrWarn: () => this.getAgentOrWarn(),
     agentForSession: (sessionId) => this.agentForSession(sessionId),
@@ -840,6 +846,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   public getCurrentAgent(): Agent | undefined {
     return this._agent;
   }
+
+  /**
+   * 工作台只读端口（字段形态而非方法：`chatPanel.ts` 已贴有效行上限，一次构造即可）
+   *
+   * 只暴露既有事实：运行态表 / 待答 / 待确认 / 实例暂停态 / 创建者账本。
+   * **不是第二个状态源**：这里不缓存、不写回、不发消息；工作台每次读到的都是现场值。
+   */
+  public readonly workbench = createWorkbenchReadPorts({
+    runtime: () => this._runtime,
+    asks: () => this._asks,
+    confirm: () => this._confirm,
+    agents: () => this._sessionAgents,
+    notifier: () => this._hostedNotifier,
+  });
 
   /**
    * 把实例绑定为「当前显示会话」的投影源（换会话 / 换实例的唯一收口）
@@ -1861,13 +1881,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
   /** 确保 Agent 已装配（未装配时返回 undefined 并提示） */
   private async getAgentOrWarn(): Promise<Agent | undefined> {
-    if (this._agent) return this._agent;
-    await this.ensureAgent();
-    if (!this._agent) {
-      void vscode.window.showWarningMessage(l10n.t('Memora: Agent is not ready; retry shortly'));
-      return undefined;
-    }
-    return this._agent;
+    return requireAgent(
+      () => this._agent,
+      () => this.ensureAgent(),
+    );
   }
 
   /**
@@ -2157,7 +2174,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.post({
       type: 'session_title',
       title: this._currentSessionId
-        ? this.currentSessionTitle()
+        ? sessionTitleFor(this.sessionStore, this._currentSessionId, vscode.l10n)
         : l10n.t('No session yet (click + above to create one)'),
     });
     // 推送当前激活角色包 → 输入区角色选择器 + AI 消息标签（主动可见）。
@@ -2437,17 +2454,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     return outcome;
   }
 
-  /** 当前会话标题（无元数据时回退占位标题，不暴露 sessionId，供 UI 展示） */
-  private currentSessionTitle(): string {
-    // 占位标题的时间取**会话创建时刻**（不是读取时刻）：同一会话每次刷新必须显示同一时间，
-    // 否则标题时间随刷新跳动，用户只会当 bug（真机实锤「新会话 08:06」）。
-    return sessionDisplayTitle(
-      this._currentSessionId,
-      this.sessionStore.getSessionMeta(this._currentSessionId),
-      vscode.l10n,
-    );
-  }
-
   /**
    * 当前执行栈是否属于「后台流」（判据与理由见 {@link BackgroundFlowGate}）
    *
@@ -2474,27 +2480,24 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * @param force true = 忽略去重强制重发（视图重建 / webview ready 时必须：新 webview 内存无旧快照）
    */
   private refreshSessionActivity(force = false): void {
-    const ids = new Set<string>(this._sessionAgents.keys());
-    for (const sessionId of this._asks.keys()) ids.add(sessionId);
-    if (this._currentSessionId) ids.add(this._currentSessionId);
-    const runningIds = [...ids].filter((id) => this._runtime.peek(id)?.streaming === true);
-    const pendingIds = [...ids].filter((id) => {
-      const askPending = (this._asks.get(id)?.pendingQuestions().length ?? 0) > 0;
-      return askPending || this._confirm.pendingCount(id) > 0;
+    // 判据 + 去重 + 投递全部外置（与工作台共用同一份判据；本处只给现场闭包与投递口）
+    this._lastSessionActivity = runSessionActivityPush({
+      sessionIds: [
+        this._currentSessionId,
+        ...this._sessionAgents.keys(),
+        ...this._asks.keys(),
+      ].filter(Boolean),
+      currentSessionId: this._currentSessionId,
+      isStreaming: this.workbench.isStreaming,
+      isWaiting: this.workbench.isWaiting,
+      lastSerialized: this._lastSessionActivity,
+      force,
+      // 刻意绕过 `post()` 的后台闸：本条是**跨会话的全局信号**，不属于任何正在跑的流的界面投影；
+      // 若被丢弃，「后台会话等到提问 ⇒ 入口角标亮」这条判据永远不可能成立。
+      post: (snapshot) => {
+        void this._view?.webview.postMessage({ type: 'session_activity', ...snapshot });
+      },
     });
-    const snapshot: ExtensionToWebviewMessage = {
-      type: 'session_activity',
-      runningIds,
-      pendingIds,
-      // 角标只数「别的会话」：当前显示会话的待处理已在屏上可见，再计数就是重复提示
-      badgeCount: pendingIds.filter((id) => id !== this._currentSessionId).length,
-    };
-    const serialized = JSON.stringify(snapshot);
-    if (!force && serialized === this._lastSessionActivity) return;
-    this._lastSessionActivity = serialized;
-    // 刻意绕过 `post()` 的后台闸：本条是**跨会话的全局信号**，不属于任何正在跑的流的界面投影；
-    // 若被丢弃，「后台会话等到提问 ⇒ 入口角标亮」这条判据永远不可能成立。
-    void this._view?.webview.postMessage(snapshot);
   }
 
   /**

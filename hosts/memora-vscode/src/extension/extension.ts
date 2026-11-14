@@ -25,7 +25,13 @@ import { resolveProjectDataDir } from './host/projectDataDir.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
 import { SessionModeStore } from './host/sessionModeStore.js';
 import { readSessionRolePackName } from './host/sessionRolePack.js';
-import { WorkspaceRoundStore, DEFAULT_SWEEP_MIN_AGE_MS } from './host/workspaceRoundStore.js';
+// 会话标题口径（与历史列表 / 标题条同一回落链：工作台不另写一套）
+import { sessionDisplayTitle } from './host/sessionTitle.js';
+import {
+  WorkspaceRoundStore,
+  DEFAULT_SWEEP_MIN_AGE_MS,
+  hasRoundStatusIndex,
+} from './host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
 import { AgentRegistry } from './host/agentRegistry.js';
 import { broadcastRolePackTeams } from './host/rolePackTeams.js';
@@ -37,6 +43,10 @@ import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { formatDiagnosticsSnapshot } from '../webview/panels/hostDiagnostics.js';
 import { MemoraSettingsPanel } from '../webview/panels/settingsPanel.js';
+// 工作台面板（编辑器区只读；第三切片/第四切片：座位身份 + 在管会话清单）
+import { MemoraWorkbenchPanel } from '../webview/panels/workbenchPanel.js';
+// 「打开工作台」命令（命令面板 + 侧栏标题栏按钮共用）
+import { registerOpenWorkbenchCommand } from './commands/openWorkbench.js';
 // 设置面板 tab 标识的类型真源（`shared/settingsTabs.ts`）：命令参数与 protocol 共用同一联合，
 // 本文件不手写字面量清单（加一页不必回来补签名）
 import type { SettingsTab } from '../shared/settingsTabs.js';
@@ -669,6 +679,49 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(MemoraChatViewProvider.viewType, chatProvider),
   );
+
+  // ─── 工作台 v0（第四切片）：编辑器区只读面板 ───
+  // 座位 = 一条托管会话；清单 = 该会话开出去的子会话（创建者账本，仅本进程）。
+  // 状态全部现场读既有事实（运行态 / ask / confirm / 轮终态），面板不缓存、不落盘；
+  // 生命周期 = 面板对象存活 + webview 不保活（隐藏即销毁，ready 时全量回放）。
+  const workbenchPanel = new MemoraWorkbenchPanel({
+    extensionUri: context.extensionUri,
+    dataSource: {
+      buildInputs: (orchestratorId) => ({
+        orchestratorId,
+        // 代理名只取装配期注入的发送者名（与 RoundMessage.name 同源，不另造「助手昵称」）
+        agentName: HOSTED_SENDER_NAME,
+        readMeta: (sessionId) => sessionStore.getSessionMeta(sessionId),
+        readRolePackName: (sessionId) => readSessionRolePackName(sessionStore, sessionId),
+        // 展示名只有本进程里有实例时才解析得到；取不到就只留名字快照（不拿名字冒充展示名）
+        readRolePackDisplayName: (sessionId, name) =>
+          agentRegistry
+            .get(sessionId)
+            ?.rolePackManager?.listMeta()
+            .find((meta) => meta.name === name)?.displayName,
+        isManaged: (sessionId) => sessionModes.isManaged(sessionId),
+        // 清单真源 = 中断通知器的创建者账本（origin 反推会把用户自己选的托管新建算错）
+        childrenOf: (creatorSessionId) => chatProvider.workbench.childrenOf(creatorSessionId),
+        peekActivity: (sessionId) => chatProvider.workbench.peekActivity(sessionId),
+        readRoundIds: (sessionId) => sessionStore.getRoundIds(sessionId),
+        readRoundStatus: (roundId) =>
+          hasRoundStatusIndex(roundStore) ? roundStore.getStatus(roundId) : undefined,
+        readRound: (roundId) => roundStore.getById(roundId) ?? undefined,
+        titleOf: (sessionId, meta) => sessionDisplayTitle(sessionId, meta, vscode.l10n),
+      }),
+    },
+    // 「去这个会话」：切聊天面板显示会话 + 聚焦侧栏；失败由面板统一弹错误提示
+    openSession: async (sessionId) => {
+      await chatProvider.switchToSession(sessionId);
+      await vscode.commands.executeCommand(`${MemoraChatViewProvider.viewType}.focus`);
+    },
+  });
+  registerOpenWorkbenchCommand(context, {
+    chatProvider,
+    workbench: workbenchPanel,
+    sessionModes,
+    sessionStore,
+  });
 
   // 设置面板：editor tab 形态；装配复用 chat 面板同一登记表 SSOT，草稿只碰草稿内存（落盘随建会话 meta）
   const settingsProvider = new MemoraSettingsPanel(context.extensionUri, providerStore);
