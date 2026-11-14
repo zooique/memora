@@ -25,9 +25,10 @@ export default [
       // 防腐：宿主文件体量红线（HOST-SPLIT-1 第 0 步）。
       // 阈值 1000 **不是本仓新造的数**——同源自 .trae/rules/generic/progressive-refactor-rules.md §1
       // 「软观察阈值 = 文件 > 1000 行」，此处只是把该软阈值机械化成闸门。
-      // 口径 = 物理行（**不加** skipBlankLines / skipComments）：与规则同口径，
+      // 口径 = **有效行**（skipBlankLines + skipComments），与内核 eslint.config.mjs 同一口径；
+      // 该口径与规则 §1 的「>1000 行软观察阈值」同义——物理行不再是判据，
       // 避免「有效行 / 物理行」两套数并存造成第二判据。
-      'max-lines': ['error', { max: 1000 }],
+      'max-lines': ['error', { max: 1000, skipBlankLines: true, skipComments: true }],
     },
   },
   // 存量超标清单（HOST-SPLIT-1 第 0 步 · 2026-10-21 闭环为「只降不升」闸）。
@@ -49,6 +50,9 @@ export default [
   //   净减 123 行；取数同上，闸门自报）。
   // - 重算指引：瘦身提交后按上法刷新该条 max 调低；**禁止只更新数字不改行数**（无判据作用的
   //   描述性行数已从注释清除，此处仅留闸门阈值）。
+  // ⚠️ 口径迁移（2026-11-14）：本块 TARGET 基线统一改为**有效行**（skipBlankLines + skipComments），
+  // 与内核 eslint.config.mjs 对齐；下方历史注释里的旧基线与净减数是**当时物理行口径**的存档，
+  // 不再与当前阈值直接可比。阈值按闸门自报的有效行实测值重订（留约 5% 余量），不是抬额度。
   {
     files: ['src/webview/scripts/chatView.ts'], // TARGET（单闭包；计划栏域、历史菜单域、占用域、活动抽屉域、状态条域、过程流单元格域、下拉选择器域、问答回顾行域、工具行动作面域、角色徽章行域、轮级动作底栏域、重放时间线域、技能选择器域、附件行渲染域已外置）
     // REPLAY-EMPTY-INTERRUPT-1（2026-11-01）：空过程事件中断轮渲染（判据/复位/时间兜底/问答行
@@ -66,7 +70,7 @@ export default [
     // （后续 UI 项不再一写就红），基线 = 4118 + 82，仍低于原 4353（只降不升未破）。
     // **现状**：此后外置使文件变小、基线按闸门自报下调后余量仍留着 —— 该余量已接受
     // （不是待清的虚空余量），见 `tasks/archive/0.10.0-host.md` 的 CHATPANEL-MARGIN-1 条目。
-    rules: { 'max-lines': ['error', { max: 4200 }] },
+    rules: { 'max-lines': ['error', { max: 2600, skipBlankLines: true, skipComments: true }] },
   },
   {
     // FORMAT-1 清零（2026-10-29）：prettier --write 还原折行欠账，物理行 4515→4529（+14 全为
@@ -85,7 +89,7 @@ export default [
     // BGTASK-SWITCH-REPUSH-1 撞顶格 ⇒ 历史会话列表投影外置 `helpers/sessionList.ts`
     // （store → DTO 纯映射），基线按闸门自报再降为 4242（只降不升）。
     files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法；诊断聚合 + thought 折叠域 + 过程事件合并域 + HTML 骨架 + 会话列表投影已外置）
-    rules: { 'max-lines': ['error', { max: 4242 }] },
+    rules: { 'max-lines': ['error', { max: 2200, skipBlankLines: true, skipComments: true }] },
   },
   {
     // WORK-PROJECTION-MOVE-1（2026-11-09）：接入第 7 页前先外置三条「读配置 → 推消息」与
@@ -94,7 +98,7 @@ export default [
     // **现状**：此后外置使文件变小、基线未跟降，余量已接受，见 `tasks/待完成任务.md` 的
     // B10-E-组3 记录（`settingsPanel.ts` 余量不外置的裁决）与 HOST-S15 条目（最新行数）。
     files: ['src/webview/panels/settingsPanel.ts'], // TARGET（七页合一；安全页骨架 / 状态推送已外置）
-    rules: { 'max-lines': ['error', { max: 2032 }] },
+    rules: { 'max-lines': ['error', { max: 1250, skipBlankLines: true, skipComments: true }] },
   },
   // fileChangeView 的专属 override 已于 2026-11-01 退役：实测 948 行 ≤ 1000 ⇒ 已达「瘦身达标」
   // 退出条件（见本块头部规则 TARGET 条：达标后删该条、回到下方通用 1000 闸）。
