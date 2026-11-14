@@ -17,6 +17,8 @@ import {
   Agent,
   FetchWebSearchProvider,
   FetchWebFetchProvider,
+  SOURCE_LABELS,
+  getSessionDisplayName,
   setLogger,
   resolveContextWindow,
 } from '@zooique/memora';
@@ -24,6 +26,7 @@ import type {
   ISessionStore,
   IRoundStore,
   IMemoryStorage,
+  Memory,
   UIMessages,
   ProviderRouter,
   LlmProvider,
@@ -48,10 +51,13 @@ import { vscodeTracer } from './tracer.js';
 import { startMcpServers } from './mcp/runtime.js';
 import type { McpServerConfig } from './mcp/connectionManager.js';
 import {
+  buildMemorySummaryFacts,
   registerWorkSessionTools,
   type HostedInputDispatcher,
   type HostedSessionCreator,
   type HostedSessionStopper,
+  type MemorySummaryFacts,
+  type MemorySummaryReader,
   type RolePackBrief,
   type SessionHistoryFacts,
   type WorkSessionToolDeps,
@@ -625,6 +631,11 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // GC 自启开关：宿主统一传 false，由 MemoryGcScheduler 单点驱动（E6）；
     // undefined 保持内核默认 true（demo / 独立装配场景自足）
     autoStartGc,
+    // 判据 5 记忆收口：主控禁掉原始 `trace_summary`（它带 roundId 时会回读原始对话）。
+    // 与下方注册的窄工具 `read_memory_summary` 必须同批生效——只做一件等于没做：
+    // 原始工具仍在 DEFAULT_EXPOSED_TOOLS 里，不 deny 就能被直接调用。
+    // 自助会话不受影响（trace_summary 照旧暴露）；这里只收主控这一次装配。
+    ...(orchestratorSession ? { denyTools: ['trace_summary'] } : {}),
   });
 
   // 4. 初始化（加载记忆/角色包/会话，注册内置工具）
@@ -664,6 +675,38 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
         };
       });
     };
+    /**
+     * 会话摘要读口（判据 5 的窄工具）
+     *
+     * 两段既有事实拼起来：会话级摘要 / 关键主题读 `SessionMeta`（归档时写入），
+     * 轮摘要读记忆库的 round-summary 条目（`sessionName` 是顶层持久化字段）。
+     * **不读原始对话**——那是被 deny 的 `trace_summary` 才有的能力。
+     *
+     * `getBySource` 抛错时把 `memories` 置 null ⇒ 回执标 `coverage: 'unreadable'`，
+     * 不把「读不到」冒充成「没有轮摘要」。
+     */
+    const readMemorySummary: MemorySummaryReader = (sessionId) => {
+      const meta = store.getSessionMeta(sessionId);
+      // 会话不存在与「摘要读不到」是两件事：返回 null 让工具层回 E_NOT_FOUND
+      if (!meta) return null;
+      /** 该会话的 round-summary 记忆；null = 记忆库读不到 */
+      let memories: Memory[] | null = null;
+      try {
+        memories = storage
+          .getBySource(SOURCE_LABELS.ROUND_SUMMARY)
+          .filter((memory) => memory.sessionName === sessionId);
+      } catch (err) {
+        // 读不到不是致命错：会话级摘要仍可返回，只在 coverage 上如实降级
+        logger?.warn({ err, sessionId }, '[work-session] 轮摘要读取失败，按不可读回执');
+      }
+      const facts: MemorySummaryFacts = buildMemorySummaryFacts({
+        title: getSessionDisplayName(meta) || meta.sessionId,
+        ...(meta.summary ? { summary: meta.summary } : {}),
+        ...(meta.keyTopics ? { keyTopics: meta.keyTopics } : {}),
+        memories,
+      });
+      return facts;
+    };
     // 依赖面：调用方 id / 发送者名是「注册清单工具」的最低要求；派发 / 建会话只在回调
     // 到位时注册（宁可不注册，也不注册永远失败的空壳）。状态 / 归属读口独立于这两者，
     // 缺省时 list 项如实标 unreadable / unknown，不冒充空闲。
@@ -675,6 +718,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
             ...(dispatchHostedInput ? { dispatch: dispatchHostedInput } : {}),
             ...(createHostedSession ? { createSession: createHostedSession } : {}),
             ...(stopHostedSession ? { stopSession: stopHostedSession } : {}),
+            // 判据 5：与上一段 deny trace_summary 同批生效
+            readMemorySummary,
             listRolePacks,
             ...(readHostedStatus ? { readStatus: readHostedStatus } : {}),
             ...(hostedAgentCreated ? { agentCreated: hostedAgentCreated } : {}),

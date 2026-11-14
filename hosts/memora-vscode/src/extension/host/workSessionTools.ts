@@ -16,7 +16,7 @@
  *     **不预留**对应参数或字段，深度闸等关系表落地后再加。
  *   - 主控身份**不落盘、不进 `SessionMeta`**：`SessionMeta.mode` 已作废。
  */
-import type { Agent, ISessionStore, SessionMeta, ToolDefinition } from '@zooique/memora';
+import type { Agent, ISessionStore, Memory, SessionMeta, ToolDefinition } from '@zooique/memora';
 import { getSessionDisplayName } from '@zooique/memora';
 import {
   projectCreatedBy,
@@ -66,6 +66,25 @@ export const STOP_WORK_SESSION_TOOL_NAME = 'stop_work_session';
  * 让模型猜包名只会得到一串 `E_ROLE_PACK`。只读、无副作用。
  */
 export const LIST_ROLE_PACKS_TOOL_NAME = 'list_role_packs';
+
+/**
+ * 记忆摘要窄工具名（判据 5 记忆收口）
+ *
+ * 只读「会话级摘要 + 关键主题 + 最近若干轮摘要」，**不暴露 `roundId`**：
+ * 内核原始 `trace_summary` 带 `roundId` 时会回读该轮原始对话，等于给主控开 `read_file`
+ * 后门；主控职责是管会话，不是翻子会话正文。两件事必须同做（窄工具 + 主控 deny 原始工具），
+ * 只注册窄工具而原始工具仍在 `DEFAULT_EXPOSED_TOOLS` 里，等于没做。
+ *
+ * 不叫 `read_session_summary`：它读的是记忆条目里的轮次摘要，不是能力 5 列表里的会话摘要
+ * （会话摘要走 `list_work_sessions` 的 `summary` 字段），名字相撞会让模型选错工具。
+ */
+export const READ_MEMORY_SUMMARY_TOOL_NAME = 'read_memory_summary';
+
+/** 单次返回的轮摘要条数上限（与内核 `traceSummary` 的无 roundId 分支同口径） */
+export const MEMORY_SUMMARY_ROUND_LIMIT = 5;
+
+/** 单条轮摘要的字符上限（与内核 `traceSummary` 的单条预览同口径） */
+export const MEMORY_SUMMARY_TEXT_CHARS = 120;
 
 /**
  * 派发回调可产生的业务结果（**唯一**真源 = `chatPanel.dispatchHostedInput` 的返回面）
@@ -120,6 +139,13 @@ export interface WorkSessionToolDeps {
   createSession?: HostedSessionCreator;
   /** 停止目标会话的当前轮（由宿主面板提供；缺省 ⇒ 不注册 stop 工具） */
   stopSession?: HostedSessionStopper;
+  /**
+   * 会话摘要读口（判据 5 的窄工具；缺省 ⇒ 不注册 `read_memory_summary`）
+   *
+   * 只读会话级摘要 / 关键主题 / 轮摘要，不读原始对话；与主控 deny `trace_summary`
+   * 必须同批生效（装配层负责 deny，本文件负责窄工具）。
+   */
+  readMemorySummary?: MemorySummaryReader;
   /** 角色包只读清单（装配期从内核 `listMeta()` 单点取，带来源标记） */
   listRolePacks: () => RolePackBrief[];
   /**
@@ -171,6 +197,51 @@ export interface SessionHistoryFacts {
 
 /** 角色包来源层（与角色页 / 设置页同一口径：内置 < 用户 < 项目） */
 export type RolePackSource = 'builtin' | 'user' | 'project';
+
+/**
+ * 一条轮次摘要的对外形状（窄工具 `read_memory_summary` 的列表项）
+ *
+ * 只放摘要内容与它的身份，不放原始对话、不放 `processEvents`——那是 `trace_summary`
+ * 的能力，主控刻意不给。
+ */
+export interface RoundSummaryBrief {
+  /** 轮次标识（只用于让代理说「哪几轮」；窄工具不接受它作为入参） */
+  roundId: string;
+  /** 摘要类型（preference / fact / decision / intent / general；缺省 general） */
+  summaryType: string;
+  /** 摘要正文（已按 `MEMORY_SUMMARY_TEXT_CHARS` 截断） */
+  summary: string;
+  /** 生成时间（ISO 8601，列表按此降序） */
+  createdAt: string;
+}
+
+/**
+ * 会话摘要事实（判据 5：主控读摘要不读原文）
+ *
+ * 「没有」与「读不到」必须分开，且不许伪造：
+ *   - `summary` / `keyTopics` 为 `null` = 该会话**没有归档过**（不是空串、不是标题）；
+ *   - `coverage` 为 `unreadable` = 记忆库读不到轮摘要（**不是**「没有轮摘要」）；
+ *     `rounds` 此时为空数组，调用方不得据此断定「这条会话没干过活」。
+ */
+export interface MemorySummaryFacts {
+  /** 会话标题（展示用；与清单同一回退链，只用于给模型指认） */
+  title: string;
+  /** 会话级归档摘要；`null` = 没归档过 */
+  summary: string | null;
+  /** 归档时生成的关键主题；`null` = 没归档过 */
+  keyTopics: string[] | null;
+  /** 最近若干轮摘要（按生成时间降序，最多 `MEMORY_SUMMARY_ROUND_LIMIT` 条） */
+  rounds: RoundSummaryBrief[];
+  /** 轮摘要读取覆盖：complete = 读全了；unreadable = 记忆库读不到 */
+  coverage: 'complete' | 'unreadable';
+}
+
+/**
+ * 会话摘要读口（装配层注入；`null` = 会话不存在）
+ *
+ * 只允许同步读既有事实（会话元数据 + 记忆库里的 round-summary），不读原始对话。
+ */
+export type MemorySummaryReader = (sessionId: string) => MemorySummaryFacts | null;
 
 /**
  * 角色包只读摘要（只给「按名挑包」所需的事实）
@@ -505,6 +576,96 @@ const LIST_ROLE_PACKS_DEFINITION: ToolDefinition = {
   diskWrite: 'none',
   confirmPolicy: 'audit',
 };
+
+/**
+ * 记忆摘要窄工具定义（声明面 · 判据 5）
+ *
+ * - `readonly: true` / `diskWrite: 'none'`：只读元数据与记忆索引，不写盘；
+ * - `confirmPolicy: 'audit'`：与其它会话工具同档；
+ * - 参数封闭：只接受 `sid` 一个键，**不暴露 `roundId`**（暴露它就能绕回原始对话）。
+ */
+const READ_MEMORY_SUMMARY_DEFINITION: ToolDefinition = {
+  name: READ_MEMORY_SUMMARY_TOOL_NAME,
+  description:
+    '读取指定会话的记忆摘要：会话级归档摘要、关键主题、最近若干轮的摘要（不含原始对话）。' +
+    'sid 必须来自 list_work_sessions；不接受 roundId，也不返回任何轮的原始对话。' +
+    'summary / keyTopics 为 null = 该会话没有归档过摘要；' +
+    'coverage 为 unreadable = 记忆库读不到轮摘要（不是「没有轮摘要」）。' +
+    '要更细的结论，派一个只读会话去查，不要在这里找原文。',
+  parameters: {
+    type: 'object',
+    properties: {
+      sid: { type: 'string', description: '目标会话标识（list_work_sessions 返回的 sid）' },
+    },
+    required: ['sid'],
+  },
+  readonly: true,
+  diskWrite: 'none',
+  confirmPolicy: 'audit',
+};
+
+/**
+ * 把既有事实投影成窄工具的回执事实（纯函数，便于单测）
+ *
+ * @param input.title 会话标题（展示用，不参与判断）
+ * @param input.summary 会话级归档摘要（缺省 = 没归档过）
+ * @param input.keyTopics 归档关键主题（缺省 = 没归档过）
+ * @param input.memories 已按会话过滤的 round-summary 记忆；`null` = 记忆库读不到
+ * @returns 窄工具事实（`coverage` 区分「没有」与「读不到」）
+ */
+export function buildMemorySummaryFacts(input: {
+  title: string;
+  summary?: string;
+  keyTopics?: string[];
+  memories: readonly Memory[] | null;
+}): MemorySummaryFacts {
+  // 记忆库读不到 ⇒ coverage 如实标 unreadable，`rounds` 空数组不等于「没有轮摘要」
+  if (input.memories === null) {
+    return {
+      title: input.title,
+      summary: input.summary && input.summary.trim() !== '' ? input.summary : null,
+      keyTopics: input.keyTopics && input.keyTopics.length > 0 ? [...input.keyTopics] : null,
+      rounds: [],
+      coverage: 'unreadable',
+    };
+  }
+  const rounds = [...input.memories]
+    // 最近生成的在前（与内核 traceSummary 的降序口径一致）
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, MEMORY_SUMMARY_ROUND_LIMIT)
+    .map((memory) => ({
+      roundId: memory.roundId ?? 'unknown',
+      summaryType: memory.summaryType ?? 'general',
+      // 截断只影响预览长度，不改写内容
+      summary:
+        memory.content.length > MEMORY_SUMMARY_TEXT_CHARS
+          ? `${memory.content.slice(0, MEMORY_SUMMARY_TEXT_CHARS)}…`
+          : memory.content,
+      createdAt: memory.createdAt,
+    }));
+  return {
+    title: input.title,
+    summary: input.summary && input.summary.trim() !== '' ? input.summary : null,
+    keyTopics: input.keyTopics && input.keyTopics.length > 0 ? [...input.keyTopics] : null,
+    rounds,
+    coverage: 'complete',
+  };
+}
+
+/**
+ * 校验 `read_memory_summary` 的参数（只接受 { sid }）
+ *
+ * @param args 工具执行器传入的已解析参数
+ * @returns 合法载荷；undefined = 未知键 / 缺键 / 类型不对（调用方统一回 `E_ARGS`）
+ */
+function parseReadMemorySummaryArgs(args: Record<string, unknown>): { sid: string } | undefined {
+  const keys = Object.keys(args);
+  // 键集必须恰好是 {sid}：多一个 roundId 就拒，不让窄工具长出原工具的入口
+  if (keys.length !== 1 || keys[0] !== 'sid') return undefined;
+  const { sid } = args;
+  if (typeof sid !== 'string' || sid.trim() === '') return undefined;
+  return { sid };
+}
 
 /**
  * 会话元数据 → 对外摘要（纯函数，便于单测）
@@ -1024,6 +1185,42 @@ export function registerWorkSessionTools(
       // 只读透传装配期注入的清单（内核 listMeta 单点），不在这里二次过滤 / 加缓存
       return JSON.stringify({ ok: true, packs: deps.listRolePacks() }, null, 2);
     });
+    if (deps.readMemorySummary) {
+      const readMemorySummary = deps.readMemorySummary;
+      tools.registerTool(READ_MEMORY_SUMMARY_DEFINITION, async (args) => {
+        const parsed = parseReadMemorySummaryArgs(args);
+        if (!parsed) {
+          return JSON.stringify(
+            { ok: false, code: 'E_ARGS', message: '参数必须且只能是 { sid }，sid 为非空字符串。' },
+            null,
+            2,
+          );
+        }
+        try {
+          // 只读会话元数据 + 记忆索引里的摘要条目；读不到原始对话是本工具的刻意边界
+          const facts = readMemorySummary(parsed.sid);
+          if (!facts) {
+            return JSON.stringify(
+              { ok: false, code: 'E_NOT_FOUND', message: `未知会话：${parsed.sid}` },
+              null,
+              2,
+            );
+          }
+          return JSON.stringify({ ok: true, sid: parsed.sid, ...facts }, null, 2);
+        } catch (err) {
+          // 业务契约：不 throw；宿主侧异常单独一码，与「会话不存在」分开
+          return JSON.stringify(
+            {
+              ok: false,
+              code: 'E_HOST',
+              message: `宿主读取摘要失败：${err instanceof Error ? err.message : String(err)}`,
+            },
+            null,
+            2,
+          );
+        }
+      });
+    }
   }
   return true;
 }

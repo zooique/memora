@@ -12,15 +12,18 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { SOURCE_LABELS } from '@zooique/memora';
 import type { Agent } from '@zooique/memora';
 import { assembleAgent } from '../assemble.js';
 import { createHostMemoryStorage } from '../memoryStorage.js';
 import { WorkspaceSessionStore } from '../sessionStore.js';
 import { WorkspaceRoundStore } from '../workspaceRoundStore.js';
 import {
+  buildMemorySummaryFacts,
   CREATE_SESSION_TOOL_NAME,
   LIST_ROLE_PACKS_TOOL_NAME,
   LIST_WORK_SESSIONS_TOOL_NAME,
+  READ_MEMORY_SUMMARY_TOOL_NAME,
   SEND_TO_SESSION_TOOL_NAME,
   STOP_WORK_SESSION_TOOL_NAME,
 } from '../workSessionTools.js';
@@ -1069,6 +1072,148 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
       expect(result.scopeCheck.note).toContain('历史读不到');
     } finally {
       await disposeProbe(probe);
+    }
+  }, 120_000);
+});
+
+describe('托管 v0 · read_memory_summary（判据 5 记忆收口）', () => {
+  it('返回会话级摘要 / 关键主题 / 最近轮摘要，且只认 { sid }（roundId 等未知键 E_ARGS）', async () => {
+    const probe = await assembleProbe(true, {});
+    try {
+      // 会话级摘要与主题 = 归档时写给 SessionMeta 的既有字段
+      probe.sessionStore.updateSessionMeta(TARGET_SESSION_ID, {
+        summary: '托管会话工具接线完成。',
+        keyTopics: ['托管', '会话工具'],
+      });
+      // 轮摘要 = 记忆库 round-summary 条目（sessionName 为顶层归属字段）
+      probe.storage.upsert({
+        id: `round-summary:${TARGET_SESSION_ID}:round-1`,
+        content: '第一轮结论',
+        source: SOURCE_LABELS.ROUND_SUMMARY,
+        name: '轮次摘要 round-1',
+        createdAt: '2026-11-14T08:00:00.000Z',
+        accessedAt: '2026-11-14T08:00:00.000Z',
+        summaryType: 'fact',
+        sessionName: TARGET_SESSION_ID,
+        roundId: 'round-1',
+      });
+      probe.storage.upsert({
+        id: `round-summary:${TARGET_SESSION_ID}:round-2`,
+        content: '第二轮结论',
+        source: SOURCE_LABELS.ROUND_SUMMARY,
+        name: '轮次摘要 round-2',
+        createdAt: '2026-11-14T09:00:00.000Z',
+        accessedAt: '2026-11-14T09:00:00.000Z',
+        summaryType: 'decision',
+        sessionName: TARGET_SESSION_ID,
+        roundId: 'round-2',
+      });
+      const raw = await probe.agent.tools!.execute(
+        READ_MEMORY_SUMMARY_TOOL_NAME,
+        JSON.stringify({ sid: TARGET_SESSION_ID }),
+      );
+      const parsed = JSON.parse(raw) as {
+        ok: boolean;
+        summary: string | null;
+        keyTopics: string[] | null;
+        coverage: string;
+        rounds: { roundId: string; summaryType: string; summary: string }[];
+      };
+      expect(parsed.ok).toBe(true);
+      expect(parsed.summary).toBe('托管会话工具接线完成。');
+      expect(parsed.keyTopics).toEqual(['托管', '会话工具']);
+      expect(parsed.coverage).toBe('complete');
+      // 降序：最新的 round-2 在前
+      expect(parsed.rounds.map((round) => round.roundId)).toEqual(['round-2', 'round-1']);
+      expect(parsed.rounds[0]).toMatchObject({ summaryType: 'decision', summary: '第二轮结论' });
+
+      // 窄工具不暴露 roundId：多一个键就拒，不让它长出 trace_summary 的入口
+      const rejected = JSON.parse(
+        await probe.agent.tools!.execute(
+          READ_MEMORY_SUMMARY_TOOL_NAME,
+          JSON.stringify({ sid: TARGET_SESSION_ID, roundId: 'round-1' }),
+        ),
+      ) as { ok: boolean; code: string };
+      expect(rejected.ok).toBe(false);
+      expect(rejected.code).toBe('E_ARGS');
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('未知会话 ⇒ E_NOT_FOUND（与「没有摘要」分开）', async () => {
+    const probe = await assembleProbe(true, {});
+    try {
+      const parsed = JSON.parse(
+        await probe.agent.tools!.execute(
+          READ_MEMORY_SUMMARY_TOOL_NAME,
+          JSON.stringify({ sid: '2026-11-14-not-exist' }),
+        ),
+      ) as { ok: boolean; code: string };
+      expect(parsed.ok).toBe(false);
+      expect(parsed.code).toBe('E_NOT_FOUND');
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('没归档过摘要 ⇒ summary / keyTopics 为 null、rounds 为空数组，coverage 仍 complete', async () => {
+    const probe = await assembleProbe(true, {});
+    try {
+      const parsed = JSON.parse(
+        await probe.agent.tools!.execute(
+          READ_MEMORY_SUMMARY_TOOL_NAME,
+          JSON.stringify({ sid: TARGET_SESSION_ID }),
+        ),
+      ) as {
+        ok: boolean;
+        summary: string | null;
+        keyTopics: string[] | null;
+        rounds: unknown[];
+        coverage: string;
+      };
+      expect(parsed.ok).toBe(true);
+      // 「没有」= null / 空数组，不是标题、不是伪造内容
+      expect(parsed.summary).toBeNull();
+      expect(parsed.keyTopics).toBeNull();
+      expect(parsed.rounds).toEqual([]);
+      // 读全了但没有条目 ⇒ complete（与下面的 unreadable 区分）
+      expect(parsed.coverage).toBe('complete');
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+  it('记忆库读不到 ⇒ coverage=unreadable，不冒充「没有轮摘要」', () => {
+    // 纯投影单测：memories=null 是「读不到」，与空数组（确实没有）必须分开
+    expect(buildMemorySummaryFacts({ title: '探针会话', memories: null })).toEqual({
+      title: '探针会话',
+      summary: null,
+      keyTopics: null,
+      rounds: [],
+      coverage: 'unreadable',
+    });
+  });
+});
+
+describe('托管 v0 · 主控 deny 原始 trace_summary（判据 5 的另一半）', () => {
+  it('主控装配里 trace_summary 不可见；普通会话照旧可见', async () => {
+    const orchestrator = await assembleProbe(true, {});
+    try {
+      const exposed = orchestrator.agent.tools!.list.map((tool) => tool.name);
+      // 只注册窄工具而原始工具仍暴露 = 没做；这里钉住「宽的确实关了」
+      expect(exposed).not.toContain('trace_summary');
+      expect(exposed).toContain(READ_MEMORY_SUMMARY_TOOL_NAME);
+    } finally {
+      await disposeProbe(orchestrator);
+    }
+    const self = await assembleProbe(undefined);
+    try {
+      const exposed = self.agent.tools!.list.map((tool) => tool.name);
+      // 自助会话不受影响（deny 只作用于主控这一次装配）
+      expect(exposed).toContain('trace_summary');
+      expect(exposed).not.toContain(READ_MEMORY_SUMMARY_TOOL_NAME);
+    } finally {
+      await disposeProbe(self);
     }
   }, 120_000);
 });
