@@ -1,5 +1,5 @@
 /**
- * webview 侧 l10n 装配 — 宿主注入译文的读取端（HOST-I18N-1 P1 基建）
+ * webview 侧 l10n 装配 — 宿主注入译文的读取端
  *
  * webview 运行时拿不到 `vscode.l10n`，译文由宿主序列化进 HTML 数据块
  * （写端 = helpers/htmlShell 的 buildL10nBundleScript，元素 id 真源 =
@@ -7,8 +7,9 @@
  * `config`——必须先于任何 `l10n.t` 调用（@vscode/l10n 契约：config 定义译文表）。
  *
  * 无注入（默认语言，`vscode.l10n.bundle` 为 undefined ⇒ 宿主不产数据块）时保持
- * 未配置：`l10n.t` 返回原文，与宿主侧 `vscode.l10n.t` 同一语义——故 P1 基建落地
- * 零可见变化（既有中文裸串在 P2 起逐面板迁移，本批不搬文案）。
+ * 未配置：`l10n.t` 返回原文，与宿主侧 `vscode.l10n.t` 同一语义——本模块落地时零可见
+ * 变化。译文迁移按面板分批推进，进度真源是 `scripts/verify-nls.mjs` 的 `WEBVIEW_PANELS`
+ * （逐项 `state: 'migrated'`）；本模块自身不持有任何文案。
  *
  * 消费约定：webview 业务码一律 `import * as l10n from '@vscode/l10n'` 后写
  * `l10n.t('…')`——键面守卫 verify-nls 按 `l10n.t(` 采集源码键（判据⑨⑫），
