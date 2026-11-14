@@ -11,11 +11,15 @@ import { buildDropdownHtml, dropdownStyles } from '../components/dropdown.js';
 import { contextMenuStyles } from '../styles/contextMenu.js';
 import { chatStyles } from '../styles/chatStyles.js';
 import { buildHtmlHead, resolveHtmlLang } from '../helpers/htmlShell.js';
+import type { UiForm } from '../../shared/protocol.js';
 
 /** 生成 Webview HTML（含消息区 / 输入框 + 模型下拉框 / 主动提问框）
  *  @param scriptUri 外部脚本 chatView.js 的 asWebviewUri（CSP script-src cspSource 加载）
- *  @param cspSource webview 本地资源源（webview.cspSource，供 CSP script-src 放行 asWebviewUri 外部脚本） */
-export function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
+ *  @param cspSource webview 本地资源源（webview.cspSource，供 CSP script-src 放行 asWebviewUri 外部脚本）
+ *  @param form 侧栏形态（真源 = 宿主 `_uiFormOps`）：只落成 body 的 data-form 属性，
+ *  让助手形态的样式与文案在**首帧**即正确——否则视图重建后会先画一遍自助形态再被
+ *  `ui_form` 消息纠正（可见闪烁）。自助形态（缺省）与既往 HTML 逐字等价。 */
+export function buildHtml(scriptUri: vscode.Uri, cspSource: string, form: UiForm = 'self'): string {
   return `${buildHtmlHead({
     lang: resolveHtmlLang(vscode.env?.language),
     cspSource,
@@ -24,7 +28,7 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     // `?.` 守测试侧 vscode mock 未提供 l10n 的场景，真实 API 恒存在
     l10nBundle: vscode.l10n?.bundle,
   })}
-<body>
+<body data-form="${form}">
   <!-- SSOT：面板无顶部身份条，角色切换在「角色」视图。
        角色/模型/状态职责归位：模型选择在输入区 composer（model-picker），生成状态由
        思考折叠块 + 发送按钮承载，「谁在回答」由 AI 消息头部标签 msg-ai-label 表达。
@@ -206,6 +210,14 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <span class="btn-icon" data-icon="scroll-bottom"></span>
     </button>
     <div id="inputWrap">
+      <!-- 助手形态标识条（ASSISTANT-FORM）：输入框**上方**一行小字，说明「现在是在跟助手
+           说话、它会替你安排会话」；右侧是工作台的入口（工作台仍是编辑器区独立面板，
+           不搬进侧栏——搬进来会伤自助形态那套会话列表）。
+           默认 hidden：自助形态零占位、零视觉变化；显隐由 chatView.applyForm 单点裁决。 -->
+      <div id="assistantModeBar" class="assistant-mode-bar" hidden>
+        <span class="assistant-mode-bar__text">${vscode.l10n.t('Assistant mode · it arranges sessions for you')}</span>
+        <button id="assistantWorkbenchBtn" class="assistant-mode-bar__link" type="button">${vscode.l10n.t('Workbench')}</button>
+      </div>
       <!-- 附件行（选择态行）：你亲手选的能力（skill）排在盒内文字上方——面单贴在信封上；
            盒外留给系统运行时条，两种来源由物理位置分界，不混住。空态 hidden 零高度。
            ⚠️ 能力选择 ≠ 附件：技能行保持独立（差异清单见台账 HOST-ATT-1） -->
@@ -214,7 +226,14 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
            （attachmentRowView）。原图片行 #imageChips 已并入本行（2026-11-11 汇流），
            不许再拆出第二条运行时行 -->
       <div id="refChips" class="skill-chip-row" hidden></div>
-      <textarea id="input" rows="1" placeholder="${vscode.l10n.t('@ to reference files, / to pick a skill; Enter to send, Shift+Enter for newline')}" aria-label="${vscode.l10n.t('Message input')}"></textarea>
+      <!-- 输入框包裹层（ASSISTANT-FORM）：唯一目的是给「输入框左侧的助手图标」一个并排
+           容器。默认 display:contents ⇒ 自助形态里它不生成盒子，布局与既往**逐像素一致**；
+           助手形态改 display:flex 才让图标落到文字左缘（样式全在 chatStyles 的
+           body[data-form='assistant'] 作用域内，漏不到自助面）。 -->
+      <div id="inputBox" class="input-box">
+        <span id="assistantModeIcon" class="assistant-mode-icon" aria-hidden="true" hidden><span data-icon="assistant"></span></span>
+        <textarea id="input" rows="1" placeholder="${vscode.l10n.t('@ to reference files, / to pick a skill; Enter to send, Shift+Enter for newline')}" aria-label="${vscode.l10n.t('Message input')}"></textarea>
+      </div>
       <div id="inputFooter">
         <!-- Row 1 · 一级直面：左侧功能群 + 右侧唯一发送按钮（发送突出化） -->
         <div class="composer-row composer-row--main">

@@ -2046,7 +2046,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // CSP script-src 用 webview.cspSource（本地资源源）而非 'self'：
     // asWebviewUri 生成的外部脚本 URL 的 origin 是 https://*.vscode-resource.vscode-cdn.net，
     // 与 webview 文档自身 origin 不同，'self' 无法匹配 → 脚本被 CSP 拦截（历史加载/回放失效根因）
-    this._view.webview.html = buildHtml(scriptUri, this._view.webview.cspSource);
+    // 形态随骨架一次性下发（data-form）：视图重建时首帧即助手形态，不必等 ui_form 纠正
+    this._view.webview.html = buildHtml(
+      scriptUri,
+      this._view.webview.cspSource,
+      this._uiFormOps.current(),
+    );
   }
 
   /**

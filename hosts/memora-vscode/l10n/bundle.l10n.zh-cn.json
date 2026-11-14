@@ -1432,6 +1432,7 @@
   "This session lets the assistant work for you": "本会话会让助手替你干活",
   "Messages here are sent by the assistant on your behalf. To chat on your own again, use the Command Palette to choose how a new session runs.": "这里的消息由助手代你发送。想换回我自己聊，请用命令面板重新选择新建会话的方式。",
   "Workbench": "工作台",
+  "Assistant mode · it arranges sessions for you": "助手模式 · 它会替你安排会话",
   "Agent seat": "代理座位",
   "Recent work": "最近在办什么",
   "No work has been handed to the assistant yet": "还没有交给助手的活",
