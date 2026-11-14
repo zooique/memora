@@ -1,9 +1,9 @@
 /**
  * escapeHtml — HTML 文本转义纯函数（单一真理源，防注入）
  *
- * 单一真理源：renderMarkdown.ts 与 settingsView.ts 两个消费方统一引此，避免同名
- * escapeHtml 各持一份、一处改而另一处漏的漂移风险（坑）。实现为**纯函数**（Node-safe
- * 契约，webview 与扩展宿主 import 链均不依赖 document）。
+ * 单一真理源：`renderMarkdown` 与 `skillsView` / `securityView` / `mcpView` 四个消费方
+ * 统一引此，避免同名 escapeHtml 各持一份、一处改而另一处漏的漂移风险（坑）。实现为
+ * **纯函数**（Node-safe 契约，webview 与扩展宿主 import 链均不依赖 document）。
  *
  * 转义面：`& < > " '` 五字符（HTML 文本/纯双引号属性上下文的安全最小集），
  * 与 DOM `textContent → innerHTML` 序列化的转义结果等效。
