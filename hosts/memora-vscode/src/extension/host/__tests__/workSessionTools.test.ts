@@ -766,14 +766,18 @@ describe('托管 v0 · create_session（工具层）', () => {
     }));
     const probe = await assembleProbe(true, { createSession });
     try {
-      expect(
-        await executeCreate(probe, {
-          rolePack: '资料员',
-          title: '调研会话',
-          text: '先读 README',
-          paths: ['docs'],
-        }),
-      ).toEqual({ ok: true, sid: '2026-11-14-created', title: '调研会话' });
+      const accepted = await executeCreate(probe, {
+        rolePack: '资料员',
+        title: '调研会话',
+        text: '先读 README',
+        paths: ['docs'],
+      });
+      // 成功回执必须带「核清了多少」：本例历史读口是空账本且读全 ⇒ complete、无 note
+      expect(accepted).toMatchObject({ ok: true, sid: '2026-11-14-created', title: '调研会话' });
+      expect(accepted).toMatchObject({
+        scopeCheck: { coverage: 'complete', scannedRounds: 0, totalRounds: 0, unscopedRunning: 0 },
+      });
+      expect((accepted as { scopeCheck: { note?: string } }).scopeCheck.note).toBeUndefined();
       // 发送者名必须是装配期注入值：工具内写死字面量会让本断言转红
       expect(createSession).toHaveBeenCalledWith(
         SESSION_ID,
@@ -949,6 +953,135 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
         await executeCreate(probe, { title: '新活', text: '改文档', paths: ['docs/b.md'] }),
       ).toMatchObject({ ok: false, code: 'E_SCOPE_CONFLICT' });
       expect(createSession).not.toHaveBeenCalled();
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('历史被 60 轮截断 ⇒ 照派但回执必须带「只核了最近 N 轮」（不许给「无冲突」结论）', async () => {
+    const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
+      ok: true,
+      sid: '2026-11-14-partial',
+      title: '新活',
+    }));
+    const probe = await assembleProbe(true, {
+      createSession,
+      // 总 80 轮、只扫最近 60 轮：更早开的活完全可能还在跑
+      readHistory: () => ({
+        coverage: 'partial',
+        children: [],
+        totalRounds: 80,
+        scannedRounds: 60,
+      }),
+      readStatus: () => ({ kind: 'running' }),
+    });
+    try {
+      const result = (await executeCreate(probe, {
+        title: '新活',
+        text: '改文档',
+        paths: ['docs'],
+      })) as { ok: boolean; scopeCheck: { coverage: string; note?: string } };
+      expect(result.ok).toBe(true);
+      expect(result.scopeCheck.coverage).toBe('partial');
+      expect(result.scopeCheck.note).toContain('最近 60 轮');
+      expect(result.scopeCheck.note).toContain('核不清');
+      // 降级告知 ≠ 撞上了：不能被读成冲突码
+      expect(result).not.toHaveProperty('code');
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('历史读不到 ⇒ 照派但回执明说「没核到」，且不与冲突码混用', async () => {
+    const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
+      ok: true,
+      sid: '2026-11-14-unreadable',
+      title: '新活',
+    }));
+    const probe = await assembleProbe(true, {
+      createSession,
+      readHistory: () => ({
+        coverage: 'unreadable',
+        children: [],
+        totalRounds: 0,
+        scannedRounds: 0,
+      }),
+      readStatus: () => ({ kind: 'running' }),
+    });
+    try {
+      const result = (await executeCreate(probe, {
+        title: '新活',
+        text: '改文档',
+        paths: ['docs'],
+      })) as { ok: boolean; scopeCheck: { coverage: string; note?: string } };
+      expect(result.ok).toBe(true);
+      expect(result.scopeCheck.coverage).toBe('unreadable');
+      expect(result.scopeCheck.note).toContain('历史读不到');
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('在跑的活没有声明记录 ⇒ 计入 unscopedRunning 并降级为 partial', async () => {
+    const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
+      ok: true,
+      sid: '2026-11-14-legacy',
+      title: '新活',
+    }));
+    const probe = await assembleProbe(true, {
+      createSession,
+      // 范围上线前的旧记录：查得到会话、查不到声明
+      readHistory: () => ({
+        coverage: 'complete',
+        children: [{ sessionId: '2026-11-13-legacy', title: '旧活' }],
+        totalRounds: 3,
+        scannedRounds: 3,
+      }),
+      readStatus: () => ({ kind: 'running' }),
+    });
+    try {
+      const result = (await executeCreate(probe, {
+        title: '新活',
+        text: '改文档',
+        paths: ['docs'],
+      })) as {
+        ok: boolean;
+        scopeCheck: { coverage: string; unscopedRunning: number; note?: string };
+      };
+      expect(result.ok).toBe(true);
+      expect(result.scopeCheck.coverage).toBe('partial');
+      expect(result.scopeCheck.unscopedRunning).toBe(1);
+      expect(result.scopeCheck.note).toContain('没有声明记录');
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('核清了（历史读全 + 无未声明在跑活）⇒ scopeCheck 不带 note', async () => {
+    const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
+      ok: true,
+      sid: '2026-11-14-clean',
+      title: '新活',
+    }));
+    const probe = await assembleProbe(true, {
+      createSession,
+      readHistory: () => ({
+        coverage: 'complete',
+        children: [{ sessionId: '2026-11-14-done', paths: ['src/agent'] }],
+        totalRounds: 2,
+        scannedRounds: 2,
+      }),
+      // 旧活已收场：既不参与冲突，也不算「未声明在跑活」
+      readStatus: () => ({ kind: 'completed' }),
+    });
+    try {
+      const result = (await executeCreate(probe, {
+        title: '新活',
+        text: '改文档',
+        paths: ['docs'],
+      })) as { ok: boolean; scopeCheck: { coverage: string; note?: string } };
+      expect(result.scopeCheck.coverage).toBe('complete');
+      expect(result.scopeCheck.note).toBeUndefined();
     } finally {
       await disposeProbe(probe);
     }

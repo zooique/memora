@@ -190,7 +190,7 @@ export interface RolePackBrief {
  *   - 宿主兜底：`E_HOST`（拿锁失败 / 装配失败等），**不得**冒名 `E_NOT_FOUND`。
  */
 export type CreateSessionResult =
-  | { ok: true; sid: string; title: string }
+  | { ok: true; sid: string; title: string; scopeCheck?: ScopeCheck }
   | {
       ok: false;
       code: 'E_DENIED' | 'E_ROLE_PACK' | 'E_HOST';
@@ -203,6 +203,49 @@ export type CreateSessionResult =
       /** 撞上了哪些活、各撞在哪（按发现顺序；同一会话只报第一处交集） */
       conflicts: readonly ScopeConflict[];
     };
+
+/**
+ * 本次范围核对「核清了多少」（成功的派发回执里必带）
+ *
+ * ⚠️ 这不是错误码，也**不是**「撞上了」：`coverage !== 'complete'` 或 `unscopedRunning > 0`
+ * 表示**没有办法确认**没有冲突（历史只扫最近 60 轮 / 历史读不到 / 旧记录没有声明）。
+ * `note` 是给模型看的一句话，随回执一起返回——**不能只写日志**。
+ */
+export interface ScopeCheck {
+  /** `complete` = 全部轮次都读到且无未声明在跑活；其余情况都表示「核不清」 */
+  coverage: 'complete' | 'partial' | 'unreadable';
+  /** 本次实际核了几轮 */
+  scannedRounds: number;
+  /** 代理会话总轮数（> scannedRounds 即被 60 轮上限截断） */
+  totalRounds: number;
+  /** 在跑但没有声明记录的活数量（>0 表示存在无法判重叠的活） */
+  unscopedRunning: number;
+  /** 核不清时给模型看的一句话；`coverage === 'complete'` 且 `unscopedRunning === 0` 时省略 */
+  note?: string;
+}
+
+/**
+ * 一次范围扫描的结果（内存声明 ∪ 历史声明 + 覆盖事实）
+ *
+ * `scopes` 只含**读得到声明**且在跑的活；读不到的只进 `unscopedRunning` 计数，不猜范围。
+ */
+interface ActiveScopeScan {
+  /** 参与重叠比对的活（声明已规范化） */
+  scopes: {
+    sid: string;
+    title?: string;
+    paths: readonly string[];
+    status: WorkbenchJobStatus;
+  }[];
+  /** 历史覆盖状态（没有读口 = unreadable） */
+  coverage: 'complete' | 'partial' | 'unreadable';
+  /** 实扫轮数 */
+  scannedRounds: number;
+  /** 总轮数 */
+  totalRounds: number;
+  /** 在跑但声明读不到的活数量 */
+  unscopedRunning: number;
+}
 
 /**
  * 一次范围冲突（回给代理的「撞上哪条活、撞在哪」）
@@ -542,6 +585,54 @@ function occupiesScope(kind: WorkbenchJobStatus['kind']): boolean {
 }
 
 /**
+ * 把扫描事实转成回执里的 `scopeCheck`（给模型看，不只是给日志看）
+ *
+ * 「核不清」与「撞上了」是两件事：这里只描述前者，不伪造后者，也不在核不清时假装
+ * 「没有冲突」。`coverage='complete'` 且无未声明在跑活时省略 `note`（没什么可告警的）。
+ *
+ * @param scan 本次范围扫描结果
+ * @returns 回执字段（`note` 在核不清时必有）
+ */
+function buildScopeCheck(scan: ActiveScopeScan): ScopeCheck {
+  // 历史读全、且没有「在跑但声明读不到」的活 ⇒ 才敢说核清了
+  const coverage: ScopeCheck['coverage'] =
+    scan.coverage === 'complete' && scan.unscopedRunning === 0
+      ? 'complete'
+      : scan.coverage === 'complete'
+        ? 'partial'
+        : scan.coverage;
+  if (coverage === 'complete') {
+    return {
+      coverage,
+      scannedRounds: scan.scannedRounds,
+      totalRounds: scan.totalRounds,
+      unscopedRunning: 0,
+    };
+  }
+  const parts: string[] = [];
+  if (scan.coverage === 'unreadable') {
+    parts.push('历史读不到，本次没有核到早先开的活的声明。');
+  } else if (scan.totalRounds > scan.scannedRounds) {
+    parts.push(
+      `本次只核了最近 ${scan.scannedRounds} 轮（共 ${scan.totalRounds} 轮），更早开的活没读到。`,
+    );
+  } else {
+    parts.push(`历史有轮次读不到（本次核了 ${scan.scannedRounds} / ${scan.totalRounds} 轮）。`);
+  }
+  if (scan.unscopedRunning > 0) {
+    parts.push(`另有 ${scan.unscopedRunning} 条在跑的活没有声明记录，无法判重叠。`);
+  }
+  parts.push('这不是「撞上了」，是「核不清」；要绝对安全可显式传 ["."] 独占整个工作区。');
+  return {
+    coverage,
+    scannedRounds: scan.scannedRounds,
+    totalRounds: scan.totalRounds,
+    unscopedRunning: scan.unscopedRunning,
+    note: parts.join(''),
+  };
+}
+
+/**
  * 序列化 `create_session` 的结果（工具对外文本的**唯一**产生点）
  *
  * 🔒 互锁（WORKBENCH-SID-1）：工作台重启后会从 `tool_result.summary`（内核截到 100 字符）
@@ -556,11 +647,12 @@ function occupiesScope(kind: WorkbenchJobStatus['kind']): boolean {
  * delegate 专用回执，没有给自定义工具的通用结构化载荷；为此新增字段等于新增持久化字段，
  * 超出本切片边界（见任务约束「不为此新增持久化字段」）。
  *
- * @param result 建会话结果（成功带 sid / title；业务失败带错误码）
+ * @param result 建会话结果（成功带 sid / title / scopeCheck；业务失败带错误码）
  * @returns 缩进 2 空格的 JSON 文本（与既有对外形态逐字一致）
  */
 export function serializeCreateSessionResult(result: CreateSessionResult): string {
-  // 键序固定 ok → sid → title；sid 落在第 3 行，100 字符窗口内可稳定命中
+  // 键序固定 ok → sid → title；sid 落在第 3 行，100 字符窗口内可稳定命中。
+  // scopeCheck 只追加在 title 之后，不挪 sid 的位置（互锁契约见上）
   return JSON.stringify(result, null, 2);
 }
 
@@ -592,25 +684,51 @@ export function registerWorkSessionTools(
    */
   const declaredScopes = new Map<string, { paths: readonly string[]; title?: string }>();
   /**
-   * 当前还在占写面的活（内存声明 ∪ 历史声明）
+   * 当前还在占写面的活（内存声明 ∪ 历史声明）+ **这次到底核清了多少**
    *
-   * 历史只取带 `paths` 的创建记录（范围声明上线前的旧记录不参与，不猜）。
+   * 读不全就说读不全：历史只扫最近 60 轮，更早开的活如果还在跑，它的声明读不到；
+   * 这类「核不清」必须由调用方如实告诉模型，**不得**当成「没有冲突」。
+   * 历史里带 `paths` 的记录参与比对；没有 `paths` 的旧记录若还在跑，只计数、不猜范围。
    */
-  const collectActiveScopes = (): { sid: string; title?: string; paths: readonly string[] }[] => {
-    const merged = new Map<string, { sid: string; title?: string; paths: readonly string[] }>();
-    for (const [sid, entry] of declaredScopes) merged.set(sid, { sid, ...entry });
+  const collectActiveScopes = (): ActiveScopeScan => {
+    const merged = new Map<
+      string,
+      { sid: string; title?: string; paths: readonly string[]; status: WorkbenchJobStatus }
+    >();
+    for (const [sid, entry] of declaredScopes) {
+      // 内存里的活是本进程刚开的，状态一定读得到；读不到按「占着」处理（宁严不松）
+      merged.set(sid, {
+        sid,
+        ...entry,
+        status: deps?.readStatus?.(sid) ?? { kind: 'unreadable' as const },
+      });
+    }
     const history = deps?.callingSessionId ? deps.readHistory?.(deps.callingSessionId) : undefined;
+    let unscopedRunning = 0;
     for (const child of history?.children ?? []) {
-      if (!child.paths || child.paths.length === 0) continue;
       if (merged.has(child.sessionId)) continue;
+      const status = deps?.readStatus?.(child.sessionId) ?? { kind: 'unreadable' as const };
+      if (!occupiesScope(status.kind)) continue;
+      if (!child.paths || child.paths.length === 0) {
+        // 在跑但没有声明记录（范围上线前的旧记录 / 入参读不出）：无法判重叠，如实计数
+        unscopedRunning += 1;
+        continue;
+      }
       merged.set(child.sessionId, {
         sid: child.sessionId,
         ...(child.title ? { title: child.title } : {}),
         // 历史里是**原始**入参：比较前必须与本进程同一套规范化（含工作区根截断）
         paths: normalizeScopePaths(child.paths, deps?.workspaceRoot),
+        status,
       });
     }
-    return [...merged.values()];
+    return {
+      scopes: [...merged.values()],
+      coverage: history?.coverage ?? 'unreadable',
+      scannedRounds: history?.scannedRounds ?? 0,
+      totalRounds: history?.totalRounds ?? 0,
+      unscopedRunning,
+    };
   };
   /**
    * 读「这条会话是不是调用方开的」所需的既有事实
@@ -749,13 +867,13 @@ export function registerWorkSessionTools(
         }
         // ① 范围门禁（判据 4）：规范化本次声明，与当前占写面的活逐条比交集
         const requested = normalizeScopePaths(parsed.paths, deps.workspaceRoot);
+        const scan = collectActiveScopes();
         const conflicts: ScopeConflict[] = [];
-        for (const active of collectActiveScopes()) {
+        for (const active of scan.scopes) {
           // 主控自己不是被派发的活，不占写面
           if (active.sid === deps.callingSessionId) continue;
           // 状态读不到时按「占着」处理（读不到 ≠ 空闲，不能拿未知状态放行第二条活）
-          const status = deps.readStatus?.(active.sid) ?? { kind: 'unreadable' as const };
-          if (!occupiesScope(status.kind)) continue;
+          if (!occupiesScope(active.status.kind)) continue;
           const overlap = findScopeOverlap(requested, active.paths);
           if (!overlap) continue;
           conflicts.push({
@@ -797,8 +915,10 @@ export function registerWorkSessionTools(
               paths: requested,
               ...(result.title ? { title: result.title } : {}),
             });
+            // 回执必带「这次核清了多少」：读不全 / 读不到时，这句随结果给模型看，
+            // 不把「核不清」冒充成「没有冲突」（与 E_SCOPE_CONFLICT 用不同的话）
+            return serializeCreateSessionResult({ ...result, scopeCheck: buildScopeCheck(scan) });
           }
-          // 文本形态只有一个产生点（工作台重建依赖它的前缀，见 serializeCreateSessionResult 的互锁注释）
           return serializeCreateSessionResult(result);
         } catch (err) {
           // 业务契约：不 throw；宿主侧异常单独一码，与角色包 / 会话语义分开
