@@ -63,6 +63,11 @@ describe('PanelSnapshots · 后台任务条跨会话隔离', () => {
       isBackground: () => false,
       getSessionId: () => sessionId,
       l10n: L10N,
+      // 指标域本用例不验：开关恒关 ⇒ pushMetrics 直接早退（不产生额外投递干扰计数）
+      showMetrics: () => false,
+      getSecurityAudit: () => ({ total: 0, denied: 0, recent: [] }),
+      getFingerprints: () => ({}),
+      getRecentTrace: () => [],
     });
 
     snapshots.pushTasks('force');
@@ -94,6 +99,11 @@ describe('PanelSnapshots · 后台任务条跨会话隔离', () => {
       isBackground: () => false,
       getSessionId: () => sessionId,
       l10n: L10N,
+      // 指标域本用例不验：开关恒关 ⇒ pushMetrics 直接早退（不产生额外投递干扰计数）
+      showMetrics: () => false,
+      getSecurityAudit: () => ({ total: 0, denied: 0, recent: [] }),
+      getFingerprints: () => ({}),
+      getRecentTrace: () => [],
     });
 
     // A 首次推送落签名

@@ -7,6 +7,8 @@
   "command.openRoles.title": "Memora: Manage Role Packs",
   "command.openSettings.title": "Memora: Open Settings Panel",
   "command.openWorkbench.title": "Memora: Open Workbench",
+  "command.formAssistant.title": "Memora: Switch to Assistant",
+  "command.formSelf.title": "Memora: Back to Chatting Myself",
   "command.attachImage.title": "Memora: Add Image to Chat",
   "command.memoryStats.title": "Memora: View Memory Statistics",
   "command.cleanupMemories.title": "Memora: Clean Up Expired Memories",

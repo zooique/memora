@@ -75,35 +75,8 @@ const INTERJECT_LIMIT = LOOP_CONSTANTS.MAX_PENDING_INTERJECTIONS;
 
 /**
  * 目录快照遍历时跳过的目录 → 已随扫描实现整批外置到 `extension/host/workspaceTextScan.ts`
- * （IMG-12 同批腾行）；本处只留降级提示常量——调用方（scriptSnapshots 快照面）仍在本类。
+ * （IMG-12 同批腾行）；快照降级 / 启动让位三类提示文案同批外置到 `helpers/panelNoticeText.ts`。
  */
-
-/**
- * 快照超阈值（文件过多 / 总量过大）时的降级提示
- *
- * 写前快照与写后扫描两条路径都会降级到同一句提示——并列字面量必漂移，故抽为单点函数
- * （函数而非常量：`l10n.t` 必须在**调用时刻**取，模块加载期取值会绕过 VS Code 的
- * locale 初始化窗口，且无法被 bundle 覆盖率判据匹配）。
- */
-function snapshotOversizeNotice(): string {
-  return l10n.t(
-    'Too many text files in the workspace; script changes are not tracked automatically. Use git to review the changes.',
-  );
-}
-
-/** 启动时首选会话被另一窗口占用、已自动让位到最近可用会话的提示（解释「为什么不是上次那个会话」） */
-function sessionDisplacedNotice(): string {
-  return l10n.t(
-    'The session you were on is in use by another window; opened another session instead.',
-  );
-}
-
-/** 启动时首选会话被占且工作区无其他可用会话、已新建空会话的提示（如实说「新建」而非「另一个」） */
-function sessionDisplacedNewNotice(): string {
-  return l10n.t(
-    'The session you were on is in use by another window; created a new empty session.',
-  );
-}
 import type {
   ChatRef,
   InjectionSegment,
@@ -114,6 +87,7 @@ import type {
   TurnState,
   PendingQuestionDto,
   LlmProviderConfig,
+  UiForm,
 } from '../../shared/protocol.js';
 // 错误文案映射单一真理源（与 webview 重放渲染共用，防文案双源漂移）
 import { type PendingLiveRound } from '../../shared/turnProjection.js';
@@ -208,12 +182,20 @@ import { createChatRefOps } from './chatRefOps.js';
 import { createChatTurnStructureOps, truncateFailNotice } from './chatTurnStructureOps.js';
 // 会话导航域（B9-D-4 按 op 组外置）：分叉 / 改名 / 切换共用「拿锁 → 换显示源 → 回放」
 import { createChatSessionNavOps } from './chatSessionNavOps.js';
+// 侧栏形态域（自助 ⇄ 助手）：形态状态 + 上下文键镜像 + 进/出助手时的会话接线
+import { createAssistantFormOps, UI_FORM_CONTEXT_KEY } from './assistantFormOps.js';
 // 主控建会话实现域（B9-D 拆法：完整闭环外置，面板只留注入依赖的薄壳）
 import { createHostedSessionWith } from '../helpers/hostedSessionCreate.js';
 // 会话作答域（用户作答 + 主控代答）：两条入口共用同一条执行链，判据与回执形态在 helper
 import { createChatAnswerOps } from './chatAnswerOps.js';
 // 会话活跃度纯计算（与工作台共用同一份判据；外置防两处各写一套 Set 遍历）
 import { runSessionActivityPush } from '../helpers/sessionActivity.js';
+// 提示文案（快照降级 / 启动让位）：函数而非常量，l10n 必须在调用时刻取（见模块头）
+import {
+  sessionDisplacedNewNotice,
+  sessionDisplacedNotice,
+  snapshotOversizeNotice,
+} from '../helpers/panelNoticeText.js';
 // 工作台只读端口（一扇只读窗：运行态 / 待答 / 创建者账本；不投消息、不改布局）
 import { createWorkbenchReadPorts } from '../helpers/workbenchReadPorts.js';
 // Agent 就绪守卫（取实例 + 懒装配 + 提示；外置守面板有效行上限）
@@ -316,6 +298,25 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _pendingPrefill?: string;
   /** 右键「添加到对话」引用缓冲：对话视图未就绪时暂存，ready 后补发（与 _pendingPrefill 同构） */
   private _pendingRefs?: ChatRef[];
+  /**
+   * 侧栏形态域（自助 ⇄ 助手）：形态状态、菜单 context key、进/出助手时的会话接线
+   *
+   * 全部依赖都是**延迟闭包**：本字段初始化早于 `_navOps` / `sessionModes` 可用的时刻，
+   * 构造期捕获实例会拿到 undefined（与 `_navOps` 同一纪律）。
+   */
+  private readonly _uiFormOps = createAssistantFormOps({
+    post: (msg) => this.post(msg),
+    currentSessionId: () => this._currentSessionId,
+    isDraft: () => this.isDraft,
+    isManaged: (sessionId) => this.sessionModes.isManaged(sessionId),
+    listManagedSessionIds: () => this.sessionModes.listManagedSessionIds(),
+    switchToSession: (sessionId) => this.switchToSession(sessionId),
+    newSessionFromCommand: (mode) => this.newSessionFromCommand(mode),
+    setContext: (uiForm) => {
+      // 菜单 when 判据只认这个键：形态一变必须同步写，否则标题栏按钮与实际形态相反
+      void vscode.commands.executeCommand('setContext', UI_FORM_CONTEXT_KEY, uiForm);
+    },
+  });
   /**
    * @ 提及 QuickPick 的并发守卫随域外置（见 `chatRefOps.ts` 的 `mentionQuickPickOpen`），
    * 面板不再持有该状态。
@@ -553,6 +554,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     getSessionId: () => this._currentSessionId,
     // 后台任务状态标签的词形（SSOT-OWNERSHIP-1：展示文案归宿主，不再取内核表）
     l10n: vscode.l10n,
+    // 指标深度隐藏开关：配置真源仍是 VS Code settings，本处只给读取面（判据在外置域）
+    showMetrics: () =>
+      vscode.workspace.getConfiguration('memora').get<boolean>('showMetrics', false),
+    // 安全审计累加（概要的「有事件才携带」判据归外置域，本处只给原始计数）
+    getSecurityAudit: () => ({
+      total: this._securityAuditTotal,
+      denied: this._securityAuditDenied,
+      recent: this._recentSecurityAudits,
+    }),
+    // 指标指纹 / 操作流（真源 = 宿主 tracer 单例；本处只透传读取）
+    getFingerprints: () => vscodeTracer.getLatestFingerprints(),
+    getRecentTrace: () => vscodeTracer.getRecentTraces(20),
   });
   /** 最近 webview 错误上报（复制诊断命令消费；容量/格式化归 hostDiagnostics 模块） */
   private readonly _recentHostDiags: HostDiagEntry[] = [];
@@ -848,6 +861,24 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   public isDraftSession(): boolean {
     return this.isDraft;
+  }
+
+  /**
+   * 当前侧栏形态（`extension` 的形态命令与渲染入口的唯一读取口）
+   *
+   * 不落盘：进程重启即回 `self`（用户拍板「形态不记住」）。
+   */
+  public getUiForm(): UiForm {
+    return this._uiFormOps.current();
+  }
+
+  /**
+   * 切换侧栏形态（形态唯一写点：写状态 → context key → 下发 `ui_form` → 换会话）
+   *
+   * 换会话的判据全在 `assistantFormOps`（同形态重复点击 = 无操作）。
+   */
+  public async setUiForm(form: UiForm): Promise<void> {
+    await this._uiFormOps.set(form);
   }
 
   /**
@@ -1195,6 +1226,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     } else if (msg.type === 'input') {
       // 输入统一入口：宿主按当前 turn 相位单一路由，错位输入丢弃并落宿主日志留痕
       void this.handleInput(msg);
+    } else if (msg.type === 'assistant_open_workbench') {
+      // 助手形态输入区上方的「工作台」入口：选座逻辑全在既有命令里（当前托管会话 → 唯一
+      // 托管会话 → QuickPick → 如实说没有），本处只转达点击，不自己判断看哪一条
+      void vscode.commands.executeCommand('memora.openWorkbench');
     } else if (msg.type === 'open_settings_tab') {
       // 设置面板选项卡导航（空态引导 → 大模型 / 角色徽章 → 角色；只导航——切换执行仍走各视图单路径）。
       // **不维护「tab → 命令名」映射表**：那是第二真源，加一页要补一行且 protocol 得同步放宽。tab 直投命令。
@@ -1216,7 +1251,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._activeFile.setActiveFileAttach(msg.enabled);
     } else if (msg.type === 'new_session') {
       // 标题条「＋」新建会话 → 切入空会话，旧会话归档进历史
-      void this.newSessionFromCommand();
+      // 助手形态里的「＋」建的是**助手会话**（形态决定新建身份，否则用户点完还在自助面）
+      void this.newSessionFromCommand(this.getUiForm() === 'assistant' ? 'managed' : undefined);
     } else if (msg.type === 'fork_session') {
       // AI 回复底部「分叉」按钮 → 从指定 Round 位置分叉新会话
       void this.forkCurrentSession(msg.roundId);
@@ -2020,6 +2056,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 回放通道（否则与 _viewEpoch 折叠重建回放产生双重复放）。
    */
   private async handleWebviewReady(): Promise<void> {
+    // ⓪ 侧栏形态补推（时间面漏面，同 ④~⑧）：形态只在切换时下发，视图折叠/重开会重建 HTML，
+    //    新 webview 的初值恒为自助 ⇒ 不补推就「折叠一次，助手形态被悄悄切回自助」。
+    //    必须放在草稿早退**之前**：草稿路径不经过下面的回放链，漏在这里就永远补不上。
+    this._uiFormOps.repush();
     // 草稿态（webview 重建，面板对象存活）：只重建草稿页。
     // 不能走启动归属裁决——它按「无当前会话」会退回/新建会话，那会在草稿期落记录。
     if (this.isDraft) {
@@ -3926,51 +3966,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 推送活动指标快照（透明面板 + 指纹可见）
    *
-   * 从 vscodeTracer 提取最近一轮「模型看到了什么」指纹（只记 hash 不记内容），
-   * 从 agent.getMetrics() 取累计指标；推送 webview 折叠区展示。
-   * 指纹展示前 12 位（完整 hash 过长，仅作比对/调试抓手）。
-   *
-   * 深度隐藏（编排对齐）：指标是开发者调试信息，默认不推送——仅当用户显式开启
-   * `memora.showMetrics` 配置时才推送，避免对普通用户造成噪音（不推送则 webview
-   * 详情区不显示指标块，彻底隐藏而非「显示后折叠」）。
+   * 实现与判据（含 `memora.showMetrics` 深度隐藏）已整体外置到
+   * `helpers/panelSnapshots.ts`（`PanelSnapshots.pushMetrics`）——本文件不留第二份口径。
    */
   private postMetrics(): void {
-    if (!this._agent || this.isBackgroundFlow()) return;
-    // 深度隐藏开关：默认 false（普通用户零噪音），调试可观测性时开启
-    const show = vscode.workspace.getConfiguration('memora').get<boolean>('showMetrics', false);
-    if (!show) return;
-    const fp = vscodeTracer.getLatestFingerprints();
-    const m = this._agent.getMetrics();
-    // 提取最近操作流（span 标签序列）供透明面板渲染
-    const traces = vscodeTracer.getRecentTraces(20);
-    // 安全/装配透明：推送路径守卫审计概要（有审计事件才携带）
-    const securityAudit =
-      this._securityAuditTotal > 0
-        ? {
-            total: this._securityAuditTotal,
-            denied: this._securityAuditDenied,
-            recent: [...this._recentSecurityAudits],
-          }
-        : undefined;
-    this.post({
-      type: 'metrics',
-      fingerprints: {
-        systemPromptHash: fp.systemPromptHash ? fp.systemPromptHash.slice(0, 12) : undefined,
-      },
-      metrics: {
-        llmCallCount: m.llm.callCount,
-        toolFailureCount: m.tools.failureCount,
-        // 未解析工具意图：累计数与内核口径一致，供诊断面板观察
-        unparsedToolIntentCount: m.tools.unparsedToolIntentCount,
-        truncationCount: m.context.truncationCount,
-        // token 用量：内核按调用累计的估算值（estimateTokens 口径，非 provider 计费值）
-        llmTokenIn: m.llm.totalInputTokens,
-        llmTokenOut: m.llm.totalOutputTokens,
-        // 透出最近一次装配的上下文预算构成（prepare 计算，指标快照携带）
-        ...(m.context.budget ? { budget: m.context.budget } : {}),
-      },
-      trace: traces,
-      ...(securityAudit ? { securityAudit } : {}),
-    });
+    this._snapshots.pushMetrics();
   }
 }

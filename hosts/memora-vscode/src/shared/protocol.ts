@@ -295,6 +295,15 @@ export type InjectionSummary = {
  * 会把千行级协议文件的运行时常量一并打进 webview bundle；独立模块零依赖、体积可控。
  */
 
+/**
+ * 侧栏形态（`self` = 自助会话列表 + 对话；`assistant` = 助手形态）
+ *
+ * 形态是**界面的一个维度**，不是会话属性：它只决定输入区长什么样、切换入口指向哪，
+ * 不描述任何会话的身份（会话身份仍是 `SessionMode`）。
+ * 形态不落盘（重启一律回 `self`），与 `SessionMode` 的「不持久」同源纪律。
+ */
+export type UiForm = 'self' | 'assistant';
+
 export type WebviewToExtensionMessage =
   /** Webview 脚本已就绪（监听器已注册），extension 可安全回放会话/推送数据 */
   | { type: 'ready' }
@@ -936,7 +945,16 @@ export type WebviewToExtensionMessage =
    * 开对话线（工作台只读，不是第二个聊天对象）。会话存在性 / 锁 / 装配全部由
    * 聊天面板既有的 `switchToSession` 链路裁决，webview 只上报意图。
    */
-  | { type: 'workbench_open_session'; sessionId: string };
+  | { type: 'workbench_open_session'; sessionId: string }
+  /**
+   * 打开助手工作台（W→E）
+   *
+   * 来源 = 助手形态输入区上方那行小字旁的「工作台」入口。为什么不复用 `open_*` 系列：
+   * 工作台的选座逻辑（当前会话是托管会话 → 用它；唯一一条 → 用它；多条 → QuickPick）
+   * 已收口在 `memora.openWorkbench` 命令里，本消息只转达「用户点了这个入口」，
+   * 宿主执行该命令即可——webview 不得自己判断该看哪一条会话（第二真理源）。
+   */
+  | { type: 'assistant_open_workbench' };
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
@@ -1333,6 +1351,16 @@ export type ExtensionToWebviewMessage =
        */
       defaultMode?: 'self' | 'managed';
     }
+  /**
+   * 侧栏形态（E→W，形态命令 / webview 就绪时下发）
+   *
+   * 形态真源在宿主（`MemoraChatViewProvider._uiForm`）：webview 只**显示**，不得自行
+   * 记住或推断形态（重启回自助 + 视图重建后按宿主当前值还原，两处都得听宿主）。
+   *
+   * ⚠️ 不合并进 `session_title`：形态与「哪条会话」正交——草稿路径没有 `session_title`
+   * 之外的字段可搭车，且形态变化不改变会话标题，搭车会迫使两处各自判「要不要重发」。
+   */
+  | { type: 'ui_form'; form: UiForm }
   /**
    * 历史会话列表（对 session_list 的应答）
    *

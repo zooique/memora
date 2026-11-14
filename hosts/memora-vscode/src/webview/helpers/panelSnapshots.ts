@@ -1,9 +1,13 @@
 /**
- * 面板快照投影（任务看板 / 后台任务 / 上下文占用）——自 chatPanel 外置（max-lines 只降不升）
+ * 面板快照投影（任务看板 / 后台任务 / 上下文占用 / 活动指标）——自 chatPanel 外置（max-lines 只降不升）
  *
- * 三者同族：都是「读当前显示会话的 Agent 快照 → 投递给唯一界面」，且都带宿主缓存
+ * 四者同族：都是「读当前显示会话的 Agent 快照 → 投递给唯一界面」，且都带宿主缓存
  * （后台任务签名 / 用户收起偏好）。判据与文案随方法整体搬走，面板只做依赖注入，
  * 不新增第二份口径。
+ *
+ * 活动指标（ASSISTANT-FORM 同批搬入）：与 `postOccupancy` 是**两种推送纪律**——
+ * 指标受 `memora.showMetrics` 深度隐藏开关（默认关），占用脱离该开关恒推；
+ * 两者同域不同判据，故并存在本模块而非合并成一条通道。
  *
  * 会话归属纪律（E4 批 2）：`getAgent()` 返回的是**当前显示会话**的实例，因此本域任何
  * 写缓存动作前必须先问 `isBackground()`——后台流调用时若不挡，会把 A 的任务签名写进
@@ -15,6 +19,9 @@
  */
 import { estimateOccupancy, type Agent, type BackgroundTask } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
+
+/** 活动指标消息（取联合类型中的一支，避免手写结构漂移） */
+type MetricsMessage = Extract<ExtensionToWebviewMessage, { type: 'metrics' }>;
 
 /**
  * 后台任务状态 → 屏幕标签（宿主自持，SSOT-OWNERSHIP-1）
@@ -47,6 +54,19 @@ export interface PanelSnapshotDeps {
   getSessionId: () => string;
   /** 本地化注入面（后台任务状态标签的词形；生产传 `vscode.l10n`） */
   l10n: { t(message: string): string };
+  /** `memora.showMetrics` 的读取面（指标是开发者信息，默认关；判据留在本域，注入方只给值） */
+  showMetrics: () => boolean;
+  /** 安全审计累加（`total` = 累计次数；「有事件才携带概要」的判据归本域） */
+  getSecurityAudit: () => NonNullable<MetricsMessage['securityAudit']>;
+  /**
+   * 最近一轮装配指纹（真源 = 宿主 tracer；本域只截前 12 位展示，不另算一份）
+   *
+   * 以注入面而非直接 import tracer：`tracer.ts` 顶层 `import * as vscode` ⇒ 直接依赖会
+   * 让本模块的测试（不 mock vscode）在 import 阶段就崩（见 SKILL 规则 ⑤ 的同型教训）。
+   */
+  getFingerprints: () => { systemPromptHash?: string };
+  /** 最近操作流（span 标签，新→旧）：透明面板「操作流」段的唯一数据源 */
+  getRecentTrace: () => { label: string }[];
 }
 
 /** 任务看板 / 后台任务 / 上下文占用的快照投影器（生命周期 = 面板实例） */
@@ -277,5 +297,53 @@ export class PanelSnapshots {
       return;
     }
     this._deps.post({ type: 'context_occupancy', occupancy: occ });
+  }
+
+  /**
+   * 推送活动指标快照（透明面板 + 指纹可见）
+   *
+   * 从 vscodeTracer 提取最近一轮「模型看到了什么」指纹（只记 hash 不记内容），
+   * 从 agent.getMetrics() 取累计指标；推送 webview 折叠区展示。
+   * 指纹展示前 12 位（完整 hash 过长，仅作比对/调试抓手）。
+   *
+   * 深度隐藏（编排对齐）：指标是开发者调试信息，默认不推送——仅当用户显式开启
+   * `memora.showMetrics` 配置时才推送，避免对普通用户造成噪音（不推送则 webview
+   * 详情区不显示指标块，彻底隐藏而非「显示后折叠」）。
+   */
+  pushMetrics(): void {
+    const agent = this._deps.getAgent();
+    if (!agent || this._deps.isBackground()) return;
+    // 深度隐藏开关：默认 false（普通用户零噪音），调试可观测性时开启
+    if (!this._deps.showMetrics()) return;
+    const fp = this._deps.getFingerprints();
+    const m = agent.getMetrics();
+    // 提取最近操作流（span 标签序列）供透明面板渲染
+    const traces = this._deps.getRecentTrace();
+    // 安全/装配透明：推送路径守卫审计概要（有审计事件才携带）
+    const audit = this._deps.getSecurityAudit();
+    const securityAudit =
+      audit.total > 0
+        ? { total: audit.total, denied: audit.denied, recent: [...audit.recent] }
+        : undefined;
+    this._deps.post({
+      type: 'metrics',
+      fingerprints: {
+        systemPromptHash: fp.systemPromptHash ? fp.systemPromptHash.slice(0, 12) : undefined,
+      },
+      metrics: {
+        llmCallCount: m.llm.callCount,
+        toolFailureCount: m.tools.failureCount,
+        // 未解析工具意图：累计数与内核口径一致，供诊断面板观察
+        unparsedToolIntentCount: m.tools.unparsedToolIntentCount,
+        truncationCount: m.context.truncationCount,
+        // token 用量：内核按调用累计的估算值（estimateTokens 口径，非 provider 计费值）
+        llmTokenIn: m.llm.totalInputTokens,
+        llmTokenOut: m.llm.totalOutputTokens,
+        // 透出最近一次装配的上下文预算构成（prepare 计算，指标快照携带）
+        ...(m.context.budget ? { budget: m.context.budget } : {}),
+      },
+      trace: traces,
+      ...(securityAudit ? { securityAudit } : {}),
+    });
   }
 }

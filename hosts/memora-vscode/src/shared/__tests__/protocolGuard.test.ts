@@ -54,8 +54,13 @@ import { join } from 'node:path';
  *  快照）与 `workbench_open_session`（W→E 切会话）；握手复用既有 `ready`，不另开通道。
  *  两条语义不可合并（一条是下行快照、一条是上行动作）⇒ 实测 140，阈值按同一口径
  *  重算 141（当前计数 + 1 余量）。
+ *  2026-11-15 侧栏形态（`ASSISTANT-FORM`）+2：新增 `ui_form`（E→W 形态下行）与
+ *  `assistant_open_workbench`（W→E「点开工作台」意图）。两条不可合并（一上一下），
+ *  也无法搭既有通道的便车：形态与「哪条会话」正交（`session_title` 不描述形态），
+ *  工作台选座逻辑已在 `memora.openWorkbench` 命令里（不需要 webview 传参）。
+ *  实测 142，阈值同口径重算 143。
  */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 141;
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 143;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {
