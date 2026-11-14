@@ -1,13 +1,13 @@
 /**
  * Webview 全局错误边界 — 未处理异常的「最后目击者」（T1）
  *
- * 背景：两个 webview 入口（chatViewMain / settingsViewMain）的业务脚本若抛出未捕获
+ * 背景：三个 webview 入口（chatViewMain / settingsViewMain / workbenchViewMain）的业务脚本若抛出未捕获
  * 异常或未处理的 Promise 拒绝，此前无任何兜底：面板静默卡死，用户只看到「没反应」，
  * 宿主侧零日志（静默失败 = 假阴性）。
  *
- * 职责（单点、双入口各装配一行）：
+ * 职责（单点、三入口各装配一行）：
  *   ① 界面就地插入错误卡片（textContent 防注入），给用户「重新打开面板可恢复」的自救指引；
- *   ② 经 host_diag 通道上报宿主落日志（webview console 用户拿不到）。
+ *   ② 经 host_diag 通道上报宿主（宿主落点由各面板的 host_diag 分支处理；webview console 用户拿不到）。
  *
  * 边界（诚实登记，不承诺全兜）：
  *   - 只覆盖**主脚本已加载后**的错误；主脚本加载失败 / HTML 生成失败在本函数运行前，
@@ -28,7 +28,7 @@ import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
 /** 错误卡片容器 id —— 单例判据（已存在即不再插卡，只重复上报） */
 const ERROR_CARD_ID = 'memora-error-card';
 
-/** 依赖注入面（与 htmlShell 同构：纯函数、可直接单测，不依赖全局 vscode） */
+/** 依赖注入面（与 htmlShell 同构：不依赖全局 vscode、可直接单测；但本模块有事件监听与 DOM 写入副作用，不是纯函数） */
 export interface ErrorBoundaryDeps {
   /** postMessage 出口（Main 已 acquire 的同一 api 实例） */
   post: (msg: WebviewToExtensionMessage) => void;
