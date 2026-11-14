@@ -36,10 +36,13 @@ export interface SessionActivitySnapshot {
 /**
  * 计算一次活跃度快照（纯函数，无 I/O）
  *
+ * 不导出：外部只需要 `runSessionActivityPush`（本文件内唯一消费者），
+ * 直接暴露快照计算会让第二个调用点绕过「去重 + 投递」这条唯一路径。
+ *
  * @param input 遍历面与两个判据闭包
  * @returns 可直接投递的活跃度快照
  */
-export function collectSessionActivity(input: SessionActivityInputs): SessionActivitySnapshot {
+function collectSessionActivity(input: SessionActivityInputs): SessionActivitySnapshot {
   // 遍历面去重（调用方给的是多个来源的并集：当前会话 + 已装配实例 + 已建 ask 协调器，
   // 同一会话会重复出现；不去重会让 pendingIds 出现重复项，角标与列表双亮）
   const ids = [...new Set(input.sessionIds)];
