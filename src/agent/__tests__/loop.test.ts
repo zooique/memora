@@ -4333,7 +4333,7 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
     const messages = loop.getMessages();
     const lastTool = messages.find((m) => m.role === 'tool' && m.toolCallId === 'q1');
     expect(lastTool).toBeDefined();
-    expect(lastTool?.content).toContain('[ASK_ANSWER] 用户回答：欢快');
+    expect(lastTool?.content).toContain('[ASK_ANSWER] 回答：欢快');
     // 重复回答（无在途提问）返回 false
     expect(loop.answerQuestion(['再次回答'])).toBe(false);
   });
@@ -4375,7 +4375,7 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
     const toolOf = (id: string) => messages.find((m) => m.role === 'tool' && m.toolCallId === id);
 
     // 已答的题：原样回填
-    expect(toolOf('q1')?.content).toContain('[ASK_ANSWER] 用户回答：中文');
+    expect(toolOf('q1')?.content).toContain('[ASK_ANSWER] 回答：中文');
     // 未答的题：**不得**复制 q1 的答案（旧兜底「不足时复用最后一条」会让 LLM 以为用户每题都答了
     // ——制造假事实、无报错、直接污染决策上下文）
     expect(toolOf('q2')?.content).not.toContain('[ASK_ANSWER]');

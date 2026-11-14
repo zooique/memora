@@ -1895,7 +1895,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
         .filter((m) => m.role === 'tool')
         .map((m) => String(m.content))
         .join('\n');
-      expect(resumeToolResults).toContain('[ASK_ANSWER] 用户回答：我想读 probe.txt');
+      expect(resumeToolResults).toContain('[ASK_ANSWER] 回答：我想读 probe.txt');
 
       // (d) 续跑最终轮恰好产 1 条 round-summary（恒 1:1：暂停轮 0 + 续跑轮 1）
       await vi.waitFor(() => expect(askProvider.summaryRequestCount).toBe(1), { timeout: 2000 });

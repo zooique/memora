@@ -2074,10 +2074,14 @@ export class AgentLoop {
       // 多题场景下「底部只有一条文本的输入框」必然触发这条兜底（宿主已把回答统一走本入口）。
       // 现改：缺答案落 [ASK_ABORTED] 占位（与 cancelAsk 同文案同源），把「未答」这一事实
       // 显式告知模型；配对不变量不变——每条 toolCallId 恒有 tool 消息，不撞兼容端 400。
+      // 中性文案（托管代答例外，2026-11-14 用户批准）：子会话的提问可能由主控代理代替作答，
+      // 原「用户回答：」会在它的上下文里写下一句假话（作答者不是用户）。这里只陈述「回答」本身，
+      // 不声称是谁答的，也不加托管/代答来源标记——来源已在该轮交互归属里，不造第二层标记。
+      // 自助模式下用户本人作答时，「回答：」同样为真；`[ASK_ANSWER]` 前缀与配对/落盘语义不变。
       const result =
         answer === undefined || answer.trim() === ''
           ? LOOP_CONSTANTS.ASK_ABORTED_RESULT
-          : `[ASK_ANSWER] 用户回答：${answer}`;
+          : `[ASK_ANSWER] 回答：${answer}`;
       this.appendToolMessage(wrapToolResult(ASK_USER_TOOL.name, result), id);
     });
     // 已作答提问转存快照（runResume 落盘交互输入时随回答持久化），pendingAsk 即清空。
