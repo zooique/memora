@@ -16,6 +16,8 @@
 import * as vscode from 'vscode';
 import type { SessionMeta } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
+// 名字归一化判据单点放在零依赖模块：主控清单工具也要用，不能把本模块的 l10n 拖进它的 node 单测
+import { normalizeRolePackName } from './rolePackName.js';
 
 /** 会话元数据读取的最小面（避免把整个 WorkspaceSessionStore 类型拖进纯判据） */
 export interface SessionMetaReader {
@@ -34,10 +36,7 @@ export function readSessionRolePackName(
   sessionId: string,
 ): string | undefined {
   if (!sessionId) return undefined;
-  const name = store.getSessionMeta(sessionId)?.activeRolePackName;
-  if (typeof name !== 'string') return undefined;
-  const trimmed = name.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+  return normalizeRolePackName(store.getSessionMeta(sessionId)?.activeRolePackName);
 }
 
 /**

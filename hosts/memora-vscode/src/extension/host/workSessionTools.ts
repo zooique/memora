@@ -24,6 +24,8 @@ import {
   type AgentCreatedBy,
 } from '../../shared/sessionStatus.js';
 import type { WorkbenchJobStatus } from '../../shared/workbenchDto.js';
+// 角色包名的读侧归一化与「会话记录的角色包」同一判据（不在这里另写 trim / 空串判断）
+import { normalizeRolePackName } from './rolePackName.js';
 
 /**
  * 会话清单工具名（装配点、单测、后续切片共用的唯一字面量）
@@ -222,8 +224,8 @@ export type HostedSessionStopper = (
 /**
  * 单个会话的对外摘要（代理判断「该复用还是该新开」的最小字段集）
  *
- * 四个事实：标识、标题、最后更新时间、**当前状态**，外加**归属**（谁开的）。
- * 状态与归属全部来自既有事实的读侧投影，不新增持久化、不建关系表。
+ * 六个事实：标识、标题、最后更新时间、**当前状态**、**归属**（谁开的）、**角色包**（能力面）。
+ * 全部来自既有事实的读侧投影，不新增持久化、不建关系表。
  */
 export interface WorkSessionBrief {
   /** 会话标识（YYYY-MM-DD-sessionName，与 sessionStore 同口径） */
@@ -244,6 +246,13 @@ export interface WorkSessionBrief {
    * ⚠️ `unknown` 不等于「不是你的」；只表示现有事实不足以判定。
    */
   createdBy: AgentCreatedBy;
+  /**
+   * 该会话挂的角色包名（能力面的既有事实，取 `SessionMeta.activeRolePackName`）
+   *
+   * `null` = 该会话**没有记录**角色包（旧会话 / 从未选过）——不是空串，也**不是**默认包；
+   * 默认包由装配链兜底，读侧不得把兜底值写成这条会话的选择记录。
+   */
+  rolePack: string | null;
 }
 
 /**
@@ -256,10 +265,11 @@ export interface WorkSessionBrief {
 const LIST_WORK_SESSIONS_DEFINITION: ToolDefinition = {
   name: LIST_WORK_SESSIONS_TOOL_NAME,
   description:
-    '列出当前工作区已知的会话（sid、标题、最后更新时间、状态、归属），用于判断是否已有相关会话、避免重复新建。' +
+    '列出当前工作区已知的会话（sid、标题、最后更新时间、状态、归属、角色包），用于判断是否已有相关会话、避免重复新建。' +
     '不含对话正文。status.kind：running 在跑 / waiting 等你（用户要先处理）/ completed 已完成 / ' +
     'stopped 被中止（stop 给原因）/ unsettled 上次未正常结束 / queued 尚未开始 / unreadable 状态读不到。' +
     'createdBy：agent = 你开的 / user = 用户自己建的 / unknown = 无法确认。' +
+    'rolePack：该会话挂的角色包名（能力面依据）；null = 会话没有记录角色包，不是默认包。' +
     '⚠️ unreadable、unknown、或顶层 coverage 不为 complete 都表示「不确定」，' +
     '不得当成「这条活没在跑、可以再开一个」；不确定时先向用户确认，不要盲目新建或派活。',
   parameters: {
@@ -406,6 +416,8 @@ export function toWorkSessionBrief(
     updatedAt: meta.updatedAt,
     status,
     createdBy,
+    // 读侧只取「会话记录过的名字」：没有记录 = null，不拿装配兜底的默认包冒充
+    rolePack: normalizeRolePackName(meta.activeRolePackName) ?? null,
   };
 }
 

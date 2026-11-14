@@ -58,6 +58,8 @@ const SESSION_TITLE = '主控探针会话';
 const SESSION_UPDATED_AT = '2026-11-14T08:00:00.000Z';
 /** 播种的「目标会话」标识（派发用例的目标；与主控自身区分开） */
 const TARGET_SESSION_ID = '2026-11-14-target-probe';
+/** 播种的目标会话角色包名（清单项 rolePack 的正例输入） */
+const TARGET_ROLE_PACK = '资料员';
 /** 装配期注入的发送者名（断言工具原样交给派发回调，而不是自造字面量） */
 const SENDER_NAME = '派发探针';
 
@@ -178,6 +180,8 @@ async function assembleProbe(orchestratorSession?: boolean, hosted?: HostedDeps)
     messageCount: 0,
     // 托管来源：与代理开的子会话同形（归属判定不能只看 origin，见 projectCreatedBy）
     origin: 'hosted',
+    // 会话记录的角色包（清单项的 rolePack 取自这个既有字段，不是装配兜底值）
+    activeRolePackName: TARGET_ROLE_PACK,
   });
   const storage = createHostMemoryStorage(projectPath);
   const agent = await assembleAgent({
@@ -263,6 +267,7 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
           updatedAt: string;
           status: WorkbenchJobStatus;
           createdBy: string;
+          rolePack: string | null;
         }[];
       };
       expect(parsed.ok).toBe(true);
@@ -277,7 +282,13 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
         status: { kind: 'completed' },
         // 普通会话（无 hosted 来源标记）= 用户自己建的
         createdBy: 'user',
+        // 该会话没有记录角色包 ⇒ null（不是空串，也不是种子里的默认包「默认助手」）
+        rolePack: null,
       });
+      // 有记录的角色包如实带出（取 SessionMeta.activeRolePackName，只读不落盘）
+      expect(parsed.sessions.find((s) => s.sid === TARGET_SESSION_ID)?.rolePack).toBe(
+        TARGET_ROLE_PACK,
+      );
     } finally {
       await disposeProbe(probe);
     }
