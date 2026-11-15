@@ -463,6 +463,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private _composerHasText = false;
   /**
+   * 是否仍在激活期（构造完成前）
+   *
+   * 激活期只读磁盘：会话文件的整份写入有跨进程 fail-closed 锁守卫
+   * （`assertSessionWriteAllowed`），构造函数不在任何持锁上下文里。形态/座位恢复会走
+   * `adoptSession → setCurrentSessionId`，若照常写「上次停留」就会在激活期整写会话文件
+   * ⇒ 抛错 ⇒ 构建 provider 失败 ⇒ 整个扩展激活失败（真机 2/2）。
+   */
+  private _booting = true;
+
+  /**
    * 未发送输入草稿（按会话存 workspaceState，实现在 `helpers/composerDrafts`）
    *
    * 只搬文本、不做判据：`_composerHasText` **只**由 `composer_state`（翻转信号）决定，
@@ -785,6 +795,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         getDefaultRolePackName: resolveDraftRolePackName,
         // 进 / 出空白页时记一位（重启后据此回到空白页）；未注入持久层 = 不记，行为同改造前
         markDraftPage: (on) => void this.uiState?.update(UI_DRAFT_PAGE_KEY, on ? true : undefined),
+        // 空白页归属随投影下发：不发则 webview 归属停在上一条会话（空白页的字会被写错归属）
+        restoreComposerDraft: () => this.post(this._composerDrafts.restore('')),
       },
       !this._currentSessionId || lastDraftPage,
     );
@@ -795,7 +807,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 形态 + 座位成对恢复（实现在 helpers/uiFormPersistence.ts）：播种形态、把座位写回
     // SessionModeStore 并打「恢复」标签、必要时切到座位那条会话。必须在构造末尾调用——
     // 依赖的 `_draft` / `_uiFormOps` 已就位，且早于首次 render 与 agent 装配。
+    // 激活期结束：此后所有导航（用户切会话 / 建会话）都正常写「上次停留」
     this._uiFormOps.restoreOnce();
+    this._booting = false;
     // 文档上下文不在此处预取（发送时实时读活动编辑器，见 snapshotDocContext）。
     // 曾用 onDidChangeActiveTextEditor 缓存——盖不住「同一文件被编辑」，脏态停在「打开时干净」⇒ 每轮拿磁盘旧版当真相（P0 撒谎源）。
   }
@@ -1224,11 +1238,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 在 webview 脚本监听器注册前丢失。
    */
   public prefillInput(text: string): void {
-    if (this._view) {
-      this.post({ type: 'prefill_input', text });
-    } else {
-      this._pendingPrefill = text;
-    }
+    if (this._view) this.post({ type: 'prefill_input', text });
+    else this._pendingPrefill = text;
   }
 
   /**
@@ -1305,8 +1316,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 宁可写一条随后可清的键，也不能把用户正在打的字丢掉（丢文本的代价远高于一条脏键）。
     else if (msg.type === 'composer_draft') {
       const known = this.sessionStore.isResolvable(msg.sessionId);
-      // 空白页（归属为空）同样落盘：accept 内部映射到固定标记，不再走「没有 id 就丢」的老分支
-      this._composerDrafts.accept(known ? msg.sessionId : this._currentSessionId, msg.text);
+      // 空白页是宿主自己的事实，优先于 webview 回传：页面处于草稿态时一律记到空白页键，
+      // 否则「＋」后打的字会被写成上一条真实会话的 id（真机复现；回传归属可能尚未刷新）。
+      const owner = this.isDraft ? '' : known ? msg.sessionId : this._currentSessionId;
+      this._composerDrafts.accept(owner, msg.text);
     } else if (msg.type === 'open_settings_tab') {
       // 设置面板选项卡导航（空态引导 → 大模型 / 角色徽章 → 角色；只导航——切换执行仍走各视图单路径）。
       // **不维护「tab → 命令名」映射表**：那是第二真源，加一页要补一行且 protocol 得同步放宽。tab 直投命令。
@@ -1872,6 +1885,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 离开空白页的同一时刻清掉它的草稿键：文本要么已发出、要么随页面一起作废。
     // 不清就会留一条永不复位的孤儿键（重启时 lastDraftPage 已是 false，再没人读它）。
     this._composerDrafts.clear('');
+    // 激活期不写「上次停留」：构造里那次座位恢复不在持锁上下文，会话文件写入会 fail-closed
+    // （真机整扩展激活失败）。欠下的这一笔由启动归属裁决拿到跨进程锁之后补写。
+    if (this._booting) return;
     this.sessionStore.setLastActiveSession(sessionId);
   }
 
@@ -2227,7 +2243,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     });
     // 握手期间面板被销毁：补归还刚落到的锁并中止后续让位
     if (this._lockFinalizer.abandonIfDisposed(claim.sessionId)) return;
-    if (!claim.displaced) return; // 首选归属本进程：单窗口常态
+    if (!claim.displaced) {
+      // 首选归属本进程：单窗口常态。构造期恢复链只读（见 `_booting`）⇒ 形态/座位恢复
+      // 欠下的「上次停留」在这里补——此刻已持该会话的跨进程锁；指针本就指向它则不动盘。
+      if (claim.sessionId !== this.sessionStore.getInitialSessionId())
+        this.sessionStore.setLastActiveSession(claim.sessionId);
+      return;
+    }
     if (claim.sessionId) {
       const manager = this._agent?.sessionManager;
       if (manager) {
@@ -2929,9 +2951,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const sessionManager = agent.sessionManager;
     if (sessionManager) {
       const info = sessionManager.getCurrentSessionInfo();
-      if (info && `${info.date}-${info.session}` !== targetSessionId) {
+      if (info && `${info.date}-${info.session}` !== targetSessionId)
         await sessionManager.switchToSession(targetSessionId);
-      }
     }
     if (this._runtime.peek(targetSessionId)?.streaming === true) return busy;
     const now = new Date().toISOString();
@@ -3523,9 +3544,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 提问 chunk（question_pending）：事件优先驱动，chunk 幂等兜底。
         // 事件已驱动（内核先回调、后 yield chunk）→ 跳过；未驱动 → 攒缓存，流尾统一兜底渲染（避免逐条 post 后者覆盖前者）
         if (chunk.type === 'question_pending') {
-          if (!clarifyEventDriven) {
-            clarifyChunkQueue.push(...chunk.questions);
-          }
+          if (!clarifyEventDriven) clarifyChunkQueue.push(...chunk.questions);
           continue;
         }
         if (chunk.type === 'tool_pending') {
@@ -3862,9 +3881,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     // 流期间 view 重建过 → 新 webview 未投影本流（隐藏期消息被丢弃），数据已完整落盘 →
     // 补一次 replaySession 全量回放恢复完整回合
-    if (this._viewEpoch !== flowViewEpoch) {
-      this.replaySession();
-    }
+    if (this._viewEpoch !== flowViewEpoch) this.replaySession();
     // plan 快照对齐：generator close 后内核 clearPlanOnTurnEnd 已清 plan（暂停态 guard 不清），
     // 此处推一次快照让 webview 同步——正常/中断 → 空 items（顶部条收起）；
     // 暂停 → 保留当前 plan（paused 分支前面，plan 还没被清，继续供 resume 消费）

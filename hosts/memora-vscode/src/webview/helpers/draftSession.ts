@@ -47,6 +47,14 @@ export interface DraftSessionDeps {
    * 「上次停在空白页」与「上次停在真会话」——前者要回空白页把草稿放回，后者不许被抢戏。
    */
   markDraftPage: (on: boolean) => void;
+  /**
+   * 把「空白页归属 + 它的草稿」下发给 webview（`composer_draft_restore`）
+   *
+   * 必须每次投影都发：webview 的归属只在收到这条时更新。不发的话，点「＋」后归属仍是
+   * 上一条会话 id，空白页打的字会被当成那条会话的草稿（真机把 `__draft-page__` 映射
+   * 一次都没走到，就是这里缺了一手）。
+   */
+  restoreComposerDraft: () => void;
 }
 
 /**
@@ -191,6 +199,8 @@ export class DraftSessionController {
     this.deps.post({ type: 'background_tasks', items: [] });
     this.deps.pushSessionList();
     this.deps.refreshActivity();
+    // 归属与草稿一起下发（见 deps.restoreComposerDraft）：空白页的文本只能落在空白页键上
+    this.deps.restoreComposerDraft();
     if (historyLoaded) this.deps.post({ type: 'history_loaded' });
   }
 }

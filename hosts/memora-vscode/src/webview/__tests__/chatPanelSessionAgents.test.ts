@@ -203,7 +203,7 @@ interface PanelHandle {
     /** 显示会话输入框是否有未发送文本（宿主侧布尔，webview 重建时必须复位） */
     _composerHasText: boolean;
     /** 草稿会话控制器（「＋」后的空白页态；测试断言「重启是否回到空白页」） */
-    _draft: { isDraft: boolean };
+    _draft: { isDraft: boolean; enter(mode?: 'self' | 'hosted' | 'managed'): void };
     runtimeFor(sessionId?: string): {
       streaming: boolean;
       abortController?: AbortController;
@@ -2356,11 +2356,11 @@ describe('形态 + 座位成对恢复（重启后照旧）', () => {
     expect(provider.getCurrentSessionId()).toBe(seat);
   });
 
-  it('形态恢复成助手但上次停留的不是座位那条：切到座位那条（O3）', () => {
+  it('形态恢复成助手但上次停留的不是座位那条：切到座位那条（O3）', async () => {
     const seat = '2026-11-15-seat';
     const other = '2026-11-15-other';
     const modes = createEphemeralSessionModeStore();
-    const { provider, store } = setupPanel(
+    const { provider, store, fireMessage } = setupPanel(
       {},
       [other, seat],
       modes,
@@ -2370,9 +2370,12 @@ describe('形态 + 座位成对恢复（重启后照旧）', () => {
       }),
     );
 
+    // 激活期只读：构造里不持跨进程锁，写会话文件会 fail-closed（真机整扩展激活失败）
     expect(provider.getCurrentSessionId()).toBe(seat);
-    // 切过去走的是导航唯一写点：停留指针同步，下次启动仍会回到这里
-    expect(store.getInitialSessionId()).toBe(seat);
+    expect(store.getInitialSessionId()).toBe(other);
+    // 锁是在启动归属裁决里拿到的：拿到之后才补写「上次停留」（已持锁，合法整写）
+    fireMessage({ type: 'ready' });
+    await vi.waitFor(() => expect(store.getInitialSessionId()).toBe(seat));
   });
 
   it('座位会话已被删除：回落自助，不把成自动会话恢复成托管', () => {
@@ -2665,5 +2668,28 @@ describe('空白草稿页的草稿（O5-B）', () => {
     // 页面已不是空白页：旧字随页面作废，键与标记都必须复位
     expect(raw.get(UI_COMPOSER_DRAFTS_KEY)).toBeUndefined();
     expect(raw.get(UI_DRAFT_PAGE_KEY)).toBeUndefined();
+  });
+
+  it('点「＋」后归属未刷新（仍带回上一会话 id）⇒ 仍记到空白页键（宿主事实优先）', () => {
+    const raw = new Map<string, unknown>();
+    const prev = '2026-11-15-prev-session';
+    const h = setupPanel({}, [prev], createEphemeralSessionModeStore(), makeUi(raw));
+    h.cast._draft.enter();
+    expect(h.provider.getCurrentSessionId()).toBe('');
+
+    // 真机路径：webview 的归属还停在上一条会话 id（restore 尚未处理）——
+    // 若按「归属可解析」就写它，空白页的字会被记成那条会话的草稿（__draft-page__ 一次不走）
+    h.fireMessage({ type: 'composer_draft', sessionId: prev, text: '空白页打字' });
+    expect(raw.get(UI_COMPOSER_DRAFTS_KEY)).toEqual({ [DRAFT_PAGE_OWNER]: '空白页打字' });
+  });
+
+  it('进入空白页必须下发归属（否则 webview 归属停在上一条会话）', () => {
+    const raw = new Map<string, unknown>();
+    const h = setupPanel({}, ['2026-11-15-prev'], createEphemeralSessionModeStore(), makeUi(raw));
+    h.posted.length = 0;
+    h.cast._draft.enter();
+
+    const restore = h.posted.find((m) => m.type === 'composer_draft_restore');
+    expect(restore?.sessionId).toBe('');
   });
 });

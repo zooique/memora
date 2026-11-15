@@ -116,4 +116,13 @@ describe('SESSION-RESUME-1 · 会话导航写点守卫', () => {
     expect(lines[idx - 1]).not.toContain('setLastActiveSession');
     expect(lines[idx]).not.toContain('setLastActiveSession');
   });
+
+  it('激活期早退必须挡在落盘之前（构造期无锁，写会话文件会 fail-closed）', () => {
+    // 真机事故：形态/座位恢复 → adoptSession → 这里整写会话文件 → 锁守卫抛错 → 扩展激活失败。
+    // 恢复链只读：这一笔改由启动归属裁决拿到跨进程锁之后补写（同一语义，合法上下文）。
+    const lines = source.split('\n');
+    const idx = lines.findIndex((l) => l.includes(PERSIST_CALL));
+    expect(idx).toBeGreaterThan(0);
+    expect(lines[idx - 1]).toContain('if (this._booting) return;');
+  });
 });
