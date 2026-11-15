@@ -1,10 +1,15 @@
 /**
- * 工作台清单 — 从代理会话历史重建「它开出去过哪些会话」
+ * 工作台清单 — 从代理会话历史重建「它开出去过哪些会话」+「它最近派给谁什么」
  *
  * 为什么能重建：`create_session` 每次成功都向模型返回过 `{ ok, sid, title }`，
  * 这次调用与结果已经作为过程事件落在代理会话自己的轮里（`tool_start.args` +
  * `tool_result.summary`）。本模块只是**读既有事实**，不新增持久化字段、不建
  * child→creator 关系表（那与「在管集合不记父子、不建树、不落盘」冲突）。
+ *
+ * 派发记录同理但更直接：`send_to_session` 的 `tool_start.args` 里就有完整的
+ * `{ sid, text }`，回执只有 `{ ok, accepted }`（不含 sid）——所以目标只能从**入参**
+ * 取，靠 `toolCallId` 与同轮结果配对确认「这次真派成功了」。这条记录是**主控自己
+ * 的工作记录**，单向：不写目标会话任何字段，目标不感知自己被派过。
  *
  * 读取边界（硬约束）：
  *   - 只在打开工作台时调用一次（调用方负责），不在启动时全量扫；
@@ -24,11 +29,21 @@
  * （界面显示「部分历史读不到」），**不**静默跳过、**不**当成「没有」。
  */
 import type { Round } from '@zooique/memora';
-import { CREATE_SESSION_TOOL_NAME } from '../../extension/host/workSessionTools.js';
+import {
+  CREATE_SESSION_TOOL_NAME,
+  SEND_TO_SESSION_TOOL_NAME,
+} from '../../extension/host/workSessionTools.js';
 import type { WorkbenchCoverage } from '../../shared/workbenchDto.js';
 
 /** 单次重建最多读多少轮（改这里必须同时改文案：界面会把这个数字说给用户） */
 export const WORKBENCH_REBUILD_MAX_ROUNDS = 60;
+
+/**
+ * 派发内容摘录的字符上限（与 `read_memory_summary` 的单条轮摘要同口径）
+ *
+ * 摘录只用于让主控想起「我派过什么」，不是全文；全文就在代理自己轮的 `args` 里。
+ */
+export const WORKBENCH_DISPATCH_EXCERPT_CHARS = 120;
 
 /** 历史读取面（由面板注入；本模块不持有存储） */
 export interface WorkbenchHistorySources {
@@ -46,17 +61,34 @@ export interface WorkbenchHistoryChild {
   title?: string;
 }
 
+/** 重建出的派发记录（目标会话 + 这次派给它的内容摘录 + 时间） */
+export interface WorkbenchHistoryDispatch {
+  /** 目标会话标识（`send_to_session.args.sid`；回执里没有 sid，不能从结果解析） */
+  sessionId: string;
+  /** 派发内容摘录（超长按 `WORKBENCH_DISPATCH_EXCERPT_CHARS` 截断并加省略号） */
+  excerpt: string;
+  /** 派发时间（ISO 8601；`null` = 事件与轮都没时间戳，不编一个） */
+  at: string | null;
+}
+
 /** 重建结果 */
 export interface WorkbenchHistoryResult {
   /** 历史里能确认创建成功的子会话（按发现顺序，已按 sid 去重） */
   children: WorkbenchHistoryChild[];
+  /**
+   * 历史里确认派发成功的记录（每个目标会话只保留最近一次）
+   *
+   * 空数组 = 这段窗口里没读到派发记录，**不等于**「从未派过」：窗口截断 / 读不到
+   * 由 `coverage` 说明。只读代理自己的轮，不触碰目标会话的任何字段。
+   */
+  dispatches: WorkbenchHistoryDispatch[];
   /** 本次读到哪：complete / partial / unreadable */
   coverage: WorkbenchCoverage;
   /** 该会话总轮数 */
   totalRounds: number;
   /** 实际扫描轮数 */
   scannedRounds: number;
-  /** 成功调用但解析不出 sid 的记录数（界面据此说「部分历史读不到」） */
+  /** 成功调用但解析不出 sid / 派发目标 / 内容的记录数（界面据此说「部分历史读不到」） */
   unreadableRecords: number;
 }
 
@@ -78,6 +110,7 @@ export function rebuildWorkbenchChildren(
   } catch {
     return {
       children: [],
+      dispatches: [],
       coverage: 'unreadable',
       totalRounds: 0,
       scannedRounds: 0,
@@ -87,6 +120,8 @@ export function rebuildWorkbenchChildren(
   // 只扫最近 N 轮：超了如实标 partial（旧会话多半在更早的轮里，界面会说明读不全）
   const scanned = roundIds.slice(-WORKBENCH_REBUILD_MAX_ROUNDS);
   const byId = new Map<string, WorkbenchHistoryChild>();
+  /** 目标 sid → 最近一次派发（扫描按轮序正序，后到的覆盖先到的） */
+  const dispatches = new Map<string, WorkbenchHistoryDispatch>();
   let unreadableRecords = 0;
   for (const roundId of scanned) {
     let round: Round | undefined;
@@ -100,12 +135,13 @@ export function rebuildWorkbenchChildren(
       unreadableRecords += 1;
       continue;
     }
-    collectFromRound(round, byId, () => {
+    collectFromRound(round, byId, dispatches, () => {
       unreadableRecords += 1;
     });
   }
   return {
     children: [...byId.values()],
+    dispatches: [...dispatches.values()],
     coverage: roundIds.length > scanned.length || unreadableRecords > 0 ? 'partial' : 'complete',
     totalRounds: roundIds.length,
     scannedRounds: scanned.length,
@@ -114,34 +150,60 @@ export function rebuildWorkbenchChildren(
 }
 
 /**
- * 从一轮的过程事件里收集 `create_session` 的成功结果
+ * 从一轮的过程事件里收集 `create_session` / `send_to_session` 的成功结果
  *
- * 配对方式：同 `toolCallId` 的 `tool_start` 给标题、`tool_result(ok)` 给 sid。
- * 结果事件没带 sid ⇒ 记录读不到（成功过、但认不出是哪条会话）。
+ * 配对方式：同 `toolCallId` 的 `tool_start` 给完整入参、`tool_result(ok)` 确认这次真成功。
+ * - 建会话：结果摘要里解析 sid（入参给标题）；
+ * - 派发：入参里取 `{ sid, text }`（结果里没有 sid），并取事件时间。
+ *
+ * 成功过却认不出「哪条会话 / 派了什么」⇒ 记录读不到，不静默丢、不拿别的字段顶替。
  *
  * @param round 整轮
- * @param byId 结果累加器（sid → 子会话；重复 sid 只保留首次）
+ * @param byId 建会话累加器（sid → 子会话；重复 sid 只保留首次）
+ * @param dispatches 派发累加器（目标 sid → 最近一次；后到的覆盖先到的）
  * @param noteUnreadable 记录「读不到」的回调
  */
 function collectFromRound(
   round: Round,
   byId: Map<string, WorkbenchHistoryChild>,
+  dispatches: Map<string, WorkbenchHistoryDispatch>,
   noteUnreadable: () => void,
 ): void {
-  /** 本轮的调用 → 标题（args 完整；解析失败为 undefined，不阻断 sid 提取） */
+  /** 本轮的建会话调用 → 标题（args 完整；解析失败为 undefined，不阻断 sid 提取） */
   const titles = new Map<string, string | undefined>();
+  /** 本轮的派发调用 → 目标与内容（解析失败为 undefined，结果 ok 时计入读不到） */
+  const sends = new Map<string, { sid: string; text: string; at: string | null } | undefined>();
   for (const event of round.processEvents ?? []) {
-    if (event.type === 'tool_start' && event.payload.name === CREATE_SESSION_TOOL_NAME) {
-      titles.set(event.payload.toolCallId, parseTitle(event.payload.args));
+    if (event.type === 'tool_start') {
+      if (event.payload.name === CREATE_SESSION_TOOL_NAME) {
+        titles.set(event.payload.toolCallId, parseTitle(event.payload.args));
+        continue;
+      }
+      if (event.payload.name === SEND_TO_SESSION_TOOL_NAME) {
+        const parsed = parseSendArgs(event.payload.args);
+        sends.set(
+          event.payload.toolCallId,
+          parsed ? { ...parsed, at: resolveEventTime(event.ts, round.createdAt) } : undefined,
+        );
+      }
       continue;
     }
-    if (
-      event.type !== 'tool_result' ||
-      event.payload.name !== CREATE_SESSION_TOOL_NAME ||
-      !event.payload.ok
-    ) {
+    if (event.type !== 'tool_result' || !event.payload.ok) continue;
+    if (event.payload.name === SEND_TO_SESSION_TOOL_NAME) {
+      const send = sends.get(event.payload.toolCallId);
+      if (!send) {
+        // 成功过但入参认不出目标 / 内容：不能静默丢，也不能编一个目标
+        noteUnreadable();
+        continue;
+      }
+      dispatches.set(send.sid, {
+        sessionId: send.sid,
+        excerpt: excerptOf(send.text),
+        at: send.at,
+      });
       continue;
     }
+    if (event.payload.name !== CREATE_SESSION_TOOL_NAME) continue;
     const sid = parseCreateSessionSid(event.payload.summary ?? '');
     if (!sid) {
       // 成功过但认不出 sid：不能静默丢，计入「读不到」
@@ -152,6 +214,55 @@ function collectFromRound(
       byId.set(sid, { sessionId: sid, title: titles.get(event.payload.toolCallId) });
     }
   }
+}
+
+/**
+ * 从 `tool_start.args` 里提取派发的目标会话与内容
+ *
+ * 与 `send_to_session` 的入参封闭契约一致（`{ sid, text }` 且都是非空字符串）。
+ * 形状不对返回 undefined，由调用方计入「读不到」——不猜目标、不拿别的键顶替。
+ *
+ * @param args 工具入参 JSON 文本（完整；可能非法）
+ * @returns 目标与内容；解析失败返回 undefined
+ */
+function parseSendArgs(args: string | undefined): { sid: string; text: string } | undefined {
+  if (!args) return undefined;
+  try {
+    const parsed = JSON.parse(args) as { sid?: unknown; text?: unknown };
+    if (typeof parsed.sid !== 'string' || parsed.sid.trim() === '') return undefined;
+    if (typeof parsed.text !== 'string' || parsed.text.trim() === '') return undefined;
+    return { sid: parsed.sid, text: parsed.text };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 解析事件时间：优先工具调用事件自身的 `ts`，缺失时回退整轮创建时间
+ *
+ * 两者都没有（极旧数据 / 手工构造）时如实返回 `null`，不拿当前时间冒充历史时间。
+ *
+ * @param ts 事件时间（可能缺省）
+ * @param roundCreatedAt 整轮创建时间（可能缺省）
+ * @returns ISO 时间或 null
+ */
+function resolveEventTime(
+  ts: string | undefined,
+  roundCreatedAt: string | undefined,
+): string | null {
+  return ts || roundCreatedAt || null;
+}
+
+/**
+ * 把派发内容截成摘录（只影响展示长度，不改写内容）
+ *
+ * @param text 派发原文（`send_to_session.args.text`，完整未截断）
+ * @returns 不超过上限的摘录；超长时以省略号结尾
+ */
+function excerptOf(text: string): string {
+  return text.length > WORKBENCH_DISPATCH_EXCERPT_CHARS
+    ? `${text.slice(0, WORKBENCH_DISPATCH_EXCERPT_CHARS)}…`
+    : text;
 }
 
 /**

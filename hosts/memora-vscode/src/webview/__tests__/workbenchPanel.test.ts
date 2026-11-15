@@ -176,6 +176,7 @@ describe('MemoraWorkbenchPanel — 不保活生命周期', () => {
     openSession = vi.fn(async () => undefined);
     rebuildHistory = vi.fn((): WorkbenchHistoryResult => ({
       children: [],
+      dispatches: [],
       coverage: 'complete',
       totalRounds: 0,
       scannedRounds: 0,

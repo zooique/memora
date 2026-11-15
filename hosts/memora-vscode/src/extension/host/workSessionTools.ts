@@ -224,14 +224,21 @@ export interface WorkSessionToolDeps {
 /**
  * 调用方历史重建的消费形状（`WorkbenchHistoryResult` 结构上直接满足）
  *
- * 只取工具要用的四件事：覆盖状态、创建记录、总轮数、实扫轮数。
- * 注意：它只用来**认领旧会话**（范围功能上线前开的、没有声明的活），不再用来反推范围声明。
+ * 只取工具要用的五件事：覆盖状态、创建记录、派发记录、总轮数、实扫轮数。
+ * 注意：它只用来**认领旧会话**（范围功能上线前开的、没有声明的活）与回忆「派过什么」，
+ * 不再用来反推范围声明。
  */
 export interface SessionHistoryFacts {
   /** complete / partial / unreadable（`partial` = 超上限或有记录读不到） */
   coverage: 'complete' | 'partial' | 'unreadable';
   /** 历史里的 `create_session` 记录（sid + 创建时标题） */
   children: readonly { sessionId: string; title?: string }[];
+  /**
+   * 历史里的 `send_to_session` 成功派发记录（每个目标 sid 只保留最近一次）
+   *
+   * 空数组 ≠ 「从未派过」：窗口截断 / 读不到时由 `coverage` 说明。
+   */
+  dispatches: readonly { sessionId: string; excerpt: string; at: string | null }[];
   /** 代理会话总轮数 */
   totalRounds: number;
   /** 本次实际扫描的轮数（< total 即「上限截断」） */
@@ -426,10 +433,25 @@ export type HostedSessionStopper = (
 ) => Promise<HostedStopResult>;
 
 /**
+ * 最近一次派给某会话的任务摘录（主控自己的工作记录，单向）
+ *
+ * 来源 = 主控会话自己轮里的 `send_to_session` 调用：目标 sid 与内容取自
+ * `tool_start.args`，是否真派成功由同 `toolCallId` 的 `tool_result.ok` 确认。
+ * 这只是读代理自己的历史，**不写目标会话任何字段**，目标不感知自己被派过。
+ */
+export interface WorkSessionLastDispatch {
+  /** 派发内容摘录（超长截断，不是全文；全文在主控自己的轮里） */
+  excerpt: string;
+  /** 派发时间（ISO 8601；`null` = 记录里没有可用时间戳） */
+  at: string | null;
+}
+
+/**
  * 单个会话的对外摘要（代理判断「该复用还是该新开」的最小字段集）
  *
- * 七个事实：标识、标题、**归档摘要**、最后更新时间、**当前状态**、**归属**（谁开的）、
- * **角色包**（能力面）。全部来自既有事实的读侧投影，不新增持久化、不建关系表。
+ * 八个事实：标识、标题、**归档摘要**、最后更新时间、**当前状态**、**归属**（谁开的）、
+ * **角色包**（能力面）、**最近一次派给它什么**。前七项全部来自既有事实的读侧投影，
+ * 第八项来自主控自己轮里的派发记录——不新增持久化、不建关系表。
  */
 export interface WorkSessionBrief {
   /** 会话标识（YYYY-MM-DD-sessionName，与 sessionStore 同口径） */
@@ -469,6 +491,13 @@ export interface WorkSessionBrief {
    * 默认包由装配链兜底，读侧不得把兜底值写成这条会话的选择记录。
    */
   rolePack: string | null;
+  /**
+   * 最近一次派给它的任务摘录（`null` = 本次可读历史窗口里没读到派给它的记录）
+   *
+   * ⚠️ `null` **不等于**「从未派过」：窗口有上限（顶层 `scan.truncated`）或部分读不到
+   * （`coverage !== 'complete'`）时，只能说「这次没看到」。不许用占位词冒充事实。
+   */
+  lastDispatch: WorkSessionLastDispatch | null;
 }
 
 /**
@@ -490,6 +519,8 @@ const LIST_WORK_SESSIONS_DEFINITION: ToolDefinition = {
     'stopped 被中止（stop 给原因）/ unsettled 上次未正常结束 / queued 尚未开始 / unreadable 状态读不到。' +
     'createdBy：agent = 你开的 / user = 用户自己建的 / unknown = 无法确认。' +
     'rolePack：该会话挂的角色包名（能力面依据）；null = 会话没有记录角色包，不是默认包。' +
+    'lastDispatch：你最近一次派给它的任务摘录（来自你自己轮里的 send_to_session 调用）；' +
+    'null = 本次可读历史窗口里没读到派给它的记录，不等于从未派过——窗口上限与截断见顶层 scan。' +
     '⚠️ unreadable、unknown、或顶层 coverage 不为 complete 都表示「不确定」，' +
     '不得当成「这条活没在跑、可以再开一个」；不确定时先向用户确认，不要盲目新建或派活。',
   parameters: {
@@ -786,12 +817,14 @@ function parseReadMemorySummaryArgs(args: Record<string, unknown>): { sid: strin
  * @param meta 会话元数据（store 真源）
  * @param status 状态投影（缺读口时由调用方传 `unreadable`，不猜空闲）
  * @param createdBy 归属三档（缺事实时 `unknown`）
+ * @param lastDispatch 最近一次派给它的任务摘录（没有 / 本次窗口内没读到 = `null`）
  * @returns 对外摘要
  */
 export function toWorkSessionBrief(
   meta: SessionMeta,
   status: WorkbenchJobStatus,
   createdBy: AgentCreatedBy,
+  lastDispatch: WorkSessionLastDispatch | null,
 ): WorkSessionBrief {
   return {
     sid: meta.sessionId,
@@ -803,6 +836,8 @@ export function toWorkSessionBrief(
     createdBy,
     // 读侧只取「会话记录过的名字」：没有记录 = null，不拿装配兜底的默认包冒充
     rolePack: normalizeRolePackName(meta.activeRolePackName) ?? null,
+    // 派发记录来自主控自己的历史；没读到就如实 null，不用占位词冒充
+    lastDispatch,
   };
 }
 
@@ -916,6 +951,7 @@ function readHostedCreatedFacts(deps: WorkSessionToolDeps | undefined): {
     historyFacts: history ?? {
       coverage: 'unreadable',
       children: [],
+      dispatches: [],
       totalRounds: 0,
       scannedRounds: 0,
     },
@@ -990,14 +1026,21 @@ export function registerWorkSessionTools(
     const metas = sessionStore.listSessionMetas();
     const callingSessionId = deps?.callingSessionId;
     const { history, ledger, historyFacts } = readCreatedFacts();
-    const sessions = metas.map((meta) =>
-      toWorkSessionBrief(
+    // 派发记录按目标 sid 索引（历史重建已按轮序只保留最近一次）
+    const dispatchBySid = new Map(
+      (history?.dispatches ?? []).map((item) => [item.sessionId, item] as const),
+    );
+    const sessions = metas.map((meta) => {
+      const latest = dispatchBySid.get(meta.sessionId);
+      return toWorkSessionBrief(
         meta,
         // 缺读口 = 不知道，绝不写成 queued / completed（那会让代理以为可以再开一个）
         deps?.readStatus?.(meta.sessionId) ?? { kind: 'unreadable' },
         projectCreatedBy(meta, meta.sessionId, { ledger, history: historyFacts }),
-      ),
-    );
+        // 没读到 = null（不是 unknown 占位，也不是空串）；窗口边界见顶层 scan
+        latest ? { excerpt: latest.excerpt, at: latest.at } : null,
+      );
+    });
     const coverage = resolveListCoverage({
       history: history ?? { coverage: 'unreadable' },
       // 调用方自己都不在清单里 ⇒ 清单不可信（会话被删 / 存储加载失败），不能说「一条都没有」

@@ -15,8 +15,9 @@
  * 持久化字段，超出本切片边界。
  */
 import { describe, expect, it } from 'vitest';
+import type { ProcessEvent, Round } from '@zooique/memora';
 import { serializeCreateSessionResult } from '../../extension/host/workSessionTools.js';
-import { parseCreateSessionSid } from '../helpers/workbenchHistory.js';
+import { parseCreateSessionSid, rebuildWorkbenchChildren } from '../helpers/workbenchHistory.js';
 
 /** 固定的会话标识（真实形态：日期前缀 + session 名） */
 const SID = '2026-11-14-session-weekly-report';
@@ -57,5 +58,50 @@ describe('create_session 结果格式互锁', () => {
       message: '角色包不可用',
     });
     expect(parseCreateSessionSid(text)).toBeUndefined();
+  });
+});
+
+describe('send_to_session 派发记录的配对面', () => {
+  /** 派发事件时间（断言时间取自事件，不取轮创建时间） */
+  const DISPATCH_TS = '2026-11-14T09:30:00.000Z';
+
+  it('目标 sid 只能来自 tool_start.args（成功回执里没有 sid）', () => {
+    // 真实成功回执 = 派发层结果直接序列化后过内核 100 字截断：只有 ok / accepted
+    const receipt = JSON.stringify({ ok: true, accepted: true }, null, 2).slice(0, SUMMARY_LIMIT);
+    expect(receipt.toLowerCase()).not.toContain('sid');
+
+    /** 一次真实形状的派发调用对（入参完整，结果只有 ok / accepted） */
+    const events = [
+      {
+        type: 'tool_start',
+        seq: 1,
+        ts: DISPATCH_TS,
+        payload: {
+          toolCallId: 'send-1',
+          name: 'send_to_session',
+          args: JSON.stringify({ sid: SID, text: '把周报整理成三段' }),
+        },
+      },
+      {
+        type: 'tool_result',
+        seq: 2,
+        ts: DISPATCH_TS,
+        payload: { toolCallId: 'send-1', name: 'send_to_session', ok: true, summary: receipt },
+      },
+    ] as unknown as ProcessEvent[];
+    const rebuilt = rebuildWorkbenchChildren('session-agent', {
+      readRoundIds: () => ['r1'],
+      readRound: () =>
+        ({
+          id: 'r1',
+          status: 'complete',
+          createdAt: '2026-11-14T09:29:00.000Z',
+          processEvents: events,
+        }) as Round,
+    });
+    // 改工具名 / 改入参键名 / 改配对方式，这里先红（而不是让「派过什么」静默消失）
+    expect(rebuilt.dispatches).toEqual([
+      { sessionId: SID, excerpt: '把周报整理成三段', at: DISPATCH_TS },
+    ]);
   });
 });

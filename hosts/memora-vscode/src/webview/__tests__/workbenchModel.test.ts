@@ -17,6 +17,8 @@ import type { WorkbenchHistoryResult } from '../helpers/workbenchHistory.js';
 function emptyHistory(overrides: Partial<WorkbenchHistoryResult> = {}): WorkbenchHistoryResult {
   return {
     children: [],
+    // 本用例不验派发记录：空数组 = 这段历史里没有（工作台投影不消费它）
+    dispatches: [],
     coverage: 'complete',
     totalRounds: 0,
     scannedRounds: 0,

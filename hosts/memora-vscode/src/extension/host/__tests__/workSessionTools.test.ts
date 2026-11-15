@@ -269,6 +269,7 @@ async function assembleProbe(orchestratorSession?: boolean, hosted?: HostedDeps)
             ((): SessionHistoryFacts => ({
               coverage: 'complete',
               children: [],
+              dispatches: [],
               totalRounds: 0,
               scannedRounds: 0,
             })),
@@ -329,6 +330,8 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
         createdBy: 'user',
         // 该会话没有记录角色包 ⇒ null（不是空串，也不是种子里的默认包「默认助手」）
         rolePack: null,
+        // 这一轮历史里没有派给它的记录 ⇒ null（不许用 unknown 之类占位词冒充事实）
+        lastDispatch: null,
       });
       // 有记录的角色包如实带出（取 SessionMeta.activeRolePackName，只读不落盘）
       expect(parsed.sessions.find((s) => s.sid === TARGET_SESSION_ID)?.rolePack).toBe(
@@ -388,6 +391,7 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
       readHistory: () => ({
         coverage: 'partial',
         children: [],
+        dispatches: [],
         totalRounds: 120,
         scannedRounds: 60,
       }),
@@ -405,6 +409,42 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
       expect(parsed.sessions.find((s) => s.sid === TARGET_SESSION_ID)?.createdBy).toBe('unknown');
       // 用户来源（无 hosted 标记）不依赖历史，仍可确定
       expect(parsed.sessions.find((s) => s.sid === SESSION_ID)?.createdBy).toBe('user');
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('清单带上「最近一次派给它的任务摘录」；没读到就 null（占位词不算事实）', async () => {
+    // 历史里只有一条派给目标会话的记录：只有目标会话应有摘录，其余一律 null
+    const probe = await assembleProbe(true, {
+      readHistory: () => ({
+        coverage: 'complete',
+        children: [],
+        dispatches: [
+          {
+            sessionId: TARGET_SESSION_ID,
+            excerpt: '把周报整理成三段',
+            at: '2026-11-14T09:00:00.000Z',
+          },
+        ],
+        totalRounds: 4,
+        scannedRounds: 4,
+      }),
+    });
+    try {
+      const raw = await probe.agent.tools!.execute(LIST_WORK_SESSIONS_TOOL_NAME, '{}');
+      const parsed = JSON.parse(raw) as {
+        sessions: {
+          sid: string;
+          lastDispatch: { excerpt: string; at: string | null } | null;
+        }[];
+      };
+      expect(parsed.sessions.find((s) => s.sid === TARGET_SESSION_ID)?.lastDispatch).toEqual({
+        excerpt: '把周报整理成三段',
+        at: '2026-11-14T09:00:00.000Z',
+      });
+      // 没派过的会话：如实 null，不拿空串 / unknown 之类的占位词冒充
+      expect(parsed.sessions.find((s) => s.sid === SESSION_ID)?.lastDispatch).toBeNull();
     } finally {
       await disposeProbe(probe);
     }
@@ -1327,6 +1367,7 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
       readHistory: () => ({
         coverage: 'complete',
         children: [{ sessionId: '2026-11-13-legacy', title: '旧活' }],
+        dispatches: [],
         totalRounds: 3,
         scannedRounds: 3,
       }),
@@ -1368,6 +1409,7 @@ describe('托管 v0 · create_session 范围门禁（判据 4）', () => {
       readHistory: () => ({
         coverage: 'unreadable',
         children: [],
+        dispatches: [],
         totalRounds: 0,
         scannedRounds: 0,
       }),
