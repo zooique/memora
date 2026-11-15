@@ -2206,6 +2206,7 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
       vi.fn(async (_projectPath: string, sessionId: string) => sessionAgent(sessionId)),
     );
     const acquireSpy = vi.spyOn(store, 'acquireSessionLock');
+    const releaseSpy = vi.spyOn(store, 'releaseSessionLock');
 
     const result = await provider.dispatchHostedInput(
       '2026-11-06-a',
@@ -2218,6 +2219,38 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
     await vi.waitFor(() => expect(cast.runtimeFor('2026-11-06-b').streaming).toBe(false), {
       timeout: 5000,
     });
+    // 归还时机：只盖住本轮（建轮那次 appendRoundId 已落盘），收场即还，
+    // 不把目标会话长期占成「本窗口专用」（否则别的窗口打开它会被判占用）
+    await vi.waitFor(() => expect(releaseSpy).toHaveBeenCalledWith('2026-11-06-b'), {
+      timeout: 5000,
+    });
+  });
+
+  it('派发轮收场时用户正在看目标会话 ⇒ 保留长锁（那是「进入过的会话」语义）', async () => {
+    const roundId = 'round-viewing';
+    const flow = (): AsyncGenerator<Chunk> => {
+      return (async function* () {
+        yield { type: 'thinking', phase: 'processing', roundId };
+        yield { type: 'step_boundary', roundId };
+      })();
+    };
+    const target = sessionAgent('2026-11-06-b', flow);
+    const modes = createEphemeralSessionModeStore();
+    modes.set('2026-11-06-a', 'managed');
+    const { provider, store, cast } = setupPanel({ '2026-11-06-b': target }, [], modes);
+    cast._currentSessionId = '2026-11-06-a';
+    provider.setAgentFactory(
+      vi.fn(async (_projectPath: string, sessionId: string) => sessionAgent(sessionId)),
+    );
+    const releaseSpy = vi.spyOn(store, 'releaseSessionLock');
+    // 流期间用户把界面切到目标会话（派发不得把锁在用户眼皮底下放掉）
+    cast._currentSessionId = '2026-11-06-b';
+
+    await provider.dispatchHostedInput('2026-11-06-a', '2026-11-06-b', '派发原文', '派发探针');
+    await vi.waitFor(() => expect(cast.runtimeFor('2026-11-06-b').streaming).toBe(false), {
+      timeout: 5000,
+    });
+    expect(releaseSpy).not.toHaveBeenCalledWith('2026-11-06-b');
   });
 
   it('目标会话被另一个窗口占用（拿不到写锁）⇒ E_LOCKED，不受理也不登记驱动归属', async () => {
@@ -2240,6 +2273,11 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
     );
     // 不假装受理：回执如实说「另一个窗口在用」，且没有起流、没有登记归属
     expect(result).toMatchObject({ ok: false, code: 'E_LOCKED' });
+    // 回执必须带可操作的下一步（换会话 / 稍后重试），不能只丢一个码让模型去猜
+    if (!result.ok) {
+      expect(result.message).toContain('Send it later');
+      expect(result.message).toContain('switch to another session');
+    }
     expect(chatSpy).not.toHaveBeenCalled();
     expect(modes.isAgentDriven('2026-11-06-b')).toBe(false);
     expect(cast.runtimeFor('2026-11-06-b').streaming).toBe(false);

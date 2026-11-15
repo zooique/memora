@@ -189,8 +189,10 @@ import { createChatSessionNavOps } from './chatSessionNavOps.js';
 import { createAssistantFormOps, UI_FORM_CONTEXT_KEY } from './assistantFormOps.js';
 // 主控建会话实现域（B9-D 拆法：完整闭环外置，面板只留注入依赖的薄壳）
 import { createHostedSessionWith } from '../helpers/hostedSessionCreate.js';
-// 派发写权核对（判据外置：不持目标会话锁就派发 = 孤儿轮，见该模块头）
-import { ensureDispatchWriteLock } from '../helpers/hostedDispatchLock.js';
+// 派发执行域（校验 / 判忙 / 写权租约 / 对齐 / 起流闭环外置，面板只注入窄依赖）
+import { dispatchHostedInputWith } from '../helpers/hostedDispatchRun.js';
+// 写权租约类型（租约与归还时机都在该模块，面板只存引用）
+import type { DispatchWriteLease } from '../helpers/hostedDispatchLock.js';
 // 收回本会话实现域（B9-D 拆法）：运行期归属交接 + 形态同步 + 「收不回什么」的如实说明
 import { createRevokeManagedSessionOps } from '../helpers/revokeManagedSessionOps.js';
 // 会话作答域（用户作答 + 主控代答）：两条入口共用同一条执行链，判据与回执形态在 helper
@@ -551,6 +553,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private readonly _flowGate = new BackgroundFlowGate();
   /** 会话锁收尾器：销毁 / 重开 / 流收场 / 握手销毁的唯一收口（B1） */
   private readonly _lockFinalizer: PanelSessionLockFinalizer;
+  /**
+   * 派发写权租约（会话 id → 租约）：派发轮收场时统一归还本面板**代拿**的临时长锁
+   *
+   * 只收「派发前本来没持锁」的那些；用户进过 / 本窗口建的会话不进这里（它们的长锁归
+   * 收尾器与实例关闭管）。异常路径与正常收场共用 `runFlow` 收尾这一处归还点。
+   */
+  private readonly _dispatchLeases = new Map<string, DispatchWriteLease>();
   /**
    * 当前会话 id 的读写面：收尾器与本类回滚共用同一份清空写点
    * （sessionWritePointGuard 要求「清空」在源码中恰好 1 处；回滚也必须走这里）
@@ -2887,17 +2896,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 托管派发入口（`send_to_session` 的宿主实现，装配期以回调注入工具面）
    *
-   * 三条硬约束（与 `workSessionTools.ts` 头注释同源）：① **不注入用户上下文**，只投调用方给的原文；② **不绕过并发闸**，目标是跑就回 `E_BUSY`，不排队；③ handler 不持有面板实例，只拿注入回调。
-   * 受理语义：投递被接受即登记「目标会话当前由代理驱动」（停止 / 暂停 / 恢复、中断通知、工作台清单从此覆盖它）。
-   * 失败语义：`E_DENIED` = 调用方非托管（防御纵深）；`E_BUSY` = 目标在跑（await 后再判一次防竞态）；
-   * `E_LOCKED` = 目标会话被另一个窗口占用（派发要在目标里建轮，先拿写锁，拿不到不受理）；
-   * 未知异常交给工具层统一映射。
+   * 实现见 `helpers/hostedDispatchRun.ts`（身份 / 判忙 / 写权租约 / 对齐 / 起流闭环）；
+   * 本方法只注入窄依赖，不外泄装配与流控制。与 `createHostedSession` 同一拆法（B9-D）。
    *
    * @param callingSessionId 发起派发的会话（判 `E_DENIED`）
-   * @param targetSessionId 目标会话（判 `E_BUSY`、定流归属）
+   * @param targetSessionId 目标会话（判 `E_BUSY` / `E_LOCKED`、定流归属）
    * @param text 要投递的原始输入（不夹带任何宿主上下文）
    * @param senderName 落 `RoundMessage.name` 的发送者名（装配期传入）
-   * @returns `{ok:true,accepted:true}` = 已受理；业务失败带错误码
+   * @returns `{ok:true,accepted:true}` = 已受理；业务失败带错误码与可操作下一步
    */
   public async dispatchHostedInput(
     callingSessionId: string,
@@ -2905,76 +2911,25 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     text: string,
     senderName: string,
   ): Promise<HostedDispatchResult> {
-    // ① 调用方身份：mode 是装配期事实，重启回落 self（此时工具面本就不存在，这里只是防御）
-    if (!this.sessionModes.isManaged(callingSessionId)) {
-      return {
-        ok: false,
-        code: 'E_DENIED',
-        message: l10n.t('Memora: only managed sessions can call send_to_session.'),
-      };
-    }
-    // 前置判忙的同一份信封（两处判据必须同文案，抽一份防漂移）
-    const busy: HostedDispatchResult = {
-      ok: false,
-      code: 'E_BUSY',
-      message: l10n.t('Memora: the target session is running; the input was not sent.'),
-    };
-    // ② 前置判忙：peek 不建记录（读操作不产生写副作用），值就是该会话的真实 stream 运行态
-    if (this._runtime.peek(targetSessionId)?.streaming === true) return busy;
-    // ③ 目标会话的写权：派发必然在目标会话里建新轮（内核 appendUser → appendRoundId），
-    //    而会话文件的整写有 fail-closed 跨进程锁守卫 —— 不持锁就写，只会 warn 后丢引用：
-    //    轮文件在、会话 roundIds 里没有它（孤儿轮），重启后这一轮从会话历史里消失。
-    //    条件就这么具体：目标文件**已存在**（重启前就有的会话）且本面板**未持锁**（没进过它），
-    //    而助手新建的会话因 createSession 已拿锁，所以只有「派给用户自建会话」会中招。
-    //    拿不到 = 另一个窗口正持有 ⇒ 如实拒收（不排队、不假装受理，判据见 hostedDispatchLock）。
-    const locked = await ensureDispatchWriteLock(
-      { acquire: (sessionId) => this._lockFinalizer.acquire(sessionId) },
-      targetSessionId,
-    );
-    if (locked) return locked;
-    // ④ 取（或建）目标会话实例：装配可能在途，期间目标会话或已被别的入口开跑 ⇒ 落地前再判一次
-    const agent = await this.agentForSession(targetSessionId);
-    // 与 sendInput 同一对齐判据：内核 appendUser 写的是 agent 当前会话，错位会写进别的会话；
-    // 只在错位时切，且**不改面板显示源**（后台派发不得把用户界面拽到目标会话）
-    const sessionManager = agent.sessionManager;
-    if (sessionManager) {
-      const info = sessionManager.getCurrentSessionInfo();
-      if (info && `${info.date}-${info.session}` !== targetSessionId) {
-        await sessionManager.switchToSession(targetSessionId);
-      }
-    }
-    if (this._runtime.peek(targetSessionId)?.streaming === true) return busy;
-    const now = new Date().toISOString();
-    // ④ 受理即登记驱动归属：从这一刻起这条会话归代理管（停止 / 暂停 / 恢复、中断通知、
-    //    工作台清单共用同一判据）。必须在首轮流启动之前登记——首轮可能立刻失败 / 被停，
-    //    晚登记会漏掉中断通知；用户自建的会话被派活后同样归代理（收回仍由用户说了算）。
-    this.sessionModes.markAgentDriven(targetSessionId);
-    this._hostedNotifier.remember(targetSessionId, callingSessionId);
-    // ⑤ 走既有 runFlow 通路（不另造流）：归属显式传目标会话，后台流投递由 BackgroundFlowGate 整批丢弃；
-    //    `void` 不等待——工具要的是「已受理」，目标轮的结果由其自己的收场事件/历史承载
-    void this.runFlow(
-      // attachments 不传（派发通道不收图）；opts 让内核把本轮 origin 落 'hosted'、消息名落 senderName，
-      // 并把「谁派来」记到 Round.dispatchedBy（重启后工作台靠它反查，不另存台账）
-      (signal) =>
-        agent.chat(text, signal, undefined, {
-          origin: 'hosted',
-          senderName,
-          dispatchedBy: { from: callingSessionId, via: 'delegate' },
-        }),
+    return dispatchHostedInputWith(
       {
-        // seed = 上屏与 live 投影用的裸输入：**没有**注入信封，与落盘原文同值（重放剥信封后仍是这一条）
-        userMessage: {
-          id: `live-hosted-${now}`,
-          role: 'user',
-          content: text,
-          timestamp: now,
-          name: senderName,
-        },
-        origin: 'hosted',
+        isManaged: (sessionId) => this.sessionModes.isManaged(sessionId),
+        isStreaming: (sessionId) => this._runtime.peek(sessionId)?.streaming === true,
+        currentSessionId: () => this._currentSessionId,
+        acquireLock: (sessionId) => this._lockFinalizer.acquire(sessionId),
+        holdsLock: (sessionId) => this._lockFinalizer.holds(sessionId),
+        releaseLock: (sessionId) => this._lockFinalizer.releaseOne(sessionId),
+        getAgent: (sessionId) => this.agentForSession(sessionId),
+        markAgentDriven: (sessionId) => this.sessionModes.markAgentDriven(sessionId),
+        rememberCreator: (sessionId, creator) => this._hostedNotifier.remember(sessionId, creator),
+        trackLease: (sessionId, lease) => this._dispatchLeases.set(sessionId, lease),
+        startFlow: (sessionId, factory, seed) => void this.runFlow(factory, seed, sessionId),
       },
+      callingSessionId,
       targetSessionId,
+      text,
+      senderName,
     );
-    return { ok: true, accepted: true };
   }
 
   /**
@@ -3315,7 +3270,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 本轮已收场：创建者若因「忙 / 用户正在输入」压着落定汇报，此刻补浮现（多条合并成一轮）。
     // 放在 catch 之后而非 finally 内：必须等 consumeFlow 的收场投递（done / turn_update）走完，
     // 否则新一轮的 thinking 会被上一轮的 done 覆盖。
-    this._hostedNotifier.flushPending(sessionId);
+    try {
+      this._hostedNotifier.flushPending(sessionId);
+    } finally {
+      // 派发轮收场：归还本次派发**代拿**的会话写锁（正常收场 / 轮内抛错共用这一个归还点）。
+      // 建轮那次 appendRoundId 已在本流内落盘，锁盖到这里就够；用户此刻正在看则保留长锁。
+      this._dispatchLeases.get(sessionId)?.releaseIfIdle();
+      this._dispatchLeases.delete(sessionId);
+    }
   }
 
   /**

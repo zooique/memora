@@ -79,7 +79,7 @@
   "Memora: images go with a new message": "Memora：图片只能随新消息发送",
   "Memora: only managed sessions can call send_to_session.": "Memora：当前会话不能向其他会话派发输入。",
   "Memora: the target session is running; the input was not sent.": "Memora：目标会话正在运行，本条输入未发送。",
-  "Memora: another window is using the target session; the input was not sent.": "Memora：另一个窗口正在使用目标会话，本条输入未发送。",
+  "Memora: another window is using the target session; the input was not sent. Send it later, or switch to another session.": "Memora：另一个窗口正在使用目标会话，本条输入未发送。请稍后重试，或换一条会话。",
   "Memora: open a session first.": "Memora：请先打开一个会话。",
   "Memora: this session is already yours.": "Memora：这个会话本来就是你自己在聊。",
   "Memora: the session is running; take it back after it finishes.": "Memora：会话正在运行，结束后再收回。",
