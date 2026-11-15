@@ -242,6 +242,25 @@ describe('buildWorkbenchSnapshot — 清单口径', () => {
     expect(snapshot.coverage).toBe('complete');
   });
 
+  it('座位被收回（revoked）：仍按实时驱动权过滤，被收回的记录不计入在管清单', () => {
+    // 判据要点：收回发生在本进程里 ⇒ 驱动权是实时事实，不能像 history 那样整批放行
+    const snapshot = buildWorkbenchSnapshot(
+      baseInputs({
+        seatSource: 'revoked',
+        childrenOf: () => ['session-revoked'],
+        isAgentDriven: () => false,
+        history: emptyHistory({
+          children: [{ sessionId: 'session-revoked', title: '旧任务' }],
+          totalRounds: 1,
+          scannedRounds: 1,
+        }),
+      }),
+    );
+    expect(snapshot.jobs).toEqual([]);
+    expect(snapshot.filteredCount).toBe(1);
+    expect(snapshot.seatSource).toBe('revoked');
+  });
+
   it('历史重建模式（无实时驱动方）：不按当前驱动权过滤，历史记录照样只读列出', () => {
     const snapshot = buildWorkbenchSnapshot(
       baseInputs({

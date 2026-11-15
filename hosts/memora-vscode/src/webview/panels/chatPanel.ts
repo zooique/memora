@@ -186,6 +186,8 @@ import { createChatSessionNavOps } from './chatSessionNavOps.js';
 import { createAssistantFormOps, UI_FORM_CONTEXT_KEY } from './assistantFormOps.js';
 // 主控建会话实现域（B9-D 拆法：完整闭环外置，面板只留注入依赖的薄壳）
 import { createHostedSessionWith } from '../helpers/hostedSessionCreate.js';
+// 收回本会话实现域（B9-D 拆法）：运行期归属交接 + 形态同步 + 「收不回什么」的如实说明
+import { createRevokeManagedSessionOps } from '../helpers/revokeManagedSessionOps.js';
 // 会话作答域（用户作答 + 主控代答）：两条入口共用同一条执行链，判据与回执形态在 helper
 import { createChatAnswerOps } from './chatAnswerOps.js';
 // 会话活跃度纯计算（与工作台共用同一份判据；外置防两处各写一套 Set 遍历）
@@ -291,6 +293,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     currentSessionId: () => this._currentSessionId,
     isDraft: () => this.isDraft,
     isManaged: (sessionId) => this.sessionModes.isManaged(sessionId),
+    // 发送当口归属提示的判据：与收回 / 停止 / 工作台同一份「现在谁在支配」
+    isAgentControlled: (sessionId) => this.sessionModes.isAgentControlled(sessionId),
     listManagedSessionIds: () => this.sessionModes.listManagedSessionIds(),
     switchToSession: (sessionId) => this.switchToSession(sessionId),
     newSessionFromCommand: (mode) => this.newSessionFromCommand(mode),
@@ -298,6 +302,36 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 菜单 when 判据只认这个键：形态一变必须同步写，否则标题栏按钮与实际形态相反
       void vscode.commands.executeCommand('setContext', UI_FORM_CONTEXT_KEY, uiForm);
     },
+  });
+  /**
+   * 收回本会话域（外置实现）：运行期归属交接 + 形态同步 + 「收不回什么」的如实说明
+   *
+   * 依赖同样全是**延迟闭包**（本字段初始化早于 `_hostedNotifier` / `workbench` 等成员可用）。
+   */
+  private readonly _revokeOps = createRevokeManagedSessionOps({
+    sessionModes: {
+      isAgentControlled: (sessionId) => this.sessionModes.isAgentControlled(sessionId),
+      set: (sessionId, mode) => this.sessionModes.set(sessionId, mode),
+      clearAgentDriven: (sessionId) => this.sessionModes.clearAgentDriven(sessionId),
+    },
+    // 只读运行态（peek 不建记录）：与既有「在跑就拒绝收回」判据同一份
+    isStreaming: (sessionId) => this._runtime.peek(sessionId)?.streaming === true,
+    currentSessionId: () => this._currentSessionId,
+    forgetAgent: (sessionId) => {
+      this._sessionAgents.delete(sessionId);
+    },
+    releaseAgent: (sessionId) => this._releaseAgent?.(sessionId),
+    assemble: (sessionId) => this.agentForSession(sessionId),
+    bindAgent: (agent) => this.bindAgent(agent),
+    resetDisplayedAgent: () => {
+      this._agent = undefined;
+      this._agentReady = null;
+    },
+    post: (msg) => this.post(msg),
+    forceSelfForm: () => this._uiFormOps.forceSelf(),
+    childrenOf: (sessionId) => this._hostedNotifier.childrenOf(sessionId),
+    pendingReportCount: (sessionId) => this._hostedNotifier.pendingReportCount(sessionId),
+    isChildStreaming: (sessionId) => this.workbench.isStreaming(sessionId),
   });
   /**
    * @ 提及 QuickPick 的并发守卫随域外置（见 `chatRefOps.ts` 的 `mentionQuickPickOpen`），
@@ -2697,6 +2731,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       case 'send': {
         const text = msg.text?.trim() ?? '';
         if (!text) return;
+        // 归属提示（真机：收回托管后输入框仍是助手外观，发出去的话没人接、也没有任何说明）：
+        // 形态声称「跟助手说话」而归属已收回 ⇒ 当场说明并给恢复入口（不拦发送，见 ops 注释）
+        this._uiFormOps.warnIfOwnershipLost();
         // IMG-5 顺延补做：上一轮已收场 ⇒ 新 turn 起点是唯一必然可用的安全点。补做仍失败**不拦
         // 发送**：一级门禁会给可见文案（含「改用支持图片的模型」指引），比静默吞掉或卡输入更诚实。
         if (this._providerStale) await this.applyActiveProviderRefresh();
@@ -2924,64 +2961,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 收回本会话（撤销助手代理，回到「我自己聊」）
    *
-   * 只改**运行期状态**，不改持久事实：
-   *   - 驱动权：清 `agentDriven`（代理开出的子会话 → 当前归用户）；
-   *   - 有调度权的会话：mode 置回 `'self'`（容器本就不落盘，重启也是回落 self）；
-   *   - 历史轮次的 `origin: 'hosted'` **一个字节都不动**（历史只读，标记永久保留）；
-   *   - `SessionMeta.origin` 不改——它记的是「这个会话最初由谁建立」，撤销不擦除归属；
-   *   - 用户级「上次模式」不改——撤销这一笔 ≠ 改新建会话的默认值。
-   *
-   * 判据只看**当前是否由代理驱动**（`isManaged || isAgentDriven`），不看出生记录：
-   * 代理开的子会话没有调度权，但收回前仍归代理，必须允许用户收回。
-   *
-   * 工具面为什么必须重装：主控工具在**装配期**就注册进实例，改 mode 不会摘掉已有实例
-   * 的工具面 ⇒ 先回收（登记表 unregister + close），再按新 mode 重新装配并换绑显示源。
-   * 会话在跑时拒绝撤销：close 会打断在途流，不能拿用户正在看的回答当代价。
+   * 实现外置在 `helpers/revokeManagedSessionOps.ts`（只改运行期归属、不擦持久事实；
+   * 收回成功后同步侧栏形态并如实说明「还有什么不会再报回这里」），本处只留转发口。
    *
    * @param sessionId 目标会话（缺省 = 当前显示会话）
    * @returns 是否真的撤销并重装（false = 草稿 / 本来就是用户自己的 / 正在运行 / 重装失败）
    */
   public async revokeManagedSession(sessionId?: string): Promise<boolean> {
-    const sid = sessionId ?? this._currentSessionId;
-    if (!sid) {
-      void vscode.window.showInformationMessage(l10n.t('Memora: open a session first.'));
-      return false;
-    }
-    // 当前归谁 = 一个判断点：有调度权（用户亲自选的托管）或当前由代理驱动，都允许收回
-    if (!this.sessionModes.isAgentControlled(sid)) {
-      void vscode.window.showInformationMessage(l10n.t('Memora: this session is already yours.'));
-      return false;
-    }
-    if (this._runtime.peek(sid)?.streaming === true) {
-      void vscode.window.showWarningMessage(
-        l10n.t('Memora: the session is running; take it back after it finishes.'),
-      );
-      return false;
-    }
-    // 顺序不可换：① 先改运行期状态，重装才读到 self / 非驱动；② 旧实例必须先摘表再回收，
-    // 否则 agentForSession 命中旧实例，工具面原样保留（mode 变了但模型仍能派发）
-    this.sessionModes.set(sid, 'self');
-    this.sessionModes.clearAgentDriven(sid);
-    this._sessionAgents.delete(sid);
-    await this._releaseAgent?.(sid);
-    try {
-      const agent = await this.agentForSession(sid);
-      // 只换绑当前显示会话；非显示会话下次切入时自然按新实例绑定
-      // （经 getCurrentSessionId 读，避免直接对 `_currentSessionId` 做比较——那会被
-      //  SESSION-RESUME-1 写点守卫的赋值正则误判成一次收口外的赋值）
-      if (this.getCurrentSessionId() === sid) this.bindAgent(agent);
-    } catch (err) {
-      // 重装失败：旧实例已 close，不能留在 `_agent` 里被当活实例用；
-      // 清空装配缓存让下一次 ensureAgent 重新走装配（对齐 performAgentAssembly 的失败口径）
-      this._agent = undefined;
-      this._agentReady = null;
-      this.post({ type: 'notice', level: 'error', message: toNoticeText(err) });
-      return false;
-    }
-    void vscode.window.showInformationMessage(
-      l10n.t('Memora: the assistant has stepped back; this session is yours again.'),
-    );
-    return true;
+    return this._revokeOps.revoke(sessionId);
   }
 
   /**

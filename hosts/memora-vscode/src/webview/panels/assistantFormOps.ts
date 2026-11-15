@@ -13,6 +13,7 @@
  * 为什么外置：`chatPanel.ts` 已贴 max-lines `只降不升` 基线，且这块是「一组状态 + 一条
  * 换会话链路」的自足域（与 `chatRunControlOps` / `chatSessionNavOps` 同型）。
  */
+import * as vscode from 'vscode';
 import type { ExtensionToWebviewMessage, UiForm } from '../../shared/protocol.js';
 import type { SessionMode } from '../../extension/host/sessionModeStore.js';
 
@@ -35,6 +36,13 @@ export interface AssistantFormOpsDeps {
   isDraft: () => boolean;
   /** 某会话是否以托管身份装配（判据与工作台 / 停止暂停同一份） */
   isManaged: (sessionId: string) => boolean;
+  /**
+   * 某会话当前是否由代理支配（托管座位 ∪ 代理驱动；与收回 / 停止同一判据）
+   *
+   * 只服务「发送当口的归属提示」：形态说「你在跟助手说话」，而归属已不归助手时，
+   * 必须当场说清，不能等用户自己发现消息没人接。
+   */
+  isAgentControlled: (sessionId: string) => boolean;
   /** 进程内有调度权的会话 id（按登记顺序） */
   listManagedSessionIds: () => string[];
   /** 切入指定会话（锁 / 装配 / 回放全由既有链路裁决） */
@@ -51,6 +59,10 @@ export interface AssistantFormOps {
   current(): UiForm;
   /** 切换形态（唯一写点） */
   set(form: UiForm): Promise<void>;
+  /** 就地回自助形态（不换会话；供「收回本会话」这类就地改变归属的动作使用） */
+  forceSelf(): void;
+  /** 发送当口的归属提示（助手形态 × 会话已不归助手）；不拦发送、只如实说明 */
+  warnIfOwnershipLost(): void;
   /** 视图重建 / webview 就绪时补推当前形态（只发消息，不换会话） */
   repush(): void;
 }
@@ -118,6 +130,41 @@ export function createAssistantFormOps(deps: AssistantFormOpsDeps): AssistantFor
   return {
     current: () => form,
     repush: () => deps.post({ type: 'ui_form', form }),
+    /**
+     * 就地回自助形态（不换会话）
+     *
+     * 为什么**不**走 `set('self')`：那条路会 `restoreSelfPosition()` 跳回进助手前的位置——
+     * 而收回本会话之后，用户要的正是眼前这一条（它刚归自己），跳走等于把刚收回的会话留在身后。
+     * 记录的自助位置同时作废：形态此刻已经是自助，下次进助手应重新记当前位置。
+     */
+    forceSelf(): void {
+      returnTo = undefined;
+      // 同形态 = 无操作（幂等：重复收回不重复下发 ui_form）
+      if (form === 'self') return;
+      apply('self');
+    },
+    /**
+     * 发送当口的归属提示（助手形态 × 当前会话已不归助手）
+     *
+     * 真机验收：收回托管后侧栏仍是助手外观，用户发出的消息只落进会话、没有任何说明。
+     * 这里补一条**当场可见**的事实（形态说「跟助手说话」，归属却已收走），并写清恢复入口。
+     *
+     * 刻意**不拦发送**：这条消息会按自助会话正常处理，拦下只会把用户的话吞掉；
+     * 这里解决的是「没人告诉他会发生什么」，不是「不许他发」。
+     */
+    warnIfOwnershipLost(): void {
+      // 只有助手形态才存在「以为在跟助手说话」的误解；自助形态下这条消息本来就是普通对话
+      if (form !== 'assistant') return;
+      const sid = deps.currentSessionId();
+      if (!sid || deps.isAgentControlled(sid)) return;
+      deps.post({
+        type: 'notice',
+        level: 'info',
+        message: vscode.l10n.t(
+          'Memora: this session was taken back from the assistant, so the assistant will not handle your message; it is sent as a self-service chat. To hand it back, click "Assistant" in the title bar (switches to or starts an assistant session), or create a new session.',
+        ),
+      });
+    },
     async set(next: UiForm): Promise<void> {
       // 同形态重复点击 = 无操作（不重放会话、不刷界面）
       if (next === form) return;

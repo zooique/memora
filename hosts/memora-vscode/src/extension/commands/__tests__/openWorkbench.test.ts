@@ -45,6 +45,10 @@ interface DepsOptions {
   current?: string;
   /** 本进程托管座位表 */
   managed?: string[];
+  /** 本进程登记过装配模式的会话（收回会写 self，仍算登记过） */
+  registered?: string[];
+  /** 当前仍由代理驱动的会话 */
+  driven?: string[];
   /** 持久历史里的会话元数据 */
   metas?: SessionMeta[];
 }
@@ -65,6 +69,9 @@ function makeDeps(options: DepsOptions = {}): {
       sessionModes: {
         isManaged: (sessionId: string) => (options.managed ?? []).includes(sessionId),
         listManagedSessionIds: () => options.managed ?? [],
+        // 本进程是否写过它的 mode：默认「没登记过」（= 重启后按历史重建）
+        has: (sessionId: string) => (options.registered ?? []).includes(sessionId),
+        isAgentDriven: (sessionId: string) => (options.driven ?? []).includes(sessionId),
       } as never,
       sessionStore: {
         getSessionMeta: (sessionId: string) =>
@@ -116,6 +123,28 @@ describe('openWorkbench — 座位解析', () => {
     await openWorkbench(h.deps);
     expect(mocks.showQuickPick).not.toHaveBeenCalled();
     expect(h.open).toHaveBeenCalledWith('session-current', { seatSource: 'history' });
+  });
+
+  it('座位被收回（本进程登记过、当前无驱动方）：按 revoked 打开，不冒充「重启后重建」', async () => {
+    const h = makeDeps({
+      current: 'session-seat',
+      // 收回会写 mode = self 并清驱动权：登记过 ⇒ 不是重启后第一次见到它
+      registered: ['session-seat'],
+      metas: [meta('session-seat', 'hosted', '2026-11-14T00:00:00.000Z')],
+    });
+    await openWorkbench(h.deps);
+    expect(h.open).toHaveBeenCalledWith('session-seat', { seatSource: 'revoked' });
+  });
+
+  it('本进程登记过但仍有代理在驱动：按 live（有实时驱动事实，不说「没有驱动方」）', async () => {
+    const h = makeDeps({
+      current: 'session-child',
+      registered: ['session-child'],
+      driven: ['session-child'],
+      metas: [meta('session-child', 'hosted', '2026-11-14T00:00:00.000Z')],
+    });
+    await openWorkbench(h.deps);
+    expect(h.open).toHaveBeenCalledWith('session-child', { seatSource: 'live' });
   });
 
   it('实时与历史都没有托管记录：如实提示，不打开空面板', async () => {

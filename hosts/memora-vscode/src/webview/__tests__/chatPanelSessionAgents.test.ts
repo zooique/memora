@@ -33,7 +33,9 @@ import { BUILTIN_FALLBACK_PACK, RolePackManager, formatDateKey } from '@zooique/
 import { readSessionRolePackName } from '../../extension/host/sessionRolePack.js';
 import type * as vscode from 'vscode';
 // 共享 vscode mock 的运行时引用：默认角色包用例要按用例改写 getConfiguration
-import { workspace as mockedWorkspace } from 'vscode';
+import { workspace as mockedWorkspace, commands as mockedCommands } from 'vscode';
+// 形态上下文键的真源（收回同步形态时断言宿主侧也写了同一键，测试不自造字面量）
+import { UI_FORM_CONTEXT_KEY } from '../panels/assistantFormOps.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
@@ -59,6 +61,8 @@ const tStub = vi.hoisted(() => (msg: string, ...args: unknown[]): string => {
 
 vi.mock('vscode', async () => ({
   l10n: { t: tStub },
+  // 形态切换写上下文键（`setContext`）；收回同步形态的用例要断言这一处也被写了
+  commands: { executeCommand: vi.fn() },
   // 视图重开走真实 render（buildHtmlHead 读 vscode.env.language）
   env: { language: 'zh-cn' },
   Uri: {
@@ -461,6 +465,89 @@ describe('撤销并交还 · revokeManagedSession', () => {
     expect(await provider.revokeManagedSession()).toBe(false);
     expect(release).not.toHaveBeenCalled();
     expect(factory).not.toHaveBeenCalled();
+  });
+
+  it('收回当前显示会话：形态同步回自助（状态 + context key + ui_form 三处）', async () => {
+    const modes = createEphemeralSessionModeStore();
+    const sid = '2026-11-06-form';
+    const { provider, posted } = setupPanel({ [sid]: sessionAgent(sid) }, [sid], modes);
+    modes.set(sid, 'managed');
+    provider.setAgentReleaser(async () => {});
+    provider.setAgentFactory(async () => sessionAgent(sid));
+    // 先真的进助手形态（生产唯一写点）；此后侧栏就是助手外观
+    await provider.setUiForm('assistant');
+    expect(provider.getUiForm()).toBe('assistant');
+    // 清掉进形态那一笔，只看收回这一笔的形态同步
+    vi.mocked(mockedCommands.executeCommand).mockClear();
+    posted.length = 0;
+
+    expect(await provider.revokeManagedSession()).toBe(true);
+    // 形态状态 = 自助（不是只改外观）
+    expect(provider.getUiForm()).toBe('self');
+    // webview 侧：下发 ui_form（只改宿主状态会让标题栏菜单与实际形态相反）
+    expect(posted).toContainEqual({ type: 'ui_form', form: 'self' });
+    // 宿主侧：context key 同步写
+    expect(vi.mocked(mockedCommands.executeCommand)).toHaveBeenCalledWith(
+      'setContext',
+      UI_FORM_CONTEXT_KEY,
+      'self',
+    );
+  });
+
+  it('收回时还有派出去仍在跑的会话：如实说明它们的结果不会再报回这条会话', async () => {
+    const modes = createEphemeralSessionModeStore();
+    const sid = '2026-11-06-seat';
+    const child = '2026-11-06-child';
+    const { provider, posted, cast } = setupPanel({ [sid]: sessionAgent(sid) }, [sid], modes);
+    modes.set(sid, 'managed');
+    provider.setAgentReleaser(async () => {});
+    provider.setAgentFactory(async () => sessionAgent(sid));
+    // 进程内事实：这条座位开过 child，且 child 此刻仍在跑流
+    cast._hostedNotifier.remember(child, sid);
+    cast.runtimeFor(child).streaming = true;
+
+    expect(await provider.revokeManagedSession()).toBe(true);
+    // 不静默：说清「收不回什么」，并给条数（1 = 那条还在跑的派发会话）
+    expect(
+      posted.some(
+        (msg) =>
+          msg.type === 'notice' &&
+          (msg.message ?? '').includes('still running') &&
+          (msg.message ?? '').includes('1'),
+      ),
+    ).toBe(true);
+  });
+
+  it('发送当口：助手形态 × 会话已不归助手 ⇒ 当场说明并给恢复入口（不静默吞掉）', async () => {
+    const modes = createEphemeralSessionModeStore();
+    const sid = '2026-11-06-lost';
+    const { provider, posted, cast, fireMessage } = setupPanel(
+      { [sid]: sessionAgent(sid) },
+      [sid],
+      modes,
+    );
+    modes.set(sid, 'managed');
+    provider.setAgentFactory(async () => sessionAgent(sid));
+    await provider.setUiForm('assistant');
+    // 显示源显式绑到该会话（setupPanel 只登记投影表，`_agent` 由绑定动作写入）
+    cast._agent = cast._sessionAgents.get(sid);
+    // 构造真机窗口：归属已交还，形态还停在助手（新版收回会同步形态，这里专门验兜底）
+    modes.set(sid, 'self');
+    modes.clearAgentDriven(sid);
+    posted.length = 0;
+
+    fireMessage({ type: 'input', kind: 'send', text: '在吗' });
+    // 消息入口是异步处理（生产按 void 调用），等一轮宏任务再断言
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(
+      posted.some(
+        (msg) =>
+          msg.type === 'notice' &&
+          (msg.message ?? '').includes('taken back from the assistant') &&
+          (msg.message ?? '').includes('self-service chat'),
+      ),
+    ).toBe(true);
   });
 });
 

@@ -65,13 +65,7 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
       : '';
     seatRole.textContent = role;
     seatRole.hidden = !role;
-    const state =
-      // 重启后按历史重建：必须先说清这不是实时画面，且当前没有实时驱动方
-      snapshot.seatSource === 'history'
-        ? l10n.t('Rebuilt from history after restart; no live agent is driving it right now')
-        : orchestrator.managed
-          ? ''
-          : l10n.t('This session is no longer a managed agent session');
+    const state = seatStateText(snapshot);
     seatState.textContent = state;
     seatState.hidden = !state;
   };
@@ -81,6 +75,12 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
    *
    * 空清单**不能一律说「还没有」**：历史读不到 / 有会话找不到 / 只读了最近若干轮
    * 都只说明「没读到」，不说明「没有」。三种情况用不同句子，绝不把读失败渲染成空。
+   *
+   * ⚠️ 「有 N 条记录但当前没有代理在驱动」只属于**空态**（下面 `jobs.length === 0` 内），
+   * 不是一条全局状态横幅：清单非空时记录已经逐行摊在眼前，读者能自己看见它们的状态，
+   * 再补一句「有 N 条但没人驱动」是把空态解释词误当状态播报。
+   * 真机曾把「清单里挂着一条已完成记录时不出现这句」当成缺陷上报——这是**正常表达**，
+   * 不是覆盖缺失；已完成的记录本身就在清单里，空态解释句没有存在的余地。
    */
   const renderJobs = (snapshot: WorkbenchSnapshot): void => {
     const { jobs, coverage, missingCount, filteredCount, scan } = snapshot;
@@ -135,6 +135,33 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
       renderJobs(snapshot);
     },
   };
+}
+
+/**
+ * 座位状态行（按**事件来源**分档，不拿一句话套所有场景）
+ *
+ * 真机验收：只做了「收回托管」、没有重启，顶部却写着「重启后按历史重建」——
+ * 来源档位被错说成了另一种事实。这里按三档各说各的：
+ *   ① 仍按托管装配（实时事实）→ 不解释（空串）；
+ *   ② 本进程从没见过这条会话（典型 = 重开窗口）→ 重启后按历史重建；
+ *   ③ 本进程登记过、现在已不归代理（典型 = 刚收回）→ 已从助手收回；
+ *   ④ 其余（仍归代理但没有调度权）→ 不再按托管运行。
+ *
+ * 为什么①要排在最前：面板绑定的是**打开时**的来源；用户收回后又点「助手」重新接管，
+ * 来源快照仍是旧档，只有实时 `managed` 能立刻纠正这一行（否则会一直挂着「已收回」）。
+ *
+ * @param snapshot 宿主投递的全量快照
+ * @returns 要显示的句子（空串 = 隐藏该行）
+ */
+function seatStateText(snapshot: WorkbenchSnapshot): string {
+  if (snapshot.orchestrator.managed) return '';
+  if (snapshot.seatSource === 'history') {
+    return l10n.t('Rebuilt from history after restart; no live agent is driving it right now');
+  }
+  if (snapshot.seatSource === 'revoked') {
+    return l10n.t('Taken back from the assistant; no live agent is driving it right now');
+  }
+  return l10n.t('This session is no longer a managed agent session');
 }
 
 /**

@@ -192,6 +192,20 @@ export class HostedSessionNotifier {
   }
 
   /**
+   * 列出「压在这个创建者名下、尚未浮现的落定汇报」条数
+   *
+   * 只读待办队列，不触发投递：收回托管时用它如实告知「还有几条结果不会再送到这条会话」。
+   * 创建者被收回后 `resolveTarget` 的 `isManaged` 判据不再成立 ⇒ 待办不会再浮现，
+   * 这条事实必须在收回当口说清，否则用户以为结果还会来。
+   *
+   * @param creatorSessionId 主控会话 id
+   * @returns 待浮现条数（无待办 = 0）
+   */
+  pendingReportCount(creatorSessionId: string): number {
+    return this.pendingReports.get(creatorSessionId)?.length ?? 0;
+  }
+
+  /**
    * 流通用收尾：若本会话是代理开的且本轮已落定，把结论通知创建者
    *
    * 成功 / 失败 / 中断三档都会通知（判据见 `deriveSettlement`）；暂停可续跑，

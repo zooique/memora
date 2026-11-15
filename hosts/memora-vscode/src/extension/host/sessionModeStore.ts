@@ -143,6 +143,21 @@ export class SessionModeStore {
     return ids;
   }
 
+  /**
+   * 本进程是否**登记过**这条会话的装配模式（只读 `modes`，不新增状态）
+   *
+   * 与 `get()` 的差别：`get()` 对未知会话回落 `'self'`，无法区分「用户收回成 self」与
+   * 「本进程从没见过它」。工作台据此按**事件来源**分档说话：
+   * - 登记过 + 当前不归代理 ⇒ 座位被**收回**（不能写成「重启后重建」）；
+   * - 从没登记过 ⇒ 典型 = 重开窗口后按历史重建。
+   *
+   * @param sessionId 目标会话
+   * @returns true = 本进程写过它的 mode（无论写的是 self 还是 managed）
+   */
+  has(sessionId: string): boolean {
+    return this.modes.has(sessionId);
+  }
+
   /** 登记会话模式（新建会话 / 切换时写；仅进程内有效） */
   set(sessionId: string, mode: SessionMode): void {
     this.modes.set(sessionId, mode);

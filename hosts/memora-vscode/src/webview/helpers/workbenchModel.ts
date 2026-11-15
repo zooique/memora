@@ -46,10 +46,12 @@ export interface WorkbenchSnapshotInputs {
   /** 座位会话标识（工作台以一条托管会话为单位） */
   orchestratorId: string;
   /**
-   * 座位来源（`live` = 本进程托管装配；`history` = 重启后按历史重建，无实时驱动方）
+   * 座位来源（`live` = 本进程托管装配；`history` = 重启后按历史重建；`revoked` = 座位被收回）
    *
    * 为 `history` 时**不按当前驱动权过滤清单**：重启后驱动集合必为空，若照旧过滤，
    * 历史里读回来的记录会被全部挡掉——那等于把「我看不见」说成「你没有」。
+   * `revoked` 与 `live` 一样**照旧过滤**：收回发生在本进程里，驱动权是**实时事实**，
+   * 被收回的记录不该再冒充「在管的活」（挡掉的数量由 `filteredCount` 如实交代）。
    */
   seatSource: WorkbenchSeatSource;
   /** 代理名（装配期注入的发送者名，与 `RoundMessage.name` 同源） */
@@ -113,9 +115,10 @@ export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): Workben
   let filteredCount = 0;
   for (const [sessionId, historyTitle] of merged) {
     // 当前驱动权过滤：用户收回后即使账本 / 历史还记着，也不再归代理（唯一判据）。
-    // 历史重建模式下没有实时驱动事实（重启后集合必空）⇒ 不做这道过滤，
-    // 只读呈现历史里读回来的记录；界面会另行说明「当前没有实时驱动方」。
-    if (inputs.seatSource === 'live' && !inputs.isAgentDriven(sessionId)) {
+    // 只有 `history`（重启后重建）不做这道过滤：那时没有实时驱动事实（集合必空），
+    // 照旧过滤会把历史记录全挡掉；界面另行说明「当前没有实时驱动方」。
+    // `revoked` 走过滤：收回是本进程内的实时事件，被收回的记录不再算「在管」。
+    if (inputs.seatSource !== 'history' && !inputs.isAgentDriven(sessionId)) {
       filteredCount += 1;
       continue;
     }

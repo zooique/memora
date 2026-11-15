@@ -218,11 +218,77 @@ describe('workbenchView — 空态：读不到 ≠ 没有', () => {
 
   it('重启后按历史重建：座位上明说「无实时驱动方」，不冒充实时画面', () => {
     const { view, seatState } = mount();
-    view.render(snapshot({ seatSource: 'history' }));
+    view.render(
+      snapshot({
+        seatSource: 'history',
+        // 按历史重建 = 本进程没登记过它 ⇒ 前端身份也不可能是托管（两处事实同源）
+        orchestrator: {
+          name: 'Memora',
+          sessionId: 'session-agent',
+          title: '代理会话',
+          managed: false,
+        },
+      }),
+    );
     expect(seatState.hidden).toBe(false);
     expect(seatState.textContent).toBe(
       'Rebuilt from history after restart; no live agent is driving it right now',
     );
+  });
+
+  it('座位被收回（没重启）：说「已从助手收回」，不说「重启后按历史重建」', () => {
+    const { view, seatState } = mount();
+    view.render(
+      snapshot({
+        seatSource: 'revoked',
+        orchestrator: {
+          name: 'Memora',
+          sessionId: 'session-agent',
+          title: '代理会话',
+          managed: false,
+        },
+      }),
+    );
+    expect(seatState.hidden).toBe(false);
+    expect(seatState.textContent).toBe(
+      'Taken back from the assistant; no live agent is driving it right now',
+    );
+    // 真机缺陷靶标：收回被错说成「重启后重建」
+    expect(seatState.textContent).not.toContain('Rebuilt from history after restart');
+  });
+
+  it('收回后又点「助手」重新接管：实时事实优先，状态行立刻消失（来源快照不再当屏）', () => {
+    const { view, seatState } = mount();
+    view.render(
+      snapshot({
+        // 面板绑定的是打开时的来源；这一刻真实状态已是托管
+        seatSource: 'revoked',
+        orchestrator: {
+          name: 'Memora',
+          sessionId: 'session-agent',
+          title: '代理会话',
+          managed: true,
+        },
+      }),
+    );
+    expect(seatState.textContent).toBe('');
+    expect(seatState.hidden).toBe(true);
+  });
+
+  it('清单非空 + 有被过滤记录：不出空态的「有 N 条记录但无人驱动」（空态解释句不越界当状态播报）', () => {
+    const { view, jobsEmpty, jobsNotice, jobsList } = mount();
+    view.render(
+      snapshot({
+        jobs: [job('session-a', { kind: 'completed' })],
+        filteredCount: 3,
+      }),
+    );
+    expect(jobsList.children).toHaveLength(1);
+    // 空态整体隐藏：那条句子只属于空态
+    expect(jobsEmpty.hidden).toBe(true);
+    // 也没有被改道到通知行（真机就是「清单里挂着已完成记录，就不该出现这句」）
+    expect(jobsEmpty.textContent ?? '').not.toContain('record(s) exist');
+    expect(jobsNotice.textContent ?? '').not.toContain('record(s) exist');
   });
 
   it('清单非空时隐藏空态，并把读不全的事实放进 notice 行', () => {

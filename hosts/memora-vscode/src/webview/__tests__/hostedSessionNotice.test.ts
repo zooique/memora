@@ -298,10 +298,13 @@ describe('HostedSessionNotifier', () => {
     // 创建者正在跑别的活
     h.setCanWake(false);
 
+    expect(h.notifier.pendingReportCount(CREATOR)).toBe(0);
     expect(h.notifier.noteSettledFlow(CHILD, 'r11', false, false)).toBe(true);
     // 不打断：此刻既不写创建者队列，也不起轮
     expect(h.creatorQueue).not.toHaveBeenCalled();
     expect(h.wakeCreator).not.toHaveBeenCalled();
+    // 收回托管要如实说「还有几条没送到」：待办条数就是那句事实的读数源
+    expect(h.notifier.pendingReportCount(CREATOR)).toBe(1);
 
     // 本轮收场，创建者恢复空闲 → 补浮现
     h.setCanWake(true);
@@ -309,6 +312,8 @@ describe('HostedSessionNotifier', () => {
     expect(h.creatorQueue).toHaveBeenCalledTimes(1);
     expect(h.wakeCreator).toHaveBeenCalledTimes(1);
     expect(h.creatorQueue.mock.calls[0][0] as string).toContain('抓取任务');
+    // 浮现后待办清空（条数随之归零，不会一直报「未送达」）
+    expect(h.notifier.pendingReportCount(CREATOR)).toBe(0);
   });
 
   it('用户正在输入 → 同样压着不抢；等到本轮收场才浮现', () => {

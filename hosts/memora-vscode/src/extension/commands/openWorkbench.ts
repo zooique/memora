@@ -7,8 +7,12 @@
  *   ③ 多条 → QuickPick 让用户选（不做「猜一个」的默认值）。
  *
  * 本进程一条托管会话都没有时（多为重启后：mode 不落盘、装配表为空），**不再直接拒绝**：
- * 改读持久历史里的托管来源会话（`SessionMeta.origin === 'hosted'`），以只读方式重建工作台，
- * 并由面板说清「这是重启后按历史重建的，当前没有实时驱动方」。这仍是读既有事实，
+ * 改读持久历史里的托管来源会话（`SessionMeta.origin === 'hosted'`），以只读方式重建工作台。
+ * 这一档还要按**事件来源**再分一次（真机：只收回托管、没重启，却被写成「重启后按历史重建」）：
+ *   - 当前仍有代理在驱动它 ⇒ 有实时事实，按 `live`；
+ *   - 本进程登记过这条会话、它现在又不归代理 ⇒ 座位是被**收回**的；
+ *   - 本进程从没登记过 ⇒ 才是「重开窗口后按历史重建」。
+ * 后两种都说「当前没有实时驱动方」，但来源不同，不能共用一句话。这仍是读既有事实，
  * 不新增持久化、不猜一个实时座位出来。
  *
  * 边界：本命令只负责选座位与开面板；座位身份、状态与清单全由工作台面板按既有
@@ -40,7 +44,7 @@ export interface OpenWorkbenchDeps {
 interface SeatTarget {
   /** 座位会话 id */
   sessionId: string;
-  /** 来源：live = 本进程托管表；history = 重启后按持久历史重建 */
+  /** 来源档（三档语义见 `WorkbenchSeatSource` 注释，勿在此另写一套） */
   source: WorkbenchSeatSource;
 }
 
@@ -99,17 +103,39 @@ async function resolveSeat(deps: OpenWorkbenchDeps): Promise<SeatTarget | undefi
   }
   // 当前显示会话恰是托管来源会话：优先沿用它，少一次选择
   if (current && historical.some((meta) => meta.sessionId === current)) {
-    return { sessionId: current, source: 'history' };
+    return { sessionId: current, source: historicalSeatSource(deps, current) };
   }
   if (historical.length === 1) {
-    return { sessionId: historical[0].sessionId, source: 'history' };
+    return {
+      sessionId: historical[0].sessionId,
+      source: historicalSeatSource(deps, historical[0].sessionId),
+    };
   }
   const picked = await pickSession(
     deps,
     historical.map((meta) => meta.sessionId),
     vscode.l10n.t('Choose the hosted session to inspect from history'),
   );
-  return picked ? { sessionId: picked, source: 'history' } : undefined;
+  return picked ? { sessionId: picked, source: historicalSeatSource(deps, picked) } : undefined;
+}
+
+/**
+ * 给「历史档」的候选再判一次事件来源（实时驱动 / 收回 / 重启重建）
+ *
+ * 判据全部读既有容器，不新增状态：
+ *   - `isAgentDriven(sid)` = 现在仍有代理在驱动它（这类有**实时事实**，按 `live` 处理：
+ *     它没被收回，也就不能说「当前没有实时驱动方」）；
+ *   - `has(sid)` = 本进程写过这条会话的 mode（收回会写 `'self'`；重启后 Map 为空）；
+ *   - 都没命中 = 本进程第一次见到它 ⇒ 重开窗口后按历史重建。
+ *
+ * @param deps 既有单例依赖
+ * @param sessionId 候选会话
+ * @returns 座位来源档（`live` / `revoked` / `history`）
+ */
+function historicalSeatSource(deps: OpenWorkbenchDeps, sessionId: string): WorkbenchSeatSource {
+  if (deps.sessionModes.isAgentDriven(sessionId)) return 'live';
+  if (deps.sessionModes.has(sessionId)) return 'revoked';
+  return 'history';
 }
 
 /**
