@@ -614,7 +614,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // var(--lh-relaxed) +3（55→58；实数经 scripts/count-token-refs.mjs 实锤同步）。
     // 59：工作台 v0（workbenchStyles）正文 line-height 引 var(--lh-snug) +1（2026-11-14；
     // 实数经 scripts/count-token-refs.mjs 实锤同步）。
-    'lh-': 59, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1；
+    // 60：助手形态标识条（chatStyles 的 .assistant-mode-bar）line-height: var(--lh-normal)
+    // +1（2026-11-15，ASSISTANT-FORM；实数经 scripts/count-token-refs.mjs 实锤同步）。
+    'lh-': 60, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1；
     //             MCP 页级说明段落改 var(--lh-relaxed) +1（2026-10-24）
     //             MCP 隐藏条目解释行 var(--lh-relaxed) +1（2026-10-24）
     // 18：回到原值。中途曾 +2（🔒 未钉态 / ✕ 弱化态各用 opacity: var(--op-6)），后经真机

@@ -1600,7 +1600,7 @@ export const chatStyles = `
     align-items: center;
     gap: var(--sp-2, 6px);
     padding: var(--sp-3, 8px) var(--sp-6, 16px) 0;
-    font-size: var(--font-sm, 12px);
+    font-size: var(--font-sm, 11px);
     line-height: var(--lh-normal);
     color: var(--text-secondary);
   }
@@ -1618,7 +1618,7 @@ export const chatStyles = `
   /* 卡片本体：品牌色描边 + 淡底，与自助形态的中性描边一眼可辨 */
   body[data-form='assistant'] #inputWrap {
     border-color: var(--accent, #0e639c);
-    background: var(--accent-soft, rgba(14, 99, 156, 0.12));
+    background: var(--accent-soft, rgba(128, 128, 128, 0.2));
   }
   /* 包裹层改横排：图标落到文字左缘（左内距由包裹层给，textarea 自身左内距归零） */
   body[data-form='assistant'] #inputBox {
