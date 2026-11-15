@@ -59,8 +59,13 @@ import { join } from 'node:path';
  *  也无法搭既有通道的便车：形态与「哪条会话」正交（`session_title` 不描述形态），
  *  工作台选座逻辑已在 `memora.openWorkbench` 命令里（不需要 webview 传参）。
  *  实测 142，阈值同口径重算 143。
+ *  2026-11-15 落定主动浮现（`SETTLEMENT-WAKE`）+1：新增 `composer_state`（W→E，
+ *  输入框是否有未发送文本）。既有上行通道里没有「用户正在打字」这一事实：`input` 只在
+ *  按下发送时发、`mention_open` 只认 `@`，宿主无从判断「此刻唤醒会不会抢掉用户正在敲的字」。
+ *  刻意只在翻转时上行（不是按键级），且只服务一个布尔判据，不与 `ui_form` / `input` 合并。
+ *  实测 143，阈值同口径重算 144。
  */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 143;
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 144;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {

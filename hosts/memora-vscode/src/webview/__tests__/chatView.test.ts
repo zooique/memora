@@ -278,6 +278,29 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(icons()).toHaveLength(1);
   });
 
+  it('输入框文本翻转 → 上行 composer_state（翻转才发，不按键级刷帧）', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    const composerCalls = (): unknown[] =>
+      postMessage.mock.calls
+        .map((call) => call[0] as { type?: string })
+        .filter((msg) => msg?.type === 'composer_state');
+
+    // 有字 → true；同一状态再来一帧也不重复上行
+    input.value = '在吗';
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new Event('input'));
+    expect(composerCalls()).toEqual([{ type: 'composer_state', hasText: true }]);
+
+    // 清空 → 翻回 false（宿主据此恢复「可唤醒」判据）
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+    expect(composerCalls()).toEqual([
+      { type: 'composer_state', hasText: true },
+      { type: 'composer_state', hasText: false },
+    ]);
+  });
+
   it('clear_ok 同时清空 .msg 与 .round-block 残留，并恢复空状态', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;

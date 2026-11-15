@@ -1607,8 +1607,16 @@ export const chatStyles = `
   body[data-form='assistant'] .assistant-mode-bar__text { flex: 1 1 auto; min-width: 0; }
   body[data-form='assistant'] .assistant-mode-bar__link {
     flex: 0 0 auto;
-    padding: 0;
+    /* 点击热区：11px 下划线文字的可点面在真机上过小（验收里表现为「点了没反应」）。
+       用内距把热区抬到 24px 高、加宽两侧，再用负右外边距把文字视觉右缘拉回原位——
+       只放大可点面，不挪版、不新增元素。 */
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--sp-8, 24px);
+    padding: var(--sp-0, 2px) var(--sp-2, 6px);
+    margin-right: calc(-1 * var(--sp-2, 6px));
     border: none;
+    border-radius: var(--radius-sm, 2px);
     background: transparent;
     color: var(--accent, #0e639c);
     font: inherit;

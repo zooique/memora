@@ -954,7 +954,15 @@ export type WebviewToExtensionMessage =
    * 已收口在 `memora.openWorkbench` 命令里，本消息只转达「用户点了这个入口」，
    * 宿主执行该命令即可——webview 不得自己判断该看哪一条会话（第二真理源）。
    */
-  | { type: 'assistant_open_workbench' };
+  | { type: 'assistant_open_workbench' }
+  /**
+   * 输入框是否有未发送文本（W→E，翻转时才上行）
+   *
+   * 唯一用途 = 落定汇报的「不抢用户正在打的字」判据：用户正在输入时，主动一轮压回待办，
+   * 等当前轮收场后再浮现（宁晚不打断）。刻意只在**翻转**时发，不做按键级高频上行；
+   * 不参与发送 / 相位 / 按钮语义任何判据，宿主只存一个布尔。
+   */
+  | { type: 'composer_state'; hasText: boolean };
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =

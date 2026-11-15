@@ -14,7 +14,9 @@
  */
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { SessionMeta } from '@zooique/memora';
 import { createWorkbenchView, type WorkbenchView } from '../scripts/workbenchView.js';
+import { buildWorkbenchSnapshot } from '../helpers/workbenchModel.js';
 import type {
   WorkbenchJob,
   WorkbenchJobStatus,
@@ -138,6 +140,77 @@ describe('workbenchView — 空态：读不到 ≠ 没有', () => {
   it('有记录但被驱动权过滤：如实说过滤，不改口成「还没有」', () => {
     const { view, jobsEmpty } = mount();
     view.render(snapshot({ coverage: 'complete', filteredCount: 2 }));
+    expect(jobsEmpty.hidden).toBe(false);
+    expect(jobsEmpty.textContent).toBe('2 record(s) exist, but no agent is driving them right now');
+    expect(jobsEmpty.textContent).not.toBe('No work has been handed to the assistant yet');
+  });
+
+  it('端到端（模型 → 视图）：历史完整、记录都在，只是不由代理驱动 → 说「有 N 条记录」', () => {
+    // 上一批交付与真机复核对「这档是否存在」说法互相矛盾：这里不手搓快照，
+    // 而是走真实投影 `buildWorkbenchSnapshot`，钉住「分支顺序 + 文案」由模型事实驱动。
+    const orchestratorId = 'session-agent';
+    const metas = new Map<string, SessionMeta>([
+      [
+        orchestratorId,
+        {
+          sessionId: orchestratorId,
+          displayName: '代理会话',
+          updatedAt: '2026-11-15T00:00:00.000Z',
+          messageCount: 1,
+        },
+      ],
+      [
+        'session-a',
+        {
+          sessionId: 'session-a',
+          displayName: '会话 A',
+          updatedAt: '2026-11-15T00:00:00.000Z',
+          messageCount: 1,
+        },
+      ],
+      [
+        'session-b',
+        {
+          sessionId: 'session-b',
+          displayName: '会话 B',
+          updatedAt: '2026-11-15T00:00:00.000Z',
+          messageCount: 1,
+        },
+      ],
+    ]);
+    const snap = buildWorkbenchSnapshot({
+      orchestratorId,
+      seatSource: 'live',
+      agentName: 'Memora',
+      readMeta: (sid) => metas.get(sid),
+      readRolePackName: () => undefined,
+      readRolePackDisplayName: () => undefined,
+      isManaged: () => true,
+      // 历史读得到、记录也存在，但用户已全部收回驱动权
+      isAgentDriven: () => false,
+      childrenOf: () => ['session-a', 'session-b'],
+      history: {
+        children: [],
+        dispatches: [],
+        coverage: 'complete',
+        totalRounds: 2,
+        scannedRounds: 2,
+        unreadableRecords: 0,
+      },
+      peekActivity: () => ({ running: false, waiting: false }),
+      readRoundIds: () => [],
+      readRoundStatus: () => undefined,
+      readRound: () => undefined,
+      titleOf: (sid) => `标题-${sid}`,
+    });
+    // 前提确实是「读得到 + 完整 + 被过滤」，不是靠空历史蒙对
+    expect(snap.coverage).toBe('complete');
+    expect(snap.missingCount).toBe(0);
+    expect(snap.filteredCount).toBe(2);
+    expect(snap.jobs).toHaveLength(0);
+
+    const { view, jobsEmpty } = mount();
+    view.render(snap);
     expect(jobsEmpty.hidden).toBe(false);
     expect(jobsEmpty.textContent).toBe('2 record(s) exist, but no agent is driving them right now');
     expect(jobsEmpty.textContent).not.toBe('No work has been handed to the assistant yet');

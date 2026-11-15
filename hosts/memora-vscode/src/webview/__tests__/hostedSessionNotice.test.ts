@@ -1,10 +1,12 @@
 /**
- * 托管子会话落定通知器单测（第三 / 第四切片）
+ * 托管子会话落定通知器单测（第三 / 第四 / 第五切片）
  *
- * 钉七件事：用户停 → 结论归中断且只通知创建者；异常终止 → 结论归失败并带回原文；
+ * 钉九件事：用户停 → 结论归中断且只通知创建者；异常终止 → 结论归失败并带回原文；
  * 成功收场 → 结论归成功；用户自己的会话当前不归代理 → 不产生通知；
  * 代理派发接管的用户会话 → 照常通知；同一会话同一轮重复信号只写一条；
- * 取不到原因时如实标「不可知」，不伪造「用户停」。
+ * 取不到原因时如实标「不可知」，不伪造「用户停」；
+ * 创建者忙 / 用户正在输入时不抢（进待办，收场后合并成一轮浮现）；
+ * 待办多条只唤醒一轮，且同一轮重复信号不会重复排队。
  */
 import { describe, expect, it, vi } from 'vitest';
 import type { Agent, ProcessEvent, Round, RoundStatus, SessionMeta } from '@zooique/memora';
@@ -60,6 +62,9 @@ function harness(): {
   notifier: HostedSessionNotifier;
   creatorQueue: ReturnType<typeof vi.fn>;
   childQueue: ReturnType<typeof vi.fn>;
+  wakeCreator: ReturnType<typeof vi.fn>;
+  /** 模拟「创建者忙 / 用户正在输入」：false = 此刻不能唤醒 */
+  setCanWake: (can: boolean) => void;
   metas: Map<string, SessionMeta>;
   managed: Set<string>;
   driven: Set<string>;
@@ -67,6 +72,9 @@ function harness(): {
 } {
   const creatorQueue = vi.fn();
   const childQueue = vi.fn();
+  // 「能否唤醒」由面板判据给出（空闲 + 用户没在打字）；此处用可变开关模拟两种不抢场景
+  let canWake = true;
+  const wakeCreator = vi.fn(() => true);
   const metas = new Map<string, SessionMeta>();
   const managed = new Set<string>([CREATOR]);
   // 当前由代理驱动的会话（生产 = SessionModeStore.agentDriven；子会话出生后默认在内）
@@ -82,8 +90,22 @@ function harness(): {
     isAgentDriven: (sid) => driven.has(sid),
     getAgent: (sid) => agents.get(sid),
     readRound: (roundId) => rounds.get(roundId),
+    canWakeCreator: () => canWake,
+    wakeCreator,
   });
-  return { notifier, creatorQueue, childQueue, metas, managed, driven, rounds };
+  return {
+    notifier,
+    creatorQueue,
+    childQueue,
+    wakeCreator,
+    setCanWake: (can) => {
+      canWake = can;
+    },
+    metas,
+    managed,
+    driven,
+    rounds,
+  };
 }
 
 describe('HostedSessionNotifier', () => {
@@ -266,5 +288,81 @@ describe('HostedSessionNotifier', () => {
     expect(text).toContain('异常终止：chat 锁被占用');
     // 标题缺失时回退用 id，不能只给一个空标题
     expect(text).toContain(CHILD);
+  });
+
+  it('创建者忙 → 不抢：先进待办不写队列，收场后浮现并只唤醒一轮', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    h.rounds.set('r11', round('r11', 'complete', []));
+    h.notifier.remember(CHILD, CREATOR);
+    // 创建者正在跑别的活
+    h.setCanWake(false);
+
+    expect(h.notifier.noteSettledFlow(CHILD, 'r11', false, false)).toBe(true);
+    // 不打断：此刻既不写创建者队列，也不起轮
+    expect(h.creatorQueue).not.toHaveBeenCalled();
+    expect(h.wakeCreator).not.toHaveBeenCalled();
+
+    // 本轮收场，创建者恢复空闲 → 补浮现
+    h.setCanWake(true);
+    h.notifier.flushPending(CREATOR);
+    expect(h.creatorQueue).toHaveBeenCalledTimes(1);
+    expect(h.wakeCreator).toHaveBeenCalledTimes(1);
+    expect(h.creatorQueue.mock.calls[0][0] as string).toContain('抓取任务');
+  });
+
+  it('用户正在输入 → 同样压着不抢；等到本轮收场才浮现', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    h.rounds.set('r12', round('r12', 'complete', []));
+    h.notifier.remember(CHILD, CREATOR);
+    // 面板判据把「用户正在打字」折算成不可唤醒
+    h.setCanWake(false);
+
+    h.notifier.noteSettledFlow(CHILD, 'r12', false, false);
+    expect(h.creatorQueue).not.toHaveBeenCalled();
+
+    // 用户本轮收场且不再打字 → 收场补浮现（宁晚不打断）
+    h.setCanWake(true);
+    h.notifier.flushPending(CREATOR);
+    expect(h.creatorQueue).toHaveBeenCalledTimes(1);
+    expect(h.wakeCreator).toHaveBeenCalledTimes(1);
+  });
+
+  it('多条落定压在一起 → 收场只唤醒一轮（不逐条刷屏）', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    h.rounds.set('r13', round('r13', 'complete', []));
+    h.rounds.set('r14', round('r14', 'complete', []));
+    h.notifier.remember(CHILD, CREATOR);
+    h.setCanWake(false);
+
+    h.notifier.noteSettledFlow(CHILD, 'r13', false, false);
+    h.notifier.noteSettledFlow(CHILD, 'r14', false, false);
+    expect(h.creatorQueue).not.toHaveBeenCalled();
+
+    h.setCanWake(true);
+    h.notifier.flushPending(CREATOR);
+    // 两条事实都带进上下文，但只起一轮汇报
+    expect(h.creatorQueue).toHaveBeenCalledTimes(2);
+    expect(h.wakeCreator).toHaveBeenCalledTimes(1);
+  });
+
+  it('待办阶段同一轮重复信号 → 只排一条（不许重复刷屏）', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    h.rounds.set('r15', round('r15', 'complete', []));
+    h.notifier.remember(CHILD, CREATOR);
+    h.setCanWake(false);
+
+    expect(h.notifier.noteSettledFlow(CHILD, 'r15', false, false)).toBe(true);
+    // 同一轮的第二 / 第三次信号：去重键已记，不再入待办
+    expect(h.notifier.noteSettledFlow(CHILD, 'r15', false, false)).toBe(false);
+    expect(h.notifier.noteSettledFlow(CHILD, 'r15', false, false)).toBe(false);
+
+    h.setCanWake(true);
+    h.notifier.flushPending(CREATOR);
+    expect(h.creatorQueue).toHaveBeenCalledTimes(1);
+    expect(h.wakeCreator).toHaveBeenCalledTimes(1);
   });
 });

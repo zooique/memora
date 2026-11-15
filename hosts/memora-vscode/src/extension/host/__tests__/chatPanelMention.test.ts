@@ -60,6 +60,8 @@ vi.mock('vscode', async () => ({
     getConfiguration: vi.fn(() => ({ get: vi.fn(() => false) })),
     findFiles: vi.fn(),
   },
+  // 工作台入口（ASSISTANT-FORM）转达既有命令；命令实现本身由 openWorkbench.test 覆盖
+  commands: { executeCommand: vi.fn() },
 }));
 
 type QpStub = {
@@ -318,5 +320,12 @@ describe('HOST-CTX-1 @ 提及：openMentionQuickPick', () => {
       expect.stringContaining('host not restarted'),
     );
     warn.mockRestore();
+  });
+
+  it('助手形态「工作台」入口 → 转达既有命令（ASSISTANT-FORM：复用面板不新造）', () => {
+    const h = setup();
+    h.dispatch({ type: 'assistant_open_workbench' });
+    // 链路钉死：webview 发 → 宿主接 → 走既有命令（选座 / 建面板全在命令实现里）
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('memora.openWorkbench');
   });
 });

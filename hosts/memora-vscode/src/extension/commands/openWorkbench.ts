@@ -21,6 +21,8 @@ import type { SessionModeStore } from '../host/sessionModeStore.js';
 import type { HostSessionStore } from '../host/sessionStore.js';
 import type { WorkbenchSeatSource } from '../../shared/workbenchDto.js';
 import { sessionDisplayTitle } from '../host/sessionTitle.js';
+// 错误文案归一（与面板通知同源，不另写一套截断规则）
+import { toNoticeText } from '../host/noticeText.js';
 
 /** 命令依赖（全部为既有单例） */
 export interface OpenWorkbenchDeps {
@@ -152,6 +154,16 @@ export function registerOpenWorkbenchCommand(
   deps: OpenWorkbenchDeps,
 ): void {
   context.subscriptions.push(
-    vscode.commands.registerCommand('memora.openWorkbench', () => openWorkbench(deps)),
+    // 失败必须可见：点入口与走命令面板共用本命令，任何一环抛错（选座 / 重建历史 / 建面板）
+    // 都不能只留在 rejection 里——真机验收里那表现为「点了没反应」，用户只能改走命令面板
+    vscode.commands.registerCommand('memora.openWorkbench', async () => {
+      try {
+        await openWorkbench(deps);
+      } catch (err) {
+        void vscode.window.showErrorMessage(
+          vscode.l10n.t('Failed to open the workbench: {0}', toNoticeText(err)),
+        );
+      }
+    }),
   );
 }

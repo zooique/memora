@@ -1471,5 +1471,7 @@
   "Memora: failed to pause the session.": "",
   "Memora: only managed sessions can resume other sessions.": "",
   "Memora: the target session has no live instance to resume.": "",
-  "Memora: failed to resume the session.": ""
+  "Memora: failed to resume the session.": "",
+  "Failed to open the workbench: {0}": "",
+  "A managed session has just settled. Read the settlement notice in context, then report to me: which session it was, how it ended (one sentence), and whether you suggest a next step or need my decision.": ""
 }

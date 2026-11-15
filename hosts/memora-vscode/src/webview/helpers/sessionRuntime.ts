@@ -41,6 +41,34 @@ export interface LiveFlowBuffer {
   seedOrigin?: RoundView['origin'];
 }
 
+/**
+ * 本轮运行时种子（`chat()` 开新轮时的上屏素材）
+ *
+ * 原为面板私有接口；随「主动汇报一轮」外置到运行控制域后，两侧都要构造同一形状，
+ * 故上移到本模块作单一类型源（避免面板与 ops 各写一份并列形状、字段漂移无人报警）。
+ */
+export interface FlowSeed {
+  /**
+   * 本轮开轮用户输入的**上屏裸文本**（不含注入信封）。
+   *
+   * 与重放口径必须同值：历史读的是 `stripInjectedContextPrefix(落盘原文)`，而注入信封
+   * （技能 / 文档 / problems / git / 引用）只进 `chat()` 的入参、由内核原样落盘。
+   * 这里若跟着带信封，同一轮在 live 投影与重放投影会变成两种内容（同一轮两副面孔）；
+   * 托管派发同理——`dispatchHostedInput` 只放原文，不构造信封。
+   *
+   * id 用宿主临时值（内核生成的 `msg-{uuid}` 此刻未知）：轮收场落盘后由历史版本整体替换，
+   * 与 `toRoundView` 的 `assistantMessage.id = live-{roundId}` 同一范式。
+   */
+  userMessage?: RoundView['userMessage'];
+  /**
+   * 本轮输入来源标记（普通发送 = `'user'`；托管派发 = `'hosted'`）。
+   *
+   * 与 `userMessage` 同批传：live 轮投影要靠它把 origin 带给 `RoundView`，
+   * 否则 mergeLiveRound 会按缺省处理。
+   */
+  origin?: RoundView['origin'];
+}
+
 /** 单会话流运行态（字段沿用重构前 chatPanel 的对应单份字段，命名去掉下划线） */
 export interface SessionRuntimeState {
   /** 该会话是否在流式生成中（consumeFlow 维护） */

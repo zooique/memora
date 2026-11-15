@@ -302,3 +302,107 @@ describe('resumeHostedSession — 主控恢复入口', () => {
     });
   });
 });
+
+/**
+ * 造一个可用于「主动汇报一轮」的 Agent 替身
+ *
+ * @param status 会话状态机当前状态
+ * @param aligned 内核当前会话是否已对齐创建者（false = 需要先 switchToSession）
+ * @returns Agent 替身与两个可观测间谍
+ */
+function fakeWakeAgent(
+  status: 'thinking' | 'paused' | 'done',
+  aligned = true,
+): {
+  agent: Agent;
+  chat: ReturnType<typeof vi.fn>;
+  switchToSession: ReturnType<typeof vi.fn>;
+} {
+  const chat = vi.fn(async function* () {
+    // 空流：本用例只关心「有没有起一轮、种子对不对」，不关心 chunk
+  });
+  const switchToSession = vi.fn(async () => undefined);
+  const agent = {
+    sessionManager: {
+      status,
+      getCurrentSessionInfo: () => ({ date: '2026-11-14', session: aligned ? 'creator' : 'other' }),
+      switchToSession,
+    },
+    isPausePending: () => false,
+    chat,
+  } as unknown as Agent;
+  return { agent, chat, switchToSession };
+}
+
+describe('落定主动浮现 — isSessionIdle / wakeSettlementReport', () => {
+  /** 创建者会话 id（与 fakeWakeAgent 的对齐口径一致） */
+  const CREATOR = '2026-11-14-creator';
+
+  it('三种「不空」都不算空闲：在跑 / 待答 / 暂停可续跑', () => {
+    const streaming = makeOps({
+      runtimeFor: () => ({ streaming: true }),
+      getAgent: () => fakeWakeAgent('thinking').agent,
+    });
+    expect(streaming.ops.isSessionIdle(CREATOR)).toBe(false);
+
+    const asking = makeOps({
+      askFor: () => ({
+        pendingQuestions: () => [{ id: 'q1' }],
+        abandonOnStop: async () => true,
+      }),
+      getAgent: () => fakeWakeAgent('thinking').agent,
+    });
+    expect(asking.ops.isSessionIdle(CREATOR)).toBe(false);
+
+    const paused = makeOps({ getAgent: () => fakeWakeAgent('paused').agent });
+    expect(paused.ops.isSessionIdle(CREATOR)).toBe(false);
+
+    const idle = makeOps({ getAgent: () => fakeWakeAgent('thinking').agent });
+    expect(idle.ops.isSessionIdle(CREATOR)).toBe(true);
+  });
+
+  it('空闲 → 走既有托管通道起一轮：种子标 hosted，事实留在系统事件队列', () => {
+    const { agent, chat } = fakeWakeAgent('thinking');
+    const { ops, calls } = makeOps({ getAgent: () => agent });
+
+    expect(ops.wakeSettlementReport(CREATOR)).toBe(true);
+    expect(calls.runFlow).toHaveBeenCalledTimes(1);
+    const [factory, sessionId, seed] = calls.runFlow.mock.calls[0] as [
+      (signal: AbortSignal) => AsyncGenerator<unknown, void, unknown>,
+      string,
+      { origin?: string; userMessage?: { content: string } },
+    ];
+    // 必须归到创建者会话、且来源标 hosted（不伪装成用户发言）
+    expect(sessionId).toBe(CREATOR);
+    expect(seed.origin).toBe('hosted');
+    expect(seed.userMessage?.content).toContain('settled');
+    // 种子只负责「起一轮」：调用即进既有 chat 通道（不新造流）
+    void factory(new AbortController().signal).next();
+    expect(chat).toHaveBeenCalledTimes(1);
+    expect(chat.mock.calls[0]?.[0]).toBe(seed.userMessage?.content);
+    expect(chat.mock.calls[0]?.[3]).toEqual({ origin: 'hosted' });
+  });
+
+  it('不空闲 / 实例不在 → 不起轮，如实返回 false', () => {
+    const { ops: busy, calls: busyCalls } = makeOps({
+      runtimeFor: () => ({ streaming: true }),
+      getAgent: () => fakeWakeAgent('thinking').agent,
+    });
+    expect(busy.wakeSettlementReport(CREATOR)).toBe(false);
+    expect(busyCalls.runFlow).not.toHaveBeenCalled();
+
+    const { ops: gone } = makeOps({ getAgent: () => undefined });
+    expect(gone.wakeSettlementReport(CREATOR)).toBe(false);
+  });
+
+  it('内核当前会话错位 → 先切回创建者再起轮（不把汇报写进别的会话）', async () => {
+    const { agent, switchToSession } = fakeWakeAgent('thinking', false);
+    const { ops, calls } = makeOps({ getAgent: () => agent });
+
+    expect(ops.wakeSettlementReport(CREATOR)).toBe(true);
+    // 错位时不同步直接开跑：先等切换完成，再走 runFlow
+    expect(switchToSession).toHaveBeenCalledWith(CREATOR);
+    expect(calls.runFlow).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(calls.runFlow).toHaveBeenCalledTimes(1));
+  });
+});

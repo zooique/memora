@@ -23,6 +23,8 @@ import type {
 import { stopHostedSession } from '../helpers/hostedSessionStop.js';
 // 主控暂停 / 恢复：按目标 sid 取既有实例，调实例现有公开方法（内核签名不动）
 import { pauseHostedSession, resumeHostedSession } from '../helpers/hostedSessionRunControl.js';
+// 本轮运行时种子（开轮上屏素材；单一类型源在会话级运行态模块）
+import type { FlowSeed } from '../helpers/sessionRuntime.js';
 
 /** 本域读到的会话级运行态（`runtimeFor()` 的窄投影，只读本域需要的两个字段） */
 export interface RunControlRuntime {
@@ -63,6 +65,7 @@ export interface ChatRunControlOpsDeps {
   runFlow: (
     factory: (signal: AbortSignal) => AsyncGenerator<AgentChunk, void, unknown>,
     sessionId?: string,
+    seed?: FlowSeed,
   ) => Promise<void>;
   /** 重投影待发送队列（`force` = 绕长度守卫，停止路径必须无条件推相位） */
   syncPendingQueue: (force?: boolean) => void;
@@ -100,6 +103,18 @@ export interface ChatRunControlOps {
     callingSessionId: string,
     targetSessionId: string,
   ) => Promise<HostedResumeResult>;
+  /** 某会话此刻是否空闲（不在跑流 / 没有待答提问 / 没有暂停挂起）——落定汇报的「不打断」判据 */
+  isSessionIdle(sessionId: string): boolean;
+  /**
+   * 托管落定「主动起一轮」：替创建者开一轮汇报（读结果 → 整理 → 发给用户）
+   *
+   * 与托管派发同一条 `runFlow` + `chat(origin='hosted')` 通路，不新造通道、不新造面板；
+   * 事实本体由通知器压入创建者的系统事件队列，本方法只负责「起一轮」并把汇报口径写进种子。
+   *
+   * @param creator 创建者（托管主控）会话 id
+   * @returns 是否真的起了一轮（false = 实例未就绪 / 不空闲 / 未开跑）
+   */
+  wakeSettlementReport(creator: string): boolean;
 }
 
 /**
@@ -320,6 +335,64 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
         callingSessionId,
         targetSessionId,
       ),
+
+    /**
+     * 某会话此刻是否空闲（落定汇报的「不打断」判据）
+     *
+     * 三档都算「不空」：正在跑流（抢跑 = 打断）、挂着待答提问（用户正要答）、
+     * 暂停可续跑（等用户决定续不续）。宁晚不打断：不空时通知器把落定压进内存待办，
+     * 等本轮收场后再浮现。
+     */
+    isSessionIdle(sessionId: string): boolean {
+      if (deps.runtimeFor(sessionId).streaming) return false;
+      if (deps.askFor(sessionId).pendingQuestions().length > 0) return false;
+      const agent = deps.getAgent(sessionId);
+      if (agent?.sessionManager?.status === 'paused' || agent?.isPausePending()) return false;
+      return true;
+    },
+
+    /**
+     * 托管落定「主动起一轮」：替创建者开一轮汇报
+     *
+     * 走既有托管通道（`chat(origin='hosted')` + `runFlow`），不新造流、不新造面板：
+     * 事实本体已由通知器压入创建者的系统事件队列（首个 step 边界注入），
+     * 本方法的种子只写「读结果并汇报」的口径——主控据此主动说话，用户不必先开口。
+     * 种子气泡与普通托管输入一样带来源标记（origin=hosted），不伪装成用户发言。
+     */
+    wakeSettlementReport(creator: string): boolean {
+      const agent = deps.getAgent(creator);
+      if (!agent || !ops.isSessionIdle(creator)) return false;
+      // 汇报口径进种子：哪条会话 / 结果如何 / 一句话结论 / 下一步建议或需用户决定
+      const seedText = vscode.l10n.t(
+        'A managed session has just settled. Read the settlement notice in context, then report to me: which session it was, how it ended (one sentence), and whether you suggest a next step or need my decision.',
+      );
+      const now = new Date().toISOString();
+      const seed: FlowSeed = {
+        userMessage: {
+          id: `live-settlement-${now}`,
+          role: 'user',
+          content: seedText,
+          timestamp: now,
+        },
+        origin: 'hosted',
+      };
+      const start = (): void => {
+        void deps.runFlow(
+          (signal) => agent.chat(seedText, signal, undefined, { origin: 'hosted' }),
+          creator,
+          seed,
+        );
+      };
+      // 与 dispatchHostedInput 同一对齐判据：内核当前会话错位会把这一轮写进别的会话
+      const manager = agent.sessionManager;
+      const info = manager?.getCurrentSessionInfo();
+      if (manager && info && `${info.date}-${info.session}` !== creator) {
+        void manager.switchToSession(creator).then(start, () => undefined);
+        return true;
+      }
+      start();
+      return true;
+    },
   };
   return ops;
 }

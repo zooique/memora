@@ -83,7 +83,6 @@ import type {
   InjectionSource,
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
-  RoundView,
   TurnState,
   PendingQuestionDto,
   LlmProviderConfig,
@@ -168,6 +167,7 @@ import { buildChatRolePacks } from '../helpers/rolePackListView.js';
 import {
   SessionRuntimeStates,
   BackgroundFlowGate,
+  type FlowSeed,
   type LiveFlowBuffer,
   type SessionRuntimeState,
 } from '../helpers/sessionRuntime.js';
@@ -261,28 +261,10 @@ export {
  * 而实例字段有跨轮残留风险（按会话的 `streaming` 这类布尔碎片正是本方案要收口的对象，不该再添一个）。
  * 6 个 `runFlow` 调用点中只有 `chat()` 开新轮需要它（`resumeExecution` 各形态续同一轮、不分裂，
  * 其 userMessage 从落盘历史取）。
+ *
+ * 类型本体（`FlowSeed`）已上移到 `helpers/sessionRuntime.ts`：主动汇报一轮由运行控制域构造
+ * 同一种子，两处不能各写一份并列形状。
  */
-interface FlowSeed {
-  /**
-   * 本轮开轮用户输入的**上屏裸文本**（不含注入信封）。
-   *
-   * 与重放口径必须同值：历史读的是 `stripInjectedContextPrefix(落盘原文)`，而注入信封
-   * （技能 / 文档 / problems / git / 引用）只进 `chat()` 的入参、由内核原样落盘。
-   * 这里若跟着带信封，同一轮在 live 投影与重放投影会变成两种内容（同一轮两副面孔）；
-   * 托管派发同理——`dispatchHostedInput` 只放原文，不构造信封。
-   *
-   * id 用宿主临时值（内核生成的 `msg-{uuid}` 此刻未知）：轮收场落盘后由历史版本整体替换，
-   * 与 `toRoundView` 的 `assistantMessage.id = live-{roundId}` 同一范式。
-   */
-  userMessage?: RoundView['userMessage'];
-  /**
-   * 本轮输入来源标记（普通发送 = `'user'`；托管派发 = `'hosted'`）。
-   *
-   * 与 `userMessage` 同批传：live 轮投影要靠它把 origin 带给 `RoundView`，
-   * 否则 mergeLiveRound 会按缺省处理。
-   */
-  origin?: RoundView['origin'];
-}
 
 // 本流 live 缓冲形状已随会话级运行态迁至 `helpers/sessionRuntime.ts`（LiveFlowBuffer）。
 
@@ -398,7 +380,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       (sessionId === this._currentSessionId ? this._agent : undefined),
     currentSessionId: () => this.getCurrentSessionId(),
     isManaged: (id) => this.sessionModes.isManaged(id),
-    runFlow: (factory, sessionId) => this.runFlow(factory, undefined, sessionId),
+    runFlow: (factory, sessionId, seed) => this.runFlow(factory, seed, sessionId),
     syncPendingQueue: (force) => this.syncPendingQueue(force),
     postPendingDiscarded: (items) => this.postPendingDiscarded(items),
     onUserStopped: (_agent, roundId, sessionId) =>
@@ -426,9 +408,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     isAgentDriven: (sid) => this.sessionModes.isAgentDriven(sid),
     getAgent: (sid) => this._sessionAgents.get(sid),
     readRound: (roundId) => this._eventLogRoundStore?.getById(roundId) ?? undefined,
+    // 主动浮现的前提：创建者空闲，且用户没在输入框里打字（不抢 / 不打断；宁晚不打断）
+    canWakeCreator: (sid) =>
+      this._runOps.isSessionIdle(sid) && !(sid === this._currentSessionId && this._composerHasText),
+    wakeCreator: (sid) => this._runOps.wakeSettlementReport(sid),
   });
   /** 当前**显示会话**的 Agent（`_sessionAgents` 的一份投影；真正的实例归属表在 extension） */
   private _agent: Agent | undefined;
+  /**
+   * 显示会话的输入框里是否有**未发送**文本（webview `composer_state` 上行，翻转时才发）
+   *
+   * 只为「落定汇报不抢用户正在打的字」服务：用户正在输入时把主动一轮压回待办，
+   * 等当前轮结束后再浮现。不参与任何发送 / 相位判据。
+   */
+  private _composerHasText = false;
   /**
    * 草稿会话态（「＋」后、首次发送前的空白页）——**只存在于本面板内存**
    *
@@ -1229,9 +1222,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       void this.handleInput(msg);
     } else if (msg.type === 'assistant_open_workbench') {
       // 助手形态输入区上方的「工作台」入口：选座逻辑全在既有命令里（当前托管会话 → 唯一
-      // 托管会话 → QuickPick → 如实说没有），本处只转达点击，不自己判断看哪一条
+      // 托管会话 → QuickPick → 如实说没有），本处只转达点击，不自己判断看哪一条。
+      // 失败可见性收口在命令实现里：旧实现只 `void` 吞掉 rejection，真机表现为「点了没反应」。
       void vscode.commands.executeCommand('memora.openWorkbench');
-    } else if (msg.type === 'open_settings_tab') {
+    } else if (msg.type === 'composer_state') this._composerHasText = msg.hasText;
+    else if (msg.type === 'open_settings_tab') {
       // 设置面板选项卡导航（空态引导 → 大模型 / 角色徽章 → 角色；只导航——切换执行仍走各视图单路径）。
       // **不维护「tab → 命令名」映射表**：那是第二真源，加一页要补一行且 protocol 得同步放宽。tab 直投命令。
       void vscode.commands.executeCommand('memora.openSettings', msg.tab);
@@ -3262,6 +3257,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 只对代理开的会话生效（帮助器内部判 origin + 创建者）
       this._hostedNotifier.noteSyncThrow({ sessionId, error: err });
     }
+    // 本轮已收场：创建者若因「忙 / 用户正在输入」压着落定汇报，此刻补浮现（多条合并成一轮）。
+    // 放在 catch 之后而非 finally 内：必须等 consumeFlow 的收场投递（done / turn_update）走完，
+    // 否则新一轮的 thinking 会被上一轮的 done 覆盖。
+    this._hostedNotifier.flushPending(sessionId);
   }
 
   /**

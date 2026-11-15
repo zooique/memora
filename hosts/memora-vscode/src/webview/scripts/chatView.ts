@@ -1715,6 +1715,23 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     send.disabled = currentButtonSemantics().send.disabled;
   }
 
+  /** 上次上报给宿主的「输入框有未发送文本」（只在翻转时上行，不做按键级高频） */
+  let composerHasText = false;
+  /**
+   * 上报输入框是否有未发送文本
+   *
+   * 唯一消费方 = 落定汇报的「不抢用户正在打的字」判据（宿主存一个布尔，不参与发送 / 相位）。
+   * 只在 true/false 翻转时发：输入框内容每变一次就跨进程发一帧既无必要，也会把宿主的
+   * 主动汇报判据变成高频噪声。程序化填框（预填 / 润色 / 引用 chip / 清空）不触发 input 事件，
+   * 故这些点要显式调用。
+   */
+  function reportComposerState(): void {
+    const hasText = input.value.trim().length > 0;
+    if (hasText === composerHasText) return;
+    composerHasText = hasText;
+    vscode.postMessage({ type: 'composer_state', hasText });
+  }
+
   /**
    * 会话结构写窗口锁（SSOT）：只约束**会重写会话文件**的动作（截断 / 分叉）；导航类
    * （历史 / 新建 / 切换 / 重命名）不在此列，可用态在 turn_update 单写点施加。
@@ -3324,6 +3341,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       autoResize();
       syncSendEnabled(); // 程序化预填不触发 input 事件，须手动同步可用性
       syncButtonSemantics(); // 程序化预填同理不触发 input 事件，须同步按钮语义（标题随相位+输入重算），避免窗口期文案过期
+      reportComposerState(); // 预填同样要让宿主知道「输入框里已有字」
     } else if (msg.type === 'focus_input') {
       // HOST-CTX-16：@ 提及 QuickPick 收场后宿主归还焦点——QuickPick 开着时焦点在它那，
       // 收场后 VS Code 不自动还给网页输入框，用户继续打字前得先点一下。只 focus 不改文本
@@ -3383,6 +3401,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         autoResize();
         syncSendEnabled(); // 程序化回填不触发 input 事件，须手动同步可用性
         syncButtonSemantics(); // 程序化回填同理不触发 input 事件，须同步按钮语义（标题随相位+输入重算）
+        reportComposerState(); // 润色回填同样要让宿主知道「输入框里已有字」
       }
       // 恢复润色按钮状态（图标按钮，无需恢复文本）
       if (polishBtn) {
@@ -3700,6 +3719,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 清输入框后按钮语义也要重算（hasInput 变了）
     syncButtonSemantics();
     syncSendEnabled();
+    reportComposerState();
     // 构建消息：send 意图单消息，宿主按相位路由到 chat / interject / 带文本续跑；技能按名注入
     const selectedSkill = skillPickerView.getSelected();
     const payload: WebviewToExtensionMessage = {
@@ -3798,6 +3818,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 输入内容变化时，按钮语义（classList 图标）和 disabled 态都要重算
     syncButtonSemantics();
     syncSendEnabled();
+    reportComposerState();
     // HOST-CTX-13：@ 提及的**兜底触发路径**（中文输入法 / 粘贴）。
     // 根因：上方 keydown 路径的判据是 `e.key === '@'`——那是**按键事实**，依赖键盘布局与 IME 行为。
     // 中文输入法插入的 @ 不保证走这条路（IME 可能吞掉 keydown 或上报 'Process'/'Unidentified'），
@@ -3842,6 +3863,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     autoResize();
     syncSendEnabled();
     syncButtonSemantics();
+    reportComposerState(); // 删 @ 也是文本变化（可能删空），宿主判据要跟着翻转
   }
 
   // 历史菜单（会话记录 / 留存区）：渲染、分组与搜索状态收口于 historyMenuView（HOST-SPLIT-1
@@ -3906,6 +3928,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     autoResize();
     syncSendEnabled(); // 程序化回填不触发 input 事件，须手动同步可用性
     syncButtonSemantics(); // 程序化回填同理不触发 input 事件，须同步按钮语义（标题随相位+输入重算）
+    reportComposerState(); // 引用 chip 回填同样要让宿主知道「输入框里已有字」
   }
   document.addEventListener('click', onDocumentClick);
 

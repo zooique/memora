@@ -1,21 +1,26 @@
 /**
- * 代理接管会话的落定通知器（第三切片：中断通知 → 第四切片：会话级落定）
+ * 代理接管会话的落定通知器（第三切片：中断通知 → 第四切片：会话级落定 → 第五切片：主动浮现）
  *
- * 职责：把「某条归代理驱动的会话本轮已落定」这一事实，投递给创建 / 派发它的主控会话，
- * 让主控**下次说话时**在上下文里看到（它空闲时不会自己刷新）。落定结论三档：
+ * 职责：把「某条归代理驱动的会话本轮已落定」这一事实，投递给创建 / 派发它的主控会话。
+ * 第五切片起**不再等用户下次开口**：创建者空闲时立刻替它起一轮（读结果 → 整理 → 汇报），
+ * 用户不需要先说话。落定结论三档：
  *   - `success`：轮以 `complete` 收场（跑完了）；
  *   - `failed`：轮以 `interrupted` 收场，且现场有 `error` 事件（跑挂了）；
  *   - `interrupted`：轮以 `interrupted` 收场，但原因是用户停 / 超时 / 不可知（被打断）。
  *
  * 边界（刻意收窄）：
- *   - 不写会话历史、不造轮：复用内核 `AgentLoop.enqueueCommandResult` 的系统事件注入队列
+ *   - 不写会话历史、不造轮：事实本体复用内核 `AgentLoop.enqueueCommandResult` 的系统事件注入队列
  *     （system 角色、跨空闲期留存、下一 turn 首个 step 边界注入），不伪装成用户发言；
- *   - 不落盘、不加 `SessionMeta` 字段：创建者关系只在进程内有效，重启即失（如实不通知）；
+ *     「起一轮」由面板经既有托管通道（`chat(origin='hosted')` + `runFlow`）完成，不新造通道；
+ *   - 不落盘、不加 `SessionMeta` 字段：创建者关系与待汇报队列都只在进程内有效。重启后内存队列
+ *     随之丢失，**刻意不补发**（宁可漏报一条旧落定，也不在重启后刷一屏历史）；
  *   - 只通知**本进程内登记过创建者、且当前仍由代理驱动**的会话。登记来源两条：
  *     代理建会话（`create_session`）与代理派发接管（`send_to_session`）。
  *     `SessionMeta.origin` 只记出生事实（用户自建会话被派发后仍是 `'user'`），不作通知判据；
  *     用户自己选托管新建、且从未被派发过的会话没有创建者记录 ⇒ 不会向任何代理发通知；
  *   - 同一会话同一轮只写一条（成功 / 失败 / 中断共用同一去重键，重复信号不再打扰主控）；
+ *   - 宁晚不打断：创建者正在跑流、挂着待答提问、暂停中，或用户正在输入框里打字时，
+ *     不立刻唤醒——把事实压进内存待办，等创建者本轮收场后由 `flushPending` 合并成一轮浮现；
  *   - 事件只带身份 + 结论（+ 失败 / 中断原因），**不带正文**：结论细节由主控按需调
  *     `list_work_sessions` / `read_memory_summary` 读，不在通知里另造一份摘要。
  */
@@ -45,6 +50,14 @@ export interface HostedSessionNoticeDeps {
   getAgent: (sessionId: string) => Agent | undefined;
   /** 按轮 id 读盘上轮（paused 停止路径用；正常流尾由调方直接给轮） */
   readRound: (roundId: string) => Round | undefined;
+  /** 此刻能否唤醒创建者（空闲 + 用户没在输入框里打字）——「不抢 / 不打断」的唯一判据 */
+  canWakeCreator: (creatorSessionId: string) => boolean;
+  /**
+   * 替创建者立刻起一轮汇报（面板实现：既有托管通道 `chat(origin='hosted')` + `runFlow`）
+   *
+   * @returns false = 起不来（实例未就绪 / 此刻不空闲）；调用方据此保留待办、不装作已浮现
+   */
+  wakeCreator: (creatorSessionId: string) => boolean;
 }
 
 /** 流尾通知入参（对象化只为可读；字段都来自流尾现成值） */
@@ -137,6 +150,14 @@ export class HostedSessionNotifier {
 
   /** 已投递过的 `${sessionId}:${roundId}`（同一轮重复信号只写一条） */
   private readonly notified = new Set<string>();
+
+  /**
+   * 创建者 → 压着待浮现的落定正文（创建者忙 / 用户正在输入时暂存）
+   *
+   * 只存正文、不存轮身份：去重键在入待办时就已记下，同一轮不会再排第二次。
+   * 内存态、随进程消失（重启不补发，见模块头边界）。
+   */
+  private readonly pendingReports = new Map<string, string[]>();
 
   constructor(private readonly deps: HostedSessionNoticeDeps) {}
 
@@ -272,15 +293,44 @@ export class HostedSessionNotifier {
   }
 
   /**
-   * 真正投递：压入创建者的系统事件注入队列
+   * 创建者本轮收场后，补浮现被压着的落定（面板在 `runFlow` 收尾时调）
    *
-   * 只有压入成功才记去重键——取不到实例 / 队列不可用时如实不投，不装作已送达。
+   * 合并成**一轮**：多条落定一次唤醒，避免逐条刷屏。仍不空闲 / 用户仍在输入则继续压着
+   * （宁晚不打断）；实例已不在则如实留在待办里，不装作已浮现。
+   *
+   * @param creator 刚收场的那个会话（通常只是子会话，无待办时立即返回）
+   */
+  flushPending(creator: string): void {
+    const pending = this.pendingReports.get(creator);
+    if (!pending || pending.length === 0) return;
+    const loop = this.deps.getAgent(creator)?.agentLoop;
+    if (!loop) return;
+    if (!this.deps.canWakeCreator(creator)) return;
+    this.pendingReports.delete(creator);
+    for (const text of pending) loop.enqueueCommandResult(text);
+    this.deps.wakeCreator(creator);
+  }
+
+  /**
+   * 真正投递：压入创建者的系统事件注入队列，并（空闲时）替它起一轮汇报
+   *
+   * 只有投递成功才记去重键——取不到实例时如实不投，不装作已送达。
+   * 「忙 / 用户正在输入」不抢：正文进内存待办，等收场后由 `flushPending` 统一浮现。
    */
   private deliver(creator: string, text: string, key: string | undefined): boolean {
     const loop = this.deps.getAgent(creator)?.agentLoop;
     if (!loop) return false;
-    loop.enqueueCommandResult(text);
     if (key) this.notified.add(key);
+    if (!this.deps.canWakeCreator(creator)) {
+      const queue = this.pendingReports.get(creator);
+      if (queue) queue.push(text);
+      else this.pendingReports.set(creator, [text]);
+      return true;
+    }
+    loop.enqueueCommandResult(text);
+    // 事实已入队；立刻起一轮让主控主动汇报。起不来（实例刚被摘）时事实仍在队列，
+    // 下次用户说话时照样带进上下文——不丢事实，只是不主动开口这一种降级。
+    this.deps.wakeCreator(creator);
     return true;
   }
 }
