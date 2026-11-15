@@ -114,8 +114,14 @@ export async function createHostedSessionWith(
   const agent = await deps.getAgent(sessionId);
   await deps.startFlow(
     sessionId,
-    // 第三参 undefined 与既有 chat 调用形态一致（缺口为「未指定工具白名单」）
-    (signal) => agent.chat(text, signal, undefined, { origin: 'hosted', senderName }),
+    // 第三参 undefined 与既有 chat 调用形态一致（缺口为「未指定工具白名单」）；
+    // dispatchedBy 记「谁开的这条会话」，与派发（send_to_session）在盘上可分辨
+    (signal) =>
+      agent.chat(text, signal, undefined, {
+        origin: 'hosted',
+        senderName,
+        dispatchedBy: { from: callingSessionId, via: 'create' },
+      }),
     {
       userMessage: {
         // id 用毫秒时间戳（ISO 带冒号，不宜进 id）；timestamp 用 ISO（与 RoundMessage 同型）

@@ -2938,8 +2938,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // ⑤ 走既有 runFlow 通路（不另造流）：归属显式传目标会话，后台流投递由 BackgroundFlowGate 整批丢弃；
     //    `void` 不等待——工具要的是「已受理」，目标轮的结果由其自己的收场事件/历史承载
     void this.runFlow(
-      // attachments 不传（派发通道不收图）；opts 让内核把本轮 origin 落 'hosted'、消息名落 senderName
-      (signal) => agent.chat(text, signal, undefined, { origin: 'hosted', senderName }),
+      // attachments 不传（派发通道不收图）；opts 让内核把本轮 origin 落 'hosted'、消息名落 senderName，
+      // 并把「谁派来」记到 Round.dispatchedBy（重启后工作台靠它反查，不另存台账）
+      (signal) =>
+        agent.chat(text, signal, undefined, {
+          origin: 'hosted',
+          senderName,
+          dispatchedBy: { from: callingSessionId, via: 'delegate' },
+        }),
       {
         // seed = 上屏与 live 投影用的裸输入：**没有**注入信封，与落盘原文同值（重放剥信封后仍是这一条）
         userMessage: {

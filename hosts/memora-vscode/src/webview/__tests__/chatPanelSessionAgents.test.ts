@@ -626,10 +626,12 @@ describe('代理能开会话 · createHostedSession', () => {
     expect(provider.getCurrentSessionId()).toBe(callerId);
     expect(modes.getLastMode()).toBe('self');
     // ④ 首轮：origin hosted + 装配期注入的发送者名（不是硬编码）
+    //    + 派发归属（via=create：助手开会话，与「派发接管」在盘上可分辨）
     const chat = agents[result.sid].chat as unknown as ReturnType<typeof vi.fn>;
     expect(chat).toHaveBeenCalledWith('先读 README', expect.any(AbortSignal), undefined, {
       origin: 'hosted',
       senderName: 'Memora',
+      dispatchedBy: { from: callerId, via: 'create' },
     });
   });
 
@@ -2049,10 +2051,12 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
     await atGate;
 
     // ① 原文直投：没有「用户请求：」之类的注入信封（第二个参数 = signal，第三个 = 无附件）
+    //    第四个参数带派发归属：创建者 = 调用方，动作 = delegate（与「助手开会话」可分辨）
     expect(chatSpy).toHaveBeenCalledTimes(1);
     expect(chatSpy).toHaveBeenCalledWith('原始需求', expect.any(AbortSignal), undefined, {
       origin: 'hosted',
       senderName: '派发探针',
+      dispatchedBy: { from: '2026-11-06-a', via: 'delegate' },
     });
     // ② live 投影种子：来源 + 发送者名（页面重放与运行时同一份事实）
     const runtime = cast.runtimeFor('2026-11-06-b');

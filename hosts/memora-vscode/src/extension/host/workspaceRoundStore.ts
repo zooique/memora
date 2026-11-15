@@ -42,6 +42,15 @@ interface RoundIndexEntry {
   createdAt: string;
   /** 文件路径（相对于 rounds 目录） */
   file: string;
+  /**
+   * 派发归属的索引投影（与 `Round.dispatchedBy` 同值；缺省 = 该轮没有派发归属）
+   *
+   * 为什么要复制进索引：工作台重建要按会话「从末尾往前找被谁派过」，而 `getById` 是
+   * **整轮文件读**（JSON.parse 全轮正文），按会话 × 轮数扫会直接把开工作台变慢。
+   * 索引是派生缓存（`status` 同等待遇：权威值永远在轮文件里，索引缺条目就补读轮文件），
+   * 所以这不是第二份台账，而是让「反查」变成零磁盘 IO 的派生投影。
+   */
+  dispatchedBy?: Round['dispatchedBy'];
 }
 
 /** 回收站目录名（与 rounds/*.json 同层，明确不属于活轮集合） */
@@ -120,6 +129,8 @@ const ROUND_PERSISTED_KEYS: Record<keyof Round, true> = {
   processEvents: true,
   // 输入来源标记：不登记即编译红；登记错/漏登记则 save() 静默丢字段
   origin: true,
+  // 派发归属（谁派来 / 派发还是新建）：跨重启读回「谁派给谁」的唯一真相源，必须落盘
+  dispatchedBy: true,
 };
 
 /**
@@ -134,6 +145,22 @@ function pickRoundFields(round: Round): Round {
     if (round[key] !== undefined) out[key] = round[key];
   }
   return out as unknown as Round;
+}
+
+/**
+ * 校验索引条目里的派发归属投影（索引是派生缓存，坏值不得注入读侧）
+ *
+ * 形状不对 / 缺字段一律 `undefined`——「读不出来」绝不解释成某一种派发。
+ *
+ * @param raw 索引条目里的原始值
+ * @returns 合法归属；不可信时为 undefined
+ */
+function readDispatchOf(raw: unknown): Round['dispatchedBy'] | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const { from, via } = raw as { from?: unknown; via?: unknown };
+  if (typeof from !== 'string' || !from) return undefined;
+  if (via !== 'delegate' && via !== 'create') return undefined;
+  return { from, via };
 }
 
 /**
@@ -214,11 +241,14 @@ export class WorkspaceRoundStore implements IRoundStore {
         const entries = JSON.parse(raw) as Array<Partial<RoundIndexEntry> & { id: string }>;
         for (const entry of entries) {
           if (!entry.id) continue;
+          // 索引是派生缓存：坏值一律丢弃（不把脏数据当事实）
+          const dispatchedBy = readDispatchOf(entry.dispatchedBy);
           this.index.set(entry.id, {
             id: entry.id,
             status: entry.status as RoundStatus,
             createdAt: entry.createdAt ?? '',
             file: entry.file ?? `${entry.id}.json`,
+            ...(dispatchedBy ? { dispatchedBy } : {}),
           });
         }
       } catch (err) {
@@ -289,6 +319,8 @@ export class WorkspaceRoundStore implements IRoundStore {
         status: round.status,
         createdAt: round.createdAt,
         file: `${roundId}.json`,
+        // 补缺时一并带上派发归属（来源就是轮文件本身，不臆造）
+        ...(round.dispatchedBy ? { dispatchedBy: round.dispatchedBy } : {}),
       });
       logger.warn({ roundId }, '轮文件在盘上但索引缺条目，已补入派生索引（仅内存）');
     }
@@ -339,6 +371,8 @@ export class WorkspaceRoundStore implements IRoundStore {
       status: e.status,
       createdAt: e.createdAt,
       file: e.file,
+      // 派生投影：只在有值时写，与轮文件的「可选字段缺省即不写」同口径
+      ...(e.dispatchedBy ? { dispatchedBy: e.dispatchedBy } : {}),
     }));
     atomicWriteFileSync(this.indexPath, JSON.stringify(entries, null, 2));
   }
@@ -403,6 +437,8 @@ export class WorkspaceRoundStore implements IRoundStore {
       status: round.status,
       createdAt: round.createdAt,
       file: `${round.id}.json`,
+      // 派发归属随索引同步：反查读索引即得，不必为每一轮读整文件
+      ...(round.dispatchedBy ? { dispatchedBy: round.dispatchedBy } : {}),
     };
     this.index.set(round.id, entry);
 
@@ -462,6 +498,20 @@ export class WorkspaceRoundStore implements IRoundStore {
     // 只查派生索引：status 的真源在轮文件，但索引条目是它在内存里的同步副本；
     // 这里刻意不回读盘，避免列表渲染对每个会话做一次 IO。
     return this.index.get(roundId)?.status;
+  }
+
+  /**
+   * 按 ID 读取派发归属（**只读内存索引，不读盘**）
+   *
+   * 工作台重建的反查入口：按会话从末尾往前找「这一轮是谁派来的」，每步只查索引——
+   * 若走 `getById` 就是整轮文件读（JSON.parse 全轮正文），会话数 × 轮数会直接拖慢开工作台。
+   * 索引缺失 / 旧轮没有该字段 ⇒ `undefined`（历史事实不可猜，回填等于伪造）。
+   *
+   * @param roundId - Round ID
+   * @returns 索引中的派发归属；无条目 / 无该字段时为 undefined
+   */
+  getDispatch(roundId: string): Round['dispatchedBy'] | undefined {
+    return this.index.get(roundId)?.dispatchedBy;
   }
 
   /**

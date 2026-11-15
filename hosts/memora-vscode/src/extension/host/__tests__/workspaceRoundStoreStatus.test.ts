@@ -6,9 +6,12 @@
  *   ② `getStatus` **只读内存索引、不读盘**——盘上轮文件被改成别的状态后，
  *      索引值仍是 `save()` 时的值（终态投影的读取代价必须与列表规模无关）；
  *   ③ `hasRoundStatusIndex` 是结构化能力探测：具备该方法才放行，否则调用方不投影。
+ *   ④ `getDispatch` 同样**只读索引**：派发归属随索引跨重启保留，旧轮缺字段返回 `undefined`
+ *      （工作台重建的反查依赖它，代价必须与「会话数 × 轮数」的磁盘读脱钩）。
  *
  * 变异靶标：把 `getStatus` 改成 `this.getById(roundId)?.status`（读盘）⇒ 用例② 转红；
- * 把 `hasRoundStatusIndex` 改成恒 true ⇒ 用例③ 的负例转红。
+ * 把 `hasRoundStatusIndex` 改成恒 true ⇒ 用例③ 的负例转红；
+ * 把 `getDispatch` 改成 `this.getById(roundId)?.dispatchedBy` ⇒ 用例④ 的「只读索引」段转红。
  */
 import { describe, it, expect } from 'vitest';
 import { writeFileSync } from 'node:fs';
@@ -60,5 +63,41 @@ describe('WorkspaceRoundStore 索引态读取（P1 会话终态投影）', () =>
     // ③ 能力探测：真实 store 有 getStatus ⇒ true；缺该方法的普通 IRoundStore ⇒ false
     expect(hasRoundStatusIndex(store)).toBe(true);
     expect(hasRoundStatusIndex({} as unknown as IRoundStore)).toBe(false);
+  });
+
+  it('getDispatch 只读索引：随索引跨重启保留，旧轮缺字段返回 undefined（不猜来源）', () => {
+    const dir = makeTempDir('memora-round-dispatch-test-');
+    const store = new WorkspaceRoundStore(dir);
+    store.load();
+
+    // 新轮：派发归属随 save() 进索引（与 status 同等对待）
+    const delegated: Round = {
+      ...makeRound('round-d', 'complete'),
+      dispatchedBy: { from: 'session-creator', via: 'delegate' },
+    };
+    store.save(delegated);
+    // 旧轮：没有该字段 ⇒ undefined（等于「不知道创建者」，不许编一个）
+    store.save(makeRound('round-legacy', 'complete'));
+    expect(store.getDispatch('round-d')).toEqual({ from: 'session-creator', via: 'delegate' });
+    expect(store.getDispatch('round-legacy')).toBeUndefined();
+    expect(store.getDispatch('round-missing')).toBeUndefined();
+
+    // 只读索引、不读盘：盘上轮文件被改成别的创建者，索引值不变（反查代价与会话数无关）
+    const roundPath = join(resolveProjectDataDir(dir), 'rounds', 'round-d.json');
+    writeFileSync(
+      roundPath,
+      JSON.stringify({
+        ...makeRound('round-d', 'complete'),
+        dispatchedBy: { from: 'session-other', via: 'create' },
+      }),
+      'utf-8',
+    );
+    expect(store.getDispatch('round-d')).toEqual({ from: 'session-creator', via: 'delegate' });
+
+    // 重启（重新 load 读索引文件）⇒ 归属仍在：工作台重建靠这条读路径
+    const reloaded = new WorkspaceRoundStore(dir);
+    reloaded.load();
+    expect(reloaded.getDispatch('round-d')).toEqual({ from: 'session-creator', via: 'delegate' });
+    expect(reloaded.getDispatch('round-legacy')).toBeUndefined();
   });
 });
