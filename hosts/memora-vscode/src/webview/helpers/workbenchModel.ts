@@ -60,7 +60,7 @@ export interface WorkbenchSnapshotInputs {
    * 用户收回后即使创建者账本还记着它，也不再出现在清单里——账本只做出生记录，不当权限用。
    */
   isAgentDriven: (sessionId: string) => boolean;
-  /** 该会话开出去的子会话（真源 = 中断通知器的创建者账本，仅本进程） */
+  /** 该会话当前接管过的会话（真源 = 中断通知器的创建者账本：建会话 + 派发接管，仅本进程） */
   childrenOf: (creatorSessionId: string) => readonly string[];
   /**
    * 打开工作台时从历史重建的结果（重启后账本为空，靠它把清单补回来）

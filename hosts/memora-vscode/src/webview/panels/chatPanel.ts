@@ -676,9 +676,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     onConfirmShown: (info) => this._attention.onConfirmShown({ requestId: info.requestId }),
     // 待处理确认数变化（含后台会话入队）⇒ 重算列表标识与入口角标
     onPendingChanged: () => this.refreshSessionActivity(),
-    // 托管会话的确认请求照常入队/推送/计时，只把「谁来按」换成代理代按批准（后台卡上不了屏，
-    // 挂着只会等超时被拒）；自助会话判据恒 false ⇒ 排队/计时/上屏/超时逐字不变
-    isManagedSession: (sid) => this.sessionModes.isManaged(sid),
+    // 代理驱动的会话（托管座位 + 代理开出 / 派发接管）的确认请求照常入队/推送/计时，
+    // 只把「谁来按」换成代理代按批准（后台卡上不了屏，挂着只会等超时被拒）；
+    // 自助会话判据恒 false ⇒ 排队/计时/上屏/超时逐字不变
+    isAgentDrivenSession: (sid) => this.sessionModes.isAgentControlled(sid),
   });
 
   /**
@@ -2802,6 +2803,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 托管派发入口（`send_to_session` 的宿主实现，装配期以回调注入工具面）
    *
    * 三条硬约束（与 `workSessionTools.ts` 头注释同源）：① **不注入用户上下文**，只投调用方给的原文；② **不绕过并发闸**，目标是跑就回 `E_BUSY`，不排队；③ handler 不持有面板实例，只拿注入回调。
+   * 受理语义：投递被接受即登记「目标会话当前由代理驱动」（停止 / 暂停 / 恢复、中断通知、工作台清单从此覆盖它）。
    * 失败语义：`E_DENIED` = 调用方非托管（防御纵深）；`E_BUSY` = 目标在跑（await 后再判一次防竞态）；未知异常交给工具层统一映射。
    *
    * @param callingSessionId 发起派发的会话（判 `E_DENIED`）
@@ -2849,7 +2851,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       return busy;
     }
     const now = new Date().toISOString();
-    // ④ 走既有 runFlow 通路（不另造流）：归属显式传目标会话，后台流投递由 BackgroundFlowGate 整批丢弃；
+    // ④ 受理即登记驱动归属：从这一刻起这条会话归代理管（停止 / 暂停 / 恢复、中断通知、
+    //    工作台清单共用同一判据）。必须在首轮流启动之前登记——首轮可能立刻失败 / 被停，
+    //    晚登记会漏掉中断通知；用户自建的会话被派活后同样归代理（收回仍由用户说了算）。
+    this.sessionModes.markAgentDriven(targetSessionId);
+    this._hostedNotifier.remember(targetSessionId, callingSessionId);
+    // ⑤ 走既有 runFlow 通路（不另造流）：归属显式传目标会话，后台流投递由 BackgroundFlowGate 整批丢弃；
     //    `void` 不等待——工具要的是「已受理」，目标轮的结果由其自己的收场事件/历史承载
     void this.runFlow(
       // attachments 不传（派发通道不收图）；opts 让内核把本轮 origin 落 'hosted'、消息名落 senderName
@@ -2946,7 +2953,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       return false;
     }
     // 当前归谁 = 一个判断点：有调度权（用户亲自选的托管）或当前由代理驱动，都允许收回
-    if (!this.sessionModes.isManaged(sid) && !this.sessionModes.isAgentDriven(sid)) {
+    if (!this.sessionModes.isAgentControlled(sid)) {
       void vscode.window.showInformationMessage(l10n.t('Memora: this session is already yours.'));
       return false;
     }

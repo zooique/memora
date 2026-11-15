@@ -7,6 +7,8 @@
  * - **当前驱动权真源 = `agentDriven` 集合**：只回答「这条会话现在是否由代理驱动」，
  *   与装配身份分开——代理开出的子会话没有调度权（mode = self），但当前仍由代理驱动；
  *   用户收回后从集合移除。停止 / 暂停 / 恢复、工作台清单、中断通知都只认这一个判断。
+ *   确认代批问的不是「开了谁」而是「这一轮谁在支配」⇒ 用组合判据 `isAgentControlled`
+ *   （托管座位 ∪ 本集合），边界见该方法注释；两套判据刻意分开，不互相顶替。
  * - 未知 sid 一律回落 `'self'`；重启 / 重开窗口后容器为空 ⇒ 存量会话按自助装配。
  * - `globalState` 里的「上次模式」只作**新建会话的默认值输入**，不描述任何存量会话。
  *
@@ -81,6 +83,24 @@ export class SessionModeStore {
    */
   isAgentDriven(sessionId: string): boolean {
     return this.agentDriven.has(sessionId);
+  }
+
+  /**
+   * 该会话当前是否归代理（= 托管装配（有调度权）或由代理驱动）
+   *
+   * 为什么单独一个方法：确认请求的代批判据问的是「这一轮是谁在支配」——用户亲自选的托管座位
+   * 由代理代写提示词、代批确认；代理开出 / 派发接管的会话同样归代理。两个集合各自回答
+   * 不同问题（`isManaged` = 有调度权，`isAgentDriven` = 代理开出 / 接管），组合判据只此一处，
+   * 避免各消费点手写 `||` 后漂移。
+   *
+   * 边界：停止 / 暂停 / 恢复的目标判据仍是 `isAgentDriven`——托管座位是用户自己开的，
+   * 不因为「归代理」就允许别的代理去停它。
+   *
+   * @param sessionId 目标会话
+   * @returns true = 当前由代理支配（含托管座位）
+   */
+  isAgentControlled(sessionId: string): boolean {
+    return this.isManaged(sessionId) || this.isAgentDriven(sessionId);
   }
 
   /**

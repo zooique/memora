@@ -1365,6 +1365,7 @@
   "Upgrade VS Code to ≥1.101 and reopen this workspace": "升级 VS Code 至 ≥1.101 后重开本工作区",
   "Do not create memories.json in this workspace by hand — forking the data would overwrite real memories": "切勿手动在该工作区新建 memories.json——数据分叉会覆盖真实记忆",
   "Approved": "已批准",
+  "Approved on your behalf (managed)": "托管代批",
   "Declined": "已拒绝",
   "User did not confirm in time; declined automatically": "用户未在时限内确认，已自动拒绝",
   "Workspace is not trusted, so Memora skips project-level skills and role packs (.memora/). It takes effect once trusted.": "工作区未受信任，Memora 不读取项目级技能/角色包（.memora/）。信任后自动生效。",

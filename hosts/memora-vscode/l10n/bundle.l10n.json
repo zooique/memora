@@ -1365,6 +1365,7 @@
   "Upgrade VS Code to ≥1.101 and reopen this workspace": "",
   "Do not create memories.json in this workspace by hand — forking the data would overwrite real memories": "",
   "Approved": "",
+  "Approved on your behalf (managed)": "",
   "Declined": "",
   "User did not confirm in time; declined automatically": "",
   "Workspace is not trusted, so Memora skips project-level skills and role packs (.memora/). It takes effect once trusted.": "",

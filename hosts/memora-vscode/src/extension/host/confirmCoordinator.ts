@@ -63,22 +63,28 @@ export interface ConfirmDeps {
    */
   onPendingChanged?: (sessionId: string, count: number) => void;
   /**
-   * 该会话是否为**托管会话**（是 ⇒ 请求照常入队，但由代理代替用户按「批准」）
+   * 该会话当前是否由代理驱动（是 ⇒ 请求照常入队，但由代理代替用户按「批准」）
    *
-   * 为什么需要：后台托管会话的卡上不了屏，只能挂到 30 分钟超时被 fail-closed 自动拒。
+   * 判据真源 = `SessionModeStore.isAgentControlled`（托管座位 + 代理开出 / 派发接管的会话），
+   * 不再只认「是不是托管座位」：代理开出的子会话、被 `send_to_session` 派活接管的会话
+   * 同样归代理，否则它们撞上必须问的命令时只入队、不上屏、计时也不起——必须人切进去点一下
+   * 才能继续，托管任务就卡死在等点上。
+   *
+   * 为什么需要：后台会话的卡上不了屏，只能挂到 30 分钟超时被 fail-closed 自动拒。
    * 托管语义下用户把操作权委派给了代理，确认请求不需要人点击——但**请求本身照常存在**：
    * 照常入队、按前台规则推送（前台推卡 / 后台不推）、该起计时就起计时，差别只在
-   * 「谁来按」，并在既有决策记录里留下与用户点击完全一样的「已批准」痕迹。
+   * 「谁来按」，并在既有决策记录里留下「托管代批」的痕迹（不冒充用户批准）。
    *
    * 边界（刻意如此）：
-   *   - **只认托管**：自助会话不注入判据 ⇒ 排队/计时/上屏/超时逐字不变；
-   *   - 恒拦黑名单（`deny` 档）在内核判据处就不进确认流程，本钩子看不到、也绕不过；
+   *   - **只认代理驱动**：自助会话不注入判据 ⇒ 排队/计时/上屏/超时逐字不变；
+   *   - 恒拦黑名单（内核 `deny` 档，如 `rm -rf /`）在内核判据处就不进确认流程，本钩子看不到、
+   *     也绕不过（`git push` / `npm publish` 属 always-ask，照常进确认流程、可被代批）；
    *   - 自动批准走既有 `answerFor` 唯一应答入口（决策记录 `_logDecision` 唯一发点），
    *     不新造第二套审计，也不从旁路直接 `resolve`。
    *
    * **可选**：不注入 = 零行为（既有测试与其它装配点无需改动）。
    */
-  isManagedSession?: (sessionId: string) => boolean;
+  isAgentDrivenSession?: (sessionId: string) => boolean;
 }
 
 /**
@@ -101,7 +107,7 @@ interface ConfirmEntry {
   /** 超时计时器（**首次推出时**才启动；从未上屏的后台请求不烧超时额度） */
   timer?: ReturnType<typeof setTimeout>;
   /**
-   * 是否需要代理代替用户按「批准」（托管会话 = true）
+   * 是否需要代理代替用户按「批准」（该会话当前由代理驱动 = true）
    *
    * 刻意放在**条目上**而不是入队前分支：请求照常入队/推送/起计时，只在轮到它时把
    * 「谁来按」换成代理——与用户点击同一条 `answerFor` 通路，决策记录也同一发点。
@@ -284,8 +290,8 @@ export class ConfirmCoordinator {
         info.targetPath.split(/[\\/]/).pop() ?? info.targetPath,
       ),
       presented: false,
-      // 托管会话：由代理代按批准（不是绕过确认——入队/推送/计时照常，见 _show/_drainAutoApproved）
-      autoApprove: this._deps.isManagedSession?.(sessionId) === true,
+      // 当前由代理驱动的会话：由代理代按批准（不是绕过确认——入队/推送/计时照常，见 _show/_drainAutoApproved）
+      autoApprove: this._deps.isAgentDrivenSession?.(sessionId) === true,
     };
     const state = this._stateFor(sessionId);
     state.queue.push(entry);
@@ -299,19 +305,19 @@ export class ConfirmCoordinator {
       // 承接面。与 `_show` 共用同一钩子、同一 requestId —— 提醒层按 `confirm:${requestId}` 去重，
       // 切到该会话补推同一张卡时不会再响第二声。
       this._deps.onConfirmShown?.({ requestId: entry.requestId, label: entry.logLabel });
-      // 托管后台请求：依正常入队后由代理代按（微任务 ⇒ 先让入队/计数/提醒落地，再走应答入口）
+      // 代理驱动的后台请求：依正常入队后由代理代按（微任务 ⇒ 先让入队/计数/提醒落地，再走应答入口）
       if (entry.autoApprove) queueMicrotask(() => this._drainAutoApproved(sessionId));
     }
   }
 
   /**
-   * 托管后台会话：把队首的托管请求按 FIFO 逐条交「代理批准」
+   * 代理驱动的后台会话：把队首的托管请求按 FIFO 逐条交「代理批准」
    *
    * 为什么单独一段：后台请求不推卡（前台规则），`_pump` 不会被调用，也就没有 `_show`
    * 去触发代按。这里**只做「谁来按」**——入队/计数/提醒已在 `_enqueue` 正常发生过；
    * 裁决与留痕仍走 `answerFor`（唯一应答入口 + 唯一决策发点），不直接 `resolve`。
    *
-   * 遇到非托管条目立即停手（理论上同 sid 不会混档，但守住判据：不自作主张替用户拍板）。
+   * 遇到非代理驱动的条目立即停手（理论上同 sid 不会混档，但守住判据：不自作主张替用户拍板）。
    *
    * @param sessionId 会话标识
    */
@@ -386,8 +392,8 @@ export class ConfirmCoordinator {
     // 交互提醒钩子（可选）：卡已推出 ⇒ 通知不在面板前的用户。放在 post 之后：
     // 只有卡真的发出去了，提醒才有承接面（先提醒后发卡 = 用户回来找不到卡）。
     this._deps.onConfirmShown?.({ requestId, label: entry.logLabel });
-    // 托管会话：卡照常推出、计时照常起，随后由代理「代按批准」——微任务让本轮
-    // post / 计时器先落地，再走与用户点击**同一条**应答入口（决策记录同源）。
+    // 代理驱动的会话：卡照常推出、计时照常起，随后由代理「代按批准」——微任务让本轮
+    // post / 计时器先落地，再走与用户点击**同一条**应答入口（决策记录同源，但文案标「托管代批」）。
     // 用 `_findSession` 反查而非前台会话：微任务执行前若已切走，找不到就不答，
     // 绝不对着新前台会话的卡误按。
     if (entry.autoApprove) {
@@ -436,7 +442,10 @@ export class ConfirmCoordinator {
   ): void {
     const word =
       verdict === 'approved'
-        ? vscode.l10n.t('Approved')
+        ? entry.autoApprove
+          ? // 代批留痕：明确写出「托管代批」，不写成与用户亲手点击一样的「已批准」
+            vscode.l10n.t('Approved on your behalf (managed)')
+          : vscode.l10n.t('Approved')
         : verdict === 'declined'
           ? vscode.l10n.t('Declined')
           : confirmTimeoutNotice();

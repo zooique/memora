@@ -1,15 +1,17 @@
 /**
- * 托管子会话中断通知器（第三切片：中断通知）
+ * 代理接管会话的中断通知器（第三切片：中断通知）
  *
- * 职责：把「某条代理开出去的会话被停 / 异常终止」这一事实，投递给创建它的主控会话，
+ * 职责：把「某条归代理驱动的会话被停 / 异常终止」这一事实，投递给创建 / 派发它的主控会话，
  * 让主控**下次说话时**在上下文里看到（它空闲时不会自己刷新）。
  *
  * 边界（刻意收窄）：
  *   - 不写会话历史、不造轮：复用内核 `AgentLoop.enqueueCommandResult` 的系统事件注入队列
  *     （system 角色、跨空闲期留存、下一 turn 首个 step 边界注入），不伪装成用户发言；
  *   - 不落盘、不加 `SessionMeta` 字段：创建者关系只在进程内有效，重启即失（如实不通知）；
- *   - 只通知 `SessionMeta.origin === 'hosted'` 且**本次进程内记录了创建者**的会话；
- *     用户自己选托管新建的会话同为 `hosted`，但它没有创建者记录 ⇒ 不会向任何代理发通知；
+ *   - 只通知**本进程内登记过创建者、且当前仍由代理驱动**的会话。登记来源两条：
+ *     代理建会话（`create_session`）与代理派发接管（`send_to_session`）。
+ *     `SessionMeta.origin` 只记出生事实（用户自建会话被派发后仍是 `'user'`），不作通知判据；
+ *     用户自己选托管新建、且从未被派发过的会话没有创建者记录 ⇒ 不会向任何代理发通知；
  *   - 同一会话同一轮只写一条（重复的停止信号不再打扰主控）。
  */
 import {
@@ -90,10 +92,10 @@ function formatNotice(
 }
 
 /**
- * 托管会话中断通知器（每个面板一个实例，状态仅存于本进程）
+ * 代理接管会话的中断通知器（每个面板一个实例，状态仅存于本进程）
  */
 export class HostedSessionNotifier {
-  /** 子会话 → 创建它的主控会话（只记代理建会话，不记派发） */
+  /** 子会话 → 接管它的主控会话（代理建会话或代理派发接管时登记） */
   private readonly childToCreator = new Map<string, string>();
 
   /** 已投递过的 `${sessionId}:${roundId}`（同一轮重复信号只写一条） */
@@ -102,25 +104,26 @@ export class HostedSessionNotifier {
   constructor(private readonly deps: HostedSessionNoticeDeps) {}
 
   /**
-   * 登记「代理创建了这条会话」
+   * 登记「这条会话归某个主控代理驱动」
    *
+   * 两种来源：代理建会话（`create_session`）与代理派发接管（`send_to_session`）。
    * 必须在首轮流启动**之前**调用（真实故障：首轮流可能先失败/被停，晚登记会漏通知）。
    *
-   * @param childSessionId 子会话
-   * @param creatorSessionId 创建它的主控会话
+   * @param childSessionId 被接管的会话
+   * @param creatorSessionId 创建 / 派发它的主控会话
    */
   remember(childSessionId: string, creatorSessionId: string): void {
     this.childToCreator.set(childSessionId, creatorSessionId);
   }
 
   /**
-   * 列出「某主控会话开出去的子会话」（只读创建者账本）
+   * 列出「某主控会话接管过的会话」（只读创建者账本）
    *
    * 工作台的「最近在办什么」直接用这份账本：`SessionMeta.origin === 'hosted'` 只说明
    * 「托管通道出生」，区分不了代理开的会话与用户自己选的托管新建，不能当清单判据。
    *
    * @param creatorSessionId 主控会话 id
-   * @returns 子会话 id（按登记顺序；账本仅本进程有效，重启后为空）
+   * @returns 被接管会话 id（按登记顺序；账本仅本进程有效，重启后为空）
    */
   childrenOf(creatorSessionId: string): string[] {
     const children: string[] = [];
@@ -208,12 +211,12 @@ export class HostedSessionNotifier {
   /**
    * 判定该会话是否该通知，并取出标题与创建者
    *
-   * @returns undefined = 不通知（非代理开的 / 创建者不在 / 目标已不由代理驱动 / 创建者已非托管）
+   * @returns undefined = 不通知（无元数据 / 没有创建者账本 / 目标已不由代理驱动 / 创建者已非托管）
    */
   private resolveTarget(sessionId: string): { creator: string; title: string } | undefined {
     const meta = this.deps.readSessionMeta(sessionId);
-    // 出生来源判据：缺省（旧会话 / 用户自助）与 'user' 一律不通知
-    if (meta?.origin !== 'hosted') return undefined;
+    // 元数据缺失 = 会话已删 / 未落盘：连标题都无从谈起，如实不投
+    if (!meta) return undefined;
     const creator = this.childToCreator.get(sessionId);
     if (!creator) return undefined;
     // 当前驱动权判据（与停止 / 暂停 / 工作台清单同一判断）：用户收回后当前归用户，不再通知

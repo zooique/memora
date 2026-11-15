@@ -77,4 +77,22 @@ describe('SessionModeStore · 会话级 mode 容器', () => {
     // 关键边界：上次模式只服务「新建」，已有 / 未知会话仍按 self
     expect(store.get('existing-session')).toBe('self');
   });
+
+  it('「当前归代理」= 托管座位 ∪ 代理驱动；收回 / 删除后都不算', () => {
+    const store = makeStore(makeMemento());
+    store.set('s-seat', 'managed');
+    store.set('s-child', 'self');
+    store.markAgentDriven('s-child');
+
+    // 座位（有调度权）与子会话（无调度权但由代理驱动）都归代理
+    expect(store.isAgentControlled('s-seat')).toBe(true);
+    expect(store.isAgentControlled('s-child')).toBe(true);
+    expect(store.isAgentControlled('s-user')).toBe(false);
+
+    // 收回驱动权：子会话当前归用户；删除会话：两条判据一起清
+    store.clearAgentDriven('s-child');
+    expect(store.isAgentControlled('s-child')).toBe(false);
+    store.delete('s-seat');
+    expect(store.isAgentControlled('s-seat')).toBe(false);
+  });
 });

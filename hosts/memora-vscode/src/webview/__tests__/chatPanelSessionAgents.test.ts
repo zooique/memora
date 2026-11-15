@@ -1953,6 +1953,9 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
     // ③ 面板显示会话不被派发拽走（目标实例已在投影表里，也不该走工厂）
     expect(provider.getCurrentSessionId()).toBe('2026-11-06-a');
     expect(factory).not.toHaveBeenCalled();
+    // ④ 受理即登记驱动归属：目标会话归代理，创建者账本记到调用方名下（停止 / 通知 / 清单同一判据）
+    expect(modes.isAgentDriven('2026-11-06-b')).toBe(true);
+    expect(provider.workbench.childrenOf('2026-11-06-a')).toContain('2026-11-06-b');
 
     releaseGate();
     await vi.waitFor(() => expect(cast.runtimeFor('2026-11-06-b').streaming).toBe(false), {
@@ -2007,6 +2010,8 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
     // 判忙先于取实例：既没有第二次 chat，也没有为派发重新装配
     expect(chatSpy).not.toHaveBeenCalled();
     expect(factory).not.toHaveBeenCalled();
+    // 未受理不得登记驱动归属（否则工作台 / 停止面会看见一条代理根本没接管的会话）
+    expect(modes.isAgentDriven('2026-11-06-b')).toBe(false);
 
     releaseGate();
     await running;

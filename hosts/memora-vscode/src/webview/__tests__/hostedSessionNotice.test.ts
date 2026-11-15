@@ -1,9 +1,9 @@
 /**
  * 托管子会话中断通知器单测（第三切片）
  *
- * 钉五件事：用户停 → 原因归用户且只通知创建者；异常终止 → 原因归异常；
- * 用户自己的会话被停 → 不产生通知；同一会话同一轮停两次只写一条；
- * 取不到原因时如实标「不可知」，不伪造「用户停」。
+ * 钉六件事：用户停 → 原因归用户且只通知创建者；异常终止 → 原因归异常；
+ * 用户自己的会话当前不归代理 → 不产生通知；代理派发接管的用户会话 → 照常通知；
+ * 同一会话同一轮停两次只写一条；取不到原因时如实标「不可知」，不伪造「用户停」。
  */
 import { describe, expect, it, vi } from 'vitest';
 import type { Agent, ProcessEvent, Round, RoundStatus, SessionMeta } from '@zooique/memora';
@@ -124,7 +124,7 @@ describe('HostedSessionNotifier', () => {
     expect(text).toContain('异常终止：模型返回 500');
   });
 
-  it('用户自己的会话被停 → 不产生通知（来源不是 hosted）', () => {
+  it('用户自己的会话当前不归代理 → 不产生通知（判据是驱动权，不看出生来源）', () => {
     const h = harness();
     h.metas.set(CHILD, meta(CHILD, 'user', '我自己的会话'));
     h.rounds.set(
@@ -133,11 +133,30 @@ describe('HostedSessionNotifier', () => {
         { type: 'aborted', seq: 1, ts: TS, payload: { reason: 'cancelled', stopReason: 'user' } },
       ]),
     );
-    // 即使有人误登记了创建者，出生来源判据也必须拦住
+    // 即使有人误登记了创建者，驱动权判据也必须拦住（当前归用户）
     h.notifier.remember(CHILD, CREATOR);
+    h.driven.delete(CHILD);
 
     expect(h.notifier.noteSettledFlow(CHILD, 'r3', false, true)).toBe(false);
     expect(h.creatorQueue).not.toHaveBeenCalled();
+  });
+
+  it('代理派发接管的用户自建会话（origin=user）→ 中断照常通知创建者', () => {
+    const h = harness();
+    // 出生来源仍是用户建（持久事实），但 send_to_session 受理后当前归代理驱动
+    h.metas.set(CHILD, meta(CHILD, 'user', '我自己的会话'));
+    h.rounds.set(
+      'r3b',
+      round('r3b', 'interrupted', [
+        { type: 'aborted', seq: 1, ts: TS, payload: { reason: 'cancelled', stopReason: 'user' } },
+      ]),
+    );
+    h.notifier.remember(CHILD, CREATOR);
+
+    expect(h.notifier.noteSettledFlow(CHILD, 'r3b', false, true)).toBe(true);
+    const text = h.creatorQueue.mock.calls[0][0] as string;
+    expect(text).toContain('我自己的会话');
+    expect(text).toContain('用户主动停止');
   });
 
   it('hosted 但没有创建者记录 → 不通知（不知道谁是代理，就不乱发）', () => {

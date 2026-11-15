@@ -681,23 +681,23 @@ describe('ConfirmCoordinator · disposeSession 会话删除清理（E4 批 3）'
 });
 
 /**
- * 托管会话自动放行（`isManagedSession`）
+ * 代理驱动会话自动放行（`isAgentDrivenSession`）
  *
- * 事实背景：后台托管会话的卡上不了屏（防跨会话串台），只能挂到 30 分钟超时被
+ * 事实背景：后台会话的卡上不了屏（防跨会话串台），只能挂到 30 分钟超时被
  * fail-closed 自动拒——代理发起的写入/命令白等半小时然后失败。
  *
  * 判据：
  *   ① 请求**照常走链路**：入队、按前台规则推送（前台推卡 / 后台不推）、该起计时就起计时；
- *   ② 差别只在「谁来按」：托管会话由代理代按批准，与用户点击同一条 `answerFor` 通路；
- *   ③ 留痕同构：走既有决策记录（前台直发 / 后台暂存待补发），切回会话可见「被批了」；
- *   ④ 自助会话（判据 false / 未注入）⇒ 排队、上屏、超时逐字不变。
+ *   ② 差别只在「谁来按」：代理驱动的会话由代理代按批准，与用户点击同一条 `answerFor` 通路；
+ *   ③ 留痕可分辨：决策记录写「托管代批」，不写成与用户亲手点击一样的「已批准」；
+ *   ④ 自助会话（判据 false / 未注入）⇒ 排队、上屏、超时、留痕逐字不变。
  */
-describe('ConfirmCoordinator · 托管会话由代理代按（isManagedSession）', () => {
+describe('ConfirmCoordinator · 代理驱动会话由代理代按（isAgentDrivenSession）', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  /** 带托管判据的协调器（按 sid 精确匹配「托管集合」） */
+  /** 带代理驱动判据的协调器（按 sid 精确匹配「驱动集合」） */
   function makeManagedCoordinator(managed: string[]) {
     const posted: Posted[] = [];
     const pendingChanges: Array<{ sessionId: string; count: number }> = [];
@@ -709,7 +709,7 @@ describe('ConfirmCoordinator · 托管会话由代理代按（isManagedSession�
       },
       onPendingChanged: (sessionId, count) => pendingChanges.push({ sessionId, count }),
       onConfirmShown: (info) => shown.push(info),
-      isManagedSession: (sid) => managed.includes(sid),
+      isAgentDrivenSession: (sid) => managed.includes(sid),
     });
     return {
       coordinator,
@@ -742,12 +742,12 @@ describe('ConfirmCoordinator · 托管会话由代理代按（isManagedSession�
     expect(h.requests()).toHaveLength(0);
     expect(h.closed()).toHaveLength(0);
     expect(h.shown).toHaveLength(1);
-    // ③ 后台决策记录不写当前屏幕（防串台），切回该会话补上屏一次「已批准」
+    // ③ 后台决策记录不写当前屏幕（防串台），切回该会话补上屏一次「托管代批」
     expect(h.decisions()).toHaveLength(0);
     h.coordinator.setForeground('s-managed');
     const decisions = h.decisions();
     expect(decisions).toHaveLength(1);
-    expect(String(decisions[0].message)).toContain('Approved');
+    expect(String(decisions[0].message)).toContain('Approved on your behalf (managed)');
     expect(String(decisions[0].message)).toContain('foo.md');
     // 载荷纪律沿用既有单点：不记 description 全文
     expect(String(decisions[0].message)).not.toContain(CARGO_MARKER);
@@ -765,13 +765,13 @@ describe('ConfirmCoordinator · 托管会话由代理代按（isManagedSession�
     const settled = stub.trigger(confirmInfo());
 
     await expect(settled).resolves.toBe(true);
-    // 推卡 → 代按 → 收卡：与用户手点确认的可见轨迹一致
+    // 推卡 → 代按 → 收卡：与用户手点确认的可见轨迹一致，但留痕标「托管代批」
     expect(h.requests()).toHaveLength(1);
     expect(h.closed()).toHaveLength(1);
     expect(h.shown).toHaveLength(1);
     const decisions = h.decisions();
     expect(decisions).toHaveLength(1);
-    expect(String(decisions[0].message)).toContain('Approved');
+    expect(String(decisions[0].message)).toContain('Approved on your behalf (managed)');
   });
 
   it('后台托管会话 FIFO：两条按序各代按一次，两条决策记录都在', async () => {
@@ -792,7 +792,7 @@ describe('ConfirmCoordinator · 托管会话由代理代按（isManagedSession�
     expect(String(decisions[1].message)).toContain('bar.md');
   });
 
-  it('自助会话不受影响：仍排队 + 上屏 + 等用户裁决（判据只认托管集合）', async () => {
+  it('自助会话不受影响：仍排队 + 上屏 + 等用户裁决（判据只认代理驱动集合）', async () => {
     const h = makeManagedCoordinator(['s-managed']);
     const stub = agentStub();
     h.coordinator.bindSession('s-self', stub.agent);
