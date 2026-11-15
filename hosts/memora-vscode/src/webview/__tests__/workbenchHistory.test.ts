@@ -186,7 +186,7 @@ describe('rebuildWorkbenchChildren', () => {
       }),
     );
     expect(rebuilt.children).toEqual([{ sessionId: 'session-target', via: 'delegate' }]);
-    expect(rebuilt.dispatchScan).toEqual({ sessions: 1, truncated: 0 });
+    expect(rebuilt.dispatchScan).toEqual({ sessions: 1, truncated: 0, foreign: 0 });
   });
 
   it('派发反查只认这位创建者：别人派的会话不进清单', () => {
@@ -200,6 +200,45 @@ describe('rebuildWorkbenchChildren', () => {
     expect(rebuilt.children).toEqual([]);
   });
 
+  it('别人派出的活只报数量：不进清单，但空态能说「另有 N 条」', () => {
+    const rebuilt = rebuildWorkbenchChildren(
+      'session-agent',
+      sources([], undefined, {
+        // 两条别人派过的会话 + 一条我自己的：只有别人那两条计入 foreign
+        sessions: {
+          'session-other-a': ['a1'],
+          'session-other-b': ['b1'],
+          'session-mine': ['m1'],
+        },
+        dispatch: {
+          a1: { from: 'session-other', via: 'delegate' },
+          b1: { from: 'session-other-2', via: 'delegate' },
+          m1: { from: 'session-agent', via: 'delegate' },
+        },
+      }),
+    );
+    // 归属不混：别人派的不进我的清单
+    expect(rebuilt.children).toEqual([{ sessionId: 'session-mine', via: 'delegate' }]);
+    expect(rebuilt.dispatchScan.foreign).toBe(2);
+  });
+
+  it('同一会话被多人派过：我自己的派发优先，不计入「别人的活」', () => {
+    const rebuilt = rebuildWorkbenchChildren(
+      'session-agent',
+      sources([], undefined, {
+        sessions: { 'session-both': ['x1', 'x2'] },
+        // 从末尾往前：x2 是别人派来的，记下 foreignSeen 后继续；x1 是我，命中归我
+        dispatch: {
+          x1: { from: 'session-agent', via: 'delegate' },
+          x2: { from: 'session-other', via: 'delegate' },
+        },
+      }),
+    );
+    // 我的派发在更早处：x2 别人 → 记 foreignSeen 后继续往前，x1 命中归我
+    expect(rebuilt.children).toEqual([{ sessionId: 'session-both', via: 'delegate' }]);
+    expect(rebuilt.dispatchScan.foreign).toBe(0);
+  });
+
   it('派发反查从末尾往前、超回看上限就停：更早的派发读不到并如实上报 truncated', () => {
     // 21 轮：派发发生在最早那一轮，末尾 20 轮都不是 ⇒ 按设计不认（越近越有路由价值）
     const ids = Array.from({ length: WORKBENCH_DISPATCH_LOOKBACK_ROUNDS + 1 }, (_, i) => `t${i}`);
@@ -211,7 +250,7 @@ describe('rebuildWorkbenchChildren', () => {
       }),
     );
     expect(rebuilt.children).toEqual([]);
-    expect(rebuilt.dispatchScan).toEqual({ sessions: 1, truncated: 1 });
+    expect(rebuilt.dispatchScan).toEqual({ sessions: 1, truncated: 1, foreign: 0 });
   });
 
   it('已由 create_session 认定的会话不被后来的派发改档（创造是更早的事实）', () => {

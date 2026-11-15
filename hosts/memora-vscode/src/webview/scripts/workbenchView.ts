@@ -98,7 +98,8 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
     if (jobs.length === 0) {
       // 空态句子按「我们知道多少」分档：读不到 ≠ 没有
       const missing = reasonOf('missing-sessions');
-      jobsEmpty.textContent =
+      /** 主句（覆盖状态 / 过滤事实按优先级分档） */
+      const base =
         coverage === 'unreadable'
           ? l10n.t('History could not be read')
           : missing
@@ -120,6 +121,14 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
                         filteredCount,
                       )
                     : l10n.t('No work has been handed to the assistant yet');
+      // 另有别人派出的活：**只报数量、不列条目**（工作台锚点是当前座位，列出来会让
+      // 「这是谁的活」变糊）；不补这句，「不在我的清单里」就会被读成「那条活消失了」。
+      // 历史完全读不到时不补：那一刻连「本机有几条」都不可信。
+      const foreign = snapshot.foreignDispatches;
+      jobsEmpty.textContent =
+        foreign > 0 && coverage !== 'unreadable'
+          ? `${base} · ${l10n.t('{0} more were dispatched by other assistant sessions', foreign)}`
+          : base;
     }
     // 有清单时的读不全说明（空态已在上面的句子里说清，不重复）
     const notices: string[] = [];

@@ -50,6 +50,8 @@ function snapshot(overrides: Partial<WorkbenchSnapshot> = {}): WorkbenchSnapshot
     jobs: [],
     seatSource: 'live',
     filteredCount: 0,
+    // 默认没有「别人派出的活」：本用例不验那一档
+    foreignDispatches: 0,
     coverage: 'complete',
     missingCount: 0,
     // 判据在 shared/sessionStatus 产出：默认无理由（complete）
@@ -181,6 +183,23 @@ describe('workbenchView — 空态：读不到 ≠ 没有', () => {
     expect(jobsEmpty.textContent).toBe('No work has been handed to the assistant yet');
   });
 
+  it('本座位没有活、但别人派过：补一句「另有 N 条」，不列条目', () => {
+    const { view, jobsEmpty, jobsList } = mount();
+    view.render(snapshot({ coverage: 'complete', foreignDispatches: 3 }));
+    // 不冒充「一条都没有」：把「不在我的清单里」和「消失了」分开
+    expect(jobsEmpty.textContent).toBe(
+      'No work has been handed to the assistant yet · 3 more were dispatched by other assistant sessions',
+    );
+    // 只报数量，不列条目（列出来会让「这是谁的活」变糊）
+    expect(jobsList.children).toHaveLength(0);
+  });
+
+  it('历史完全读不到：不补「另有 N 条」（那一刻连本机有几条都不可信）', () => {
+    const { view, jobsEmpty } = mount();
+    view.render(snapshot({ coverage: 'unreadable', foreignDispatches: 3 }));
+    expect(jobsEmpty.textContent).toBe('History could not be read');
+  });
+
   it('有记录但被驱动权过滤：如实说过滤，不改口成「还没有」', () => {
     const { view, jobsEmpty } = mount();
     view.render(snapshot({ coverage: 'complete', filteredCount: 2 }));
@@ -240,7 +259,7 @@ describe('workbenchView — 空态：读不到 ≠ 没有', () => {
         totalRounds: 2,
         scannedRounds: 2,
         unreadableRecords: 0,
-        dispatchScan: { sessions: 0, truncated: 0 },
+        dispatchScan: { sessions: 0, truncated: 0, foreign: 0 },
       },
       peekActivity: () => ({ running: false, waiting: false }),
       readRoundIds: () => [],

@@ -155,6 +155,8 @@ export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): Workben
     seatSource: inputs.seatSource,
     jobs,
     filteredCount,
+    // 别人派出的活只报数量（工作台锚点是当前座位，不混写归属）
+    foreignDispatches: inputs.history.dispatchScan.foreign,
     coverage: listed.coverage,
     coverageReasons: listed.reasons,
     missingCount,

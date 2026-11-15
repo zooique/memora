@@ -120,6 +120,14 @@ export interface WorkbenchHistoryResult {
     sessions: number;
     /** 轮数超过回看上限、只扫了末尾一段的会话数 */
     truncated: number;
+    /**
+     * 本机确实存在、但**不是这位创建者**派出的活（按目标会话去重）
+     *
+     * 工作台的锚点是当前座位，这些活不属于它、不列条目；只用于空态说清
+     * 「另有 N 条由其他助手会话派出」，免得用户把「不在我的清单里」读成「消失了」。
+     * 复用同一次反查，不额外扫盘。
+     */
+    foreign: number;
   };
 }
 
@@ -146,7 +154,7 @@ export function rebuildWorkbenchChildren(
       totalRounds: 0,
       scannedRounds: 0,
       unreadableRecords: 0,
-      dispatchScan: { sessions: 0, truncated: 0 },
+      dispatchScan: { sessions: 0, truncated: 0, foreign: 0 },
     };
   }
   // 只扫最近 N 轮：超了如实标 partial（旧会话多半在更早的轮里，界面会说明读不全）
@@ -194,6 +202,9 @@ export function rebuildWorkbenchChildren(
  * 「最近被派过」才有路由价值；很久以前派过、之后又自己聊了很多轮的会话本来就该排后面。
  * 每步走索引级读口（`readRoundDispatch`），零磁盘 IO。
  *
+ * 同一个循环顺带数出**别人派出的活**（`foreign`）：不属于这位创建者、不进清单，
+ * 只让空态能说一句「另有 N 条」。扫描没有第二次，口径与命中即停的规则完全复用。
+ *
  * @param orchestratorId 创建者会话 id
  * @param sources 读取面
  * @param byId 子会话累加器（已由 `create_session` 认定的不覆盖：创造是更早的事实）
@@ -203,19 +214,21 @@ function collectDispatchedChildren(
   orchestratorId: string,
   sources: WorkbenchHistorySources,
   byId: Map<string, WorkbenchHistoryChild>,
-): { sessions: number; truncated: number } {
+): { sessions: number; truncated: number; foreign: number } {
   let ids: readonly string[];
   try {
     ids = sources.listSessionIds();
   } catch {
     // 会话列表读不出来：不补任何「猜测的」子会话，扫描口径如实报 0
-    return { sessions: 0, truncated: 0 };
+    return { sessions: 0, truncated: 0, foreign: 0 };
   }
   let sessions = 0;
   let truncated = 0;
+  /** 别人派过活的会话（按会话去重；同一条会话被多个创建者派过也只算一条活） */
+  let foreign = 0;
   for (const sessionId of ids) {
     if (sessionId === orchestratorId) continue;
-    // 已由 create_session 认定：来源以「创造」为准，不因后来的派发改档
+    // 已由 create_session 认定：来源以「创造」为准，不因后来的派发改档（它本来就在清单里）
     if (byId.has(sessionId)) continue;
     let roundIds: readonly string[];
     try {
@@ -225,6 +238,10 @@ function collectDispatchedChildren(
     }
     sessions += 1;
     if (roundIds.length > WORKBENCH_DISPATCH_LOOKBACK_ROUNDS) truncated += 1;
+    // 这条会话是否被「别人」派过（继续往后翻：更早处可能还有我自己的派发）
+    let foreignSeen = false;
+    /** 是否已认成这位创建者的活（命中即停，不再往下翻） */
+    let admitted = false;
     // 从末尾往前扫：命中即停（越近的派发越有路由价值）
     for (
       let i = roundIds.length - 1, seen = 0;
@@ -237,14 +254,19 @@ function collectDispatchedChildren(
       } catch {
         continue;
       }
-      // 只认「这位创建者派来的」；别人的派发与旧数据（无字段）一律不算
-      if (dispatch?.from === orchestratorId) {
+      // 旧数据（无字段）一律不算；别人的派发只记账，不抢归属
+      if (dispatch === undefined) continue;
+      if (dispatch.from === orchestratorId) {
         byId.set(sessionId, { sessionId, via: 'delegate' });
+        admitted = true;
         break;
       }
+      foreignSeen = true;
     }
+    // 只算「不是我的活」：已认成我的、或只是我自己建的，都不进 foreign
+    if (!admitted && foreignSeen) foreign += 1;
   }
-  return { sessions, truncated };
+  return { sessions, truncated, foreign };
 }
 
 /**

@@ -1473,6 +1473,7 @@
   "Older history was not read (only the latest {0} rounds)": "只读了最近 {0} 轮，更早的没读",
   "{0} session(s) could not be found": "有 {0} 条会话找不到了",
   "{0} record(s) exist, but no agent is driving them right now": "有 {0} 条记录，但当前没有代理在驱动它们",
+  "{0} more were dispatched by other assistant sessions": "另有 {0} 条由其他助手会话派出",
   "Memora: only managed sessions can stop other sessions.": "Memora：只有托管会话可以停止其他会话。",
   "Memora: failed to stop the session.": "Memora：停止会话失败。",
   "Memora: only managed sessions can pause other sessions.": "Memora：只有托管会话可以暂停其他会话。",

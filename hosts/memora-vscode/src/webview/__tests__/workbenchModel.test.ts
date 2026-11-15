@@ -24,7 +24,7 @@ function emptyHistory(overrides: Partial<WorkbenchHistoryResult> = {}): Workbenc
     scannedRounds: 0,
     unreadableRecords: 0,
     // 本用例不验派发反查口径：0 会话 = 没有候选
-    dispatchScan: { sessions: 0, truncated: 0 },
+    dispatchScan: { sessions: 0, truncated: 0, foreign: 0 },
     ...overrides,
   };
 }
@@ -354,7 +354,7 @@ describe('buildWorkbenchSnapshot — 清单口径', () => {
   it('反查窗口截断：partial 的理由是 dispatch-window（与工具同一份判据）', () => {
     const snapshot = buildWorkbenchSnapshot(
       baseInputs({
-        history: emptyHistory({ dispatchScan: { sessions: 3, truncated: 2 } }),
+        history: emptyHistory({ dispatchScan: { sessions: 3, truncated: 2, foreign: 0 } }),
       }),
     );
     expect(snapshot.coverage).toBe('partial');

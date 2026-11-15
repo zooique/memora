@@ -1473,6 +1473,7 @@
   "Older history was not read (only the latest {0} rounds)": "",
   "{0} session(s) could not be found": "",
   "{0} record(s) exist, but no agent is driving them right now": "",
+  "{0} more were dispatched by other assistant sessions": "",
   "Memora: only managed sessions can stop other sessions.": "",
   "Memora: failed to stop the session.": "",
   "Memora: only managed sessions can pause other sessions.": "",
