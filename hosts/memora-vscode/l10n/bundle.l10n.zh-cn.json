@@ -85,7 +85,7 @@
   "Memora: the assistant has stepped back; this session is yours again.": "Memora：已收回本会话，接下来由你自己聊。",
   "Memora: taken back. {0} dispatched session(s) are still running; their results will no longer be reported to this session.": "Memora：已收回。还有 {0} 条派出去的会话在运行，它们的结果不会再报回这条会话。",
   "Memora: taken back. {0} settlement report(s) have not been delivered and will not be sent to this session.": "Memora：已收回。有 {0} 条落定汇报还没送到，之后也不会再送到这条会话。",
-  "Memora: this session was taken back from the assistant, so the assistant will not handle your message; it is sent as a self-service chat. To hand it back, click \"Assistant\" in the title bar (switches to or starts an assistant session), or create a new session.": "Memora：这条会话已收回托管，助手不会再替你处理；这条消息会按自助对话发出。要恢复助手接管：点标题栏「助手」（切到或新建助手会话），或新建会话。",
+  "Memora: this session was taken back from the assistant, so the assistant will not handle your message; it is sent as a self-service chat. To have the assistant take over again, click \"+\" above to create a new session (in assistant form a new session goes to the assistant), or click \"Back to Chatting Myself\" in the view title bar and then \"Switch to Assistant\".": "Memora：这条会话已收回托管，助手不会再替你处理；这条消息会按自助对话发出。要再让助手接手：点上方「＋」新建会话（当前是助手形态，新会话会交给助手），或先点视图标题栏「回到我自己聊」，再点「助手」。",
   "Memora: only managed sessions can create sessions.": "Memora：只有助手代理可以开新会话。",
   "Memora: role pack not found or unavailable: {0}": "Memora：角色包不存在或不可用：{0}",
   "Memora: could not create the session.": "Memora：新建会话失败。",

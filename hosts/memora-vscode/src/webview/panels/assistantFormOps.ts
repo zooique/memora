@@ -161,7 +161,7 @@ export function createAssistantFormOps(deps: AssistantFormOpsDeps): AssistantFor
         type: 'notice',
         level: 'info',
         message: vscode.l10n.t(
-          'Memora: this session was taken back from the assistant, so the assistant will not handle your message; it is sent as a self-service chat. To hand it back, click "Assistant" in the title bar (switches to or starts an assistant session), or create a new session.',
+          'Memora: this session was taken back from the assistant, so the assistant will not handle your message; it is sent as a self-service chat. To have the assistant take over again, click "+" above to create a new session (in assistant form a new session goes to the assistant), or click "Back to Chatting Myself" in the view title bar and then "Switch to Assistant".',
         ),
       });
     },

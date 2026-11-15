@@ -2091,6 +2091,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 回放通道（否则与 _viewEpoch 折叠重建回放产生双重复放）。
    */
   private async handleWebviewReady(): Promise<void> {
+    // ⓪′ 输入框打字态复位：webview 重建 = 新页面，输入框从空开始（回放不恢复未发送文本），
+    //     而宿主这枚布尔只在 `composer_state` 翻转时写入 ⇒ 不在重建 / 重开时复位，就会
+    //     一直以为用户在打字，落定汇报被压到用户下次输入才浮现（输入框其实早空了）。
+    this._composerHasText = false;
     // ⓪ 侧栏形态补推（时间面漏面，同 ④~⑧）：形态只在切换时下发，视图折叠/重开会重建 HTML，
     //    新 webview 的初值恒为自助 ⇒ 不补推就「折叠一次，助手形态被悄悄切回自助」。
     //    必须放在草稿早退**之前**：草稿路径不经过下面的回放链，漏在这里就永远补不上。

@@ -185,6 +185,8 @@ interface PanelHandle {
     _asks: Map<string, unknown>;
     /** 中断通知器（第三切片）：测试直接登记「谁开的会话」这一进程内路由事实 */
     _hostedNotifier: { remember(childSessionId: string, creatorSessionId: string): void };
+    /** 显示会话输入框是否有未发送文本（宿主侧布尔，webview 重建时必须复位） */
+    _composerHasText: boolean;
     runtimeFor(sessionId?: string): {
       streaming: boolean;
       abortController?: AbortController;
@@ -2280,5 +2282,25 @@ describe('托管落定通知 · 流收场投递给创建者（第三 / 第四切
     expect(text).toContain('抓取任务');
     expect(text).toContain(roundId);
     expect(text).toContain('成功');
+  });
+});
+
+describe('webview 重建 · 宿主「用户正在打字」布尔复位', () => {
+  it('重建后 ready 到达：输入框已空 ⇒ 宿主不再认为用户仍在打字', async () => {
+    const sid = '2026-11-15-typing';
+    const { cast, fireMessage, reopenView } = setupPanel({ [sid]: sessionAgent(sid) }, [sid]);
+
+    // webview 上行的唯一写入点：输入框里有未发送文本
+    fireMessage({ type: 'composer_state', hasText: true });
+    expect(cast._composerHasText).toBe(true);
+
+    // 折叠/重开视图 = 新 webview：输入框从空开始，旧布尔必须随重建一起复位；
+    // 不复位就会把落定汇报一直压到用户下次输入（真实输入框其实早空了）。
+    reopenView();
+    fireMessage({ type: 'ready' });
+    // ready 处理链是异步入口（生产按 void 调用），等一轮宏任务再断言复位已发生
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(cast._composerHasText).toBe(false);
   });
 });

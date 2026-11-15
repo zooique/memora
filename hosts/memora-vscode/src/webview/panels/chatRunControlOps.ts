@@ -357,7 +357,8 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
      * 走既有托管通道（`chat(origin='hosted')` + `runFlow`），不新造流、不新造面板：
      * 事实本体已由通知器压入创建者的系统事件队列（首个 step 边界注入），
      * 本方法的种子只写「读结果并汇报」的口径——主控据此主动说话，用户不必先开口。
-     * 种子气泡与普通托管输入一样带来源标记（origin=hosted），不伪装成用户发言。
+     * 种子气泡与普通托管输入同型：role 仍是 `user`，只盖来源戳 `origin='hosted'`
+     * （界面据此标「由助手发送」）；不另造角色。
      */
     wakeSettlementReport(creator: string): boolean {
       const agent = deps.getAgent(creator);

@@ -101,8 +101,11 @@ export interface WorkbenchSnapshotInputs {
  */
 export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): WorkbenchSnapshot {
   const orchestrator = buildIdentity(inputs);
-  // 清单 = 历史重建 ∪ 本进程创建者账本：账本更新（刚开出的会话还未落盘事件），
-  // 历史更全（重启后账本为空）。两边都只是既有事实，不是两份状态源。
+  // 清单 = 本进程创建者账本 ∪ 历史重建。两边覆盖的**不是同一批会话**，谁也不是谁的超集：
+  //   账本 = 本进程内「代理建的 + 派发接管的」（重启即空，仅本进程可见）；
+  //   历史 = 只从代理自己轮里的 create_session 重建「代理开的」——派发接管的目标不在其中
+  //          （dispatches 只是派发摘录，不进清单）。
+  // 所以两边都要合；都只是既有事实，不是两份状态源。
   const merged = new Map<string, string | undefined>();
   for (const child of inputs.history.children) merged.set(child.sessionId, child.title);
   for (const sessionId of inputs.childrenOf(inputs.orchestratorId)) {

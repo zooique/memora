@@ -372,7 +372,7 @@ describe('落定主动浮现 — isSessionIdle / wakeSettlementReport', () => {
       string,
       { origin?: string; userMessage?: { content: string } },
     ];
-    // 必须归到创建者会话、且来源标 hosted（不伪装成用户发言）
+    // 必须归到创建者会话、且带来源戳 hosted（角色仍是 user，靠 origin 区分来源）
     expect(sessionId).toBe(CREATOR);
     expect(seed.origin).toBe('hosted');
     expect(seed.userMessage?.content).toContain('settled');
