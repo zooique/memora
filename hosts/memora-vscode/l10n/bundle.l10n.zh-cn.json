@@ -1433,6 +1433,7 @@
   "The assistant moves this session forward for you": "助手代你推进这件事",
   "Used last time": "上次使用",
   "Choose how the new session runs": "选择新会话的运行方式",
+  "In assistant mode, tell the assistant what to do and it will arrange the sessions. To create a session yourself, switch back to self mode first.": "助手形态里，直接告诉助手要做什么，它会替你安排会话。要自己新建会话，请先切回自助形态。",
   "Workbench": "工作台",
   "Assistant mode": "助手模式",
   "To chat on your own again, use \"Back to Chatting Myself\" in the view title bar.": "想换回我自己聊：点视图标题栏的「回到我自己聊」。",

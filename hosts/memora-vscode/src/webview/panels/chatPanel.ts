@@ -95,6 +95,8 @@ import { dedupeRefs } from '../../shared/refKey.js'; // 引用去重判据单点
 import { createComposerDrafts, persistDraftPageMark } from '../helpers/composerDrafts.js';
 // 「上次停在空白草稿页」标记：空白页没有会话身份，会话停留指针表达不了这件事
 import { UI_DRAFT_PAGE_KEY } from '../../shared/constants.js';
+// 助手形态下用户侧新建会话的统一提示（与命令面板共用一句，禁各写一份）
+import { assistantModeCreatesSessionsNotice } from '../../shared/assistantModeNotice.js';
 // 插话受理三态的可见文案（INPUT-LIMIT-1 / INTERJECT-PERSIST-1）统一由 windowNotices 提供，
 // 面板内不嵌字面量：那里是窗口提示的单一真源（常量形态会在模块求值时定稿语言，故用函数）。
 
@@ -1352,9 +1354,19 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 当前文件 chip 的 ✕ / 关闭态点击：改会话级开关，回推投影（webview 以回推为准）
       this._activeFile.setActiveFileAttach(msg.enabled);
     } else if (msg.type === 'new_session') {
-      // 标题条「＋」新建会话 → 切入空会话，旧会话归档进历史
-      // 助手形态里的「＋」建的是**助手会话**（形态决定新建身份，否则用户点完还在自助面）
-      void this.newSessionFromCommand(this.getUiForm() === 'assistant' ? 'managed' : undefined);
+      // 标题条「＋」新建会话 → 切入空会话，旧会话归档进历史。
+      // 助手形态例外：会话由助手安排（`create_session` / `send_to_session`），用户侧再开一条
+      // 会造出第二条托管会话、把工作台逼成「看哪条座位」。webview 已隐藏「＋」，宿主这里
+      // 仍须拒收——判据放在执行面，旧视图 / 其他触发面绕不过去。
+      if (this.getUiForm() === 'assistant') {
+        this.post({
+          type: 'notice',
+          level: 'info',
+          message: assistantModeCreatesSessionsNotice(),
+        });
+        return;
+      }
+      void this.newSessionFromCommand();
     } else if (msg.type === 'fork_session') {
       // AI 回复底部「分叉」按钮 → 从指定 Round 位置分叉新会话
       void this.forkCurrentSession(msg.roundId);

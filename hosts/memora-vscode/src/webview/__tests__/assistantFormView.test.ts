@@ -72,6 +72,18 @@ describe('助手形态输入区（ASSISTANT-FORM）', () => {
     document.getElementById('assistantWorkbenchBtn')!.click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'assistant_open_workbench' });
   });
+
+  it('助手形态隐藏标题条「＋」（会话由助手安排），切回自助即恢复', () => {
+    mountChatView();
+    const newSessionBtn = document.getElementById('newSessionBtn') as HTMLElement;
+    // 自助形态：新建入口在
+    expect(newSessionBtn.hidden).toBe(false);
+    dispatch({ type: 'ui_form', form: 'assistant' });
+    // 助手形态：不出现（防用户自己再开一条托管会话）
+    expect(newSessionBtn.hidden).toBe(true);
+    dispatch({ type: 'ui_form', form: 'self' });
+    expect(newSessionBtn.hidden).toBe(false);
+  });
 });
 
 describe('助手形态样式作用域守卫（漏前缀 = 漏到自助形态）', () => {

@@ -3691,7 +3691,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 侧栏形态的唯一落点（自助 ⇄ 助手）
    *
    * 三条纪律：
-   * - **表现层单点**：body[data-form] + 两处 hidden + 占位文字，全在这里翻；别在消息分支里
+   * - **表现层单点**：body[data-form] + 三处 hidden（标识条 / 图标 / 新建会话按钮）+ 占位文字，全在这里翻；别在消息分支里
    *   各翻一处（形态一改就要改 N 处，漏一处即半套形态）。
    * - **占位原值只认 HTML**：切走前已由 `selfPlaceholder` 记下，切回逐字还原。
    * - **不持有形态**：本函数纯写入；当前形态由宿主 `ui_form` 决定（webview 不记、不猜、不落
@@ -3705,6 +3705,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       : selfPlaceholder;
     assistantModeBar.hidden = !assistant;
     assistantModeIcon.hidden = !assistant;
+    // 助手形态里的会话由助手安排：用户侧「＋」不出现（宿主侧另有同一判据的拒收，见
+    // chatPanel 的 `new_session` 分支）。切回自助形态即恢复。
+    newSessionBtn.hidden = assistant;
   }
 
   // textarea 自适应高度（Enter 发送 / Shift+Enter 换行）
