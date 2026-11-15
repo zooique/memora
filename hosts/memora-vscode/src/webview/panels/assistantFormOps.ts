@@ -65,8 +65,6 @@ export interface AssistantFormOpsDeps {
   uiState: () => vscode.Memento | undefined;
   /** 该会话的两项事实（能否解析 / 是否托管出生；判据在会话存储，本层不另写） */
   sessionFacts: (sessionId: string) => { resolvable: boolean; hostedBorn: boolean };
-  /** 采用某条会话为当前显示会话（恢复时按 O3 切到座位那条；导航唯一写点） */
-  adoptSession: (sessionId: string) => void;
   /** 把座位写回 `SessionModeStore` 并打「恢复」标签（`restoreManaged` 单点） */
   restoreSeat: (sessionId: string) => void;
 }
@@ -77,7 +75,7 @@ export interface AssistantFormOps {
   current(): UiForm;
   /** 启动恢复：只播种内存形态（不换会话、不发消息、不写 context key） */
   seed(form: UiForm): void;
-  /** 启动恢复（读一次持久状态 → 形态 / 座位 / 会话三件一起就位；幂等） */
+  /** 启动恢复（读一次持久状态 → 形态 / 座位就位；**只读**：不导航、不写盘、不删键） */
   restoreOnce(): void;
   /** 切换形态（唯一写点） */
   set(form: UiForm): Promise<void>;
@@ -195,6 +193,9 @@ export function createAssistantFormOps(deps: AssistantFormOpsDeps): AssistantFor
      *
      * 时机：早于首次 `render()`（首帧就是恢复后的形态），早于 agent 装配（座位先就位，
      * 恢复的那条会话才会被按托管装配）。
+     *
+     * 🔴 只读：不换当前页面、不写 workspaceState、不删任何键（见 `uiFormPersistence` 头注释）。
+     * 恢复期做副作用已经出过两次真机事故，导航类动作一律不放在这里。
      */
     restoreOnce(): void {
       restorePersistedUiForm({
@@ -202,10 +203,8 @@ export function createAssistantFormOps(deps: AssistantFormOpsDeps): AssistantFor
         currentSessionId: deps.currentSessionId,
         sessionFacts: deps.sessionFacts,
         seedForm: seed,
-        adoptSession: deps.adoptSession,
         restoreSeat: deps.restoreSeat,
         enterManagedDraft: () => void deps.newSessionFromCommand('managed'),
-        persist: persistState,
       });
     },
     /**

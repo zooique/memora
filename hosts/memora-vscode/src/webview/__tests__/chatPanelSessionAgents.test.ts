@@ -42,7 +42,11 @@ import {
 // 形态上下文键的真源（收回同步形态时断言宿主侧也写了同一键，测试不自造字面量）
 import { UI_FORM_CONTEXT_KEY } from '../panels/assistantFormOps.js';
 // 未发送草稿的持久键（断言落盘形状用真源常量，不复制字面量）
-import { UI_COMPOSER_DRAFTS_KEY, UI_DRAFT_PAGE_KEY } from '../../shared/constants.js';
+import {
+  UI_COMPOSER_DRAFTS_KEY,
+  UI_DRAFT_PAGE_KEY,
+  UI_FORM_STATE_KEY,
+} from '../../shared/constants.js';
 import { DRAFT_PAGE_OWNER } from '../helpers/composerDrafts.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
@@ -2356,11 +2360,11 @@ describe('形态 + 座位成对恢复（重启后照旧）', () => {
     expect(provider.getCurrentSessionId()).toBe(seat);
   });
 
-  it('形态恢复成助手但上次停留的不是座位那条：切到座位那条（O3）', async () => {
+  it('形态恢复成助手但上次看的是别的会话：视图留在原页，座位只登记（口径 A）', () => {
     const seat = '2026-11-15-seat';
     const other = '2026-11-15-other';
     const modes = createEphemeralSessionModeStore();
-    const { provider, store, fireMessage } = setupPanel(
+    const { provider, store } = setupPanel(
       {},
       [other, seat],
       modes,
@@ -2370,12 +2374,13 @@ describe('形态 + 座位成对恢复（重启后照旧）', () => {
       }),
     );
 
-    // 激活期只读：构造里不持跨进程锁，写会话文件会 fail-closed（真机整扩展激活失败）
-    expect(provider.getCurrentSessionId()).toBe(seat);
+    // 页面优先：恢复不改当前显示会话（切走会离开用户关窗时看的那一页）
+    expect(provider.getCurrentSessionId()).toBe(other);
     expect(store.getInitialSessionId()).toBe(other);
-    // 锁是在启动归属裁决里拿到的：拿到之后才补写「上次停留」（已持锁，合法整写）
-    fireMessage({ type: 'ready' });
-    await vi.waitFor(() => expect(store.getInitialSessionId()).toBe(seat));
+    // 座位照旧登记：工作台里该看得见还看得见，形态也是助手
+    expect(provider.getUiForm()).toBe('assistant');
+    expect(modes.isManaged(seat)).toBe(true);
+    expect(modes.isRestored(seat)).toBe(true);
   });
 
   it('座位会话已被删除：回落自助，不把成自动会话恢复成托管', () => {
@@ -2628,6 +2633,26 @@ describe('空白草稿页的草稿（O5-B）', () => {
     // 不许落到最近的真会话上：空白页的字只属于空白页
     expect(h.provider.getCurrentSessionId()).toBe('');
     expect(h.cast._draft.isDraft).toBe(true);
+  });
+
+  it('助手形态 + 上次停在空白页 + 有座位：回空白页、字与标记都在，座位只登记（真机回归）', () => {
+    const raw = new Map<string, unknown>();
+    const seat = '2026-11-15-seat';
+    // 真机现场：上一轮是助手会话（座位登记着），用户点「＋」打了字就关窗（停在空白页）
+    raw.set(UI_FORM_STATE_KEY, { form: 'assistant', seatSessionId: seat });
+    raw.set(UI_DRAFT_PAGE_KEY, true);
+    raw.set(UI_COMPOSER_DRAFTS_KEY, { [DRAFT_PAGE_OWNER]: '空白页打的字' });
+    const modes = createEphemeralSessionModeStore();
+    const h = setupPanel({}, [seat], modes, makeUi(raw));
+
+    // 页面优先：仍在空白页——没被座位恢复切走，字与「上次停在空白页」标记都没被清
+    expect(h.provider.getCurrentSessionId()).toBe('');
+    expect(h.cast._draft.isDraft).toBe(true);
+    expect(raw.get(UI_DRAFT_PAGE_KEY)).toBe(true);
+    expect(raw.get(UI_COMPOSER_DRAFTS_KEY)).toEqual({ [DRAFT_PAGE_OWNER]: '空白页打的字' });
+    // 座位照旧登记（形态还是助手）：工作台里该看得见还看得见
+    expect(h.provider.getUiForm()).toBe('assistant');
+    expect(modes.isManaged(seat)).toBe(true);
   });
 
   it('上次停在真会话 ⇒ 空白页的草稿不抢戏（回填的仍是该会话自己的草稿）', async () => {

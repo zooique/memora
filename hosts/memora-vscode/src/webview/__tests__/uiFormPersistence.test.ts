@@ -39,21 +39,20 @@ interface RestoreOptions {
 /**
  * 构造依赖替身并记录所有副作用
  *
+ * 替身只给 `seedForm` / `restoreSeat` / `enterManagedDraft` 三面——恢复路径**只读**，
+ * 没有「写盘」「切会话」的注入口可调（想加回来得先改接口，改不动就是纪律生效）。
+ *
  * @param options 可调项
  */
 function makeDeps(options: RestoreOptions = {}): {
   deps: UiFormRestoreDeps;
   seedForm: ReturnType<typeof vi.fn>;
-  adoptSession: ReturnType<typeof vi.fn>;
   restoreSeat: ReturnType<typeof vi.fn>;
   enterManagedDraft: ReturnType<typeof vi.fn>;
-  persist: ReturnType<typeof vi.fn>;
 } {
   const seedForm = vi.fn();
-  const adoptSession = vi.fn();
   const restoreSeat = vi.fn();
   const enterManagedDraft = vi.fn();
-  const persist = vi.fn();
   const deps: UiFormRestoreDeps = {
     uiState: mementoOf(options.saved),
     currentSessionId: () => options.current ?? '',
@@ -62,12 +61,10 @@ function makeDeps(options: RestoreOptions = {}): {
       hostedBorn: (options.hostedBorn ?? []).includes(id),
     }),
     seedForm,
-    adoptSession,
     restoreSeat,
     enterManagedDraft,
-    persist,
   };
-  return { deps, seedForm, adoptSession, restoreSeat, enterManagedDraft, persist };
+  return { deps, seedForm, restoreSeat, enterManagedDraft };
 }
 
 describe('readPersistedUiForm — 脏数据整体回落', () => {
@@ -90,18 +87,17 @@ describe('readPersistedUiForm — 脏数据整体回落', () => {
   });
 });
 
-describe('restorePersistedUiForm — 形态 / 座位 / 会话三件成对', () => {
+describe('restorePersistedUiForm — 形态 / 座位就位，页面不动', () => {
   it('自助 / 无持久值：什么都不做（自助就是默认值，不写盘）', () => {
     for (const saved of [undefined, { form: 'self', seatSessionId: '' }]) {
       const h = makeDeps({ saved });
       restorePersistedUiForm(h.deps);
       expect(h.seedForm).not.toHaveBeenCalled();
       expect(h.restoreSeat).not.toHaveBeenCalled();
-      expect(h.persist).not.toHaveBeenCalled();
     }
   });
 
-  it('助手 + 座位可解析：播种形态、写回座位、并切到座位那条会话（O3）', () => {
+  it('助手 + 座位可解析：播种形态、登记座位；**不把当前页面切到座位**（口径 A）', () => {
     const h = makeDeps({
       saved: { form: 'assistant', seatSessionId: 'session-seat' },
       current: 'session-other',
@@ -109,23 +105,23 @@ describe('restorePersistedUiForm — 形态 / 座位 / 会话三件成对', () =
     });
     restorePersistedUiForm(h.deps);
     expect(h.seedForm).toHaveBeenCalledWith('assistant');
-    expect(h.adoptSession).toHaveBeenCalledWith('session-seat');
     expect(h.restoreSeat).toHaveBeenCalledWith('session-seat');
-    expect(h.persist).toHaveBeenCalledWith({ form: 'assistant', seatSessionId: 'session-seat' });
+    // 恢复只读：没有「换会话」这条路可走（依赖面里根本没有这个注入口）
+    expect(h.enterManagedDraft).not.toHaveBeenCalled();
   });
 
-  it('助手 + 座位就是当前会话：不重复切会话（导航写点不白跑一次）', () => {
+  it('助手 + 座位就是当前会话：同样只登记（导航写点不白跑一次）', () => {
     const h = makeDeps({
       saved: { form: 'assistant', seatSessionId: 'session-seat' },
       current: 'session-seat',
       resolvable: ['session-seat'],
     });
     restorePersistedUiForm(h.deps);
-    expect(h.adoptSession).not.toHaveBeenCalled();
+    expect(h.seedForm).toHaveBeenCalledWith('assistant');
     expect(h.restoreSeat).toHaveBeenCalledWith('session-seat');
   });
 
-  it('助手 + 座位会话已删除：回落自助并纠正磁盘（不赌最近一条会话）', () => {
+  it('助手 + 座位会话已删除：静默回落自助（不赌最近一条，也不纠正磁盘）', () => {
     const h = makeDeps({
       saved: { form: 'assistant', seatSessionId: 'session-gone' },
       current: 'session-other',
@@ -133,9 +129,7 @@ describe('restorePersistedUiForm — 形态 / 座位 / 会话三件成对', () =
     });
     restorePersistedUiForm(h.deps);
     expect(h.seedForm).not.toHaveBeenCalled();
-    expect(h.adoptSession).not.toHaveBeenCalled();
     expect(h.restoreSeat).not.toHaveBeenCalled();
-    expect(h.persist).toHaveBeenCalledWith({ form: 'self', seatSessionId: '' });
   });
 
   it('助手 + 座位为空 + 没有会话（关闭时在托管草稿）：进托管草稿', () => {
@@ -143,7 +137,18 @@ describe('restorePersistedUiForm — 形态 / 座位 / 会话三件成对', () =
     restorePersistedUiForm(h.deps);
     expect(h.seedForm).toHaveBeenCalledWith('assistant');
     expect(h.enterManagedDraft).toHaveBeenCalledTimes(1);
-    expect(h.persist).toHaveBeenCalledWith({ form: 'assistant', seatSessionId: '' });
+  });
+
+  it('助手 + 座位可解析 + 当前是空白页：座位登记与空白页**同时成立**（不切走页面）', () => {
+    const h = makeDeps({
+      saved: { form: 'assistant', seatSessionId: 'session-seat' },
+      current: '',
+      resolvable: ['session-seat'],
+    });
+    restorePersistedUiForm(h.deps);
+    expect(h.restoreSeat).toHaveBeenCalledWith('session-seat');
+    // 页面仍是空白页：只把草稿身份定成托管（首句按助手路径建会话），不离开这一页
+    expect(h.enterManagedDraft).toHaveBeenCalledTimes(1);
   });
 
   it('助手 + 座位为空 + 当前会话是托管出生：认它当座位（草稿首句已落盘）', () => {
@@ -156,10 +161,6 @@ describe('restorePersistedUiForm — 形态 / 座位 / 会话三件成对', () =
     restorePersistedUiForm(h.deps);
     expect(h.seedForm).toHaveBeenCalledWith('assistant');
     expect(h.restoreSeat).toHaveBeenCalledWith('session-flushed');
-    expect(h.persist).toHaveBeenCalledWith({
-      form: 'assistant',
-      seatSessionId: 'session-flushed',
-    });
   });
 
   it('助手 + 座位为空 + 当前会话是自助出生：回自助（出生来源只做守卫，不当权限）', () => {
@@ -172,7 +173,6 @@ describe('restorePersistedUiForm — 形态 / 座位 / 会话三件成对', () =
     restorePersistedUiForm(h.deps);
     expect(h.seedForm).not.toHaveBeenCalled();
     expect(h.restoreSeat).not.toHaveBeenCalled();
-    expect(h.persist).toHaveBeenCalledWith({ form: 'self', seatSessionId: '' });
   });
 });
 

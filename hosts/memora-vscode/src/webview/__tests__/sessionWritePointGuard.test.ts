@@ -118,8 +118,9 @@ describe('SESSION-RESUME-1 · 会话导航写点守卫', () => {
   });
 
   it('激活期早退必须挡在落盘之前（构造期无锁，写会话文件会 fail-closed）', () => {
-    // 真机事故：形态/座位恢复 → adoptSession → 这里整写会话文件 → 锁守卫抛错 → 扩展激活失败。
-    // 恢复链只读：这一笔改由启动归属裁决拿到跨进程锁之后补写（同一语义，合法上下文）。
+    // 真机事故：形态/座位恢复 → 切会话 → 这里整写会话文件 → 锁守卫抛错 → 扩展激活失败。
+    // 恢复链已改为只读（不导航 ⇒ 构造期不会走到这里）；本用例守住次序：将来任何把
+    // 「构造期切会话」加回来的改动，都必须先被这条早退拦住，不能在激活期落盘。
     const lines = source.split('\n');
     const idx = lines.findIndex((l) => l.includes(PERSIST_CALL));
     expect(idx).toBeGreaterThan(0);

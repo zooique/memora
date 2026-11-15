@@ -308,7 +308,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 「形态 + 座位」的持久层（单向回写，运行期真源仍是内存值，见 uiFormPersistence）
     uiState: () => this.uiState,
     sessionFacts: (sessionId) => this.sessionStore.sessionFacts(sessionId),
-    adoptSession: (sessionId) => this.setCurrentSessionId(sessionId),
     restoreSeat: (sessionId) => this.sessionModes.restoreManaged(sessionId),
   });
   /**
@@ -465,10 +464,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 是否仍在激活期（构造完成前）
    *
-   * 激活期只读磁盘：会话文件的整份写入有跨进程 fail-closed 锁守卫
-   * （`assertSessionWriteAllowed`），构造函数不在任何持锁上下文里。形态/座位恢复会走
-   * `adoptSession → setCurrentSessionId`，若照常写「上次停留」就会在激活期整写会话文件
-   * ⇒ 抛错 ⇒ 构建 provider 失败 ⇒ 整个扩展激活失败（真机 2/2）。
+   * 会话文件的整份写入有跨进程 fail-closed 锁守卫（`assertSessionWriteAllowed`），而构造
+   * 函数不在任何持锁上下文里。启动恢复链已改为**只读**（不导航 / 不写盘 / 不删键），这里是
+   * 第二道防线：将来任何把「构造期切会话」加回来的改动，都不会在激活期整写会话文件
+   * ⇒ 抛错 ⇒ 整个扩展激活失败（真机 2/2 出过）。
    */
   private _booting = true;
 
@@ -804,9 +803,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 上次停在空白页 ⇒ 先落回空白页（enter 内部经 finalizer 的唯一清空写点清 id），
     // 再走形态恢复——恢复分支据此看到「当前无会话」，不会把旧字硬塞给最近一条真会话。
     if (lastDraftPage) this._draft.enter();
-    // 形态 + 座位成对恢复（实现在 helpers/uiFormPersistence.ts）：播种形态、把座位写回
-    // SessionModeStore 并打「恢复」标签、必要时切到座位那条会话。必须在构造末尾调用——
-    // 依赖的 `_draft` / `_uiFormOps` 已就位，且早于首次 render 与 agent 装配。
+    // 形态 + 座位恢复（实现在 helpers/uiFormPersistence.ts）：只播种形态、把座位登记回
+    // SessionModeStore —— **只读**，不切页面 / 不写盘 / 不删键（用户口径 A：页面优先）。
+    // 必须在构造末尾调用：依赖的 `_draft` / `_uiFormOps` 已就位，且早于首次 render 与 agent 装配。
     // 激活期结束：此后所有导航（用户切会话 / 建会话）都正常写「上次停留」
     this._uiFormOps.restoreOnce();
     this._booting = false;
@@ -2243,13 +2242,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     });
     // 握手期间面板被销毁：补归还刚落到的锁并中止后续让位
     if (this._lockFinalizer.abandonIfDisposed(claim.sessionId)) return;
-    if (!claim.displaced) {
-      // 首选归属本进程：单窗口常态。构造期恢复链只读（见 `_booting`）⇒ 形态/座位恢复
-      // 欠下的「上次停留」在这里补——此刻已持该会话的跨进程锁；指针本就指向它则不动盘。
-      if (claim.sessionId !== this.sessionStore.getInitialSessionId())
-        this.sessionStore.setLastActiveSession(claim.sessionId);
-      return;
-    }
+    if (!claim.displaced) return; // 首选归属本进程：单窗口常态
     if (claim.sessionId) {
       const manager = this._agent?.sessionManager;
       if (manager) {

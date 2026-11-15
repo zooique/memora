@@ -4,18 +4,27 @@
  * 背景（2026-11-15 用户改口径）：「关闭时用的是托管形态就保持托管，重启后照旧」。
  * 此前形态是纯进程内状态（见 `assistantFormOps` 头注释），重启一律回 `self`。
  *
- * 两条纪律，别在这两处之外扩张：
+ * 四条纪律，别在这四处之外扩张：
  * - **持久值只当种子**：本文件只在启动时读一次 `workspaceState`，运行期真源仍是
  *   `assistantFormOps` 的内存 `form`；回写由 `assistantFormOps` 单向发出（`persistForm`）。
  * - **形态与座位成对**：助手形态的全部含义是「我在跟助手说话」⇒ 必须同时把座位写回
  *   `SessionModeStore`。只恢复外观不恢复座位，会重演「界面说托管、实际没人接」的旧病灶
  *   （第一轮真机验收修的就是它）。
+ * - 🔴 **恢复只读**（2026-11-15 真机第二次同类事故后定）：启动恢复**不改当前显示的会话 /
+ *   页面位置、不写任何持久层、不删任何键**。恢复期做副作用已经出过两次事：一次是整写会话
+ *   文件撞 fail-closed 锁（扩展激活失败），一次是恢复时切走用户正在看的空白页、顺带把
+ *   `composerDraftPage` 与空白页草稿清掉（数据静默丢失）。两件都不是「恢复」该干的事。
+ *   所以这里只做**只读判定 + 内存播种**；要导航，等恢复返回之后由用户动作或上层策略另起一步。
+ * - **不猜**：座位会话已删除 ⇒ 静默回落自助，不降到别的会话上赌，也不纠正磁盘
+ *   （纠正也是写盘；下次启动同样只读判定一次，代价是多读一个键，不是多一次坏恢复）。
  *
- * 恢复的三条分支（每条都写清了「凭什么这么认」）：
- *   ① 有座位且会话还在 → 播种助手形态 + 写回座位 + 打到座位那条会话（用户拍板 O3）；
- *   ② 有座位但会话已删 → **回落自助**并把磁盘纠正成自助（不造新会话、不猜近似的会话）；
- *   ③ 座位为空（关闭时在托管草稿里）→ 没有会话就进托管草稿（与点「助手」同一条路径）；
- *      有会话（草稿首句已落盘）则只认**托管出生**的那条，自助出生的一律回自助。
+ * 恢复的分支（用户口径 A「页面优先」：重启后回到关窗时看的那个页面）：
+ *   ① 座位还在 → 把座位写回 `SessionModeStore` 并播种助手形态（**不切页面**）；
+ *      座位已删 → 不登记、不赌别的会话、也不纠正磁盘（纠正也是写盘）。
+ *   ② 当前页面是空白页（无当前会话）→ 把草稿身份对齐成托管草稿（只定「第一句发给谁」；
+ *      本来就在空白页，不是切走，也不清空白页草稿与标记）。
+ *      「上次有座位」与「上次停在空白页」可以同时成立：座位照旧登记，当前视图仍是空白页。
+ *   ③ 有会话但座位不可用 → 只认**托管出生**的那条（草稿首句已落盘的情形），自助出生的一律回自助。
  *
  * 为什么外置：`chatPanel.ts` 贴着 max-lines 基线（只降不升），面板只留一行调用。
  */
@@ -33,14 +42,10 @@ export interface UiFormRestoreDeps {
   sessionFacts: (sessionId: string) => { resolvable: boolean; hostedBorn: boolean };
   /** 播种形态：只写内存，不换会话、不发消息（见 `AssistantFormOps.seed`） */
   seedForm: (form: UiForm) => void;
-  /** 采用某条会话为当前显示会话（面板导航唯一写点） */
-  adoptSession: (sessionId: string) => void;
-  /** 把座位写回 `SessionModeStore` 并打「恢复」标签 */
+  /** 把座位写回 `SessionModeStore` 并打「恢复」标签（纯内存容器，不落盘、不换页面） */
   restoreSeat: (sessionId: string) => void;
   /** 进托管草稿（与点「助手」时「一条托管会话都没有」的分支同源） */
   enterManagedDraft: () => void;
-  /** 回写持久层（回落自助时必须纠正磁盘，否则每次启动都重演一次坏恢复） */
-  persist: (state: PersistedUiFormState) => void;
 }
 
 /**
@@ -68,46 +73,31 @@ export function readPersistedUiForm(
  */
 export function restorePersistedUiForm(deps: UiFormRestoreDeps): void {
   const saved = readPersistedUiForm(deps.uiState);
-  // 自助 = 面板的默认值：不需要播种、不需要写盘（写一次也是同一个值）
+  // 自助 = 面板的默认值：不需要播种（不写盘、不纠正磁盘——恢复只读）
   if (!saved || saved.form === 'self') return;
 
-  if (saved.seatSessionId) {
-    if (deps.sessionFacts(saved.seatSessionId).resolvable) {
-      bindSeat(deps, saved.seatSessionId);
-      return;
-    }
-    // 座位会话已删除：不降到「最近一条会话」上去赌，回自助并纠正磁盘
-    deps.persist({ form: 'self', seatSessionId: '' });
-    return;
+  const seat = saved.seatSessionId;
+  // ① 座位还在 ⇒ 只登记座位（纯内存容器）；**不切页面**（用户口径 A：页面优先）
+  const seatOk = seat !== '' && deps.sessionFacts(seat).resolvable;
+  if (seatOk) {
+    deps.seedForm('assistant');
+    deps.restoreSeat(seat);
   }
 
-  const current = deps.currentSessionId();
-  if (!current) {
-    // 关闭时在托管草稿里：恢复成托管草稿（首句发送才落会话，与原来完全同态）
+  // ② 页面是空白页（无当前会话）⇒ 把草稿身份对齐成托管草稿：只定「第一句发给谁」，
+  //    不切页面（本来就在空白页）、不清空白页草稿与标记
+  if (!deps.currentSessionId()) {
     deps.seedForm('assistant');
     deps.enterManagedDraft();
-    deps.persist({ form: 'assistant', seatSessionId: '' });
     return;
   }
-  // 草稿的首句发送过后才有会话：只有托管出生的那条才配当座位，自助出生的一律回自助
-  const facts = deps.sessionFacts(current);
-  if (facts.hostedBorn && facts.resolvable) {
-    bindSeat(deps, current);
-    return;
-  }
-  deps.persist({ form: 'self', seatSessionId: '' });
-}
 
-/**
- * 把某条会话绑成恢复的托管座位
- *
- * @param deps 面板窄面
- * @param seat 座位会话 id（已确认可解析）
- */
-function bindSeat(deps: UiFormRestoreDeps, seat: string): void {
-  deps.seedForm('assistant');
-  // 与 O3 拍板一致：形态恢复成助手但当前会话不是座位那条时，切过去
-  if (seat !== deps.currentSessionId()) deps.adoptSession(seat);
-  deps.restoreSeat(seat);
-  deps.persist({ form: 'assistant', seatSessionId: seat });
+  // ③ 有会话但没有可用座位 ⇒ 只有托管出生的那条才认（自助出生的一律回自助）
+  if (seatOk) return;
+  const facts = deps.sessionFacts(deps.currentSessionId());
+  if (facts.hostedBorn && facts.resolvable) {
+    deps.seedForm('assistant');
+    // 登记身份（纯内存）：不登记的话这条会话会被按自助装配，助手工具面当场丢失
+    deps.restoreSeat(deps.currentSessionId());
+  }
 }
