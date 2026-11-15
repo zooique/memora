@@ -73,7 +73,8 @@ export interface ConfirmDeps {
    * 为什么需要：后台会话的卡上不了屏，只能挂到 30 分钟超时被 fail-closed 自动拒。
    * 托管语义下用户把操作权委派给了代理，确认请求不需要人点击——但**请求本身照常存在**：
    * 照常入队、按前台规则推送（前台推卡 / 后台不推）、该起计时就起计时，差别只在
-   * 「谁来按」，并在既有决策记录里留下「托管代批」的痕迹（不冒充用户批准）。
+   * 「谁来按」；裁决记录走同一条入口，来源归属由会话级 / 轮级气泡的来源盖章表达，
+   * 不在这条记录上另加标记。
    *
    * 边界（刻意如此）：
    *   - **只认代理驱动**：自助会话不注入判据 ⇒ 排队/计时/上屏/超时逐字不变；
@@ -393,7 +394,8 @@ export class ConfirmCoordinator {
     // 只有卡真的发出去了，提醒才有承接面（先提醒后发卡 = 用户回来找不到卡）。
     this._deps.onConfirmShown?.({ requestId, label: entry.logLabel });
     // 代理驱动的会话：卡照常推出、计时照常起，随后由代理「代按批准」——微任务让本轮
-    // post / 计时器先落地，再走与用户点击**同一条**应答入口（决策记录同源，但文案标「托管代批」）。
+    // post / 计时器先落地，再走与用户点击**同一条**应答入口（决策记录同源，来源归属
+    // 由会话级 / 轮级气泡上的来源盖章表达，不在裁决文案上另加标记）。
     // 用 `_findSession` 反查而非前台会话：微任务执行前若已切走，找不到就不答，
     // 绝不对着新前台会话的卡误按。
     if (entry.autoApprove) {
@@ -442,10 +444,9 @@ export class ConfirmCoordinator {
   ): void {
     const word =
       verdict === 'approved'
-        ? entry.autoApprove
-          ? // 代批留痕：明确写出「托管代批」，不写成与用户亲手点击一样的「已批准」
-            vscode.l10n.t('Approved on your behalf (managed)')
-          : vscode.l10n.t('Approved')
+        ? // 代批与用户亲手批准共用同一条裁决文案：来源归属由会话级 / 轮级气泡上的
+          // 来源盖章表达，不在这条记录上另加标记（2026-11-15 用户拍板）。
+          vscode.l10n.t('Approved')
         : verdict === 'declined'
           ? vscode.l10n.t('Declined')
           : confirmTimeoutNotice();

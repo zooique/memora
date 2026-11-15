@@ -689,7 +689,8 @@ describe('ConfirmCoordinator · disposeSession 会话删除清理（E4 批 3）'
  * 判据：
  *   ① 请求**照常走链路**：入队、按前台规则推送（前台推卡 / 后台不推）、该起计时就起计时；
  *   ② 差别只在「谁来按」：代理驱动的会话由代理代按批准，与用户点击同一条 `answerFor` 通路；
- *   ③ 留痕可分辨：决策记录写「托管代批」，不写成与用户亲手点击一样的「已批准」；
+ *   ③ 裁决文案不另加标记：代批与用户亲手批准都写「Approved」，来源归属由会话级 / 轮级
+ *      气泡上的来源盖章表达（2026-11-15 用户拍板）；
  *   ④ 自助会话（判据 false / 未注入）⇒ 排队、上屏、超时、留痕逐字不变。
  */
 describe('ConfirmCoordinator · 代理驱动会话由代理代按（isAgentDrivenSession）', () => {
@@ -725,7 +726,7 @@ describe('ConfirmCoordinator · 代理驱动会话由代理代按（isAgentDrive
     };
   }
 
-  it('后台托管会话：照常入队（计数 + 离屏提醒都发），由代理代按批准，留痕切回可见', async () => {
+  it('后台托管会话：照常入队（计数 + 离屏提醒都发），由代理代按批准，切回补上屏', async () => {
     vi.useFakeTimers();
     const h = makeManagedCoordinator(['s-managed']);
     const stub = agentStub();
@@ -742,12 +743,14 @@ describe('ConfirmCoordinator · 代理驱动会话由代理代按（isAgentDrive
     expect(h.requests()).toHaveLength(0);
     expect(h.closed()).toHaveLength(0);
     expect(h.shown).toHaveLength(1);
-    // ③ 后台决策记录不写当前屏幕（防串台），切回该会话补上屏一次「托管代批」
+    // ③ 后台决策记录不写当前屏幕（防串台），切回该会话补上屏一次普通批准记录
     expect(h.decisions()).toHaveLength(0);
     h.coordinator.setForeground('s-managed');
     const decisions = h.decisions();
     expect(decisions).toHaveLength(1);
-    expect(String(decisions[0].message)).toContain('Approved on your behalf (managed)');
+    // 裁决文案与用户亲手批准一致：不另加「托管代批」标记
+    expect(String(decisions[0].message)).toContain('Approved');
+    expect(String(decisions[0].message)).not.toContain('managed');
     expect(String(decisions[0].message)).toContain('foo.md');
     // 载荷纪律沿用既有单点：不记 description 全文
     expect(String(decisions[0].message)).not.toContain(CARGO_MARKER);
@@ -765,13 +768,14 @@ describe('ConfirmCoordinator · 代理驱动会话由代理代按（isAgentDrive
     const settled = stub.trigger(confirmInfo());
 
     await expect(settled).resolves.toBe(true);
-    // 推卡 → 代按 → 收卡：与用户手点确认的可见轨迹一致，但留痕标「托管代批」
+    // 推卡 → 代按 → 收卡：与用户手点确认的可见轨迹一致，裁决文案也一致
     expect(h.requests()).toHaveLength(1);
     expect(h.closed()).toHaveLength(1);
     expect(h.shown).toHaveLength(1);
     const decisions = h.decisions();
     expect(decisions).toHaveLength(1);
-    expect(String(decisions[0].message)).toContain('Approved on your behalf (managed)');
+    expect(String(decisions[0].message)).toContain('Approved');
+    expect(String(decisions[0].message)).not.toContain('managed');
   });
 
   it('后台托管会话 FIFO：两条按序各代按一次，两条决策记录都在', async () => {
