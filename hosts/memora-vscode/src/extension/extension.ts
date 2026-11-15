@@ -705,6 +705,8 @@ export function activate(context: vscode.ExtensionContext): void {
     // 图片缓存（会话回放前预读窗口内附件字节；与 Agent 的 imageResolver 同一实例）
     imageCache,
     sessionModes, // 与 assemblyDeps 同一实例（命令入口与装配链共读一份 Map<sid, mode>）
+    // 形态 + 座位的种子来源：**工作区级**（不是 globalState——那会把 A 项目的托管形态带到 B 项目）
+    context.workspaceState,
   );
   // 注入 Round-based 视图加载器（用于加载 round-based 会话的历史消息）
   // 未注入时 chatPanel 仅支持 legacy 模式（向后兼容）

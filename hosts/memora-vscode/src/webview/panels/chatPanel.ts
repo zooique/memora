@@ -298,10 +298,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     listManagedSessionIds: () => this.sessionModes.listManagedSessionIds(),
     switchToSession: (sessionId) => this.switchToSession(sessionId),
     newSessionFromCommand: (mode) => this.newSessionFromCommand(mode),
-    setContext: (uiForm) => {
+    setContext: (uiForm) =>
       // 菜单 when 判据只认这个键：形态一变必须同步写，否则标题栏按钮与实际形态相反
-      void vscode.commands.executeCommand('setContext', UI_FORM_CONTEXT_KEY, uiForm);
-    },
+      void vscode.commands.executeCommand('setContext', UI_FORM_CONTEXT_KEY, uiForm),
+    // 「形态 + 座位」的持久层（单向回写，运行期真源仍是内存值，见 uiFormPersistence）
+    uiState: () => this.uiState,
+    sessionFacts: (sessionId) => this.sessionStore.sessionFacts(sessionId),
+    adoptSession: (sessionId) => this.setCurrentSessionId(sessionId),
+    restoreSeat: (sessionId) => this.sessionModes.restoreManaged(sessionId),
   });
   /**
    * 收回本会话域（外置实现）：运行期归属交接 + 形态同步 + 「收不回什么」的如实说明
@@ -317,9 +321,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 只读运行态（peek 不建记录）：与既有「在跑就拒绝收回」判据同一份
     isStreaming: (sessionId) => this._runtime.peek(sessionId)?.streaming === true,
     currentSessionId: () => this._currentSessionId,
-    forgetAgent: (sessionId) => {
-      this._sessionAgents.delete(sessionId);
-    },
+    forgetAgent: (sessionId) => void this._sessionAgents.delete(sessionId),
     releaseAgent: (sessionId) => this._releaseAgent?.(sessionId),
     assemble: (sessionId) => this.agentForSession(sessionId),
     bindAgent: (agent) => this.bindAgent(agent),
@@ -738,10 +740,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     /**
      * 会话模式容器（extension 注入；缺省 = 进程内实例，仅「上次模式」不跨重启）。
      *
-     * ⚠️ 与来源标记的张力：mode 不落盘、重启回落 `'self'`；而 `origin` 是持久事实。
-     * 托管会话重启后不再以主控身份运行，但历史仍标记 `'hosted'`——两者不同步是设计允许的。
+     * ⚠️ 与来源标记的张力：mode 本身不落盘；**唯一起点**是 `restoreOnce` 恢复的那条座位
+     * （2026-11-15 起「形态 + 座位成对恢复」，其余会话重启仍回落 `'self'`）。而 `origin`
+     * 是持久事实：托管会话重启后不再以主控身份运行，历史仍标记 `'hosted'`——两者不同步是设计允许的。
      */
     private readonly sessionModes: SessionModeStore = createEphemeralSessionModeStore(),
+    /**
+     * 工作区级持久层（`workspaceState`）：形态 + 座位的**种子来源**
+     *
+     * 缺省 undefined = 不恢复（单测 / 嵌入宿主行为与改造前一致：重启回自助）。
+     * 只读一次（构造末尾的 `restoreOnce`），运行期不再读——见 `uiFormPersistence` 头注释。
+     */
+    private readonly uiState?: vscode.Memento,
   ) {
     this._providerStore = providerStore;
     // 初始会话 = **上次停留的会话**（导航指针），不可用时退回最近写入的会话；
@@ -763,6 +773,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       !this._currentSessionId,
     );
     this._lockFinalizer = new PanelSessionLockFinalizer(this.sessionStore, this._sessionIdAccess);
+    // 形态 + 座位成对恢复（实现在 helpers/uiFormPersistence.ts）：播种形态、把座位写回
+    // SessionModeStore 并打「恢复」标签、必要时切到座位那条会话。必须在构造末尾调用——
+    // 依赖的 `_draft` / `_uiFormOps` 已就位，且早于首次 render 与 agent 装配。
+    this._uiFormOps.restoreOnce();
     // 文档上下文不在此处预取（发送时实时读活动编辑器，见 snapshotDocContext）。
     // 曾用 onDidChangeActiveTextEditor 缓存——盖不住「同一文件被编辑」，脏态停在「打开时干净」⇒ 每轮拿磁盘旧版当真相（P0 撒谎源）。
   }
@@ -894,7 +908,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 当前侧栏形态（`extension` 的形态命令与渲染入口的唯一读取口）
    *
-   * 不落盘：进程重启即回 `self`（用户拍板「形态不记住」）。
+   * 持久化（2026-11-15 起）：切换时**单向回写** workspaceState（`memora.uiForm`），
+   * 供下次启动恢复形态 + 座位；运行期真源仍是内存值（见 helpers/uiFormPersistence.ts）。
    */
   public getUiForm(): UiForm {
     return this._uiFormOps.current();

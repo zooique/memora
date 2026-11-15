@@ -224,6 +224,7 @@ function setupPanel(
   agents: Record<string, Agent> = {},
   seedSessionIds: readonly string[] = [],
   sessionModes?: SessionModeStore,
+  uiState?: vscode.Memento,
 ): PanelHandle {
   const dir = makeTempDir('memora-e4-b2-');
   const roundStore = new WorkspaceRoundStore(dir);
@@ -253,6 +254,7 @@ function setupPanel(
     '/mock/workspace',
     undefined,
     sessionModes,
+    uiState,
   );
   const posted: PanelHandle['posted'] = [];
   /**
@@ -2302,5 +2304,104 @@ describe('webview 重建 · 宿主「用户正在打字」布尔复位', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(cast._composerHasText).toBe(false);
+  });
+});
+
+/**
+ * 工作区级持久层替身（恢复路径只读 `memora.uiForm` 一个键）
+ *
+ * @param value 持久值（undefined = 没存过）
+ */
+function uiStateOf(value: unknown): vscode.Memento {
+  // update 也要给：恢复路径会把「纠正后的值」回写（回落自助 / 绑定座位各写一次）
+  return { get: () => value, update: async () => undefined } as never;
+}
+
+describe('形态 + 座位成对恢复（重启后照旧）', () => {
+  it('记住的是助手形态 + 座位：重启后仍是助手，且座位写回为 managed / restored', () => {
+    const seat = '2026-11-15-seat';
+    const modes = createEphemeralSessionModeStore();
+    const { provider } = setupPanel(
+      {},
+      [seat],
+      modes,
+      uiStateOf({
+        form: 'assistant',
+        seatSessionId: seat,
+      }),
+    );
+
+    expect(provider.getUiForm()).toBe('assistant');
+    // 成对：只恢复外观不恢复座位，会重演「界面说托管、实际没人接」
+    expect(modes.isManaged(seat)).toBe(true);
+    // 打「恢复」标签：工作台据此说「恢复了座位」而不是「已收回」
+    expect(modes.isRestored(seat)).toBe(true);
+    expect(provider.getCurrentSessionId()).toBe(seat);
+  });
+
+  it('形态恢复成助手但上次停留的不是座位那条：切到座位那条（O3）', () => {
+    const seat = '2026-11-15-seat';
+    const other = '2026-11-15-other';
+    const modes = createEphemeralSessionModeStore();
+    const { provider, store } = setupPanel(
+      {},
+      [other, seat],
+      modes,
+      uiStateOf({
+        form: 'assistant',
+        seatSessionId: seat,
+      }),
+    );
+
+    expect(provider.getCurrentSessionId()).toBe(seat);
+    // 切过去走的是导航唯一写点：停留指针同步，下次启动仍会回到这里
+    expect(store.getInitialSessionId()).toBe(seat);
+  });
+
+  it('座位会话已被删除：回落自助，不把成自动会话恢复成托管', () => {
+    const other = '2026-11-15-other';
+    const modes = createEphemeralSessionModeStore();
+    const { provider } = setupPanel(
+      {},
+      [other],
+      modes,
+      uiStateOf({
+        form: 'assistant',
+        seatSessionId: '2026-11-15-gone',
+      }),
+    );
+
+    expect(provider.getUiForm()).toBe('self');
+    expect(modes.isManaged('2026-11-15-gone')).toBe(false);
+  });
+
+  it('没有持久值（老工作区 / 未注入）：行为与改造前一致，重启回自助', () => {
+    const seat = '2026-11-15-seat';
+    const modes = createEphemeralSessionModeStore();
+    const { provider } = setupPanel({}, [seat], modes);
+
+    expect(provider.getUiForm()).toBe('self');
+    expect(modes.isManaged(seat)).toBe(false);
+  });
+
+  it('切形态即回写（不攒到关闭时才写）：助手写座位、回自助清座位', async () => {
+    /** 捕获每次 workspaceState 写入（键 + 值） */
+    const writes: [string, unknown][] = [];
+    const ui = {
+      get: () => undefined,
+      update: async (key: string, value: unknown) => {
+        writes.push([key, value]);
+      },
+    } as never;
+    const { provider } = setupPanel({}, ['2026-11-15-seat'], createEphemeralSessionModeStore(), ui);
+
+    await provider.setUiForm('assistant');
+    // 进助手没有可接管的会话 ⇒ 托管草稿：座位此刻为空串，首句落会话后仍是空串
+    // （下次启动按「座位为空 + 当前会话托管出生」认回来，见 uiFormPersistence）
+    expect(writes.at(-1)).toEqual(['memora.uiForm', { form: 'assistant', seatSessionId: '' }]);
+
+    await provider.setUiForm('self');
+    // 回自助必须把座位清空，否则下次启动会把一条自助会话恢复成托管
+    expect(writes.at(-1)).toEqual(['memora.uiForm', { form: 'self', seatSessionId: '' }]);
   });
 });

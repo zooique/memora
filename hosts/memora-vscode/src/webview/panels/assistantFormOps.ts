@@ -6,7 +6,9 @@
  * 描述，两者不同源、不互相写入。
  *
  * 三条纪律（与 `SessionModeStore` 同源）：
- * - **不落盘**：重启一律回 `self`（用户拍板：形态不记住）；
+ * - **运行期不落盘读取**：形态的内存值是本进程真源。持久化（`persistForm`）只是**单向回写**，
+ *   供下次启动播种；运行期任何人再读持久值就是第二真相源（2026-11-15 用户改口径：
+ *   「关闭时是托管就保持托管」，见 `uiFormPersistence`）。
  * - **不记住也不推断**：webview 只显示宿主下发的 `ui_form`，自己不记；
  * - **形态与会话的接线只有这里一处**：进助手自动换会话、回自助还原位置，别在命令层再写一遍。
  *
@@ -14,8 +16,11 @@
  * 换会话链路」的自足域（与 `chatRunControlOps` / `chatSessionNavOps` 同型）。
  */
 import * as vscode from 'vscode';
+import type { PersistedUiFormState } from '../../shared/constants.js';
+import { UI_FORM_STATE_KEY } from '../../shared/constants.js';
 import type { ExtensionToWebviewMessage, UiForm } from '../../shared/protocol.js';
 import type { SessionMode } from '../../extension/host/sessionModeStore.js';
+import { restorePersistedUiForm } from '../helpers/uiFormPersistence.js';
 
 /**
  * 当前侧栏形态的 context key
@@ -51,12 +56,29 @@ export interface AssistantFormOpsDeps {
   newSessionFromCommand: (mode: SessionMode) => Promise<void>;
   /** 写 VS Code context key（菜单 `when` 判据） */
   setContext: (form: UiForm) => void;
+  /**
+   * 工作区级持久层（形态 + 座位的**唯一**持久层）
+   *
+   * 只写不读的两条纪律落在本域内：`apply` 一族单向回写（`persistState`），启动恢复才读一次
+   * （`uiFormPersistence`）。面板侧只负责把这个 Memento 递进来。
+   */
+  uiState: () => vscode.Memento | undefined;
+  /** 该会话的两项事实（能否解析 / 是否托管出生；判据在会话存储，本层不另写） */
+  sessionFacts: (sessionId: string) => { resolvable: boolean; hostedBorn: boolean };
+  /** 采用某条会话为当前显示会话（恢复时按 O3 切到座位那条；导航唯一写点） */
+  adoptSession: (sessionId: string) => void;
+  /** 把座位写回 `SessionModeStore` 并打「恢复」标签（`restoreManaged` 单点） */
+  restoreSeat: (sessionId: string) => void;
 }
 
 /** 形态域外露面 */
 export interface AssistantFormOps {
   /** 当前形态（`extension` 命令与渲染入口的唯一读取口） */
   current(): UiForm;
+  /** 启动恢复：只播种内存形态（不换会话、不发消息、不写 context key） */
+  seed(form: UiForm): void;
+  /** 启动恢复（读一次持久状态 → 形态 / 座位 / 会话三件一起就位；幂等） */
+  restoreOnce(): void;
   /** 切换形态（唯一写点） */
   set(form: UiForm): Promise<void>;
   /** 就地回自助形态（不换会话；供「收回本会话」这类就地改变归属的动作使用） */
@@ -73,7 +95,11 @@ export interface AssistantFormOps {
  * @param deps 面板提供的延迟闭包
  */
 export function createAssistantFormOps(deps: AssistantFormOpsDeps): AssistantFormOps {
-  /** 当前形态（`self` = 启动即自助；不落盘，进程重启即回本值） */
+  /**
+   * 当前形态（本进程真源；启动时可被持久化种子改写一次，见 `restoreOnce`）
+   *
+   * 默认 `self`：没有持久值 / 未注入 `workspaceState` 时行为与改造前完全一致。
+   */
   let form: UiForm = 'self';
   /**
    * 切进助手形态前自助面停留的位置
@@ -83,11 +109,35 @@ export function createAssistantFormOps(deps: AssistantFormOpsDeps): AssistantFor
    */
   let returnTo: string | undefined;
 
+  /** 形态切换的公共出口：`set` / `forceSelf` / 启动播种都只经这里写内存值 */
+  function seed(next: UiForm): void {
+    form = next;
+  }
+
   /** 状态 → 界面 / 菜单：一次写 state 必须同时落这三处，漏任何一处都是静默不一致 */
   function apply(next: UiForm): void {
-    form = next;
+    seed(next);
     deps.setContext(next);
     deps.post({ type: 'ui_form', form: next });
+  }
+
+  /**
+   * 把「当前形态 + 它绑定的会话」单向回写持久层
+   *
+   * 座位只在助手形态下有意义：自助形态一律回写空串（否则下次启动可能把一条自助会话
+   * 恢复成托管座位）。调用时机必须在**换会话之后**——进助手时先 `apply` 再切会话，
+   * 那时 `currentSessionId()` 还是旧值，提前写会把座位记错。
+   */
+  function persistState(state: PersistedUiFormState): void {
+    void deps.uiState()?.update(UI_FORM_STATE_KEY, state);
+  }
+
+  /** 回写「此刻」的形态 + 座位（`apply` 一族与恢复路径共用同一个落盘口） */
+  function persistCurrent(): void {
+    persistState({
+      form,
+      seatSessionId: form === 'assistant' ? deps.currentSessionId() : '',
+    });
   }
 
   /**
@@ -131,6 +181,34 @@ export function createAssistantFormOps(deps: AssistantFormOpsDeps): AssistantFor
     current: () => form,
     repush: () => deps.post({ type: 'ui_form', form }),
     /**
+     * 播种（启动恢复专用）：只写内存形态
+     *
+     * 幂等：同形态重复播种无副作用；不写 context key 是有意的——命令注册时会按
+     * `getUiForm()` 播种一次，那一条已覆盖菜单判据，这里多写一次只会让恢复路径
+     * 多一个必须维护的副作用。
+     */
+    seed(next: UiForm): void {
+      seed(next);
+    },
+    /**
+     * 启动恢复（幂等，构造期调用一次）
+     *
+     * 时机：早于首次 `render()`（首帧就是恢复后的形态），早于 agent 装配（座位先就位，
+     * 恢复的那条会话才会被按托管装配）。
+     */
+    restoreOnce(): void {
+      restorePersistedUiForm({
+        uiState: deps.uiState(),
+        currentSessionId: deps.currentSessionId,
+        sessionFacts: deps.sessionFacts,
+        seedForm: seed,
+        adoptSession: deps.adoptSession,
+        restoreSeat: deps.restoreSeat,
+        enterManagedDraft: () => void deps.newSessionFromCommand('managed'),
+        persist: persistState,
+      });
+    },
+    /**
      * 就地回自助形态（不换会话）
      *
      * 为什么**不**走 `set('self')`：那条路会 `restoreSelfPosition()` 跳回进助手前的位置——
@@ -142,6 +220,7 @@ export function createAssistantFormOps(deps: AssistantFormOpsDeps): AssistantFor
       // 同形态 = 无操作（幂等：重复收回不重复下发 ui_form）
       if (form === 'self') return;
       apply('self');
+      persistCurrent();
     },
     /**
      * 发送当口的归属提示（助手形态 × 当前会话已不归助手）
@@ -173,10 +252,13 @@ export function createAssistantFormOps(deps: AssistantFormOpsDeps): AssistantFor
         returnTo = deps.isDraft() ? '' : deps.currentSessionId();
         apply(next);
         await enterAssistantSession();
+        // 座位要等换会话落定后才准（此时 currentSessionId 才是助手会话 / 草稿空串）
+        persistCurrent();
         return;
       }
       apply(next);
       await restoreSelfPosition();
+      persistCurrent();
     },
   };
 }

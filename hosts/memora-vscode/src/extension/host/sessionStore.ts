@@ -910,6 +910,33 @@ export class WorkspaceSessionStore implements ISessionStore {
   // ─── 上次停留时刻（会话级属性，宿主扩展能力，非 ISessionStore 契约） ───
 
   /**
+   * 某会话能否在本地解析出实体（有 meta 或有 roundIds）
+   *
+   * 与 `getInitialSessionId` 的采信判据同源（那里原本是内联两行，这里抽出来给形态恢复复用）：
+   * 形态 + 座位恢复时必须先确认「这条会话磁盘上真存在」，否则会把已删会话恢复成座位，
+   * 用户看到的是空屏却零报错（与停留记录的坑同一个）。
+   */
+  isResolvable(sessionId: string): boolean {
+    return this.metas.has(sessionId) || this.roundIdsStore.has(sessionId);
+  }
+
+  /**
+   * 形态恢复一次取全「这条会话还在不在 / 是不是托管出生」
+   *
+   * 两件事同源（会话存储），合成一个查询是为了让面板依赖只多一行；判据本身不新增：
+   * 存在性复用 `isResolvable`（与 `getInitialSessionId` 同一口径），出生来源取 `origin`。
+   *
+   * @param sessionId 目标会话
+   * @returns `resolvable` = 本地能解析出实体；`hostedBorn` = 出生来源是托管
+   */
+  sessionFacts(sessionId: string): { resolvable: boolean; hostedBorn: boolean } {
+    return {
+      resolvable: this.isResolvable(sessionId),
+      hostedBorn: this.metas.get(sessionId)?.origin === 'hosted',
+    };
+  }
+
+  /**
    * 启动初始会话 = **唯一判据点**（chatPanel 构造时消费）
    *
    * 优先级：本进程内刚停留的会话 → 会话文件里 `lastActiveAt` 最大者 → 不可用则退回
@@ -927,14 +954,14 @@ export class WorkspaceSessionStore implements ISessionStore {
   getInitialSessionId(): string {
     // 本进程内的停留（setLastActiveSession 刚写过的情况）优先，且必须能解析出实体
     const inMemory = this.lastActiveSessionId;
-    if (inMemory && (this.metas.has(inMemory) || this.roundIdsStore.has(inMemory))) {
+    if (inMemory && this.isResolvable(inMemory)) {
       return inMemory;
     }
     // 持久化真源 = 会话文件里的 `lastActiveAt`（会话自身属性，取最大者）；同样只采信可解析的会话
     let latestSessionId = '';
     let latestAt = '';
     for (const [sessionId, at] of this.lastActiveAtStore) {
-      if (!this.metas.has(sessionId) && !this.roundIdsStore.has(sessionId)) continue;
+      if (!this.isResolvable(sessionId)) continue;
       if (at > latestAt) {
         latestSessionId = sessionId;
         latestAt = at;
@@ -986,6 +1013,14 @@ export type HostSessionStore = Omit<ISessionStore, 'deleteSession'> & {
   listArchivedIds: () => string[];
   /** 启动初始会话（导航指针优先，见 `getInitialSessionId`）：SESSION-RESUME-1 */
   getInitialSessionId: () => string;
+  /**
+   * 该会话能否在本地解析出实体（有 meta 或有 roundIds）
+   *
+   * 形态 + 座位的启动恢复用它做「座位还在不在」的校验：已删会话不能被恢复成座位。
+   */
+  isResolvable: (sessionId: string) => boolean;
+  /** 恢复形态时一次取全「还在不在 / 是不是托管出生」（判据同 `isResolvable`） */
+  sessionFacts: (sessionId: string) => { resolvable: boolean; hostedBorn: boolean };
   /** 记录上次停留会话：切会话 / 新建 / 分叉三条路径的单一写点 */
   setLastActiveSession: (sessionId: string) => void;
   /**

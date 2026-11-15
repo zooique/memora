@@ -63,6 +63,18 @@ export class SessionModeStore {
    */
   private readonly agentDriven = new Set<string>();
 
+  /**
+   * 本进程**从持久化状态恢复**出来的座位（形态 + 座位成对恢复，2026-11-15）
+   *
+   * 只做**事件来源标签**，不是权限来源：权限仍由 `modes` 回答（恢复时会写 `modes`）。
+   * 存在理由：恢复的座位满足「登记过但不归代理」，与「用户刚收回」在存储层长得一模一样；
+   * 工作台若只按 `has()` 判，就会把恢复说成「已从助手收回」——恢复完界面先自相矛盾。
+   *
+   * 生命周期：用户再次显式 `set()` 任何模式即清除（那一刻起它不再是「恢复来的」）；
+   * `delete()` 会话时一并清除。
+   */
+  private readonly restored = new Set<string>();
+
   constructor(private readonly globalState: Memento) {}
 
   /** 读取某会话的装配模式；未知会话一律 `'self'`（不猜、不从「上次模式」回填） */
@@ -161,12 +173,40 @@ export class SessionModeStore {
   /** 登记会话模式（新建会话 / 切换时写；仅进程内有效） */
   set(sessionId: string, mode: SessionMode): void {
     this.modes.set(sessionId, mode);
+    // 用户显式登记 ⇒ 它不再是「重启恢复来的」；恢复路径在 set 之后调 markRestored 重打标签
+    this.restored.delete(sessionId);
+  }
+
+  /**
+   * 标记该座位是「从持久化状态恢复的」（事件来源标签，不改变权限）
+   *
+   * 必须紧跟 `set(sessionId, 'managed')` 调用：`set` 会清标签，顺序反了标签就丢。
+   */
+  markRestored(sessionId: string): void {
+    this.restored.add(sessionId);
+  }
+
+  /**
+   * 从持久化状态恢复托管座位（**唯一**正确顺序：先写权限，再打来源标签）
+   *
+   * 顺序反了标签会丢：`set()` 内部会清掉「恢复」标签（用户显式重设即不再算恢复）。
+   * 恢复的座位有调度权、没有驱动方——工作台据此说「恢复了座位」而不是「已收回」。
+   */
+  restoreManaged(sessionId: string): void {
+    this.set(sessionId, 'managed');
+    this.restored.add(sessionId);
+  }
+
+  /** 该座位是否由本进程从持久化状态恢复（工作台文案的第四档判据） */
+  isRestored(sessionId: string): boolean {
+    return this.restored.has(sessionId);
   }
 
   /** 会话删除时清理，避免容器随已删会话累积 */
   delete(sessionId: string): void {
     this.modes.delete(sessionId);
     this.agentDriven.delete(sessionId);
+    this.restored.delete(sessionId);
   }
 
   /**
