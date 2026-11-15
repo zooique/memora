@@ -49,6 +49,8 @@ interface DepsOptions {
   registered?: string[];
   /** 当前仍由代理驱动的会话 */
   driven?: string[];
+  /** 本进程从持久化状态恢复的座位（形态 + 座位成对恢复） */
+  restored?: string[];
   /** 持久历史里的会话元数据 */
   metas?: SessionMeta[];
 }
@@ -72,6 +74,8 @@ function makeDeps(options: DepsOptions = {}): {
         // 本进程是否写过它的 mode：默认「没登记过」（= 重启后按历史重建）
         has: (sessionId: string) => (options.registered ?? []).includes(sessionId),
         isAgentDriven: (sessionId: string) => (options.driven ?? []).includes(sessionId),
+        // 恢复的座位同样「登记过」，但它是从磁盘恢复的、不是用户刚收回
+        isRestored: (sessionId: string) => (options.restored ?? []).includes(sessionId),
       } as never,
       sessionStore: {
         getSessionMeta: (sessionId: string) =>
@@ -134,6 +138,19 @@ describe('openWorkbench — 座位解析', () => {
     });
     await openWorkbench(h.deps);
     expect(h.open).toHaveBeenCalledWith('session-seat', { seatSource: 'revoked' });
+  });
+
+  it('重启恢复的座位：按 restored 打开，不被说成「已收回」', async () => {
+    const h = makeDeps({
+      current: 'session-seat',
+      // 恢复会先写 managed（登记过）再打 restored 标签：两者都为真时 restored 优先
+      managed: ['session-seat'],
+      registered: ['session-seat'],
+      restored: ['session-seat'],
+      metas: [meta('session-seat', 'hosted', '2026-11-14T00:00:00.000Z')],
+    });
+    await openWorkbench(h.deps);
+    expect(h.open).toHaveBeenCalledWith('session-seat', { seatSource: 'restored' });
   });
 
   it('本进程登记过但仍有代理在驱动：按 live（有实时驱动事实，不说「没有驱动方」）', async () => {

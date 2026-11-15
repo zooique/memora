@@ -141,20 +141,31 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
  * 座位状态行（按**事件来源**分档，不拿一句话套所有场景）
  *
  * 真机验收：只做了「收回托管」、没有重启，顶部却写着「重启后按历史重建」——
- * 来源档位被错说成了另一种事实。这里按三档各说各的：
+ * 来源档位被错说成了另一种事实。这里按四档各说各的：
  *   ① 仍按托管装配（实时事实）→ 不解释（空串）；
- *   ② 本进程从没见过这条会话（典型 = 重开窗口）→ 重启后按历史重建；
- *   ③ 本进程登记过、现在已不归代理（典型 = 刚收回）→ 已从助手收回；
- *   ④ 其余（仍归代理但没有调度权）→ 不再按托管运行。
+ *   ② 重启后从持久化状态恢复了座位（有调度权、还没开始跑）→ 恢复说明；
+ *   ③ 本进程从没见过这条会话（典型 = 重开窗口）→ 重启后按历史重建；
+ *   ④ 本进程登记过、现在已不归代理（典型 = 刚收回）→ 已从助手收回；
+ *   ⑤ 其余（仍归代理但没有调度权）→ 不再按托管运行。
  *
  * 为什么①要排在最前：面板绑定的是**打开时**的来源；用户收回后又点「助手」重新接管，
  * 来源快照仍是旧档，只有实时 `managed` 能立刻纠正这一行（否则会一直挂着「已收回」）。
+ *
+ * 第四档 `restored`（形态 + 座位成对恢复）：它有调度权、没有驱动方，与「收回」在事实上
+ * **相反**。这句话只说「它是恢复来的、还没开始跑」，不给用户任何需要维护的入口——
+ * 座位是内部判据，用户只认「我在跟助手说话」。
  *
  * @param snapshot 宿主投递的全量快照
  * @returns 要显示的句子（空串 = 隐藏该行）
  */
 function seatStateText(snapshot: WorkbenchSnapshot): string {
-  if (snapshot.orchestrator.managed) return '';
+  // 恢复的座位虽然也是 managed，但它恰好需要被看见一次 ⇒ 显式例外，不随 managed 隐藏
+  if (snapshot.orchestrator.managed && snapshot.seatSource !== 'restored') return '';
+  if (snapshot.seatSource === 'restored') {
+    return l10n.t(
+      'Seat restored after restart; it starts working when you send your first message',
+    );
+  }
   if (snapshot.seatSource === 'history') {
     return l10n.t('Rebuilt from history after restart; no live agent is driving it right now');
   }

@@ -1442,6 +1442,7 @@
   "Role pack: {0}": "角色：{0}",
   "This session is no longer a managed agent session": "这条会话现在不是托管会话",
   "Rebuilt from history after restart; no live agent is driving it right now": "重启后按历史重建；当前没有实时驱动方",
+  "Seat restored after restart; it starts working when you send your first message": "重启后恢复了助手座位；你发第一句它才会真正开始跑",
   "Taken back from the assistant; no live agent is driving it right now": "这条会话已从助手收回；当前没有实时驱动方",
   "Go to this session": "去这个会话",
   "Running": "在跑",

@@ -99,8 +99,11 @@ export interface WorkbenchAgentIdentity {
  *   当前没有实时驱动方；
  * - `revoked`：本进程登记过这条会话、但它现在已不归代理（典型 = 用户刚收回托管），
  *   同样是「当前没有实时驱动方」，却**不能**说成「重启后重建」。
+ * - `restored`：本进程**从持久化状态里把座位恢复回来了**（形态 + 座位成对恢复，2026-11-15）。
+ *   它有调度权（`isManaged` 为真）却没有驱动方，与 `revoked` 的「登记过但不归代理」在
+ *   事实上相反——不单独一档就会被说成「已收回」，恢复完界面先自相矛盾。
  */
-export type WorkbenchSeatSource = 'live' | 'history' | 'revoked';
+export type WorkbenchSeatSource = 'live' | 'history' | 'revoked' | 'restored';
 
 /** 工作台全量快照（每次 `ready` 都整份重发，不做增量） */
 export interface WorkbenchSnapshot {

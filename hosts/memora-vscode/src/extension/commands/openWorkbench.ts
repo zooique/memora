@@ -72,12 +72,14 @@ async function resolveSeat(deps: OpenWorkbenchDeps): Promise<SeatTarget | undefi
   // ① 当前显示会话就是托管会话：入口最自然的语义
   const current = deps.chatProvider.getCurrentSessionId();
   if (current && deps.sessionModes.isManaged(current)) {
-    return { sessionId: current, source: 'live' };
+    return { sessionId: current, source: liveSeatSource(deps, current) };
   }
 
   const managed = deps.sessionModes.listManagedSessionIds();
   // ② 唯一一条：直接打开
-  if (managed.length === 1) return { sessionId: managed[0], source: 'live' };
+  if (managed.length === 1) {
+    return { sessionId: managed[0], source: liveSeatSource(deps, managed[0]) };
+  }
   // ③ 多条：让用户选（标题取与历史列表同一口径；id 作描述便于排错）
   if (managed.length > 1) {
     const picked = await pickSession(
@@ -85,7 +87,7 @@ async function resolveSeat(deps: OpenWorkbenchDeps): Promise<SeatTarget | undefi
       managed,
       vscode.l10n.t('Choose the agent session to inspect'),
     );
-    return picked ? { sessionId: picked, source: 'live' } : undefined;
+    return picked ? { sessionId: picked, source: liveSeatSource(deps, picked) } : undefined;
   }
 
   // ④ 本进程托管表为空（重启后 mode 不落盘）：从持久历史里找托管来源会话。
@@ -120,20 +122,38 @@ async function resolveSeat(deps: OpenWorkbenchDeps): Promise<SeatTarget | undefi
 }
 
 /**
- * 给「历史档」的候选再判一次事件来源（实时驱动 / 收回 / 重启重建）
+ * 实时托管座位的来源档：恢复来的座位仍是 managed，但工作台要能看见「这是重启恢复的」
+ *
+ * 不加这一层，`isManaged` 就会把恢复座位一律说成 live（`orchestrator.managed` 为真 ⇒
+ * 工作台那一行直接隐藏），用户得不到任何可见标记——而恢复这件事恰恰需要被看见一次。
+ *
+ * @param deps 既有单例依赖
+ * @param sessionId 托管座位
+ * @returns `restored`（本进程从磁盘恢复的）或 `live`（用户本次点开 / 一直开着的）
+ */
+function liveSeatSource(deps: OpenWorkbenchDeps, sessionId: string): WorkbenchSeatSource {
+  return deps.sessionModes.isRestored(sessionId) ? 'restored' : 'live';
+}
+
+/**
+ * 给「历史档」的候选再判一次事件来源（实时驱动 / 恢复 / 收回 / 重启重建）
  *
  * 判据全部读既有容器，不新增状态：
  *   - `isAgentDriven(sid)` = 现在仍有代理在驱动它（这类有**实时事实**，按 `live` 处理：
  *     它没被收回，也就不能说「当前没有实时驱动方」）；
+ *   - `isRestored(sid)` = 本进程从持久化状态恢复了这条座位（有调度权、无驱动方）。
+ *     它与「用户刚收回」在 `has()` 上无法区分，必须单独一档；
  *   - `has(sid)` = 本进程写过这条会话的 mode（收回会写 `'self'`；重启后 Map 为空）；
  *   - 都没命中 = 本进程第一次见到它 ⇒ 重开窗口后按历史重建。
  *
  * @param deps 既有单例依赖
  * @param sessionId 候选会话
- * @returns 座位来源档（`live` / `revoked` / `history`）
+ * @returns 座位来源档（`live` / `restored` / `revoked` / `history`）
  */
 function historicalSeatSource(deps: OpenWorkbenchDeps, sessionId: string): WorkbenchSeatSource {
   if (deps.sessionModes.isAgentDriven(sessionId)) return 'live';
+  // 恢复的座位**有**调度权、只是没有驱动方：必须排在 has() 之前，否则被说成「已收回」
+  if (deps.sessionModes.isRestored(sessionId)) return 'restored';
   if (deps.sessionModes.has(sessionId)) return 'revoked';
   return 'history';
 }

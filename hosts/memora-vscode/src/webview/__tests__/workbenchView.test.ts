@@ -236,6 +236,29 @@ describe('workbenchView — 空态：读不到 ≠ 没有', () => {
     );
   });
 
+  it('重启恢复的座位：说「恢复了座位」，且不因 managed 为真而隐藏（可见标记）', () => {
+    const { view, seatState } = mount();
+    view.render(
+      snapshot({
+        seatSource: 'restored',
+        orchestrator: {
+          name: 'Memora',
+          sessionId: 'session-agent',
+          title: '代理会话',
+          // 恢复的座位**有**调度权（managed 为真）：这行仍要显示，否则恢复不可见
+          managed: true,
+        },
+      }),
+    );
+    expect(seatState.hidden).toBe(false);
+    expect(seatState.textContent).toBe(
+      'Seat restored after restart; it starts working when you send your first message',
+    );
+    // 不能把「恢复」说成另外两档事实
+    expect(seatState.textContent).not.toContain('Taken back from the assistant');
+    expect(seatState.textContent).not.toContain('Rebuilt from history after restart');
+  });
+
   it('座位被收回（没重启）：说「已从助手收回」，不说「重启后按历史重建」', () => {
     const { view, seatState } = mount();
     view.render(

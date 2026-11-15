@@ -1442,6 +1442,7 @@
   "Role pack: {0}": "",
   "This session is no longer a managed agent session": "",
   "Rebuilt from history after restart; no live agent is driving it right now": "",
+  "Seat restored after restart; it starts working when you send your first message": "",
   "Taken back from the assistant; no live agent is driving it right now": "",
   "Go to this session": "",
   "Running": "",
