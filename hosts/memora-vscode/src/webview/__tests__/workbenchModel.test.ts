@@ -263,6 +263,26 @@ describe('buildWorkbenchSnapshot — 清单口径', () => {
     expect(snapshot.seatSource).toBe('revoked');
   });
 
+  it('恢复的座位（restored）：也没有实时驱动事实，历史记录照样进清单（真机：整片消失）', () => {
+    // 判据要点：恢复座位的驱动归属不落盘，进程内集合必空——照旧过滤会把「被派过活」的
+    // 历史记录全挡掉，真机表现 = 重启后工作台清单为空。判据统一在 filtersByLiveDriver。
+    const snapshot = buildWorkbenchSnapshot(
+      baseInputs({
+        seatSource: 'restored',
+        isAgentDriven: () => false,
+        history: emptyHistory({
+          children: [{ sessionId: 'session-delegated', title: '被派过活', via: 'delegate' }],
+          totalRounds: 2,
+          scannedRounds: 2,
+        }),
+      }),
+    );
+    expect(snapshot.jobs.map((job) => job.sessionId)).toEqual(['session-delegated']);
+    expect(snapshot.jobs[0].via).toBe('delegate');
+    expect(snapshot.filteredCount).toBe(0);
+    expect(snapshot.seatSource).toBe('restored');
+  });
+
   it('历史重建模式（无实时驱动方）：不按当前驱动权过滤，历史记录照样只读列出', () => {
     const snapshot = buildWorkbenchSnapshot(
       baseInputs({

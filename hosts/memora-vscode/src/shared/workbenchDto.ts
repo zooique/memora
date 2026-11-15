@@ -113,6 +113,25 @@ export interface WorkbenchAgentIdentity {
  */
 export type WorkbenchSeatSource = 'live' | 'history' | 'revoked' | 'restored';
 
+/**
+ * 该座位来源的清单是否按「当前由代理驱动」过滤（**唯一判据**）
+ *
+ * 判据 = 这一档有没有**实时驱动事实**：有才过滤，没有就不许过滤（否则「重启后没有实时事实」
+ * 会把历史记录整片挡掉，真机表现 = 恢复座位底下被派过活的会话一个都不显示）。
+ * - `live`：本进程装配中，驱动集合就是真相 ⇒ 照常过滤（收回 / 用户自建的都在集合外）；
+ * - `revoked`：收回是本进程内的实时事件 ⇒ 照常过滤；
+ * - `restored`：座位从磁盘恢复，驱动归属不落盘 ⇒ 没有实时事实，**不过滤**；
+ * - `history`：重启后按历史重建 ⇒ 同样没有实时事实，**不过滤**。
+ *
+ * ⚠️ 消费方只读这一份，不许在别处按 `seatSource === 'xxx'` 自行判断（两套判据 = 两条口径）。
+ *
+ * @param seatSource 座位来源档
+ * @returns true = 该档按实时驱动权过滤清单
+ */
+export function filtersByLiveDriver(seatSource: WorkbenchSeatSource): boolean {
+  return seatSource === 'live' || seatSource === 'revoked';
+}
+
 /** 工作台全量快照（每次 `ready` 都整份重发，不做增量） */
 export interface WorkbenchSnapshot {
   /** 第一块：代理是谁 */

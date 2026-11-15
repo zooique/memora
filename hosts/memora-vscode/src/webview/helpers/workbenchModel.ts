@@ -26,11 +26,12 @@ import {
   type ListCoverageResult,
   type SessionActivity,
 } from '../../shared/sessionStatus.js';
-import type {
-  WorkbenchAgentIdentity,
-  WorkbenchJob,
-  WorkbenchSeatSource,
-  WorkbenchSnapshot,
+import {
+  filtersByLiveDriver,
+  type WorkbenchAgentIdentity,
+  type WorkbenchJob,
+  type WorkbenchSeatSource,
+  type WorkbenchSnapshot,
 } from '../../shared/workbenchDto.js';
 import { WORKBENCH_REBUILD_MAX_ROUNDS, type WorkbenchHistoryResult } from './workbenchHistory.js';
 
@@ -119,10 +120,10 @@ export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): Workben
   let filteredCount = 0;
   for (const [sessionId, origin] of merged) {
     // 当前驱动权过滤：用户收回后即使账本 / 历史还记着，也不再归代理（唯一判据）。
-    // 只有 `history`（重启后重建）不做这道过滤：那时没有实时驱动事实（集合必空），
-    // 照旧过滤会把历史记录全挡掉；界面另行说明「当前没有实时驱动方」。
-    // `revoked` 走过滤：收回是本进程内的实时事件，被收回的记录不再算「在管」。
-    if (inputs.seatSource !== 'history' && !inputs.isAgentDriven(sessionId)) {
+    // **是否过滤由座位来源决定**（判据只在 `filtersByLiveDriver` 一处）：`live` / `revoked`
+    // 有实时驱动事实 ⇒ 照常过滤；`history` / `restored` 没有（驱动归属不落盘）⇒ 不过滤，
+    // 否则重启后重建出来的历史记录会被「集合必空」整片挡掉，界面另行说明「没有实时驱动方」。
+    if (filtersByLiveDriver(inputs.seatSource) && !inputs.isAgentDriven(sessionId)) {
       filteredCount += 1;
       continue;
     }
