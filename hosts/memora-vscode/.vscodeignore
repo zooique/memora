@@ -45,7 +45,10 @@ dist/.build-stamp.json
 # `.workbuddy/**` = 本地调试日志（.gitignore 已忽略，但 vsce 不看 .gitignore）
 .workbuddy/**
 .tmp-vsce.log
-*.log
+# 必须用 `**/` 前缀：`*.log` 只匹配根目录，logs/host-*.log 会漏进包清单（2026-11-16 闸红实证）
+**/*.log
+# 宿主运行日志目录整体不入包（host-*.log 轮转产物，运行时才生成）
+logs/**
 
 # 手工验收脚本（仅本地按 docs/mcp-acceptance.md 手工跑，扩展运行时零读取）
 mcp-acceptance-server.mjs
