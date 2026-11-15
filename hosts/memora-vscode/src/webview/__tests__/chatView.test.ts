@@ -2382,6 +2382,32 @@ describe('UI-TOAST-1 瞬态提示浮层化（活动条出流 · 不挤占消息�
     // 骨架槽在位（生产模板；夹具由骨架 id 三方一致性守卫钉）
     expect(html).toContain('id="activityToastSlot"');
   });
+
+  it('CSS/HTML 源码守卫：助手形态状态签 = 圆点 + 短标签（不是 11px 整句解释）', () => {
+    // 视觉评审结论：那行「助手模式 · 它会替你安排会话」是全卡最小字号却承载最重要的事实，
+    // 且与空态两句解释同屏讲了三件事。jsdom 证不了层级 ⇒ 用源码守卫钉住形态与配色归属。
+    const css = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf8');
+    const html = readFileSync(join(__dirname, '..', 'panels', 'chatPanelHtml.ts'), 'utf8');
+    expect(html).toContain('assistant-mode-bar__tag');
+    expect(html).toContain('assistant-mode-bar__dot');
+    expect(html).not.toContain('assistant-mode-bar__text');
+    expect(html).not.toContain('Assistant mode · it arranges sessions for you');
+    // 签的文字回到前景档；只有装饰圆点用 accent（accent 是按钮底色，不当文字色）
+    expect(css).toMatch(/\.assistant-mode-bar__tag \{[^}]*color: var\(--text-primary\)/);
+    expect(css).toMatch(/\.assistant-mode-bar__dot \{[^}]*background: var\(--accent\)/);
+  });
+
+  it('CSS 源码守卫：托管卡底色走卡片主题面 + 左缘强调条，整圈描边让给聚焦态', () => {
+    // 真机评审：accent 淡底落到 editor-inactiveSelectionBackground（与用户消息气泡同色），
+    // 看着像「一条没发出去的消息」；整圈 accent 描边又与聚焦色同档 ⇒ 点进去几乎没变化。
+    const css = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf8');
+    const card = /body\[data-form='assistant'\] #inputWrap \{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(card).toContain('background: var(--surface-card)');
+    expect(card).toContain('border-left: var(--sp-0');
+    // 不再给整圈 accent 描边 / accent 淡底（形态差异只由左缘条承担）
+    expect(card).not.toContain('border-color: var(--accent');
+    expect(card).not.toContain('--accent-soft');
+  });
 });
 
 describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛）', () => {
@@ -13979,9 +14005,9 @@ describe('草稿页 = 角色显示内核兜底包，其余四项会话级投影�
 
     const hint = document.querySelector('.empty-mode-hint');
     expect(hint).not.toBeNull();
-    expect(hint?.textContent).toContain('This session lets the assistant work for you');
-    // 提示必须说明可切回自己聊（不是只报状态）
+    // 单点陈述：空态只说切回路径（模式是什么由输入区上方的状态签承担）
     expect(hint?.textContent).toContain('chat on your own again');
+    expect(hint?.textContent).not.toContain('assistant work for you');
 
     // 自助草稿：不打扰
     dispatch({ type: 'session_title', title: '新会话', draft: true });

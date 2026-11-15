@@ -6,8 +6,17 @@
  *   - 颜色只引 L2 语义令牌（其内部再映射 `--vscode-*`），跟着明/暗主题走；
  *   - 窄窗口把徽记与按钮换行，不做横向滚动；
  *   - 本文件零文案、零逻辑。
+ *
+ * ⚠ 令牌表必须**内嵌**（与 chatStyles / settingsStyles 同范式）：
+ *   本文件只引 `var(--…)`，若不同时注入 `tokens`，宿主给到的 CSS 里所有 `var()` 都是空值，
+ *   padding / border / background / gap / 字号整条失效——真机验收里工作台「整页没样式、
+ *   标题回到浏览器默认大字号、右侧状态被挤出面板」就是这个原因（2026-11-15）。
+ *   不要用「逐条写色值兜底」的方式绕：那会引出第二个色源，主题切换立刻分叉。
  */
+import { tokens } from './tokens.js';
+
 export const workbenchStyles = `
+${tokens}
 body {
   padding: 0;
   margin: 0;
@@ -88,6 +97,9 @@ body {
 .wb-job {
   display: flex;
   align-items: flex-start;
+  /* 允许换行：窄列（真机默认约 280px）下「标题块 + 右侧状态」放不下一行时，
+     右块整体落到第二行；不换行会把徽记/按钮**挤出面板右缘**（真机截图实证） */
+  flex-wrap: wrap;
   gap: var(--sp-4);
   padding: var(--sp-4) var(--sp-5);
   border: var(--line-solid);
@@ -119,10 +131,16 @@ body {
 }
 
 .wb-job__side {
-  flex: 0 0 auto;
+  /* 可收缩 + 允许内部换行：徽记很长（如「当前没有实时驱动方」）时先在自身内部折行；
+     margin-left: auto 保持右对齐（父级换行后仍贴右缘，不回到左缘） */
+  flex: 0 1 auto;
+  min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--sp-3);
+  margin-left: auto;
 }
 
 /* 状态徽记：四档 + 边缘事实各一档；颜色只表语义，不承载唯一信息（文字恒在） */
@@ -174,14 +192,14 @@ body {
   outline-offset: var(--sp-hair);
 }
 
-/* 窄窗口：徽记与按钮换行，避免标题被挤成一列单字（媒体查询无声明值，不入户值守卫） */
+/* 窄窗口：整行改纵向，右块占满宽度并保持右对齐（不再依赖 overflow 裁切） */
 @media (max-width: 420px) {
   .wb-job {
     flex-direction: column;
   }
 
   .wb-job__side {
-    align-self: flex-end;
+    align-self: stretch;
   }
 }
 `;

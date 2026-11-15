@@ -210,12 +210,13 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string, form: UiForm
       <span class="btn-icon" data-icon="scroll-bottom"></span>
     </button>
     <div id="inputWrap">
-      <!-- 助手形态标识条（ASSISTANT-FORM）：输入框**上方**一行小字，说明「现在是在跟助手
-           说话、它会替你安排会话」；右侧是工作台的入口（工作台仍是编辑器区独立面板，
-           不搬进侧栏——搬进来会伤自助形态那套会话列表）。
-           默认 hidden：自助形态零占位、零视觉变化；显隐由 chatView.applyForm 单点裁决。 -->
+      <!-- 助手形态标识条（ASSISTANT-FORM）：输入框**上方**一行状态签，左侧 accent 圆点 +
+           「助手模式」（形态的唯一陈述点；不再用整句解释，切回路径由空态那一行承担）；
+           右侧是工作台的入口（工作台仍是编辑器区独立面板，不搬进侧栏——搬进来会伤自助
+           形态那套会话列表）。默认 hidden：自助形态零占位、零视觉变化；显隐由
+           chatView.applyForm 单点裁决。 -->
       <div id="assistantModeBar" class="assistant-mode-bar" hidden>
-        <span class="assistant-mode-bar__text">${vscode.l10n.t('Assistant mode · it arranges sessions for you')}</span>
+        <span class="assistant-mode-bar__tag"><span class="assistant-mode-bar__dot" aria-hidden="true"></span>${vscode.l10n.t('Assistant mode')}</span>
         <button id="assistantWorkbenchBtn" class="assistant-mode-bar__link" type="button">${vscode.l10n.t('Workbench')}</button>
       </div>
       <!-- 附件行（选择态行）：你亲手选的能力（skill）排在盒内文字上方——面单贴在信封上；

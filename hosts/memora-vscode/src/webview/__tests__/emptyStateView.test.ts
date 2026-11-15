@@ -36,14 +36,17 @@ describe('emptyStateView · 草稿默认模式提示', () => {
     document.body.innerHTML = '';
   });
 
-  it('托管：渲染结论 + 切回自助说明，且挂在空态描述之后', () => {
+  it('托管：只给「怎么切回自助」一行，不再复述模式是什么', () => {
     const view = setup();
     view.setDefaultMode('managed');
 
     const hints = document.querySelectorAll('.empty-mode-hint');
     expect(hints).toHaveLength(1);
-    expect(hints[0]?.textContent).toContain('This session lets the assistant work for you');
+    // 单点陈述：空态只说切回路径（模式是什么由输入区上方的状态签承担）
     expect(hints[0]?.textContent).toContain('chat on your own again');
+    expect(hints[0]?.textContent).toContain('Back to Chatting Myself');
+    expect(hints[0]?.textContent).not.toContain('assistant work for you');
+    expect(hints[0]?.textContent).not.toContain('sent by the assistant');
     // 位置：紧跟在 emptyHint 之后（复用现有空态结构，不新增浮层）
     const hintEl = document.getElementById('emptyHint');
     expect(hintEl?.nextElementSibling?.classList.contains('empty-mode-hint')).toBe(true);

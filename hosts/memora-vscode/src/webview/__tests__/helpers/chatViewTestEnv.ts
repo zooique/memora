@@ -112,7 +112,7 @@ const HTML = `
       <!-- 助手形态标识条（ASSISTANT-FORM）：与生产骨架同步——默认 hidden，形态由 body[data-form]
            与 applyForm 决定；#assistantWorkbenchBtn 是工作台的唯一侧栏入口 -->
       <div id="assistantModeBar" class="assistant-mode-bar" hidden>
-        <span class="assistant-mode-bar__text">Assistant mode · it arranges sessions for you</span>
+        <span class="assistant-mode-bar__tag"><span class="assistant-mode-bar__dot" aria-hidden="true"></span>Assistant mode</span>
         <button id="assistantWorkbenchBtn" class="assistant-mode-bar__link" type="button">Workbench</button>
       </div>
       <!-- 输入框包裹层 + 左侧助手图标（生产同构：默认 display:contents / 图标 hidden） -->

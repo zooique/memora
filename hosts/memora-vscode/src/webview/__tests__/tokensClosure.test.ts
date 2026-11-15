@@ -23,6 +23,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+// 内嵌守卫直接消费生产导出的模板产物（不是读源码猜）——删掉 ${tokens} 时该守卫必红
+import { workbenchStyles } from '../styles/workbenchStyles.js';
 
 /** 本文件位于 src/webview/__tests__/ */
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -627,7 +629,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     'op-': 19, // 输入区控件去边框（2026-11-02）：.ctl[aria-disabled] 承接上传按钮置灰 opacity +1，
     //            .image-attach-btn.is-vision-off 自写 opacity 退役 -1 ⇒ 净不变（19，机械实测同步）。
     'icon-': 17,
-    'dot-': 22,
+    // 24：助手形态状态签（chatStyles）左侧 accent 圆点宽/高各引 var(--dot-sm) +2
+    // （2026-11-15，ASSISTANT-FORM 视觉评审；实数经 ../../scripts/count-token-refs.mjs 实锤同步）。
+    'dot-': 24,
     // 82：作品页（worksStyles）提示行与清单行各引 var(--line-solid) +2（2026-11-09，
     // WORK-PROJECTION-MOVE-1；实数经 scripts/count-token-refs.mjs 实锤同步）。
     // 84：同日第二批 UI 反馈订正，worksStyles 补页头 border-bottom / 页尾 border-top
@@ -783,5 +787,33 @@ describe('输入区胶囊触发器边框单一取值（UI-CTL-BORDER-1）', () =
       leaks,
       `输入区触发器又长出 border 覆盖规则（第二落点回归）：\n${leaks.join('\n')}`,
     ).toEqual([]);
+  });
+});
+
+/**
+ * 令牌表必须**内嵌**进每个面板的样式串（2026-11-15 真机回归锁）
+ *
+ * 宿主把样式串原样塞进 `<style>`，令牌只在 `tokens.ts` 定义。样式文件只引 `var(--…)`
+ * 而不内嵌 `${tokens}` 时，运行时所有 `var()` 都是空值 ⇒ padding / border / background /
+ * gap / 字号整条失效——真机现场就是「工作台整页没样式、标题回到浏览器默认大字号、
+ * 右侧状态被挤出面板」。这类失效 tsc / eslint / jsdom 全看不见，只能靠这条守卫拦。
+ */
+describe('面板样式必须内嵌令牌表（内嵌漏一次 = 整页失去样式）', () => {
+  /** 现有三张面板样式表（新增面板时必须一并登记，否则本守卫不覆盖） */
+  const PANELS = ['chatStyles.ts', 'settingsStyles.ts', 'workbenchStyles.ts'];
+
+  for (const file of PANELS) {
+    it(`${file} 同时具备 import 与 \${tokens} 插值`, () => {
+      const text = readFileSync(join(STYLES_DIR, file), 'utf8');
+      expect(text).toContain("from './tokens.js'");
+      expect(text).toContain('${tokens}');
+    });
+  }
+
+  it('workbenchStyles 展开产物里真的有令牌定义（反向守卫：空插值不算内嵌）', () => {
+    // 直接消费生产导出的模板产物：删掉 ${tokens} 时这里必红
+    expect(workbenchStyles).toContain('--sp-4: 10px');
+    expect(workbenchStyles).toContain('--surface-card:');
+    expect(workbenchStyles).toContain('--text-primary:');
   });
 });

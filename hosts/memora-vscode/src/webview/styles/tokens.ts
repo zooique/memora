@@ -140,6 +140,13 @@ export const tokens = `
     --text-primary: var(--vscode-foreground, #cccccc);
     --text-secondary: var(--vscode-descriptionForeground, #9aa0a6);
     --text-input: var(--vscode-input-foreground, #cccccc);
+    /* 链接前景（可点文字专用）——**不是** --accent：
+     *   --accent 是按钮**底色**（--vscode-button-background，深蓝 #0e639c），拿它当文字色在
+     *   暗色主题下与编辑区底色对比度约 2.2:1（真机验收实测），远低于 4.5:1 的可读线。
+     *   链接必须走 VS Code 的链接前景档，亮/暗主题各由主题给出：Dark 默认 #3794ff、
+     *   Dark Modern #4daafc、Light 默认 #006ab1（回退取 4daafc，与既有直引处同值）。 */
+    --text-link: var(--vscode-textLink-foreground, #4daafc);
+    --text-link-hover: var(--vscode-textLink-activeForeground, #79c0ff);
 
     /* === L2 语义令牌：字体族（VS Code 原生契约） ===
      * 此前 UI 字体栈与代码块等宽栈均以裸值散落各处（且等宽栈分裂为两套变体），

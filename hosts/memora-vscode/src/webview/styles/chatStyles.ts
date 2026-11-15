@@ -445,10 +445,10 @@ export const chatStyles = `
   }
   .empty-title { font-size: var(--font-lg, 14px); color: var(--text-primary, #cccccc); font-weight: 600; margin-bottom: var(--sp-2, 6px); }
   .empty-hint { font-size: var(--font-md, 12px); margin-bottom: var(--sp-5, 12px); }
-  /* 草稿默认模式提示：仅「本次草稿将按托管运行」时插入；普通文本行，不新增浮层。
-     不设 max-width / line-height：宽度继承空态容器（避免新增 --dim- / --lh- 令牌消费触发布局守卫）。 */
+  /* 草稿默认模式提示：只说「怎么切回自助」，不再复述模式是什么（模式的唯一陈述点是
+     上方那条带圆点的状态签）。不设 max-width / line-height：宽度继承空态容器
+     （避免新增 --dim- / --lh- 令牌消费触发布局守卫）。 */
   .empty-mode-hint { margin: 0 0 var(--sp-4, 10px); font-size: var(--font-md, 12px); }
-  .empty-mode-hint-title { color: var(--text-primary, #cccccc); font-weight: 600; }
   /* 示例提问 chips：点击填入输入框，主动引导新用户 */
   .empty-suggestions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2, 6px); }
   .suggestion-chip {
@@ -918,8 +918,9 @@ export const chatStyles = `
   .msg.assistant .msg-body ul,
   .msg.assistant .msg-body ol { padding-left: var(--sp-6, 16px); margin: 0 0 var(--sp-3, 8px); }
   .msg.assistant .msg-body li { margin: var(--sp-1, 4px) 0; }
-  .msg.assistant .msg-body a { color: var(--accent, #0e639c); text-decoration: none; }
-  .msg.assistant .msg-body a:hover { text-decoration: underline; }
+  /* 链接前景走 --text-link（主题 textLink 档）；--accent 是按钮底色，做文字色对比度不足 */
+  .msg.assistant .msg-body a { color: var(--text-link); text-decoration: none; }
+  .msg.assistant .msg-body a:hover { color: var(--text-link-hover); text-decoration: underline; }
   /* 行内代码 */
   .msg.assistant .msg-body code {
     font-family: var(--font-mono, ui-monospace, Consolas, monospace);
@@ -1604,9 +1605,25 @@ export const chatStyles = `
     line-height: var(--lh-normal);
     color: var(--text-secondary);
   }
-  body[data-form='assistant'] .assistant-mode-bar__text { flex: 1 1 auto; min-width: 0; }
+  /* 形态状态签：从「11px 小字承载最重要的事实」升级为可扫的一点一行——
+   * 左侧 accent 圆点负责「一眼看到形态」，文字回到 primary（比周围的 secondary 更亮）。
+   * accent 在此**只当装饰点**（不承载文字，不参与对比度）；文字仍走前景档。 */
+  body[data-form='assistant'] .assistant-mode-bar__tag {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1, 4px);
+    color: var(--text-primary);
+  }
+  body[data-form='assistant'] .assistant-mode-bar__dot {
+    width: var(--dot-sm, 5px);
+    height: var(--dot-sm, 5px);
+    border-radius: var(--radius-pill, 999px);
+    background: var(--accent);
+  }
   body[data-form='assistant'] .assistant-mode-bar__link {
     flex: 0 0 auto;
+    /* 标签改胶囊后不再有 __text 撑开剩余空间，右对齐由这里给（否则「工作台」会贴到标签后面） */
+    margin-left: auto;
     /* 点击热区：11px 下划线文字的可点面在真机上过小（验收里表现为「点了没反应」）。
        用内距把热区抬到 24px 高、加宽两侧，再用负右外边距把文字视觉右缘拉回原位——
        只放大可点面，不挪版、不新增元素。 */
@@ -1618,15 +1635,18 @@ export const chatStyles = `
     border: none;
     border-radius: var(--radius-sm, 2px);
     background: transparent;
-    color: var(--accent, #0e639c);
+    color: var(--text-link);
     font: inherit;
     cursor: pointer;
     text-decoration: underline;
   }
-  /* 卡片本体：品牌色描边 + 淡底，与自助形态的中性描边一眼可辨 */
+  /* 卡片本体：形态差异由**左缘强调条**承担，整圈描边让给聚焦态
+   * 底色改回卡片自己的主题面（--surface-card = editorWidget-background，与消息面同族），
+   * 不再用 accent 淡底——那会落到 editor-inactiveSelectionBackground，与用户消息气泡同色，
+   * 看着就像「一条没发出去的消息」。这里不写本地色值兜底：兜底只在 tokens.ts 一处。 */
   body[data-form='assistant'] #inputWrap {
-    border-color: var(--accent, #0e639c);
-    background: var(--accent-soft, rgba(128, 128, 128, 0.2));
+    background: var(--surface-card);
+    border-left: var(--sp-0, 2px) solid var(--accent);
   }
   /* 包裹层改横排：图标落到文字左缘（左内距由包裹层给，textarea 自身左内距归零） */
   body[data-form='assistant'] #inputBox {
@@ -1645,7 +1665,8 @@ export const chatStyles = `
     display: flex;
     flex: 0 0 auto;
     padding-top: var(--sp-6, 16px);
-    color: var(--accent, #0e639c);
+    /* 图标与「工作台」链接同一档前景色（--accent 是按钮底色，做图标/文字对比度不足） */
+    color: var(--text-link);
   }
   /* 附件行在场时 textarea 顶距收到 sp-2（见上方 :has 规则）⇒ 图标同刻度跟随，避免错行 */
   body[data-form='assistant'] #inputWrap:has(.skill-chip-row:not([hidden])) .assistant-mode-icon {
@@ -2990,10 +3011,10 @@ export const chatStyles = `
   .activity-metrics-empty[hidden] { display: none; }
   .activity-metrics-empty__open {
     padding: 0; border: none; background: none; cursor: pointer;
-    color: var(--vscode-textLink-foreground, #4daafc); font-size: inherit;
+    color: var(--text-link); font-size: inherit;
     text-decoration: underline;
   }
-  .activity-metrics-empty__open:hover { color: var(--vscode-textLink-activeForeground, #79c0ff); }
+  .activity-metrics-empty__open:hover { color: var(--text-link-hover); }
 
   /* 主动提问条 */
   #clarifyBar {

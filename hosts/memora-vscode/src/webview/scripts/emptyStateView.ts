@@ -175,7 +175,9 @@ export function createEmptyStateView(deps: EmptyStateViewDeps): {
   /**
    * 草稿默认模式提示：只在「本次草稿会以托管身份运行」时出现
    *
-   * 复用现有空态结构（描述下方一行文本），不新增浮层；文案说明影响面与切回自助的路径。
+   * 复用现有空态结构（描述下方一行文本），不新增浮层。
+   * ⚠ 只说「怎么切回自助」：模式是什么、消息由谁发，由输入区上方那条状态签唯一承担，
+   *   同屏不再出现第二种说法（真机验收：一句身份 + 两句解释 = 三种说法讲三件事）。
    * 必须在调用时经 `l10n.t` 取译文（模块加载早于语言包就绪）。
    */
   function setDefaultMode(mode?: 'self' | 'managed'): void {
@@ -187,16 +189,10 @@ export function createEmptyStateView(deps: EmptyStateViewDeps): {
     if (existing) return; // 重复投影（进入 / 重建 / 建会话失败回滚）不叠加
     const hint = document.createElement('div');
     hint.className = 'empty-mode-hint';
-    /** 结论行：当前默认模式 */
-    const title = document.createElement('div');
-    title.className = 'empty-mode-hint-title';
-    title.textContent = l10n.t('This session lets the assistant work for you');
-    /** 影响 + 切回路径：textContent 赋值防注入 */
-    const detail = document.createElement('div');
-    detail.textContent = l10n.t(
-      'Messages here are sent by the assistant on your behalf. To chat on your own again, use the Command Palette to choose how a new session runs.',
+    /** 切回路径：textContent 赋值防注入 */
+    hint.textContent = l10n.t(
+      'To chat on your own again, use "Back to Chatting Myself" in the view title bar.',
     );
-    hint.append(title, detail);
     emptyHint.insertAdjacentElement('afterend', hint);
   }
 
