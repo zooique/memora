@@ -23,11 +23,11 @@ import {
 import {
   projectSessionStatus,
   resolveListCoverage,
+  type ListCoverageResult,
   type SessionActivity,
 } from '../../shared/sessionStatus.js';
 import type {
   WorkbenchAgentIdentity,
-  WorkbenchCoverage,
   WorkbenchJob,
   WorkbenchSeatSource,
   WorkbenchSnapshot,
@@ -147,15 +147,16 @@ export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): Workben
     });
   }
   jobs.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  // 判据只算一次：结论与理由同一份，界面据此措辞（不再各自推断「为什么 partial」）
+  const listed = resolveCoverage(inputs, missingCount);
   return {
     orchestrator,
     seatSource: inputs.seatSource,
     jobs,
     filteredCount,
-    coverage: resolveCoverage(inputs, missingCount),
+    coverage: listed.coverage,
+    coverageReasons: listed.reasons,
     missingCount,
-    // 反查窗口截断的会话数：与 scan 分开报（两把尺子，别混成一个数）
-    dispatchTruncated: inputs.history.dispatchScan.truncated,
     scan: {
       maxRounds: WORKBENCH_REBUILD_MAX_ROUNDS,
       totalRounds: inputs.history.totalRounds,
@@ -168,17 +169,23 @@ export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): Workben
  * 解析清单覆盖状态
  *
  * 口径已外置到 `shared/sessionStatus.resolveListCoverage`：主控工具与工作台共用同一判据，
- * 避免「工作台说读不到、工具说一条都没有」这种两套答案。
+ * 避免「工作台说读不到、工具说一条都没有」这种两套答案。这里**只喂事实、不判**——
+ * 反查窗口截断也一并交给它，理由由它统一产出。
  *
  * @param inputs 读口
  * @param missingCount 找不到的会话数
  */
-function resolveCoverage(inputs: WorkbenchSnapshotInputs, missingCount: number): WorkbenchCoverage {
+function resolveCoverage(
+  inputs: WorkbenchSnapshotInputs,
+  missingCount: number,
+): ListCoverageResult {
   return resolveListCoverage({
     history: inputs.history,
     // 座位会话元数据都没了（会话被删 / 未落盘）：历史读不出来，不能说「一条都没有」
     seatExists: Boolean(inputs.readMeta(inputs.orchestratorId)),
     missingCount,
+    // 反查窗口：目标会话轮数超上限时「更早的派发没读到」，与轮窗口同属 partial 理由
+    dispatchTruncated: inputs.history.dispatchScan.truncated,
   });
 }
 

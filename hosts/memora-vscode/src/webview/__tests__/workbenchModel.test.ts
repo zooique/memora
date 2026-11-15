@@ -327,6 +327,18 @@ describe('buildWorkbenchSnapshot — 清单口径', () => {
     );
     expect(snapshot.scan).toMatchObject({ totalRounds: 120, scannedRounds: 60 });
     expect(snapshot.coverage).toBe('partial');
+    // 理由随结论一起透出：界面不再从 scan 自行推断「为什么 partial」
+    expect(snapshot.coverageReasons).toEqual([{ kind: 'history-window' }]);
+  });
+
+  it('反查窗口截断：partial 的理由是 dispatch-window（与工具同一份判据）', () => {
+    const snapshot = buildWorkbenchSnapshot(
+      baseInputs({
+        history: emptyHistory({ dispatchScan: { sessions: 3, truncated: 2 } }),
+      }),
+    );
+    expect(snapshot.coverage).toBe('partial');
+    expect(snapshot.coverageReasons).toEqual([{ kind: 'dispatch-window', count: 2 }]);
   });
 
   it('已删除会话（读不到元数据）整条跳过，不制造无名行', () => {

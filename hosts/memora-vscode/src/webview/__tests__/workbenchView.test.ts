@@ -52,7 +52,8 @@ function snapshot(overrides: Partial<WorkbenchSnapshot> = {}): WorkbenchSnapshot
     filteredCount: 0,
     coverage: 'complete',
     missingCount: 0,
-    dispatchTruncated: 0,
+    // 判据在 shared/sessionStatus 产出：默认无理由（complete）
+    coverageReasons: [],
     scan: { maxRounds: 60, totalRounds: 0, scannedRounds: 0 },
     ...overrides,
   };
@@ -110,7 +111,13 @@ describe('workbenchView — 空态：读不到 ≠ 没有', () => {
 
   it('有会话找不到：如实说「有 N 条找不到了」', () => {
     const { view, jobsEmpty } = mount();
-    view.render(snapshot({ coverage: 'partial', missingCount: 2 }));
+    view.render(
+      snapshot({
+        coverage: 'partial',
+        missingCount: 2,
+        coverageReasons: [{ kind: 'missing-sessions', count: 2 }],
+      }),
+    );
     expect(jobsEmpty.textContent).toBe('2 session(s) could not be found');
   });
 
@@ -119,6 +126,7 @@ describe('workbenchView — 空态：读不到 ≠ 没有', () => {
     view.render(
       snapshot({
         coverage: 'partial',
+        coverageReasons: [{ kind: 'history-window' }],
         scan: { maxRounds: 60, totalRounds: 120, scannedRounds: 60 },
       }),
     );
@@ -130,7 +138,8 @@ describe('workbenchView — 空态：读不到 ≠ 没有', () => {
     view.render(
       snapshot({
         jobs: [job('session-a', { kind: 'running' })],
-        dispatchTruncated: 2,
+        coverage: 'partial',
+        coverageReasons: [{ kind: 'dispatch-window', count: 2 }],
         scan: { maxRounds: 60, totalRounds: 5, scannedRounds: 5 },
       }),
     );
@@ -147,7 +156,8 @@ describe('workbenchView — 空态：读不到 ≠ 没有', () => {
       snapshot({
         jobs: [],
         filteredCount: 0,
-        dispatchTruncated: 1,
+        coverage: 'partial',
+        coverageReasons: [{ kind: 'dispatch-window', count: 1 }],
         scan: { maxRounds: 60, totalRounds: 3, scannedRounds: 3 },
       }),
     );
@@ -157,7 +167,10 @@ describe('workbenchView — 空态：读不到 ≠ 没有', () => {
 
   it('部分历史读不到：说「部分历史读不到」', () => {
     const { view, jobsEmpty } = mount();
-    view.render(snapshot({ coverage: 'partial' }));
+    // 只给 partial、没细分理由时由判据兜成 history-unreadable（不编具体窗口）
+    view.render(
+      snapshot({ coverage: 'partial', coverageReasons: [{ kind: 'history-unreadable' }] }),
+    );
     expect(jobsEmpty.textContent).toBe('Some history could not be read');
   });
 
@@ -353,6 +366,7 @@ describe('workbenchView — 空态：读不到 ≠ 没有', () => {
         jobs: [job('session-a', { kind: 'completed' })],
         coverage: 'partial',
         missingCount: 1,
+        coverageReasons: [{ kind: 'history-window' }, { kind: 'missing-sessions', count: 1 }],
         scan: { maxRounds: 60, totalRounds: 90, scannedRounds: 60 },
       }),
     );

@@ -400,10 +400,13 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
       const raw = await probe.agent.tools!.execute(LIST_WORK_SESSIONS_TOOL_NAME, '{}');
       const parsed = JSON.parse(raw) as {
         coverage: string;
+        coverageReasons: { kind: string; count?: number }[];
         scan: { totalRounds: number; scannedRounds: number; truncated: boolean };
         sessions: { sid: string; createdBy: string }[];
       };
       expect(parsed.coverage).toBe('partial');
+      // 判据只一处：工具与工作台拿到同一份理由，代理不必从 partial 一个词去猜
+      expect(parsed.coverageReasons).toEqual([{ kind: 'history-window' }]);
       expect(parsed.scan).toEqual({ totalRounds: 120, scannedRounds: 60, truncated: true });
       // 托管来源 + 账本没记 + 历史没扫到 ⇒ 不知道，不猜「用户」也不猜「代理」
       expect(parsed.sessions.find((s) => s.sid === TARGET_SESSION_ID)?.createdBy).toBe('unknown');

@@ -189,29 +189,72 @@ describe('projectCreatedBy — 归属三档', () => {
 
 describe('resolveListCoverage — 空清单与读不到的区分', () => {
   it('座位会话不存在 → unreadable（清单不可信，不能说一条都没有）', () => {
-    expect(resolveListCoverage({ history: { coverage: 'complete' }, seatExists: false })).toBe(
-      'unreadable',
-    );
+    expect(resolveListCoverage({ history: { coverage: 'complete' }, seatExists: false })).toEqual({
+      coverage: 'unreadable',
+      reasons: [],
+    });
   });
 
   it('历史读不出 → unreadable', () => {
-    expect(resolveListCoverage({ history: { coverage: 'unreadable' }, seatExists: true })).toBe(
-      'unreadable',
-    );
+    expect(resolveListCoverage({ history: { coverage: 'unreadable' }, seatExists: true })).toEqual({
+      coverage: 'unreadable',
+      reasons: [],
+    });
   });
 
-  it('历史读不全 / 有会话找不到 → partial', () => {
-    expect(resolveListCoverage({ history: { coverage: 'partial' }, seatExists: true })).toBe(
-      'partial',
-    );
+  it('历史读不全 / 有会话找不到 → partial，且理由说清是哪一种', () => {
+    // 只给 partial、没给细节：兜成 history-unreadable（不编具体窗口）
+    expect(resolveListCoverage({ history: { coverage: 'partial' }, seatExists: true })).toEqual({
+      coverage: 'partial',
+      reasons: [{ kind: 'history-unreadable' }],
+    });
     expect(
       resolveListCoverage({ history: { coverage: 'complete' }, seatExists: true, missingCount: 1 }),
-    ).toBe('partial');
+    ).toEqual({ coverage: 'partial', reasons: [{ kind: 'missing-sessions', count: 1 }] });
+    // 轮窗口截断：理由带 kind，界面据此说「只读了最近 N 轮」而不是一句无因的 partial
+    expect(
+      resolveListCoverage({
+        history: { coverage: 'partial', totalRounds: 90, scannedRounds: 60 },
+        seatExists: true,
+      }),
+    ).toEqual({ coverage: 'partial', reasons: [{ kind: 'history-window' }] });
+  });
+
+  it('反查窗口截断也进同一判据：partial 的理由是 dispatch-window', () => {
+    expect(
+      resolveListCoverage({
+        history: { coverage: 'complete', totalRounds: 3, scannedRounds: 3 },
+        seatExists: true,
+        dispatchTruncated: 2,
+      }),
+    ).toEqual({ coverage: 'partial', reasons: [{ kind: 'dispatch-window', count: 2 }] });
+  });
+
+  it('四类理由按固定顺序并列（界面与工具拿到同一份）', () => {
+    expect(
+      resolveListCoverage({
+        history: {
+          coverage: 'partial',
+          totalRounds: 90,
+          scannedRounds: 60,
+          unreadableRecords: 1,
+        },
+        seatExists: true,
+        missingCount: 1,
+        dispatchTruncated: 3,
+      }).reasons,
+    ).toEqual([
+      { kind: 'history-window' },
+      { kind: 'history-unreadable' },
+      { kind: 'missing-sessions', count: 1 },
+      { kind: 'dispatch-window', count: 3 },
+    ]);
   });
 
   it('座位在、历史读全、无缺失 → complete（只有这时空清单才是「一条都没有」）', () => {
-    expect(resolveListCoverage({ history: { coverage: 'complete' }, seatExists: true })).toBe(
-      'complete',
-    );
+    expect(resolveListCoverage({ history: { coverage: 'complete' }, seatExists: true })).toEqual({
+      coverage: 'complete',
+      reasons: [],
+    });
   });
 });

@@ -141,13 +141,12 @@ export interface WorkbenchSnapshot {
   /** 历史里有 sid、但磁盘上已找不到的会话数（跳过并计数，不静默丢弃） */
   missingCount: number;
   /**
-   * 反查「被派过活」时，因轮数超过回看上限而只扫了末尾一段的会话数
+   * `coverage` 的理由（判据只在 `resolveListCoverage` 一处，这里只是结论的携带）
    *
-   * 与 `scan` 是两把尺子：`scan` 说的是**创建者自己**的轮扫描窗口，这里说的是**目标会话**
-   * 的末尾回看窗口（每会话 20 轮、命中即停）。>0 表示更早的派发可能没读到——界面必须挂在
-   * 现有的「历史没读全」说明里说清，不能让用户只看到「少了几条」。
+   * 工作台按它措辞、主控工具按它回话：谁都不许再从 `scan` / `missingCount` /
+   * 反查口径自行推断「为什么 partial」——那就是第二份判据。
    */
-  dispatchTruncated: number;
+  coverageReasons: readonly ListCoverageReason[];
   /** 重建扫描口径（超上限时 webview 说清「只读了多少轮」） */
   scan: WorkbenchScanInfo;
 }
@@ -162,6 +161,21 @@ export type WorkbenchCoverage = 'complete' | 'partial' | 'unreadable';
  * 而 history 是宿主侧模块（会拖 `node:fs` / 内核值导入进浏览器包）。
  */
 export const WORKBENCH_DISPATCH_LOOKBACK_ROUNDS = 20;
+
+/**
+ * 清单 `partial` 的理由（**由 `resolveListCoverage` 唯一产出**）
+ *
+ * 工作台与主控工具都消费这一份：谁渲染谁负责措辞，但「为什么 partial」不许各自再判一遍。
+ * - `history-window`：创建者自己的轮窗口被截断（只扫了最近 N 轮）；
+ * - `history-unreadable`：历史里有记录读不出来（或调用方只给了 partial 没给细节）；
+ * - `missing-sessions`：历史里有 sid、盘上找不到该会话；
+ * - `dispatch-window`：目标会话的反查窗口被截断（更早的派发可能没读到）。
+ */
+export type ListCoverageReason =
+  | { kind: 'history-window' }
+  | { kind: 'history-unreadable' }
+  | { kind: 'missing-sessions'; count: number }
+  | { kind: 'dispatch-window'; count: number };
 
 /** 历史重建的扫描口径 */
 export interface WorkbenchScanInfo {

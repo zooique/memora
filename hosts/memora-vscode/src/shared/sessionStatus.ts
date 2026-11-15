@@ -19,7 +19,12 @@
 import type { Round, RoundStatus, SessionMeta } from '@zooique/memora';
 import { isRoundSettled, isRoundSuccessful } from '@zooique/memora';
 import { deriveInterruptReason, type InterruptReason } from './interruptReason.js';
-import type { WorkbenchCoverage, WorkbenchJobStatus, WorkbenchStopReason } from './workbenchDto.js';
+import type {
+  ListCoverageReason,
+  WorkbenchCoverage,
+  WorkbenchJobStatus,
+  WorkbenchStopReason,
+} from './workbenchDto.js';
 
 /** 单会话运行态（只回答「在跑吗 / 在等人吗」） */
 export interface SessionActivity {
@@ -160,25 +165,59 @@ export function projectCreatedBy(
 }
 
 /**
- * 解析清单覆盖状态（工作台与主控工具共用同一口径）
+ * 清单覆盖结论（覆盖状态 + 理由；`complete` / `unreadable` 时理由为空）
  *
- * 优先级：座位会话本身读不到 ⇒ `unreadable`（清单无从谈起）；历史读不全 / 有会话找不到 ⇒
- * `partial`；否则 `complete`。
+ * 理由类型定义在 `workbenchDto`（与 `WorkbenchCoverage` 同处，避免 shared 之间反向依赖）。
+ */
+export interface ListCoverageResult {
+  /** 三态结论 */
+  coverage: WorkbenchCoverage;
+  /** 理由（`partial` 时必非空；顺序 = 轮窗口 → 记录读不出 → 会话缺失 → 反查窗口） */
+  reasons: readonly ListCoverageReason[];
+}
+
+/**
+ * 解析清单覆盖状态（工作台与主控工具共用同一口径 —— 判据只此一处）
+ *
+ * 优先级：座位会话本身读不到 ⇒ `unreadable`（清单无从谈起）；否则按四类事实归纳理由，
+ * 有理由即 `partial`、无理由即 `complete`。
  *
  * ⚠️ `sessions` 为空且 `coverage !== 'complete'` 时，调用方**不得**把它当成「一条活都没有」。
  *
  * @param args 判定输入
+ * @returns 覆盖状态 + 理由（理由供上层措辞，不在上层重新判定）
  */
 export function resolveListCoverage(args: {
-  /** 历史重建结果 */
-  history: { coverage: WorkbenchCoverage };
+  /** 历史重建结果（缺省细节 ⇒ 不细分的 partial 也如实说出来） */
+  history: {
+    coverage: WorkbenchCoverage;
+    /** 本次扫描的轮窗口：总数 / 实际扫描数（缺省 = 没有窗口信息） */
+    totalRounds?: number;
+    scannedRounds?: number;
+    /** 成功解析但读不出内容的记录数（缺省 = 0） */
+    unreadableRecords?: number;
+  };
   /** 座位 / 调用方会话的元数据是否存在 */
   seatExists: boolean;
   /** 历史里有 sid、但磁盘上已找不到的会话数（主控工具不跳过，默认 0） */
   missingCount?: number;
-}): WorkbenchCoverage {
-  if (!args.seatExists) return 'unreadable';
-  if (args.history.coverage === 'unreadable') return 'unreadable';
-  if (args.history.coverage === 'partial' || (args.missingCount ?? 0) > 0) return 'partial';
-  return 'complete';
+  /** 反查「被派过活」时因超回看上限而截断的会话数（缺省 = 0） */
+  dispatchTruncated?: number;
+}): ListCoverageResult {
+  if (!args.seatExists || args.history.coverage === 'unreadable') {
+    return { coverage: 'unreadable', reasons: [] };
+  }
+  const h = args.history;
+  const reasons: ListCoverageReason[] = [];
+  if ((h.totalRounds ?? 0) > (h.scannedRounds ?? 0)) reasons.push({ kind: 'history-window' });
+  if ((h.unreadableRecords ?? 0) > 0) reasons.push({ kind: 'history-unreadable' });
+  // 调用方只给 partial、没给细节：如实说「读不全」，不编具体窗口
+  if (h.coverage === 'partial' && reasons.length === 0) {
+    reasons.push({ kind: 'history-unreadable' });
+  }
+  const missing = args.missingCount ?? 0;
+  if (missing > 0) reasons.push({ kind: 'missing-sessions', count: missing });
+  const dispatch = args.dispatchTruncated ?? 0;
+  if (dispatch > 0) reasons.push({ kind: 'dispatch-window', count: dispatch });
+  return { coverage: reasons.length > 0 ? 'partial' : 'complete', reasons };
 }

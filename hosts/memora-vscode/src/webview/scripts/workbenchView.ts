@@ -12,6 +12,7 @@ import * as l10n from '@vscode/l10n';
 import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
 import {
   WORKBENCH_DISPATCH_LOOKBACK_ROUNDS,
+  type ListCoverageReason,
   type WorkbenchJob,
   type WorkbenchJobStatus,
   type WorkbenchSnapshot,
@@ -84,24 +85,30 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
    * 不是覆盖缺失；已完成的记录本身就在清单里，空态解释句没有存在的余地。
    */
   const renderJobs = (snapshot: WorkbenchSnapshot): void => {
-    const { jobs, coverage, missingCount, filteredCount, scan, dispatchTruncated } = snapshot;
-    /** 是否因超上限只读了一部分（界面必须说清，不能当完整） */
-    const truncated = scan.totalRounds > scan.scannedRounds;
+    const { jobs, coverage, filteredCount, scan } = snapshot;
+    // 判据已在 shared/sessionStatus 产出（结论 + 理由）；这里只做措辞，不重新推断
+    const reasons = snapshot.coverageReasons;
+    /** 按 kind 取理由（同一 kind 至多一条） */
+    const reasonOf = <K extends ListCoverageReason['kind']>(kind: K) =>
+      reasons.find(
+        (reason): reason is Extract<ListCoverageReason, { kind: K }> => reason.kind === kind,
+      );
     jobsList.textContent = '';
     jobsEmpty.hidden = jobs.length > 0;
     if (jobs.length === 0) {
       // 空态句子按「我们知道多少」分档：读不到 ≠ 没有
+      const missing = reasonOf('missing-sessions');
       jobsEmpty.textContent =
         coverage === 'unreadable'
           ? l10n.t('History could not be read')
-          : missingCount > 0
-            ? l10n.t('{0} session(s) could not be found', missingCount)
-            : truncated
+          : missing
+            ? l10n.t('{0} session(s) could not be found', missing.count)
+            : reasonOf('history-window')
               ? l10n.t(
                   'Older history was not read (only the latest {0} rounds)',
                   scan.scannedRounds,
                 )
-              : dispatchTruncated > 0
+              : reasonOf('dispatch-window')
                 ? // 反查窗口截断：可能真的「派过但没读到」，不许落到「还没有交给助手的活」
                   l10n.t('Older dispatches were not read in some sessions')
                 : coverage === 'partial'
@@ -119,27 +126,29 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
     if (jobs.length > 0 && coverage === 'unreadable') {
       notices.push(l10n.t('Some history could not be read'));
     }
-    if (jobs.length > 0 && (truncated || dispatchTruncated > 0)) {
+    if (jobs.length > 0) {
       // 同一条「历史没读全」说明里交代两个窗口：创建者自己的轮窗口、目标会话的反查窗口
       const parts: string[] = [];
-      if (truncated) {
+      if (reasonOf('history-window')) {
         parts.push(
           l10n.t('Older history was not read (only the latest {0} rounds)', scan.scannedRounds),
         );
       }
-      if (dispatchTruncated > 0) {
+      const dispatch = reasonOf('dispatch-window');
+      if (dispatch) {
         parts.push(
           l10n.t(
             'Older dispatches were not read in {0} session(s) (only the latest {1} rounds each)',
-            dispatchTruncated,
+            dispatch.count,
             WORKBENCH_DISPATCH_LOOKBACK_ROUNDS,
           ),
         );
       }
-      notices.push(parts.join(' '));
+      if (parts.length > 0) notices.push(parts.join(' '));
     }
-    if (jobs.length > 0 && missingCount > 0) {
-      notices.push(l10n.t('{0} session(s) could not be found', missingCount));
+    const missing = reasonOf('missing-sessions');
+    if (jobs.length > 0 && missing) {
+      notices.push(l10n.t('{0} session(s) could not be found', missing.count));
     }
     jobsNotice.textContent = notices.join(' · ');
     jobsNotice.hidden = notices.length === 0;

@@ -243,6 +243,13 @@ export interface SessionHistoryFacts {
   totalRounds: number;
   /** 本次实际扫描的轮数（< total 即「上限截断」） */
   scannedRounds: number;
+  /**
+   * 反查「被派过活」的口径（可选：历史实现没提供时 = 不知道，不臆造）
+   *
+   * 结构上是 `WorkbenchHistoryResult.dispatchScan` 的子集：`truncated > 0` 说明有会话的
+   * 轮数超过回看上限，更早的派发可能没读到 —— 覆盖判据据此把 partial 的理由说清。
+   */
+  dispatchScan?: { truncated: number };
 }
 
 /** 角色包来源层（与角色页 / 设置页同一口径：内置 < 用户 < 项目） */
@@ -1041,17 +1048,22 @@ export function registerWorkSessionTools(
         latest ? { excerpt: latest.excerpt, at: latest.at } : null,
       );
     });
-    const coverage = resolveListCoverage({
+    // 判据只此一处（工作台同源）：结论 + 理由一起回给代理，不让它从 partial 一个词去猜
+    const listed = resolveListCoverage({
       history: history ?? { coverage: 'unreadable' },
       // 调用方自己都不在清单里 ⇒ 清单不可信（会话被删 / 存储加载失败），不能说「一条都没有」
       seatExists: callingSessionId
         ? metas.some((meta) => meta.sessionId === callingSessionId)
         : false,
+      // 反查窗口截断：更早的派发可能没读到（历史缺读口时按 0，不编截断）
+      dispatchTruncated: history?.dispatchScan?.truncated ?? 0,
     });
     return JSON.stringify(
       {
         ok: true,
-        coverage,
+        coverage: listed.coverage,
+        // 为什么 partial：四类理由之一或若干（措辞由读的人决定，结论不由他重判）
+        coverageReasons: listed.reasons,
         // 扫描口径：scannedRounds < totalRounds 即「上限截断」，来源归属可能因此为 unknown
         ...(history
           ? {
