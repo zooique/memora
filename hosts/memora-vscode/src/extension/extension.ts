@@ -53,7 +53,7 @@ import {
 // 会话状态投影（工作台与主控工具共用同一份判断，防两处漂移）
 import { projectSessionStatus } from '../shared/sessionStatus.js';
 import type { WorkbenchJobStatus } from '../shared/workbenchDto.js';
-// 「打开工作台」命令（命令面板 + 侧栏标题栏按钮共用）
+// 「打开工作台」命令（命令面板 + 助手形态输入区按钮共用；标题栏不再提供按钮，自助形态无此入口）
 import { registerOpenWorkbenchCommand } from './commands/openWorkbench.js';
 // 侧栏形态切换（自助 ⇄ 助手）：两条命令 + context key，菜单侧由 package.json#view/title 裁决
 import { registerAssistantFormCommands } from './commands/assistantForm.js';

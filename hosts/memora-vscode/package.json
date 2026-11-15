@@ -386,11 +386,6 @@
           "group": "navigation"
         },
         {
-          "command": "memora.openWorkbench",
-          "when": "view == memora.chat",
-          "group": "navigation@9"
-        },
-        {
           "command": "memora.form.assistant",
           "when": "view == memora.chat && memora.form != 'assistant'",
           "group": "navigation@8"
