@@ -130,6 +130,14 @@ body {
   word-break: break-word;
 }
 
+/* 来源分档（助手新建 / 派发接管）：比状态副行更弱，只交代「它怎么来的」 */
+.wb-job__via {
+  font-size: 0.85em;
+  color: var(--text-secondary);
+  opacity: 0.8;
+  word-break: break-word;
+}
+
 .wb-job__side {
   /* 可收缩 + 允许内部换行：徽记很长（如「当前没有实时驱动方」）时先在自身内部折行；
      margin-left: auto 保持右对齐（父级换行后仍贴右缘，不回到左缘） */

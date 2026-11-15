@@ -181,6 +181,7 @@ describe('MemoraWorkbenchPanel — 不保活生命周期', () => {
       totalRounds: 0,
       scannedRounds: 0,
       unreadableRecords: 0,
+      dispatchScan: { sessions: 0, truncated: 0 },
     }));
     panel = new MemoraWorkbenchPanel({
       extensionUri: {} as never,

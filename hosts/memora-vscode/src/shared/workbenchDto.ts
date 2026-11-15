@@ -65,6 +65,14 @@ export interface WorkbenchJob {
   status: WorkbenchJobStatus;
   /** 最后更新时间（ISO 8601；列表按此降序） */
   updatedAt: string;
+  /**
+   * 这条会话是怎么进到工作台的（两种来源在界面上必须说清，不许混成一种）
+   *
+   * - `'create'` = 助手开会话；`'delegate'` = 被派过活。
+   * 缺省 = 本进程账本里只有「被驱动」的事实、分不出来源（旧记录 / 收回前）：
+   * 界面不给来源标签，也不猜成某一种。
+   */
+  via?: 'create' | 'delegate';
 }
 
 /**

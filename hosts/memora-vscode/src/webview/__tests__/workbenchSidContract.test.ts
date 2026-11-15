@@ -91,6 +91,9 @@ describe('send_to_session 派发记录的配对面', () => {
     ] as unknown as ProcessEvent[];
     const rebuilt = rebuildWorkbenchChildren('session-agent', {
       readRoundIds: () => ['r1'],
+      // 本用例只钉摘要格式：不涉及反查面
+      listSessionIds: () => [],
+      readRoundDispatch: () => undefined,
       readRound: () =>
         ({
           id: 'r1',

@@ -23,6 +23,8 @@ function emptyHistory(overrides: Partial<WorkbenchHistoryResult> = {}): Workbenc
     totalRounds: 0,
     scannedRounds: 0,
     unreadableRecords: 0,
+    // 本用例不验派发反查口径：0 会话 = 没有候选
+    dispatchScan: { sessions: 0, truncated: 0 },
     ...overrides,
   };
 }
@@ -210,7 +212,7 @@ describe('buildWorkbenchSnapshot — 清单口径', () => {
     const snapshot = buildWorkbenchSnapshot(
       baseInputs({
         history: emptyHistory({
-          children: [{ sessionId: 'session-from-history', title: '整理周报' }],
+          children: [{ sessionId: 'session-from-history', title: '整理周报', via: 'create' }],
           totalRounds: 3,
           scannedRounds: 3,
         }),
@@ -228,7 +230,7 @@ describe('buildWorkbenchSnapshot — 清单口径', () => {
         // 出生记录明确是代理开的，但当前已归用户
         isAgentDriven: () => false,
         history: emptyHistory({
-          children: [{ sessionId: 'session-revoked', title: '旧任务' }],
+          children: [{ sessionId: 'session-revoked', title: '旧任务', via: 'create' }],
           totalRounds: 1,
           scannedRounds: 1,
         }),
@@ -250,7 +252,7 @@ describe('buildWorkbenchSnapshot — 清单口径', () => {
         childrenOf: () => ['session-revoked'],
         isAgentDriven: () => false,
         history: emptyHistory({
-          children: [{ sessionId: 'session-revoked', title: '旧任务' }],
+          children: [{ sessionId: 'session-revoked', title: '旧任务', via: 'create' }],
           totalRounds: 1,
           scannedRounds: 1,
         }),
@@ -268,7 +270,7 @@ describe('buildWorkbenchSnapshot — 清单口径', () => {
         // 重启后进程内驱动集合为空：照旧过滤会把历史记录全挡掉
         isAgentDriven: () => false,
         history: emptyHistory({
-          children: [{ sessionId: 'session-from-history', title: '整理周报' }],
+          children: [{ sessionId: 'session-from-history', title: '整理周报', via: 'create' }],
           totalRounds: 1,
           scannedRounds: 1,
         }),
@@ -287,7 +289,7 @@ describe('buildWorkbenchSnapshot — 清单口径', () => {
         readMeta: (sessionId) =>
           sessionId === 'session-gone' ? undefined : meta(sessionId, '2026-11-14T10:00:00.000Z'),
         history: emptyHistory({
-          children: [{ sessionId: 'session-gone', title: '旧任务' }],
+          children: [{ sessionId: 'session-gone', title: '旧任务', via: 'create' }],
           totalRounds: 1,
           scannedRounds: 1,
         }),

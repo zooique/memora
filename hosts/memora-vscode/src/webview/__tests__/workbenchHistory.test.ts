@@ -14,6 +14,7 @@ import type { ProcessEvent, Round } from '@zooique/memora';
 import {
   rebuildWorkbenchChildren,
   WORKBENCH_DISPATCH_EXCERPT_CHARS,
+  WORKBENCH_DISPATCH_LOOKBACK_ROUNDS,
   WORKBENCH_REBUILD_MAX_ROUNDS,
   type WorkbenchHistorySources,
 } from '../helpers/workbenchHistory.js';
@@ -98,12 +99,27 @@ function createSessionEvents(sid: string, title: string, callId = 'call-1'): Pro
   ];
 }
 
-/** 构造读口（默认一轮） */
-function sources(rounds: Round[], roundIds?: string[]): WorkbenchHistorySources {
+/**
+ * 构造读口（默认：一轮、没有其它会话、没有任何派发归属）
+ *
+ * @param rounds 创建者自己的轮
+ * @param roundIds 创建者的轮 id 顺序（缺省 = rounds 顺序）
+ * @param extra 反查面：其它会话的轮 id 列表 + 轮 id → 派发归属
+ */
+function sources(
+  rounds: Round[],
+  roundIds?: string[],
+  extra: {
+    sessions?: Record<string, string[]>;
+    dispatch?: Record<string, Round['dispatchedBy']>;
+  } = {},
+): WorkbenchHistorySources {
   const byId = new Map(rounds.map((r) => [r.id, r]));
   return {
-    readRoundIds: () => roundIds ?? rounds.map((r) => r.id),
+    readRoundIds: (sessionId) => extra.sessions?.[sessionId] ?? roundIds ?? rounds.map((r) => r.id),
     readRound: (id) => byId.get(id),
+    listSessionIds: () => Object.keys(extra.sessions ?? {}),
+    readRoundDispatch: (id) => extra.dispatch?.[id],
   };
 }
 
@@ -113,7 +129,9 @@ describe('rebuildWorkbenchChildren', () => {
       'session-agent',
       sources([round('r1', createSessionEvents('2026-11-14-session-abc', '整理周报'))]),
     );
-    expect(rebuilt.children).toEqual([{ sessionId: '2026-11-14-session-abc', title: '整理周报' }]);
+    expect(rebuilt.children).toEqual([
+      { sessionId: '2026-11-14-session-abc', title: '整理周报', via: 'create' },
+    ]);
     expect(rebuilt.coverage).toBe('complete');
     expect(rebuilt.totalRounds).toBe(1);
   });
@@ -124,6 +142,8 @@ describe('rebuildWorkbenchChildren', () => {
         throw new Error('disk error');
       },
       readRound: () => undefined,
+      listSessionIds: () => [],
+      readRoundDispatch: () => undefined,
     });
     expect(rebuilt.children).toEqual([]);
     expect(rebuilt.coverage).toBe('unreadable');
@@ -149,9 +169,63 @@ describe('rebuildWorkbenchChildren', () => {
     const rebuilt = rebuildWorkbenchChildren('session-agent', {
       readRoundIds: () => ['r1', 'r2'],
       readRound: (id) => (id === 'r1' ? round('r1', []) : undefined),
+      listSessionIds: () => [],
+      readRoundDispatch: () => undefined,
     });
     expect(rebuilt.unreadableRecords).toBe(1);
     expect(rebuilt.coverage).toBe('partial');
+  });
+
+  it('派发反查：目标会话最近一轮带创建者归属 ⇒ 进清单且来源是 delegate', () => {
+    const rebuilt = rebuildWorkbenchChildren(
+      'session-agent',
+      sources([], undefined, {
+        sessions: { 'session-target': ['t1', 't2'] },
+        dispatch: { t2: { from: 'session-agent', via: 'delegate' } },
+      }),
+    );
+    expect(rebuilt.children).toEqual([{ sessionId: 'session-target', via: 'delegate' }]);
+    expect(rebuilt.dispatchScan).toEqual({ sessions: 1, truncated: 0 });
+  });
+
+  it('派发反查只认这位创建者：别人派的会话不进清单', () => {
+    const rebuilt = rebuildWorkbenchChildren(
+      'session-agent',
+      sources([], undefined, {
+        sessions: { 'session-target': ['t1'] },
+        dispatch: { t1: { from: 'session-other', via: 'delegate' } },
+      }),
+    );
+    expect(rebuilt.children).toEqual([]);
+  });
+
+  it('派发反查从末尾往前、超回看上限就停：更早的派发读不到并如实上报 truncated', () => {
+    // 21 轮：派发发生在最早那一轮，末尾 20 轮都不是 ⇒ 按设计不认（越近越有路由价值）
+    const ids = Array.from({ length: WORKBENCH_DISPATCH_LOOKBACK_ROUNDS + 1 }, (_, i) => `t${i}`);
+    const rebuilt = rebuildWorkbenchChildren(
+      'session-agent',
+      sources([], undefined, {
+        sessions: { 'session-old': ids },
+        dispatch: { t0: { from: 'session-agent', via: 'delegate' } },
+      }),
+    );
+    expect(rebuilt.children).toEqual([]);
+    expect(rebuilt.dispatchScan).toEqual({ sessions: 1, truncated: 1 });
+  });
+
+  it('已由 create_session 认定的会话不被后来的派发改档（创造是更早的事实）', () => {
+    const rebuilt = rebuildWorkbenchChildren(
+      'session-agent',
+      sources([round('r1', createSessionEvents('session-both', '助手开的'))], undefined, {
+        sessions: { 'session-both': ['b1'] },
+        dispatch: { b1: { from: 'session-agent', via: 'delegate' } },
+      }),
+    );
+    expect(rebuilt.children).toEqual([
+      { sessionId: 'session-both', title: '助手开的', via: 'create' },
+    ]);
+    // 已被 create 认定的不参与反查
+    expect(rebuilt.dispatchScan.sessions).toBe(0);
   });
 
   it(`超过 ${WORKBENCH_REBUILD_MAX_ROUNDS} 轮 ⇒ 只扫最近 N 轮并如实标 partial`, () => {
@@ -181,7 +255,9 @@ describe('rebuildWorkbenchChildren', () => {
         ]),
       ]),
     );
-    expect(rebuilt.children).toEqual([{ sessionId: 'session-dup', title: '第一次' }]);
+    expect(rebuilt.children).toEqual([
+      { sessionId: 'session-dup', title: '第一次', via: 'create' },
+    ]);
     expect(rebuilt.coverage).toBe('complete');
   });
 
@@ -203,7 +279,7 @@ describe('rebuildWorkbenchChildren', () => {
         ]),
       ]),
     );
-    expect(rebuilt.children).toEqual([{ sessionId: 'session-x', title: undefined }]);
+    expect(rebuilt.children).toEqual([{ sessionId: 'session-x', title: undefined, via: 'create' }]);
     expect(rebuilt.coverage).toBe('complete');
   });
 });
@@ -320,7 +396,7 @@ describe('rebuildWorkbenchChildren · 派发记录（send_to_session）', () => 
         ]),
       ]),
     );
-    expect(rebuilt.children).toEqual([{ sessionId: 'session-abc', title: '新活' }]);
+    expect(rebuilt.children).toEqual([{ sessionId: 'session-abc', title: '新活', via: 'create' }]);
     expect(rebuilt.dispatches).toEqual([
       { sessionId: '2026-11-13-session-old', excerpt: '继续上次的活', at: EVENT_TS },
     ]);

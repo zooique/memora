@@ -51,7 +51,18 @@ export interface WorkbenchHistorySources {
   readRoundIds: (sessionId: string) => readonly string[];
   /** 按轮 id 读整轮（读不到返回 undefined） */
   readRound: (roundId: string) => Round | undefined;
+  /** 全部会话 id（反查「被派过活」的候选面；不读轮、只读会话索引） */
+  listSessionIds: () => readonly string[];
+  /**
+   * 按轮 id 读派发归属（**索引级，不读盘**；缺省 / 旧数据返回 undefined）
+   *
+   * 为什么不用 `readRound`：那是整轮文件读，按会话 × 轮数扫会拖慢开工作台。
+   */
+  readRoundDispatch: (roundId: string) => Round['dispatchedBy'] | undefined;
 }
+
+/** 反查「被派过活」时每个会话最多回看的轮数（从末尾往前、命中即停） */
+export const WORKBENCH_DISPATCH_LOOKBACK_ROUNDS = 20;
 
 /** 重建出的子会话（sid 必有；title 可能缺省，由会话元数据兜底） */
 export interface WorkbenchHistoryChild {
@@ -59,6 +70,14 @@ export interface WorkbenchHistoryChild {
   sessionId: string;
   /** 创建时给的标题（`tool_start.args.title`；可能缺省） */
   title?: string;
+  /**
+   * 这条会话是怎么进到工作台的（**两种来源不许混成一种**）
+   *
+   * - `'create'`：助手开会话（历史里的 `create_session` 成功结果）；
+   * - `'delegate'`：被派过活（反查目标会话最近轮的 `Round.dispatchedBy` 得到）。
+   *   已经被 `create` 认定的会话不因后来的派发改档：创造是更早的事实。
+   */
+  via: 'create' | 'delegate';
 }
 
 /** 重建出的派发记录（目标会话 + 这次派给它的内容摘录 + 时间） */
@@ -90,6 +109,18 @@ export interface WorkbenchHistoryResult {
   scannedRounds: number;
   /** 成功调用但解析不出 sid / 派发目标 / 内容的记录数（界面据此说「部分历史读不到」） */
   unreadableRecords: number;
+  /**
+   * 反查「被派过活」的扫描口径（覆盖度如实上报）
+   *
+   * `truncated` = 有会话的轮数超过回看上限（说明更早的派发可能读不到，
+   * 这是**按设计**排在后面，不是「读失败」；真读失败另计 `unreadableRecords`）。
+   */
+  dispatchScan: {
+    /** 实际参与反查的候选会话数（不含创建者自身、不含已由 create 认定的） */
+    sessions: number;
+    /** 轮数超过回看上限、只扫了末尾一段的会话数 */
+    truncated: number;
+  };
 }
 
 /**
@@ -115,6 +146,7 @@ export function rebuildWorkbenchChildren(
       totalRounds: 0,
       scannedRounds: 0,
       unreadableRecords: 0,
+      dispatchScan: { sessions: 0, truncated: 0 },
     };
   }
   // 只扫最近 N 轮：超了如实标 partial（旧会话多半在更早的轮里，界面会说明读不全）
@@ -139,6 +171,8 @@ export function rebuildWorkbenchChildren(
       unreadableRecords += 1;
     });
   }
+  // 反查「被派过活」：重启后账本为空，靠目标会话最近轮的 `dispatchedBy` 把清单补回来
+  const dispatchScan = collectDispatchedChildren(orchestratorId, sources, byId);
   return {
     children: [...byId.values()],
     dispatches: [...dispatches.values()],
@@ -146,7 +180,71 @@ export function rebuildWorkbenchChildren(
     totalRounds: roundIds.length,
     scannedRounds: scanned.length,
     unreadableRecords,
+    dispatchScan,
   };
+}
+
+/**
+ * 反查「被这位创建者派过活」的会话，并入子会话清单
+ *
+ * 只认 `Round.dispatchedBy.from === 创建者`——这是「谁派给谁」的唯一真相源；
+ * 不拿过程事件倒推创建者（那是同一事实的第二份来源，容易和轮文件打架）。
+ *
+ * 扫描口径（用户拍板 A）：**从末尾往前、命中即停、每会话最多 20 轮**。
+ * 「最近被派过」才有路由价值；很久以前派过、之后又自己聊了很多轮的会话本来就该排后面。
+ * 每步走索引级读口（`readRoundDispatch`），零磁盘 IO。
+ *
+ * @param orchestratorId 创建者会话 id
+ * @param sources 读取面
+ * @param byId 子会话累加器（已由 `create_session` 认定的不覆盖：创造是更早的事实）
+ * @returns 扫描口径（供覆盖度如实上报）
+ */
+function collectDispatchedChildren(
+  orchestratorId: string,
+  sources: WorkbenchHistorySources,
+  byId: Map<string, WorkbenchHistoryChild>,
+): { sessions: number; truncated: number } {
+  let ids: readonly string[];
+  try {
+    ids = sources.listSessionIds();
+  } catch {
+    // 会话列表读不出来：不补任何「猜测的」子会话，扫描口径如实报 0
+    return { sessions: 0, truncated: 0 };
+  }
+  let sessions = 0;
+  let truncated = 0;
+  for (const sessionId of ids) {
+    if (sessionId === orchestratorId) continue;
+    // 已由 create_session 认定：来源以「创造」为准，不因后来的派发改档
+    if (byId.has(sessionId)) continue;
+    let roundIds: readonly string[];
+    try {
+      roundIds = sources.readRoundIds(sessionId);
+    } catch {
+      continue;
+    }
+    sessions += 1;
+    if (roundIds.length > WORKBENCH_DISPATCH_LOOKBACK_ROUNDS) truncated += 1;
+    // 从末尾往前扫：命中即停（越近的派发越有路由价值）
+    for (
+      let i = roundIds.length - 1, seen = 0;
+      i >= 0 && seen < WORKBENCH_DISPATCH_LOOKBACK_ROUNDS;
+      i -= 1, seen += 1
+    ) {
+      let dispatch: Round['dispatchedBy'];
+      try {
+        dispatch = sources.readRoundDispatch(roundIds[i] as string);
+      } catch {
+        continue;
+      }
+      // 只认「这位创建者派来的」；别人的派发与旧数据（无字段）一律不算
+      if (dispatch?.from === orchestratorId) {
+        byId.set(sessionId, { sessionId, via: 'delegate' });
+        break;
+      }
+    }
+  }
+  return { sessions, truncated };
 }
 
 /**
@@ -211,7 +309,8 @@ function collectFromRound(
       continue;
     }
     if (!byId.has(sid)) {
-      byId.set(sid, { sessionId: sid, title: titles.get(event.payload.toolCallId) });
+      // 来源 = 助手开会话（与「被派过活」分档，界面不许混成一种）
+      byId.set(sid, { sessionId: sid, title: titles.get(event.payload.toolCallId), via: 'create' });
     }
   }
 }

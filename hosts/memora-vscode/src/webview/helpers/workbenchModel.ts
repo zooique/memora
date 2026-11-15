@@ -103,20 +103,21 @@ export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): Workben
   const orchestrator = buildIdentity(inputs);
   // 清单 = 本进程创建者账本 ∪ 历史重建。两边覆盖的**不是同一批会话**，谁也不是谁的超集：
   //   账本 = 本进程内「代理建的 + 派发接管的」（重启即空，仅本进程可见）；
-  //   历史 = 只从代理自己轮里的 create_session 重建「代理开的」——派发接管的目标不在其中
-  //          （dispatches 只是派发摘录，不进清单）。
-  // 所以两边都要合；都只是既有事实，不是两份状态源。
-  const merged = new Map<string, string | undefined>();
-  for (const child of inputs.history.children) merged.set(child.sessionId, child.title);
+  //   历史 = create_session 重建「代理开的」∪ 按 `Round.dispatchedBy` 反查「被派过活的」。
+  // 所以两边都要合；都只是既有事实（来源各带 `via`，界面分档展示，不混成一种）。
+  const merged = new Map<string, { title?: string; via?: 'create' | 'delegate' }>();
+  for (const child of inputs.history.children) {
+    merged.set(child.sessionId, { title: child.title, via: child.via });
+  }
   for (const sessionId of inputs.childrenOf(inputs.orchestratorId)) {
-    if (!merged.has(sessionId)) merged.set(sessionId, undefined);
+    if (!merged.has(sessionId)) merged.set(sessionId, {});
   }
   const jobs: WorkbenchJob[] = [];
   /** 历史里有 sid、但磁盘上已找不到的会话数（跳过并计数，不静默丢） */
   let missingCount = 0;
   /** 确实存在、但被「当前不由代理驱动」判据挡掉的记录数（空清单时如实说明用） */
   let filteredCount = 0;
-  for (const [sessionId, historyTitle] of merged) {
+  for (const [sessionId, origin] of merged) {
     // 当前驱动权过滤：用户收回后即使账本 / 历史还记着，也不再归代理（唯一判据）。
     // 只有 `history`（重启后重建）不做这道过滤：那时没有实时驱动事实（集合必空），
     // 照旧过滤会把历史记录全挡掉；界面另行说明「当前没有实时驱动方」。
@@ -137,10 +138,12 @@ export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): Workben
       // 两者都没有才退回占位标题（不把时间占位冒充「它开的活叫什么」）。
       // ⚠️ 用 `||` 而非 `??`：`getSessionDisplayName` 没名字时返回**空串**，
       //    `??` 会把空串当有效值，标题就变成空白行（历史标题被吞掉）。
-      title: getSessionDisplayName(meta) || historyTitle || inputs.titleOf(sessionId, meta),
+      title: getSessionDisplayName(meta) || origin.title || inputs.titleOf(sessionId, meta),
       // 状态判断只此一处（shared/sessionStatus）：主控工具调的是同一函数，防两处漂移
       status: projectSessionStatus(inputs, sessionId),
       updatedAt: meta.updatedAt,
+      // 来源分档：create（助手开的）/ delegate（被派过活）；分不出来源就不给标签
+      ...(origin.via ? { via: origin.via } : {}),
     });
   }
   jobs.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));

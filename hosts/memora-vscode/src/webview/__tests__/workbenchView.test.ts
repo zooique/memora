@@ -196,6 +196,7 @@ describe('workbenchView — 空态：读不到 ≠ 没有', () => {
         totalRounds: 2,
         scannedRounds: 2,
         unreadableRecords: 0,
+        dispatchScan: { sessions: 0, truncated: 0 },
       },
       peekActivity: () => ({ running: false, waiting: false }),
       readRoundIds: () => [],

@@ -1449,6 +1449,8 @@
   "Waiting for you": "等你",
   "Completed": "完成",
   "Handed over, not started yet": "已交给助手，还没开始",
+  "Created by assistant": "助手新建",
+  "Dispatched here": "派发接管",
   "Did not finish last time": "上次未正常结束",
   "No stop reason was recorded": "没有收到停止原因",
   "Status unavailable": "状态不可知",

@@ -194,6 +194,20 @@ function renderJob(document: Document, deps: WorkbenchViewDeps, job: WorkbenchJo
   title.textContent = job.title;
   main.appendChild(title);
 
+  // 来源分档：助手新建 / 派发接管。缺省不标——分不出来源时不许猜成某一种
+  const viaLabel =
+    job.via === 'create'
+      ? l10n.t('Created by assistant')
+      : job.via === 'delegate'
+        ? l10n.t('Dispatched here')
+        : '';
+  if (viaLabel) {
+    const via = document.createElement('div');
+    via.className = 'wb-job__via';
+    via.textContent = viaLabel;
+    main.appendChild(via);
+  }
+
   const described = describeStatus(job.status);
   if (described.detail) {
     const detail = document.createElement('div');

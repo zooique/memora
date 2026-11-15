@@ -592,13 +592,18 @@ export function activate(context: vscode.ExtensionContext): void {
   /**
    * 从代理会话历史重建「它开过哪些会话」
    *
-   * 工作台打开时与主控 `list_work_sessions` 共用同一读法：只读 `create_session` 的过程事件，
-   * 单次最多扫最近 60 轮（上限在 `workbenchHistory` 里），不落新账、不在启动时扫。
+   * 工作台打开时与主控 `list_work_sessions` 共用同一读法：过程事件读最近 60 轮（上限在
+   * `workbenchHistory` 里），另外按 `Round.dispatchedBy` 反查「被派过活」的会话
+   * （索引级、每会话末尾 20 轮），不落新账、不在启动时扫。
    */
   const rebuildWorkbenchHistory = (orchestratorId: string): WorkbenchHistoryResult =>
     rebuildWorkbenchChildren(orchestratorId, {
       readRoundIds: (sessionId) => sessionStore.getRoundIds(sessionId),
       readRound: (roundId) => roundStore.getById(roundId) ?? undefined,
+      // 反查候选面 = 会话索引（不读轮文件）
+      listSessionIds: () => sessionStore.listSessions(),
+      // 派发归属走索引级读口（零磁盘 IO）：绝不在此处用 readRound 逐轮读整文件
+      readRoundDispatch: (roundId) => roundStore.getDispatch(roundId),
     });
 
   /**
