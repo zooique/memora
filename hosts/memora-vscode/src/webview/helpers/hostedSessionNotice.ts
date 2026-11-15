@@ -14,6 +14,8 @@
  *     「起一轮」由面板经既有托管通道（`chat(origin='hosted')` + `runFlow`）完成，不新造通道；
  *   - 不落盘、不加 `SessionMeta` 字段：创建者关系与待汇报队列都只在进程内有效。重启后内存队列
  *     随之丢失，**刻意不补发**（宁可漏报一条旧落定，也不在重启后刷一屏历史）；
+ *   - 创建者实例**还没装配**（真机：重启后子会话先落定、创建者面板尚未装配）时，
+ *     通知压进待办、等实例就位由 `flushPending` 放出——**不许直接丢**（丢了用户永远看不到结果）。
  *   - 只通知**本进程内登记过创建者、且当前仍由代理驱动**的会话。登记来源两条：
  *     代理建会话（`create_session`）与代理派发接管（`send_to_session`）。
  *     `SessionMeta.origin` 只记出生事实（用户自建会话被派发后仍是 `'user'`），不作通知判据；
@@ -328,17 +330,23 @@ export class HostedSessionNotifier {
   /**
    * 真正投递：压入创建者的系统事件注入队列，并（空闲时）替它起一轮汇报
    *
-   * 只有投递成功才记去重键——取不到实例时如实不投，不装作已送达。
-   * 「忙 / 用户正在输入」不抢：正文进内存待办，等收场后由 `flushPending` 统一浮现。
+   * 受理即记去重键——三种受理形态（直接投递 / 忙时压待办 / 实例未装配时压待办）都算受理，
+   * 只有「判定不该通知」才不记。创建者实例还没装配时**不许直接丢**：真机场景是
+   * 「子会话先落定、创建者面板尚未装配」，丢掉等于用户永远看不到这条结果。压进待办后，
+   * 装配完成的当口由 `agentForSession` 调 `flushPending` 放出。
+   *
+   * @returns true = 已投进创建者事件队列（或已决定稍后自动放出）；false = 本轮不通知
    */
   private deliver(creator: string, text: string, key: string | undefined): boolean {
-    const loop = this.deps.getAgent(creator)?.agentLoop;
-    if (!loop) return false;
     if (key) this.notified.add(key);
+    const loop = this.deps.getAgent(creator)?.agentLoop;
+    // 实例未装配（或刚被摘）：先压待办，等实例就位再放；不丢、也不装作已送达
+    if (!loop) {
+      this.enqueuePending(creator, text);
+      return false;
+    }
     if (!this.deps.canWakeCreator(creator)) {
-      const queue = this.pendingReports.get(creator);
-      if (queue) queue.push(text);
-      else this.pendingReports.set(creator, [text]);
+      this.enqueuePending(creator, text);
       return true;
     }
     loop.enqueueCommandResult(text);
@@ -346,5 +354,17 @@ export class HostedSessionNotifier {
     // 下次用户说话时照样带进上下文——不丢事实，只是不主动开口这一种降级。
     this.deps.wakeCreator(creator);
     return true;
+  }
+
+  /**
+   * 把一条待浮现正文压进创建者的待办（同一轮重复信号不会重复排队：去重键在 `deliver` 入口就记了）
+   *
+   * @param creator 创建者会话
+   * @param text 已拼好的通知正文
+   */
+  private enqueuePending(creator: string, text: string): void {
+    const queue = this.pendingReports.get(creator);
+    if (queue) queue.push(text);
+    else this.pendingReports.set(creator, [text]);
   }
 }

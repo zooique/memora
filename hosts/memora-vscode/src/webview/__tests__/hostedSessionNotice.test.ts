@@ -1,11 +1,12 @@
 /**
  * 托管子会话落定通知器单测（第三 / 第四 / 第五切片）
  *
- * 钉九件事：用户停 → 结论归中断且只通知创建者；异常终止 → 结论归失败并带回原文；
+ * 钉这些事：用户停 → 结论归中断且只通知创建者；异常终止 → 结论归失败并带回原文；
  * 成功收场 → 结论归成功；用户自己的会话当前不归代理 → 不产生通知；
  * 代理派发接管的用户会话 → 照常通知；同一会话同一轮重复信号只写一条；
  * 取不到原因时如实标「不可知」，不伪造「用户停」；
  * 创建者忙 / 用户正在输入时不抢（进待办，收场后合并成一轮浮现）；
+ * 创建者实例还没装配时同样压待办、不丢，装配后放出；
  * 待办多条只唤醒一轮，且同一轮重复信号不会重复排队。
  */
 import { describe, expect, it, vi } from 'vitest';
@@ -69,6 +70,8 @@ function harness(): {
   managed: Set<string>;
   driven: Set<string>;
   rounds: Map<string, Round>;
+  /** 模拟「创建者实例还没装配 / 刚被摘」：false = `getAgent` 取不到创建者 */
+  setCreatorAssembled: (assembled: boolean) => void;
 } {
   const creatorQueue = vi.fn();
   const childQueue = vi.fn();
@@ -80,8 +83,10 @@ function harness(): {
   // 当前由代理驱动的会话（生产 = SessionModeStore.agentDriven；子会话出生后默认在内）
   const driven = new Set<string>([CHILD]);
   const rounds = new Map<string, Round>();
+  // 创建者实例单拎出来：`setCreatorAssembled` 要能摘掉再装回同一个对象
+  const creatorAgent = { agentLoop: { enqueueCommandResult: creatorQueue } } as unknown as Agent;
   const agents = new Map<string, Agent>([
-    [CREATOR, { agentLoop: { enqueueCommandResult: creatorQueue } } as unknown as Agent],
+    [CREATOR, creatorAgent],
     [CHILD, { agentLoop: { enqueueCommandResult: childQueue } } as unknown as Agent],
   ]);
   const notifier = new HostedSessionNotifier({
@@ -105,6 +110,11 @@ function harness(): {
     managed,
     driven,
     rounds,
+    setCreatorAssembled: (assembled) => {
+      // 摘掉 / 装回创建者实例：`getAgent` 直读这张表（生产 = 面板的 `_sessionAgents`）
+      if (assembled) agents.set(CREATOR, creatorAgent);
+      else agents.delete(CREATOR);
+    },
   };
 }
 
@@ -369,5 +379,30 @@ describe('HostedSessionNotifier', () => {
     h.notifier.flushPending(CREATOR);
     expect(h.creatorQueue).toHaveBeenCalledTimes(1);
     expect(h.wakeCreator).toHaveBeenCalledTimes(1);
+  });
+
+  it('创建者实例还没装配 → 压待办不丢（真机：子会话先落定、面板尚未装配）', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    h.rounds.set('r16', round('r16', 'complete', []));
+    h.notifier.remember(CHILD, CREATOR);
+    h.setCreatorAssembled(false);
+
+    // 投递失败但事实进待办：返回 false（如实说没送达），待办条数 +1
+    expect(h.notifier.noteSettledFlow(CHILD, 'r16', false, false)).toBe(false);
+    expect(h.creatorQueue).not.toHaveBeenCalled();
+    expect(h.notifier.pendingReportCount(CREATOR)).toBe(1);
+
+    // 同一轮重复信号：不重复排队（去重键在受理时已记）
+    expect(h.notifier.noteSettledFlow(CHILD, 'r16', false, false)).toBe(false);
+    expect(h.notifier.pendingReportCount(CREATOR)).toBe(1);
+
+    // 实例装配到位（面板装配后调 flushPending）→ 按序放出并唤醒一轮
+    h.setCreatorAssembled(true);
+    h.notifier.flushPending(CREATOR);
+    expect(h.creatorQueue).toHaveBeenCalledTimes(1);
+    expect(h.creatorQueue.mock.calls[0][0] as string).toContain('抓取任务');
+    expect(h.wakeCreator).toHaveBeenCalledTimes(1);
+    expect(h.notifier.pendingReportCount(CREATOR)).toBe(0);
   });
 });

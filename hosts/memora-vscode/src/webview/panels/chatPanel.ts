@@ -2010,6 +2010,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 装配即绑定确认回调（按会话）：后台会话的确认请求也必须能入队并标待处理；
     // 若只在「绑定显示源」时绑，后台实例的守卫回调永远是空的 ⇒ 确认永远不触发（静默挂起）
     this._confirm.bindSession(sessionId, agent);
+    // 实例就位即补浮现：实例未装配时压下的落定汇报在此放出（flushPending 自己会判忙 / 打字，
+    // 不空闲就继续压着，不打断）
+    this._hostedNotifier.flushPending(sessionId);
     return agent;
   }
 
