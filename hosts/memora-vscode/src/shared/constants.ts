@@ -25,6 +25,18 @@ export const ROLE_PACK_TEAMS_KEY = 'memora.rolePackTeams';
 export const CONFIRM_SCRIPTS_KEY = 'memora.confirmScripts';
 
 /**
+ * 未发送输入草稿在 `workspaceState` 里的键（`Record<sessionId, string>`）
+ *
+ * 归属**按会话走**：草稿是「那条会话还没发出去的话」，不是全局一坨。**空白草稿页
+ * （「＋」后还没有会话 id）不落盘**——它没有归属，存下来会在重启后落到一条无关的新会话上。
+ *
+ * 两条纪律：① 空文本一律删键，不留垃圾；② 会话被删除时同步 `forget`，否则会随会话数量
+ * 无限累积。它不是 `composer_state`（那是「有没有字」的翻转信号），文本只走这条键与
+ * `composer_draft` / `composer_draft_restore` 两条消息。
+ */
+export const UI_COMPOSER_DRAFTS_KEY = 'memora.composerDrafts';
+
+/**
  * 侧栏形态 + 座位绑定（`{ form, seatSessionId }`）在 `workspaceState` 里的键
  *
  * 作用域**故意是工作区级**：形态属于「这个项目窗口怎么开着」。用 globalState 会把 A 项目的

@@ -14027,3 +14027,91 @@ describe('草稿页 = 角色显示内核兜底包，其余四项会话级投影�
     expect(document.querySelector('.empty-mode-hint')).toBeNull();
   });
 });
+
+describe('未发送草稿（composer_draft_restore / composer_draft）', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('恢复：只填框、不搬文本回宿主，也不置「在打字」——用户敲第一下才翻转', () => {
+    vi.useFakeTimers();
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+
+    dispatch({ type: 'composer_draft_restore', sessionId: 'session-a', text: '上次写到一半' });
+    expect(input.value).toBe('上次写到一半');
+    // 恢复不是用户输入：防抖窗口内也不应把文本回发给宿主（否则会被记成「正在打字」）
+    vi.advanceTimersByTime(600);
+    const composed = (): { type?: string }[] =>
+      postMessage.mock.calls.map((call) => call[0] as { type?: string });
+    expect(composed().some((m) => m.type === 'composer_draft')).toBe(false);
+    expect(composed().some((m) => m.type === 'composer_state')).toBe(false);
+
+    // 真敲第一下 → 翻转上行（留存的旧草稿不会把落定主动汇报永久压住）
+    input.value = '上次写到一半，再补一句';
+    input.dispatchEvent(new Event('input'));
+    expect(postMessage).toHaveBeenCalledWith({ type: 'composer_state', hasText: true });
+  });
+
+  it('输入改动防抖上报 composer_draft（文本搬运与翻转是两条通道）', () => {
+    vi.useFakeTimers();
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    // 归属由宿主下发的 restore 决定，webview 只原样回传（不做第二真相源）
+    dispatch({ type: 'composer_draft_restore', sessionId: 'session-a', text: '' });
+
+    input.value = 'a';
+    input.dispatchEvent(new Event('input'));
+    input.value = 'abcd';
+    input.dispatchEvent(new Event('input'));
+    vi.advanceTimersByTime(300);
+
+    const drafts = postMessage.mock.calls
+      .map((call) => call[0] as { type?: string; text?: string; sessionId?: string })
+      .filter((msg) => msg.type === 'composer_draft');
+    // 防抖：两次按键只上行一次，且带最后的内容
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]?.text).toBe('abcd');
+    // 归属随文本回传：宿主据此落盘，不按「当前显示会话」猜
+    expect(drafts[0]?.sessionId).toBe('session-a');
+  });
+
+  it('同一会话的重复回放不覆盖正在敲的内容；切到别的会话才换框', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    dispatch({ type: 'composer_draft_restore', sessionId: 'session-a', text: '旧草稿' });
+    expect(input.value).toBe('旧草稿');
+
+    // 截断 / 重新生成会在同一条会话上再回放一次：不得用旧值吃掉刚敲的字
+    input.value = '旧草稿 + 刚敲的';
+    input.dispatchEvent(new Event('input'));
+    dispatch({ type: 'composer_draft_restore', sessionId: 'session-a', text: '旧草稿' });
+    expect(input.value).toBe('旧草稿 + 刚敲的');
+
+    // 切到另一条会话：换框（两条会话的草稿互不串台）
+    dispatch({ type: 'composer_draft_restore', sessionId: 'session-b', text: 'B 的草稿' });
+    expect(input.value).toBe('B 的草稿');
+    expect(postMessage).toHaveBeenCalled();
+  });
+
+  it('防抖到点前切了会话：仍按旧归属落盘，不写成新会话的草稿', () => {
+    vi.useFakeTimers();
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    dispatch({ type: 'composer_draft_restore', sessionId: 'session-a', text: '' });
+    input.value = 'A 里敲的字';
+    input.dispatchEvent(new Event('input'));
+
+    // 250ms 内切会话：回放用 B 的草稿替换输入框；A 那次上报还没到点
+    dispatch({ type: 'composer_draft_restore', sessionId: 'session-b', text: 'B 的草稿' });
+    expect(input.value).toBe('B 的草稿');
+    vi.advanceTimersByTime(300);
+
+    const drafts = postMessage.mock.calls
+      .map((call) => call[0] as { type?: string; sessionId?: string; text?: string })
+      .filter((msg) => msg.type === 'composer_draft');
+    // 快照语义：按「敲字那一刻」的归属与文本上行，不把 A 的字算到 B 头上
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]).toMatchObject({ sessionId: 'session-a', text: 'A 里敲的字' });
+  });
+});

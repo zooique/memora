@@ -64,8 +64,13 @@ import { join } from 'node:path';
  *  按下发送时发、`mention_open` 只认 `@`，宿主无从判断「此刻唤醒会不会抢掉用户正在敲的字」。
  *  刻意只在翻转时上行（不是按键级），且只服务一个布尔判据，不与 `ui_form` / `input` 合并。
  *  实测 143，阈值同口径重算 144。
+ *  2026-11-15 未发送草稿（`O5`）+2：新增 `composer_draft`（W→E 文本上行）与
+ *  `composer_draft_restore`（E→W 填回输入框）。刻意不复用 `composer_state`：那条只表达
+ *  「有没有字」的翻转（一个布尔），拿它搬文本会让「恢复旧草稿」被误读成「用户正在打字」；
+ *  也不能搭 `input`（发送动作）或 `session_history`（历史回放）的便车。
+ *  实测 145，阈值同口径重算 146。
  */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 144;
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 146;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {

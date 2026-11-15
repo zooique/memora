@@ -962,7 +962,19 @@ export type WebviewToExtensionMessage =
    * 等当前轮收场后再浮现（宁晚不打断）。刻意只在**翻转**时发，不做按键级高频上行；
    * 不参与发送 / 相位 / 按钮语义任何判据，宿主只存一个布尔。
    */
-  | { type: 'composer_state'; hasText: boolean };
+  | { type: 'composer_state'; hasText: boolean }
+  /**
+   * 输入框的未发送文本（W→E，webview 侧防抖 250ms 上报）
+   *
+   * 与 `composer_state` 的分工是刻意的：那个只搬「有没有字」的翻转（落定汇报不打断打字），
+   * 这条只搬**文本**（宿主按会话落 workspaceState，供视图重建 / 切会话 / 重启恢复）。
+   * 恢复路径绝不走这条——否则「上次留下的草稿」会被宿主误认成「用户此刻在打字」。
+   *
+   * `sessionId` 是宿主最近一次 `composer_draft_restore` 里给的归属（原样回传，不是 webview
+   * 自己推断的第二真源）。为什么必须回传：防抖窗口内切走 / 点「＋」时，宿主 `_currentSessionId`
+   * 已经变了，若按「当前显示会话」归属，会把这几个字写进另一条会话（或空白草稿页直接丢掉）。
+   */
+  | { type: 'composer_draft'; sessionId: string; text: string };
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
@@ -1369,6 +1381,18 @@ export type ExtensionToWebviewMessage =
    * 之外的字段可搭车，且形态变化不改变会话标题，搭车会迫使两处各自判「要不要重发」。
    */
   | { type: 'ui_form'; form: UiForm }
+  /**
+   * 把某会话留存的未发送文本放回输入框（E→W，随回放一起下发）
+   *
+   * 只填框，**不回发** `composer_state`：留存的旧草稿不是「用户此刻在打字」，不能让宿主
+   * 把落定主动汇报永久压住。webview 恢复时把本地翻转基准重置为 false，用户敲第一下才会
+   * 重新上行该信号（详见 `composer_state` 的注释）。
+   *
+   * `sessionId` = 这份文本归属的会话（'' = 空白草稿页）。webview 记下它，后续
+   * `composer_draft` 原样回传，避免防抖窗口内切换会话导致串会话；同一条会话的重复回放
+   * （截断 / 重新生成等）webview 直接忽略，不覆盖用户正在敲的内容。
+   */
+  | { type: 'composer_draft_restore'; sessionId: string; text: string }
   /**
    * 历史会话列表（对 session_list 的应答）
    *

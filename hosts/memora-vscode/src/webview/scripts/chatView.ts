@@ -1718,6 +1718,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /** 上次上报给宿主的「输入框有未发送文本」（只在翻转时上行，不做按键级高频） */
   let composerHasText = false;
   /**
+   * 输入框里这份未发送文本归属的会话 id（'' = 空白草稿页）
+   *
+   * 唯一来源 = 宿主 `composer_draft_restore` 下发的 `sessionId`（**原样记住，不推断**）：
+   * 防抖窗口内切走时，宿主 `_currentSessionId` 已变，只有回传这份归属才不会把字写进别的会话。
+   */
+  let draftOwner = '';
+  /**
    * 上报输入框是否有未发送文本
    *
    * 唯一消费方 = 落定汇报的「不抢用户正在打的字」判据（宿主存一个布尔，不参与发送 / 相位）。
@@ -1726,10 +1733,33 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 故这些点要显式调用。
    */
   function reportComposerState(): void {
+    // 文本搬运走另一条消息（composer_draft）：这里只负责「有没有字」的翻转，不夹带文本
+    scheduleComposerDraftReport();
     const hasText = input.value.trim().length > 0;
     if (hasText === composerHasText) return;
     composerHasText = hasText;
     vscode.postMessage({ type: 'composer_state', hasText });
+  }
+
+  /** 草稿文本上报的防抖计时器（250ms；按键级直发会把 workspaceState 写成高频 IO） */
+  let composerDraftTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /**
+   * 上报输入框文本给宿主（按会话落盘，供视图重建 / 切会话 / 重启恢复）
+   *
+   * 与 `reportComposerState` 的分工：这条搬**文本**，那条搬**翻转**。恢复路径（E→W
+   * `composer_draft_restore`）刻意不调用本函数——留存的旧草稿不是「用户此刻在打字」。
+   */
+  function scheduleComposerDraftReport(): void {
+    if (composerDraftTimer !== undefined) clearTimeout(composerDraftTimer);
+    // 快照**调度时刻**的归属与文本：定时器可能在切会话之后才到点（切会话会用新会话的草稿
+    // 替换输入框），晚到时若读「当前框」，上一会话最后 250ms 的字既丢了归属、还会写成新会话的草稿。
+    const owner = draftOwner;
+    const text = input.value;
+    composerDraftTimer = setTimeout(() => {
+      composerDraftTimer = undefined;
+      vscode.postMessage({ type: 'composer_draft', sessionId: owner, text });
+    }, 250);
   }
 
   /**
@@ -3342,6 +3372,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       syncSendEnabled(); // 程序化预填不触发 input 事件，须手动同步可用性
       syncButtonSemantics(); // 程序化预填同理不触发 input 事件，须同步按钮语义（标题随相位+输入重算），避免窗口期文案过期
       reportComposerState(); // 预填同样要让宿主知道「输入框里已有字」
+    } else if (msg.type === 'composer_draft_restore') {
+      // 留存的未发送文本（跨视图重建 / 切会话 / 重启）：只填框、不聚焦、不上报
+      // ⇒ 翻转基准强制回 false，用户真敲第一下才会重新上行 composer_state，
+      //   留存的旧草稿不会把宿主的「落定主动汇报」永久压住。
+      //
+      // 同一会话的重复回放（截断 / 重新生成 / 反复点同一会话）直接忽略：输入框已经属于这条
+      // 会话，用 250ms 前落盘的旧值覆盖会吞掉刚敲的字（并把光标弹到末尾）。
+      if (msg.sessionId !== draftOwner) {
+        draftOwner = msg.sessionId;
+        input.value = msg.text;
+        autoResize();
+        syncSendEnabled();
+        syncButtonSemantics();
+      }
+      composerHasText = false;
     } else if (msg.type === 'focus_input') {
       // HOST-CTX-16：@ 提及 QuickPick 收场后宿主归还焦点——QuickPick 开着时焦点在它那，
       // 收场后 VS Code 不自动还给网页输入框，用户继续打字前得先点一下。只 focus 不改文本
