@@ -93,6 +93,8 @@ import { type PendingLiveRound } from '../../shared/turnProjection.js';
 // 会话投影（合并 live 轮 + 折叠 TurnState）单一入口：本面板与远程/桥共用同一判据，防两套投影
 import { deriveSessionProjection } from '../../shared/sessionProjection.js';
 import { dedupeRefs } from '../../shared/refKey.js'; // 引用去重判据单点（与 webview 的 addRefs 共用，勿各自实现）
+// 未发送草稿（按会话落 workspaceState）：只搬文本，不参与 composer_state 的翻转判据
+import { createComposerDrafts } from '../helpers/composerDrafts.js';
 // 插话受理三态的可见文案（INPUT-LIMIT-1 / INTERJECT-PERSIST-1）统一由 windowNotices 提供，
 // 面板内不嵌字面量：那里是窗口提示的单一真源（常量形态会在模块求值时定稿语言，故用函数）。
 
@@ -458,6 +460,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 等当前轮结束后再浮现。不参与任何发送 / 相位判据。
    */
   private _composerHasText = false;
+  /**
+   * 未发送输入草稿（按会话存 workspaceState，实现在 `helpers/composerDrafts`）
+   *
+   * 只搬文本、不做判据：`_composerHasText` **只**由 `composer_state`（翻转信号）决定，
+   * 草稿上行与恢复都不碰它——否则一条上次留下的草稿会把落定主动汇报永久压住。
+   */
+  private readonly _composerDrafts = createComposerDrafts(() => this.uiState);
   /**
    * 草稿会话态（「＋」后、首次发送前的空白页）——**只存在于本面板内存**
    *
@@ -1275,7 +1284,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 失败可见性收口在命令实现里：旧实现只 `void` 吞掉 rejection，真机表现为「点了没反应」。
       void vscode.commands.executeCommand('memora.openWorkbench');
     } else if (msg.type === 'composer_state') this._composerHasText = msg.hasText;
-    else if (msg.type === 'open_settings_tab') {
+    // 草稿文本（防抖上行）：只落盘、不改「有没有字」的翻转判据（那条只认 composer_state；
+    // 恢复出来的旧草稿因此不会把落定主动汇报永久压住，用户真敲第一下才翻转）。
+    // 归属取 webview 回传的会话（缺省回落当前显示会话）：防抖窗口内切走时宿主已换会话，
+    // 按「当前显示」归属会串台；已删会话的迟到上报直接丢弃，不把垃圾键写回来。
+    else if (msg.type === 'composer_draft') {
+      const owner = msg.sessionId || this._currentSessionId;
+      if (owner && this.sessionStore.isResolvable(owner))
+        this._composerDrafts.accept(owner, msg.text);
+    } else if (msg.type === 'open_settings_tab') {
       // 设置面板选项卡导航（空态引导 → 大模型 / 角色徽章 → 角色；只导航——切换执行仍走各视图单路径）。
       // **不维护「tab → 命令名」映射表**：那是第二真源，加一页要补一行且 protocol 得同步放宽。tab 直投命令。
       void vscode.commands.executeCommand('memora.openSettings', msg.tab);
@@ -1313,6 +1330,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     } else if (msg.type === 'archive_session') {
       // 历史浮层「移入留存」→ full 模式只改显示分组、不动数据；manual 模式顺带触发会话归档
       // （写摘要、调 LLM），与删除仍是两种不同强度的动作
+      // 薄包装保留（既有验收用例按方法名直达；归档/移回实现仍在 helpers）
       void this.handleArchiveSession(msg.sessionId);
     } else if (msg.type === 'restore_session') {
       // 留存区条目「移回」→ 同上的逆操作
@@ -1491,9 +1509,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     // 首次触发装配并缓存 Promise（等待中的调用方 await 同一实例；失败内部消化不抛出）
-    if (!this._agentReady) {
-      this._agentReady = this.performAgentAssembly();
-    }
+    if (!this._agentReady) this._agentReady = this.performAgentAssembly();
     await this._agentReady;
   }
 
@@ -1771,6 +1787,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._runtime.delete(sessionId);
     this._snapshots.deleteSession(sessionId); // 任务条「收起态」桶随会话一起消失（防僵尸 id 长期驻留）
     this._rolePackFallbackNotified.delete(sessionId); // 回落提示去重键同生命周期收口
+    this._composerDrafts.forget(sessionId); // 会话永久删除：它的未发送草稿一起清（不留垃圾键）
     this.refreshSessionActivity(); // 摘除后立即重推快照（角标 / 列表标识随之熄灭）
   }
 
@@ -1837,6 +1854,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * （只赋值不落盘 = 复现 SESSION-RESUME-1：切过去看历史、重启跳回别处，且症状静默）。 */
   private setCurrentSessionId(sessionId: string): void {
     this._currentSessionId = sessionId;
+    // 切会话 = 换了一个输入框：旧框里的字属于上一条会话，不是「用户此刻正在打字」。
+    // 不复位就会把上一会话的「在打字」带到新会话，落定主动汇报被一条**已不在屏上**的
+    // 草稿永久压住（新会话里用户根本没敲字）。回放会把新会话自己的草稿填回，但那是文本、
+    // 不是翻转信号 ⇒ 这里复位后，只有用户真敲第一下才由 composer_state 重新置真。
+    this._composerHasText = false;
     // 有会话 id ⇒ 必然已离开草稿（唯一退出写点）
     this._draft.exit();
     this.sessionStore.setLastActiveSession(sessionId);
@@ -2106,9 +2128,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 回放通道（否则与 _viewEpoch 折叠重建回放产生双重复放）。
    */
   private async handleWebviewReady(): Promise<void> {
-    // ⓪′ 输入框打字态复位：webview 重建 = 新页面，输入框从空开始（回放不恢复未发送文本），
-    //     而宿主这枚布尔只在 `composer_state` 翻转时写入 ⇒ 不在重建 / 重开时复位，就会
-    //     一直以为用户在打字，落定汇报被压到用户下次输入才浮现（输入框其实早空了）。
+    // ⓪′ 输入框打字态复位：webview 重建 = 新页面，宿主这枚布尔只在 `composer_state` 翻转时写入
+    //     ⇒ 不在重建 / 重开时复位，就会一直以为用户在打字，落定汇报被压到用户下次输入才浮现。
+    //     回放会**填回**该会话留存的草稿（composer_draft_restore），但那只是文本、不是「正在打字」
+    //     ⇒ 这里仍必须复位成 false，等用户真敲第一下由 composer_state 重新上行。
     this._composerHasText = false;
     // ⓪ 侧栏形态补推（时间面漏面，同 ④~⑧）：形态只在切换时下发，视图折叠/重开会重建 HTML，
     //    新 webview 的初值恒为自助 ⇒ 不补推就「折叠一次，助手形态被悄悄切回自助」。
@@ -2267,6 +2290,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private replaySession(): void {
     if (!this._view) return;
+    // 未发送草稿：随回放把该会话留存的文本填回输入框（视图重建 / 切会话 / 重启都经这里）。
+    // 只填框、不置 `_composerHasText`——旧草稿不是「用户此刻在打字」，不压主动汇报。
+    this.post(this._composerDrafts.restore(this._currentSessionId));
     // 草稿态（webview 重载但面板对象存活）→ 重建**草稿页**：不读 store、不投影任何会话内容。
     // 面板销毁/进程重启后草稿不在（只存在面板内存），此处只服务「刷新 webview」这一种情形。
     if (this.isDraft) {
@@ -2501,10 +2527,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 协议消息的徽章/顶栏展示。无激活角色或无 traits 时返回 undefined。
    */
   private getActiveTraits(): Record<string, number> | undefined {
-    const rpm = this._agent?.rolePackManager;
-    if (!rpm) return undefined;
-    const assembly = rpm.getActive();
-    return assembly?.traits;
+    return this._agent?.rolePackManager?.getActive()?.traits;
   }
 
   /**
@@ -2757,6 +2780,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 发送**：一级门禁会给可见文案（含「改用支持图片的模型」指引），比静默吞掉或卡输入更诚实。
         if (this._providerStale) await this.applyActiveProviderRefresh();
         await this.sendInput(text, msg.skillName, msg.refs, msg.injections, msg.attachments);
+        // 已发出的文本不再是草稿：立即删键（「＋」页那份本就不落盘，见 composerDrafts）
+        this._composerDrafts.clear(this._currentSessionId);
         // 草稿期已锁清单补落（sendInput 已把草稿 flush 成会话，此刻才有元数据载体）
         if (msg.skillPinned === true || msg.refs?.some((r) => r.pinned === true))
           pinned.writePinnedItems(this.sessionStore, this._currentSessionId, msg);
@@ -2884,9 +2909,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       message: l10n.t('Memora: the target session is running; the input was not sent.'),
     };
     // ② 前置判忙：peek 不建记录（读操作不产生写副作用），值就是该会话的真实 stream 运行态
-    if (this._runtime.peek(targetSessionId)?.streaming === true) {
-      return busy;
-    }
+    if (this._runtime.peek(targetSessionId)?.streaming === true) return busy;
     // ③ 取（或建）目标会话实例：装配可能在途，期间目标会话或已被别的入口开跑 ⇒ 落地前再判一次
     const agent = await this.agentForSession(targetSessionId);
     // 与 sendInput 同一对齐判据：内核 appendUser 写的是 agent 当前会话，错位会写进别的会话；
@@ -2898,9 +2921,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         await sessionManager.switchToSession(targetSessionId);
       }
     }
-    if (this._runtime.peek(targetSessionId)?.streaming === true) {
-      return busy;
-    }
+    if (this._runtime.peek(targetSessionId)?.streaming === true) return busy;
     const now = new Date().toISOString();
     // ④ 受理即登记驱动归属：从这一刻起这条会话归代理管（停止 / 暂停 / 恢复、中断通知、
     //    工作台清单共用同一判据）。必须在首轮流启动之前登记——首轮可能立刻失败 / 被停，

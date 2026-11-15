@@ -32,10 +32,17 @@ import { BUILTIN_FALLBACK_PACK, RolePackManager, formatDateKey } from '@zooique/
 // 生产同源读回判据：装配桩按它取「会话 meta → 实际激活名」，保证硬判据不是自造链条
 import { readSessionRolePackName } from '../../extension/host/sessionRolePack.js';
 import type * as vscode from 'vscode';
-// 共享 vscode mock 的运行时引用：默认角色包用例要按用例改写 getConfiguration
-import { workspace as mockedWorkspace, commands as mockedCommands } from 'vscode';
+// 共享 vscode mock 的运行时引用：默认角色包用例要按用例改写 getConfiguration；
+// window 用于删除会话路径的确认框替身（confirmModal 只认 confirmLabel 返回值）
+import {
+  workspace as mockedWorkspace,
+  commands as mockedCommands,
+  window as mockedWindow,
+} from 'vscode';
 // 形态上下文键的真源（收回同步形态时断言宿主侧也写了同一键，测试不自造字面量）
 import { UI_FORM_CONTEXT_KEY } from '../panels/assistantFormOps.js';
+// 未发送草稿的持久键（断言落盘形状用真源常量，不复制字面量）
+import { UI_COMPOSER_DRAFTS_KEY } from '../../shared/constants.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
@@ -171,7 +178,14 @@ interface PanelHandle {
   roundStore: WorkspaceRoundStore;
   /** 临时工作区根（按生产路径推导规则定位 Round 文件） */
   dir: string;
-  posted: { type: string; message?: string; state?: unknown; text?: string }[];
+  posted: {
+    type: string;
+    message?: string;
+    state?: unknown;
+    text?: string;
+    /** 草稿下行带的归属会话（`composer_draft_restore` 断言用） */
+    sessionId?: string;
+  }[];
   /** 触发当前视图的 onDidDispose（等价 VS Code 关闭/折叠侧边栏视图） */
   disposeView: () => void;
   /** 以真实 `resolveWebviewView` 重开视图（新 webview 实例 + 代数自增 + 重新装配订阅） */
@@ -2403,5 +2417,106 @@ describe('形态 + 座位成对恢复（重启后照旧）', () => {
     await provider.setUiForm('self');
     // 回自助必须把座位清空，否则下次启动会把一条自助会话恢复成托管
     expect(writes.at(-1)).toEqual(['memora.uiForm', { form: 'self', seatSessionId: '' }]);
+  });
+});
+
+describe('未发送草稿按会话持久化（O5）', () => {
+  it('上行文本按归属落盘、清空即删键、视图重建把草稿填回输入框', async () => {
+    const seat = '2026-11-15-draft-seat';
+    /** Map 模拟工作区持久层：update(undefined) = 删键（与 Memento 语义一致） */
+    const raw = new Map<string, unknown>();
+    const ui = {
+      get: (key: string) => raw.get(key),
+      update: async (key: string, value: unknown) => {
+        if (value === undefined) raw.delete(key);
+        else raw.set(key, value);
+      },
+    } as never;
+    const h = setupPanel({}, [seat], createEphemeralSessionModeStore(), ui);
+
+    // 用户输入（防抖后上行）→ 按 webview 回传的归属落盘（宿主不按「当前显示会话」猜）
+    h.fireMessage({ type: 'composer_draft', sessionId: seat, text: '写到一半' });
+    expect((raw.get(UI_COMPOSER_DRAFTS_KEY) as Record<string, string>)[seat]).toBe('写到一半');
+
+    // 视图重建（折叠侧栏再打开）→ 回放时把该会话的草稿填回。
+    // 回放由 webview 的 ready 握手触发（不是 resolveWebviewView 本身），故按生产顺序补一次 ready。
+    h.posted.length = 0;
+    h.reopenView();
+    h.fireMessage({ type: 'ready' });
+    await vi.waitFor(
+      () => {
+        const restore = h.posted.find((m) => m.type === 'composer_draft_restore');
+        expect(restore?.text).toBe('写到一半');
+        // 归属随消息下发：webview 据此原样回传，防抖窗口内切会话也不会串台
+        expect(restore?.sessionId).toBe(seat);
+      },
+      { timeout: 5000 },
+    );
+
+    // 清空 → 删键，不留空壳（空草稿不要留垃圾）
+    h.fireMessage({ type: 'composer_draft', sessionId: seat, text: '   ' });
+    expect(raw.get(UI_COMPOSER_DRAFTS_KEY)).toBeUndefined();
+  });
+
+  it('会话被删除 ⇒ 它的草稿一起清理，别的会话不受影响', async () => {
+    const keep = '2026-11-15-draft-keep';
+    const gone = '2026-11-15-draft-gone';
+    const raw = new Map<string, unknown>();
+    const ui = {
+      get: (key: string) => raw.get(key),
+      update: async (key: string, value: unknown) => {
+        if (value === undefined) raw.delete(key);
+        else raw.set(key, value);
+      },
+    } as never;
+    const h = setupPanel({}, [keep, gone], createEphemeralSessionModeStore(), ui);
+    h.fireMessage({ type: 'composer_draft', sessionId: keep, text: '留着' });
+    h.fireMessage({ type: 'composer_draft', sessionId: gone, text: '要删的' });
+    expect((raw.get(UI_COMPOSER_DRAFTS_KEY) as Record<string, string>)[gone]).toBe('要删的');
+
+    // 删除路径的确认框只认 confirmLabel（confirmModal 单向判据）：替身返回它才算点了删除
+    const warn = mockedWindow.showWarningMessage as unknown as {
+      mockResolvedValueOnce(v: unknown): void;
+    };
+    warn.mockResolvedValueOnce('Delete');
+    h.fireMessage({ type: 'delete_session', sessionId: gone });
+    await vi.waitFor(() => expect(h.store.getSessionMeta(gone)).toBeUndefined(), { timeout: 5000 });
+
+    const left = raw.get(UI_COMPOSER_DRAFTS_KEY) as Record<string, string>;
+    expect(left[keep]).toBe('留着');
+    expect(left[gone]).toBeUndefined();
+  });
+
+  it('切会话：上一会话的「在打字」不带到新会话，恢复的草稿只填框', async () => {
+    const sidA = '2026-11-15-typing-a';
+    const sidB = '2026-11-15-typing-b';
+    const raw = new Map<string, unknown>();
+    const ui = {
+      get: (key: string) => raw.get(key),
+      update: async (key: string, value: unknown) => {
+        if (value === undefined) raw.delete(key);
+        else raw.set(key, value);
+      },
+    } as never;
+    const h = setupPanel(
+      { [sidA]: sessionAgent(sidA), [sidB]: sessionAgent(sidB) },
+      [sidA, sidB],
+      createEphemeralSessionModeStore(),
+      ui,
+    );
+    h.provider.setAgentFactory(async (_projectPath, sid) => sessionAgent(sid));
+
+    // 在 A 里敲字：宿主记为「用户此刻正在打字」
+    h.fireMessage({ type: 'composer_state', hasText: true });
+    expect(h.cast._composerHasText).toBe(true);
+    // B 有一份上次留下的草稿（恢复它会填回输入框，但**不是**正在打字）
+    h.fireMessage({ type: 'composer_draft', sessionId: sidB, text: 'B 的旧草稿' });
+
+    await h.provider.switchToSession(sidB);
+    // 不复位 ⇒ 落定主动汇报会被一条已不在屏上的「在打字」永久压住
+    expect(h.cast._composerHasText).toBe(false);
+    const restore = [...h.posted].reverse().find((m) => m.type === 'composer_draft_restore');
+    expect(restore?.text).toBe('B 的旧草稿');
+    expect(restore?.sessionId).toBe(sidB);
   });
 });
