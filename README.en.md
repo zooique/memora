@@ -209,17 +209,18 @@ The kernel interacts with the outside world through interfaces. Hosts inject imp
 
 ### Multi-project and Agent boundaries (settled model)
 
-**One Agent binds to one project** — `projectPath` + one storage + one session domain. For multiple projects, the **host** creates one Agent instance per project; the kernel neither switches projects nor maintains a cross-project registry.
+**One project binds to one storage and one session domain; the execution unit is the session** — the host assembles **one Agent instance per session** (`AgentRegistry`), so a project may host N Agent instances at once. For multiple projects, the **host** creates one set of instances per project; the kernel neither switches projects nor maintains a cross-project registry.
 
 | Dimension | Model |
 |-----------|-------|
-| One project (one Agent) | May own N sessions (`switchSession` / `switchToSession` / `forkSession`), but **only one runs at a time** |
-| N projects (N Agent instances) | Run **in parallel**, each with its own memory store / sessions / project lock |
-| Parallelism | **Counted by project, not by session** |
+| One project | May own N sessions, **one Agent instance per session**; sessions can run concurrently |
+| Within one instance | `chat` is serialized + `assertNotBusy` — only guarantees "no two concurrent turns on the same session" |
+| N projects | Each with its own memory store / sessions / project lock |
+| Parallelism | **Counted by session** (the old "by project" wording is void with `MULTI-SESS-1` closed) |
 | Sessions within a project | **Share one memory store** (search has no session filter) ⇒ experience carries across sessions |
 
-> **Trade-off (stated explicitly)**: this model deliberately does **not** mirror the mainstream "one session = one Agent instance" design. The cost: **two sessions cannot run in parallel within the same project** (mainstream tools just open two terminals). This is known and accepted, tracked as `MULTI-SESS-1` (observation only) — it is revisited only if a real need for "two parallel tasks in one repo" appears.
-> **Rationale**: the memory store belongs to the **project**; a session is just a conversation thread inside it. Drawing the identity boundary at the project (not the session) is what lets experience carry across sessions.
+> **Shared storage across instances**: all Agent instances of one project must share the same `sessionStore` / `roundStore` singletons; separate copies let whole-file writes of `rounds/index.json` erase each other (symptom: round file exists but is invisible in views).
+> **Rationale**: the memory store belongs to the **project**; a session is just an execution thread inside it. Memory boundary at the project, execution boundary at the session — experience stays continuous while different sessions progress in parallel.
 > See the [integration guide](docs/memora-接入指南.md) ("多项目怎么办") for wiring details and data layout.
 
 ## Project Structure
