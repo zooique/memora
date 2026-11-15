@@ -1283,15 +1283,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 托管会话 → QuickPick → 如实说没有），本处只转达点击，不自己判断看哪一条。
       // 失败可见性收口在命令实现里：旧实现只 `void` 吞掉 rejection，真机表现为「点了没反应」。
       void vscode.commands.executeCommand('memora.openWorkbench');
-    } else if (msg.type === 'composer_state') this._composerHasText = msg.hasText;
+    } else if (msg.type === 'composer_state') {
+      this._composerHasText = msg.hasText;
+      // 用户把输入框清空 = 硬触发点：此前因「正在打字」压着的落定汇报立刻浮现
+      //（不能只靠「下一轮收场」这种软触发——收场时若还在打字就再没有下一次机会）。
+      if (!msg.hasText) this._hostedNotifier.flushPending(this._currentSessionId);
+    }
     // 草稿文本（防抖上行）：只落盘、不改「有没有字」的翻转判据（那条只认 composer_state；
     // 恢复出来的旧草稿因此不会把落定主动汇报永久压住，用户真敲第一下才翻转）。
-    // 归属取 webview 回传的会话（缺省回落当前显示会话）：防抖窗口内切走时宿主已换会话，
-    // 按「当前显示」归属会串台；已删会话的迟到上报直接丢弃，不把垃圾键写回来。
+    // 归属以 webview 回传的会话为准；不可解析（已删 / 迟到）时回落当前会话——
+    // 宁可写一条随后可清的键，也不能把用户正在打的字丢掉（丢文本的代价远高于一条脏键）。
     else if (msg.type === 'composer_draft') {
-      const owner = msg.sessionId || this._currentSessionId;
-      if (owner && this.sessionStore.isResolvable(owner))
-        this._composerDrafts.accept(owner, msg.text);
+      const known = this.sessionStore.isResolvable(msg.sessionId);
+      const owner = known ? msg.sessionId : this._currentSessionId;
+      if (owner) this._composerDrafts.accept(owner, msg.text);
     } else if (msg.type === 'open_settings_tab') {
       // 设置面板选项卡导航（空态引导 → 大模型 / 角色徽章 → 角色；只导航——切换执行仍走各视图单路径）。
       // **不维护「tab → 命令名」映射表**：那是第二真源，加一页要补一行且 protocol 得同步放宽。tab 直投命令。
@@ -1373,9 +1378,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const before = this._agent?.getPendingInterjections?.() ?? [];
       const removed = before[msg.index];
       const ok = this._agent?.removePendingInterject(msg.index) ?? false;
-      if (ok && removed !== undefined) {
-        this.postPendingDiscarded([removed]);
-      }
+      if (ok && removed !== undefined) this.postPendingDiscarded([removed]);
       this.syncPendingQueue();
     } else if (msg.type === 'polish_input') {
       // 文本润色（输入框入口）：调 agent.polish(text) 润色输入框内容，
@@ -1686,9 +1689,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 路径取 basename 防折叠区冗长（可读且不泄露完整目录结构）
       const base = path.split(/[\\/]/).pop() ?? path;
       this._recentSecurityAudits.push({ type, path: base, tool, reason });
-      if (this._recentSecurityAudits.length > 3) {
-        this._recentSecurityAudits.shift();
-      }
+      if (this._recentSecurityAudits.length > 3) this._recentSecurityAudits.shift();
     });
   }
 
@@ -2780,8 +2781,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 发送**：一级门禁会给可见文案（含「改用支持图片的模型」指引），比静默吞掉或卡输入更诚实。
         if (this._providerStale) await this.applyActiveProviderRefresh();
         await this.sendInput(text, msg.skillName, msg.refs, msg.injections, msg.attachments);
-        // 已发出的文本不再是草稿：立即删键（「＋」页那份本就不落盘，见 composerDrafts）
-        this._composerDrafts.clear(this._currentSessionId);
+        // 已发出的文本不再是草稿由 webview 在提交点直接上报空串删键（不再在此清）：
+        // 这里曾是 `await` 之后的无条件删键——运行期插话 / 补充的 await 可能横跨整轮，
+        // 期间新打的字 250ms 后落盘，随后被这行迟到删掉（真机「跑轮时打的草稿丢了」的根因）。
         // 草稿期已锁清单补落（sendInput 已把草稿 flush 成会话，此刻才有元数据载体）
         if (msg.skillPinned === true || msg.refs?.some((r) => r.pinned === true))
           pinned.writePinnedItems(this.sessionStore, this._currentSessionId, msg);

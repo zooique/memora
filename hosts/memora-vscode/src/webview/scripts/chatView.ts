@@ -3765,6 +3765,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     syncButtonSemantics();
     syncSendEnabled();
     reportComposerState();
+    // 提交点立即删草稿键（不等 250ms 防抖）：文本已经交出去了，若这 250ms 内进程退出，
+    // 重启会把「已发出的内容」又填回输入框。宿主侧不再做这件事——它在 sendInput 的
+    // await 之后删键，运行期插话的 await 可横跨整轮，会连带删掉用户期间新打的草稿。
+    vscode.postMessage({ type: 'composer_draft', sessionId: draftOwner, text: '' });
     // 构建消息：send 意图单消息，宿主按相位路由到 chat / interject / 带文本续跑；技能按名注入
     const selectedSkill = skillPickerView.getSelected();
     const payload: WebviewToExtensionMessage = {

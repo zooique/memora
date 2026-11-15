@@ -2519,4 +2519,62 @@ describe('未发送草稿按会话持久化（O5）', () => {
     expect(restore?.text).toBe('B 的旧草稿');
     expect(restore?.sessionId).toBe(sidB);
   });
+
+  it('轮次运行期间（正在打字态）打的字同样落盘：草稿与翻转是两条通道', () => {
+    const sid = '2026-11-15-running-draft';
+    const raw = new Map<string, unknown>();
+    const ui = {
+      get: (key: string) => raw.get(key),
+      update: async (key: string, value: unknown) => {
+        if (value === undefined) raw.delete(key);
+        else raw.set(key, value);
+      },
+    } as never;
+    const h = setupPanel({}, [sid], createEphemeralSessionModeStore(), ui);
+
+    // 运行期：宿主判据先被置为「正在打字」，随后上报文本——文本搬运不看这个判据
+    h.fireMessage({ type: 'composer_state', hasText: true });
+    h.fireMessage({ type: 'composer_draft', sessionId: sid, text: '草稿H' });
+    expect((raw.get(UI_COMPOSER_DRAFTS_KEY) as Record<string, string>)[sid]).toBe('草稿H');
+  });
+
+  it('清空草稿 = 硬触发点：立刻把压着的落定汇报放出来（不依赖下一轮收场）', () => {
+    const sid = '2026-11-15-flush-on-clear';
+    const raw = new Map<string, unknown>();
+    const ui = {
+      get: (key: string) => raw.get(key),
+      update: async (key: string, value: unknown) => {
+        if (value === undefined) raw.delete(key);
+        else raw.set(key, value);
+      },
+    } as never;
+    const h = setupPanel({}, [sid], createEphemeralSessionModeStore(), ui);
+    const notifier = (
+      h.provider as unknown as { _hostedNotifier: { flushPending(id: string): void } }
+    )._hostedNotifier;
+    const flush = vi.spyOn(notifier, 'flushPending');
+
+    h.fireMessage({ type: 'composer_state', hasText: false });
+    expect(flush).toHaveBeenCalledWith(sid);
+    // 置真方向不是放行信号（否则用户刚开始打字就把汇报顶出来）
+    flush.mockClear();
+    h.fireMessage({ type: 'composer_state', hasText: true });
+    expect(flush).not.toHaveBeenCalled();
+  });
+
+  it('上报归属已不可解析 ⇒ 回落当前会话落盘（宁可留一条可清的键，也不丢字）', () => {
+    const sid = '2026-11-15-owner-fallback';
+    const raw = new Map<string, unknown>();
+    const ui = {
+      get: (key: string) => raw.get(key),
+      update: async (key: string, value: unknown) => {
+        if (value === undefined) raw.delete(key);
+        else raw.set(key, value);
+      },
+    } as never;
+    const h = setupPanel({}, [sid], createEphemeralSessionModeStore(), ui);
+
+    h.fireMessage({ type: 'composer_draft', sessionId: '2026-01-01-deleted', text: '别丢' });
+    expect((raw.get(UI_COMPOSER_DRAFTS_KEY) as Record<string, string>)[sid]).toBe('别丢');
+  });
 });

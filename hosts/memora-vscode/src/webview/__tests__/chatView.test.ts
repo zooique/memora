@@ -14094,6 +14094,21 @@ describe('未发送草稿（composer_draft_restore / composer_draft）', () => {
     expect(postMessage).toHaveBeenCalled();
   });
 
+  it('发送提交点立即上报空串删键（不等防抖；宿主不再做 await 之后的迟到删键）', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    dispatch({ type: 'composer_draft_restore', sessionId: 'session-a', text: '' });
+    input.value = '要发的话';
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    const drafts = postMessage.mock.calls
+      .map((call) => call[0] as { type?: string; sessionId?: string; text?: string })
+      .filter((msg) => msg.type === 'composer_draft');
+    // 提交点直接一条空串（防抖那条 250ms 后补的空串幂等）
+    expect(drafts.at(-1)).toEqual({ type: 'composer_draft', sessionId: 'session-a', text: '' });
+  });
+
   it('防抖到点前切了会话：仍按旧归属落盘，不写成新会话的草稿', () => {
     vi.useFakeTimers();
     const { postMessage } = mountChatView();
