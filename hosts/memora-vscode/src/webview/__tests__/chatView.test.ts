@@ -2397,7 +2397,7 @@ describe('UI-TOAST-1 瞬态提示浮层化（活动条出流 · 不挤占消息�
     expect(css).toMatch(/\.assistant-mode-bar__dot \{[^}]*background: var\(--accent\)/);
   });
 
-  it('CSS 源码守卫：托管卡底色走卡片主题面 + 左缘强调条，整圈描边让给聚焦态', () => {
+  it('CSS 源码守卫：托管卡底色走卡片主题面 + 左缘强调条，聚焦换三边描边色', () => {
     // 真机评审：accent 淡底落到 editor-inactiveSelectionBackground（与用户消息气泡同色），
     // 看着像「一条没发出去的消息」；整圈 accent 描边又与聚焦色同档 ⇒ 点进去几乎没变化。
     const css = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf8');
@@ -2407,6 +2407,15 @@ describe('UI-TOAST-1 瞬态提示浮层化（活动条出流 · 不挤占消息�
     // 不再给整圈 accent 描边 / accent 淡底（形态差异只由左缘条承担）
     expect(card).not.toContain('border-color: var(--accent');
     expect(card).not.toContain('--accent-soft');
+    // 整圈描边必须在场：聚焦规则改的就是它的颜色；只剩左缘条时「点进前后完全没变化」
+    // （真机逐像素实测上边框 rgb 一致，仅多出一圈 2px 淡光晕）——这里钉住描边 + 聚焦三边换色
+    expect(card).toContain('border: var(--line-solid)');
+    const focusCard =
+      /body\[data-form='assistant'\] #inputWrap:focus-within \{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(focusCard).toContain('border-top-color: var(--border-focus)');
+    // 左缘 accent 强调条不许被聚焦一起染色（否则同卡两套聚焦信号）
+    expect(focusCard).not.toContain('border-left');
+    expect(focusCard).not.toContain('border-color: var(--border-focus)');
   });
 });
 

@@ -640,7 +640,10 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // var(--line-solid) +1（84→85；实数经 scripts/count-token-refs.mjs 实锤同步）。
     // 88：工作台 v0（workbenchStyles）座位卡 / 会话行 / 「去这个会话」按钮三处描边
     // 引 var(--line-solid) +3（2026-11-14；实数经 scripts/count-token-refs.mjs 实锤同步）。
-    'line-': 88, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
+    // 89：托管卡整圈描边回归 —— 聚焦规则改的就是描边颜色，只剩左缘条时点进前后像素无变化
+    // （真机实测），assistant 形态 #inputWrap 补 1px var(--line-solid) +1（2026-11-15；
+    // 实数经 scripts/count-token-refs.mjs 实锤同步）。
+    'line-': 89, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
     //             var(--line-solid) +1 ⇒ 79→80（UI-STATUS-DIVIDE-1，与
     //             `.context-ring__injection` 同一既有令牌，未新造颜色）；
     //             实数经 scripts/count-token-refs.mjs 实锤同步。

@@ -1640,13 +1640,27 @@ export const chatStyles = `
     cursor: pointer;
     text-decoration: underline;
   }
-  /* 卡片本体：形态差异由**左缘强调条**承担，整圈描边让给聚焦态
+  /* 卡片本体：形态差异由**左缘强调条**承担，整圈描边保留给聚焦态
    * 底色改回卡片自己的主题面（--surface-card = editorWidget-background，与消息面同族），
    * 不再用 accent 淡底——那会落到 editor-inactiveSelectionBackground，与用户消息气泡同色，
-   * 看着就像「一条没发出去的消息」。这里不写本地色值兜底：兜底只在 tokens.ts 一处。 */
+   * 看着就像「一条没发出去的消息」。这里不写本地色值兜底：兜底只在 tokens.ts 一处。
+   * ⚠ 整圈描边**必须留着**：聚焦规则改的就是这条描边的颜色，只剩左缘条时聚焦没有任何
+   * 可变的属性（真机逐像素实测：点进前后上边框 rgb 完全一致，只有 --shadow-card-focus
+   * 那圈 2px 淡光晕）⇒ 未聚焦用 --line-solid（panel.border 一档）。 */
   body[data-form='assistant'] #inputWrap {
     background: var(--surface-card);
+    border: var(--line-solid);
     border-left: var(--sp-0, 2px) solid var(--accent);
+  }
+  /* 聚焦态：三边换焦点色，左缘 accent 强调条保持不动。
+   * 逐条写 border-*-color 而不是 border-color 简写：后者会把左缘条一起染成焦点蓝，
+   * 同一张卡上出现两个抢眼的聚焦信号；且必须在此重复声明——上面那条规则用
+   * border 简写设定了四边颜色，特异性(1,1,1) 高于基础聚焦规则(1,1,0)，
+   * 不覆盖就会让基础规则的 border-color 整条失效。 */
+  body[data-form='assistant'] #inputWrap:focus-within {
+    border-top-color: var(--border-focus);
+    border-right-color: var(--border-focus);
+    border-bottom-color: var(--border-focus);
   }
   /* 包裹层改横排：图标落到文字左缘（左内距由包裹层给，textarea 自身左内距归零） */
   body[data-form='assistant'] #inputBox {
