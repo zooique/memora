@@ -575,6 +575,21 @@ export interface Round {
    */
   origin?: 'user' | 'hosted';
 
+  /**
+   * 这一轮由谁派来（可选；缺省 = 非助手派发，或历史数据）
+   *
+   * 只在 `origin === 'hosted'` 时有意义：表达「这一轮是助手从哪条会话、以什么动作送进来的」。
+   * - `from`：**创建者**会话 id（派发方 / 开会话方），不是本轮所属的目标会话；
+   * - `via`：`'delegate'` = 派发到已有会话（`send_to_session`）；
+   *          `'create'` = 助手新建会话后的首轮（`create_session`）。
+   *
+   * 只记**真的落了轮**的动作：被拒 / 超时 / 目标不存在不会走到建轮，因此天然不写本字段。
+   * 这是「谁派给谁」的唯一真相源：宿主侧不得另存派发台账，重建一律反查本字段。
+   *
+   * 零迁移：历史轮没有本字段，`undefined` 本身就是「不知道创建者」的事实，回填等于伪造。
+   */
+  dispatchedBy?: { from: string; via: 'delegate' | 'create' };
+
   /** AI 消息（pending 状态时可能为空） */
   assistantMessage?: RoundMessage;
 

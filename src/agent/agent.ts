@@ -546,14 +546,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * @param attachments 图片附件（可选，多模态输入）；透传到种子编排器 → 装配两跳 → 持久化（方案 §7 P0）。
    *   不传 = 纯文本输入，行为与历史完全一致（零兼容回归）。
-   * @param opts 输入来源标记（`origin`）与发送者名称（`senderName`，落 `RoundMessage.name`）。
-   *   不传 = 历史行为（origin 缺省，读侧按 `'user'` 解释）。
+   * @param opts 输入来源标记（`origin`）、发送者名称（`senderName`，落 `RoundMessage.name`）与
+   *   派发归属（`dispatchedBy`，落 `Round.dispatchedBy`：谁派来、是派发还是新建）。
+   *   不传 = 历史行为（origin 缺省，读侧按 `'user'` 解释；dispatchedBy 缺省 = 非助手派发）。
    */
   async *chat(
     input: string,
     signal?: AbortSignal,
     attachments?: readonly ImageRef[],
-    opts?: { origin?: Round['origin']; senderName?: string },
+    opts?: {
+      origin?: Round['origin'];
+      senderName?: string;
+      dispatchedBy?: Round['dispatchedBy'];
+    },
   ): AsyncGenerator<AgentChunk, void, unknown> {
     this.assertInitialized('chat');
     this.validateChatInput(input);

@@ -68,14 +68,18 @@ export class SeedOrchestrator {
    *
    * @param input 用户输入
    * @param signal 中止信号
-   * @param opts 输入来源标记（origin）与发送者名称（senderName）；不传 = 历史行为
+   * @param opts 输入来源标记（origin）、发送者名称（senderName）与派发归属（dispatchedBy）；不传 = 历史行为
    * @yields AgentChunk 事件流（thinking / 透传 loop 执行流 chunk）
    */
   async *runChat(
     input: string,
     signal: AbortSignal,
     attachments?: readonly ImageRef[],
-    opts?: { origin?: Round['origin']; senderName?: string },
+    opts?: {
+      origin?: Round['origin'];
+      senderName?: string;
+      dispatchedBy?: Round['dispatchedBy'];
+    },
   ): AsyncGenerator<AgentChunk, void, unknown> {
     // 回答前：装配上下文 + 召回记忆
     const prepared = yield* this.prepare.run(input, signal, attachments, opts);

@@ -967,6 +967,8 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'assistantMessage',
       'completedAt',
       'createdAt',
+      // 2026-11-15 新增（定性见下方 ⑲）：派发归属，可选字段、非破坏
+      'dispatchedBy',
       'evidence',
       'id',
       'interactiveInputs',
@@ -1532,7 +1534,16 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    不反推历史轮次——历史有 60 轮上限，窗口一满声明就查不到）；写入方 = 宿主 \`createSession\`\n` +
       `    （创建时与标题同批），\`forkSession\` 不复制（分叉是另一条活，范围须重声明）。\n` +
       `    语义 = **记录不是权限**：不表达父子关系，不当门禁授权依据。\n` +
-      `    代价 = 零（可选字段：老会话读不到 ⇒ 按「没有声明」如实降级，不猜范围）。`;
+      `    代价 = 零（可选字段：老会话读不到 ⇒ 按「没有声明」如实降级，不猜范围）。` +
+      `\n  ⑲ Round.dispatchedBy 新增（2026-11-15 · 派发归属，非 Breaking）：\n` +
+      `    定性 = **真能力**（非 no-op 谎报）：\`{ from, via }\`，\`from\` 是创建者会话 id、\`via\` 是\n` +
+      `    \`'delegate'\`（派发到已有会话）/ \`'create'\`（助手开会话的首轮）——盘上两种来源可分辨，\n` +
+      `    反查即可回答「这条会话是谁派来的」，无需宿主另存派发台账（用户拍板的 SSOT 约束）。\n` +
+      `    真消费者 = 宿主 \`workspaceRoundStore.getDispatch\`（索引级读口）→ \`workbenchHistory\n` +
+      `    .collectDispatchedChildren\`（按会话从末尾往前 20 轮、命中即停重建「被派过活」清单）。\n` +
+      `    写入方 = 宿主两处 \`agent.chat(opts)\`（\`dispatchHostedInput\` / \`hostedSessionCreate\`），\n` +
+      `    只记**真的落了轮**的动作：被拒 / 超时 / 目标不存在不建轮，因此天然不写。\n` +
+      `    代价 = 零（可选字段：老轮次读不到 ⇒ 反查不认、也不许倒推创建者，无 deprecation 需求）。`;
     expect(
       issues,
       `\n成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,

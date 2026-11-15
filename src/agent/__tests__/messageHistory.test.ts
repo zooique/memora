@@ -119,6 +119,34 @@ describe('MessageHistory · appendEvidence（裁决证据挂载）', () => {
     return { history, roundStore };
   }
 
+  it('派发归属随轮落盘：给了就写、不给就不写（缺省 = 老数据读路径）', async () => {
+    const { history, roundStore } = createRoundBackedHistory();
+
+    // 派发（send_to_session）：创建者 + 动作类型
+    const delegated = generateRoundId();
+    await history.appendUser('派发过来的活', delegated, {
+      origin: 'hosted',
+      dispatchedBy: { from: '2000-01-01-creator', via: 'delegate' },
+    });
+    expect(roundStore.getById(delegated)?.dispatchedBy).toEqual({
+      from: '2000-01-01-creator',
+      via: 'delegate',
+    });
+
+    // 助手开会话的首句：同一字段，动作类型不同 ⇒ 盘上两种来源可分辨
+    const created = generateRoundId();
+    await history.appendUser('助手开的新会话首句', created, {
+      origin: 'hosted',
+      dispatchedBy: { from: '2000-01-01-creator', via: 'create' },
+    });
+    expect(roundStore.getById(created)?.dispatchedBy?.via).toBe('create');
+
+    // 用户自己打的字：不传就不写（老轮同理：读侧拿到 undefined，不猜创建者）
+    const plain = generateRoundId();
+    await history.appendUser('用户自己打的字', plain);
+    expect(roundStore.getById(plain)).not.toHaveProperty('dispatchedBy');
+  });
+
   it('证据挂在在途轮且随收场保留（pendingRounds 同步——漏同步则收场以旧对象覆盖即丢证据）', async () => {
     const { history, roundStore } = createRoundBackedHistory();
     const roundId = generateRoundId();

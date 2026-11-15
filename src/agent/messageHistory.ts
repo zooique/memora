@@ -351,6 +351,8 @@ export class MessageHistory {
       origin?: Round['origin'];
       /** 发送者名称（复用 `RoundMessage.name`；缺省 = 不写） */
       senderName?: string;
+      /** 派发归属（透传到 `Round.dispatchedBy`；缺省 = 不写，读侧按「非助手派发」解释） */
+      dispatchedBy?: Round['dispatchedBy'];
     },
   ): Promise<AppendUserOutcome> {
     // E2 会话漂移判据：用户消息的轮归属依赖当前会话，漂移时拒绝写入（防旧轮记入新会话）
@@ -431,6 +433,8 @@ export class MessageHistory {
           id: roundId,
           // 来源标记是「这一轮输入」的属性，落在 Round 上（不进 userMessage，后者被交互输入复用）
           ...(opts?.origin ? { origin: opts.origin } : {}),
+          // 派发归属同属「这一轮输入」：谁派来、是派发还是新建（缺省 = 不写，读侧不猜）
+          ...(opts?.dispatchedBy ? { dispatchedBy: opts.dispatchedBy } : {}),
           userMessage: {
             id: `msg-${roundId}-user`,
             role: 'user',
