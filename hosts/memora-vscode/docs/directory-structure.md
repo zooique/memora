@@ -15,7 +15,7 @@ hosts/memora-vscode/
 ├── .vscodeignore              # vsce 打包排除清单（源码/docs/设计源稿不入安装包）
 ├── resources/                 # 静态资源（打包随 vsce 直收，见 .vscodeignore 排除项）
 │   ├── icon.png               # ✅ 市场图标（拟物全彩版，256px；市场不收 SVG）
-│   ├── icon-activitybar.svg   # ✅ 活动栏图标（单色线条版：线宽 1 + 珠线断点 + 圆头，mask 染色）
+│   ├── icon-activitybar.svg   # ✅ 活动栏图标（单色线条版：24x24 网格、线宽 1.5、珠 r1.7 与线断点、圆头，mask 染色）
 │   └── memora-host-icon-design.jpeg # 设计源稿存档（1536px 原图，不入安装包）
 ├── scripts/                   # 门禁验证脚本（.mts；不入安装包）
 ├── docs/                      # 设计与审查文档（本文件 / host-overview / session-archive-design / ui-growth-review）
