@@ -194,7 +194,8 @@ export function createAssistantFormOps(deps: AssistantFormOpsDeps): AssistantFor
      * 时机：早于首次 `render()`（首帧就是恢复后的形态），早于 agent 装配（座位先就位，
      * 恢复的那条会话才会被按托管装配）。
      *
-     * 🔴 只读：不换当前页面、不写 workspaceState、不删任何键（见 `uiFormPersistence` 头注释）。
+     * 🔴 只读：不换当前页面、不写会话文件、不删任何键（见 `uiFormPersistence` 头注释）。
+     * 唯一的持久写是「停在空白页」标记（`enter` 唯一写点，同值不写）。
      * 恢复期做副作用已经出过两次真机事故，导航类动作一律不放在这里。
      */
     restoreOnce(): void {

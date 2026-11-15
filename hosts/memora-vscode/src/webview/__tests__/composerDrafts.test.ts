@@ -6,8 +6,16 @@
  */
 import { describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
-import { MAX_INPUT_CHARS, UI_COMPOSER_DRAFTS_KEY } from '../../shared/constants.js';
-import { createComposerDrafts, DRAFT_PAGE_OWNER } from '../helpers/composerDrafts.js';
+import {
+  MAX_INPUT_CHARS,
+  UI_COMPOSER_DRAFTS_KEY,
+  UI_DRAFT_PAGE_KEY,
+} from '../../shared/constants.js';
+import {
+  createComposerDrafts,
+  DRAFT_PAGE_OWNER,
+  persistDraftPageMark,
+} from '../helpers/composerDrafts.js';
 
 /** 用 Map 模拟工作区级持久层（`get` 同步、`update` 立即生效，便于断言落盘形状） */
 function makeState(initial?: Record<string, string>): {
@@ -104,5 +112,38 @@ describe('composerDrafts — 按会话归属', () => {
     expect(drafts.accept('session-a', '草稿')).toBe(true);
     expect(drafts.read('session-a')).toBe('');
     expect(() => drafts.clear('session-a')).not.toThrow();
+  });
+});
+
+describe('persistDraftPageMark — 空白页标记同值不落盘', () => {
+  it('值没翻转不调 update；进入写 true，离开删键（启动恢复不产生重复写）', () => {
+    const raw = new Map<string, unknown>();
+    /** update 次数：同值不写是本函数唯一新增的语义，用次数锁住 */
+    let writes = 0;
+    const state = {
+      get: (key: string) => raw.get(key),
+      update: async (key: string, value: unknown) => {
+        writes += 1;
+        if (value === undefined) raw.delete(key);
+        else raw.set(key, value);
+      },
+    } as never;
+
+    // 启动恢复路径：标记已是 true 时再经 enter 写一次，不得重复落盘
+    raw.set(UI_DRAFT_PAGE_KEY, true);
+    persistDraftPageMark(state, true);
+    expect(writes).toBe(0);
+
+    // 真正离开 / 进入才写：false = 删键，不写 false
+    persistDraftPageMark(state, false);
+    expect(writes).toBe(1);
+    expect(raw.get(UI_DRAFT_PAGE_KEY)).toBeUndefined();
+    persistDraftPageMark(state, true);
+    expect(writes).toBe(2);
+    expect(raw.get(UI_DRAFT_PAGE_KEY)).toBe(true);
+  });
+
+  it('未注入持久层：静默跳过（不抛错）', () => {
+    expect(() => persistDraftPageMark(undefined, true)).not.toThrow();
   });
 });

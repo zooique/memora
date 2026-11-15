@@ -17,7 +17,11 @@
  * 为什么外置：`chatPanel.ts` 贴 max-lines 基线，面板只留字段与几处单行调用。
  */
 import type * as vscode from 'vscode';
-import { MAX_INPUT_CHARS, UI_COMPOSER_DRAFTS_KEY } from '../../shared/constants.js';
+import {
+  MAX_INPUT_CHARS,
+  UI_COMPOSER_DRAFTS_KEY,
+  UI_DRAFT_PAGE_KEY,
+} from '../../shared/constants.js';
 
 /**
  * 空白草稿页的固定归属标记（**不是 sessionId**）
@@ -35,6 +39,24 @@ export const DRAFT_PAGE_OWNER = '__draft-page__';
  */
 function storageKeyOf(owner: string): string {
   return owner === '' ? DRAFT_PAGE_OWNER : owner;
+}
+
+/**
+ * 写「当前是否停在空白草稿页」标记（幂等：值没翻转就不落盘）
+ *
+ * 为什么需要幂等：启动恢复会经 `DraftSessionController.enter()` 再写一次同一个 true
+ * （构造期落回空白页），而 `Memento.update` 没有同值去重——不在入口挡一次，激活期就会
+ * 产生一次无意义的 `workspaceState` 写，与「恢复链只读」的口径互相矛盾。
+ *
+ * 写点仍是 `enter` / `exit` 两处（面板转调本函数）；本函数只负责同值不写 + false 删键。
+ *
+ * @param state 工作区级持久层（未注入 ⇒ 不记，行为同改造前）
+ * @param on true = 停在空白页；false = 已离开（删键，不写 false）
+ */
+export function persistDraftPageMark(state: vscode.Memento | undefined, on: boolean): void {
+  const next = on ? true : undefined;
+  if (state?.get<boolean>(UI_DRAFT_PAGE_KEY) === next) return;
+  void state?.update(UI_DRAFT_PAGE_KEY, next);
 }
 
 /** 草稿存取外露面 */

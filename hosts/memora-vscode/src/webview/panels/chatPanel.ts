@@ -51,8 +51,6 @@ import {
 } from '../../extension/host/fileChangeView.js';
 import {
   resolveContextWindow,
-  estimateOccupancy,
-  estimateTokensMessages,
   LOOP_CONSTANTS,
   type Agent,
   type AgentChunk,
@@ -94,7 +92,7 @@ import { type PendingLiveRound } from '../../shared/turnProjection.js';
 import { deriveSessionProjection } from '../../shared/sessionProjection.js';
 import { dedupeRefs } from '../../shared/refKey.js'; // 引用去重判据单点（与 webview 的 addRefs 共用，勿各自实现）
 // 未发送草稿（按会话落 workspaceState）：只搬文本，不参与 composer_state 的翻转判据
-import { createComposerDrafts } from '../helpers/composerDrafts.js';
+import { createComposerDrafts, persistDraftPageMark } from '../helpers/composerDrafts.js';
 // 「上次停在空白草稿页」标记：空白页没有会话身份，会话停留指针表达不了这件事
 import { UI_DRAFT_PAGE_KEY } from '../../shared/constants.js';
 // 插话受理三态的可见文案（INPUT-LIMIT-1 / INTERJECT-PERSIST-1）统一由 windowNotices 提供，
@@ -157,7 +155,8 @@ import {
 // 托管工具契约（建会话结果 / 派发结果）：工具 handler 与面板共用同一联合类型，防码集漂移
 import type { CreateSessionResult } from '../../extension/host/workSessionTools.js';
 import { createVscodeAttention } from '../../extension/host/vscodeAttention.js';
-import { collectOccupancyHistory } from '../helpers/occupancyHistory.js';
+// 历史会话占用投影（纯投影外置：只读 Provider / 历史 + 只 post，不碰会话导航与写盘）
+import { pushHistoryOccupancy } from '../helpers/occupancyPost.js';
 import {
   PanelSessionLockFinalizer,
   type PanelSessionIdAccess,
@@ -793,7 +792,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 草稿未选角色时的「即将生效」角色 = 用户级默认；未设置则内核兜底契约包
         getDefaultRolePackName: resolveDraftRolePackName,
         // 进 / 出空白页时记一位（重启后据此回到空白页）；未注入持久层 = 不记，行为同改造前
-        markDraftPage: (on) => void this.uiState?.update(UI_DRAFT_PAGE_KEY, on ? true : undefined),
+        markDraftPage: (on) => persistDraftPageMark(this.uiState, on),
         // 空白页归属随投影下发：不发则 webview 归属停在上一条会话（空白页的字会被写错归属）
         restoreComposerDraft: () => this.post(this._composerDrafts.restore('')),
       },
@@ -1237,8 +1236,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 在 webview 脚本监听器注册前丢失。
    */
   public prefillInput(text: string): void {
-    if (this._view) this.post({ type: 'prefill_input', text });
-    else this._pendingPrefill = text;
+    if (this._view) {
+      this.post({ type: 'prefill_input', text });
+    } else {
+      this._pendingPrefill = text;
+    }
   }
 
   /**
@@ -1311,13 +1313,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     // 草稿文本（防抖上行）：只落盘、不改「有没有字」的翻转判据（那条只认 composer_state；
     // 恢复出来的旧草稿因此不会把落定主动汇报永久压住，用户真敲第一下才翻转）。
-    // 归属以 webview 回传的会话为准；不可解析（已删 / 迟到）时回落当前会话——
-    // 宁可写一条随后可清的键，也不能把用户正在打的字丢掉（丢文本的代价远高于一条脏键）。
+    // 归属一律信任 webview 回传值：`''` = 空白页，照收——定时器快照的是「打字那一刻」
+    // 这段字属于谁，按当前页面改写会把上一会话最后 250ms 的字挪走（反之亦然）。
+    // 只有回传的会话已不可解析（已删）时才回落当前会话——宁可写一条随后可清的键，
+    // 也不能把用户正在打的字丢掉（丢文本的代价远高于一条脏键）。
     else if (msg.type === 'composer_draft') {
       const known = this.sessionStore.isResolvable(msg.sessionId);
-      // 空白页是宿主自己的事实，优先于 webview 回传：页面处于草稿态时一律记到空白页键，
-      // 否则「＋」后打的字会被写成上一条真实会话的 id（真机复现；回传归属可能尚未刷新）。
-      const owner = this.isDraft ? '' : known ? msg.sessionId : this._currentSessionId;
+      const owner = msg.sessionId && !known ? this._currentSessionId : msg.sessionId;
       this._composerDrafts.accept(owner, msg.text);
     } else if (msg.type === 'open_settings_tab') {
       // 设置面板选项卡导航（空态引导 → 大模型 / 角色徽章 → 角色；只导航——切换执行仍走各视图单路径）。
@@ -1460,8 +1462,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._view = webviewView;
     // 重开自愈（B1）：销毁时已清空会话 id，按真源重新派生（拿锁在 ready 握手）。
     // 草稿态必须跳过：重开视图若按 `getInitialSessionId()` 派生，会把草稿悄悄退回上一个会话
-    if (!this._currentSessionId && !this.isDraft)
+    if (!this._currentSessionId && !this.isDraft) {
       this._currentSessionId = this.sessionStore.getInitialSessionId();
+    }
     this._lockFinalizer.onResolve();
     // 视图重建代数自增：本次流若跨重建，流尾据此补移植（见 _viewEpoch 注释）
     this._viewEpoch += 1;
@@ -1704,7 +1707,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 丢弃 reason 则用户只看到「拒绝」却不知为何。
       const reason = (event as { reason?: string }).reason;
       this._securityAuditTotal += 1;
-      if (type === 'path-deny' || type === 'write-decline') this._securityAuditDenied += 1;
+      if (type === 'path-deny' || type === 'write-decline') {
+        this._securityAuditDenied += 1;
+      }
       // 路径取 basename 防折叠区冗长（可读且不泄露完整目录结构）
       const base = path.split(/[\\/]/).pop() ?? path;
       this._recentSecurityAudits.push({ type, path: base, tool, reason });
@@ -2039,48 +2044,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 推送历史会话上下文占用（轻量版）
    *
-   * 切到历史会话（含首次启动回放）时调用：圆环从「空态 0%」纠正为「该会话真实占用」——
-   *   对话层  = 持久化消息经内核 estimateTokensMessages 求和（与运行时 prepare 同口径）
-   *   角色包  = 内核当前激活角色包底盘占用（system prompt 总体 token，装配/切换即确定，
-   *             冷启动也有真实值，不再降级为 0；见 context.rolePackBaseTokens）
-   *   输入锚点= 0（历史会话无当前输入）
-   * 组装复用内核 estimateOccupancy（SSOT 单点，free 收敛口径与运行时 prepare 一致）。
-   * 异步仅用于读取当前 Provider 窗口（listMasked），失败静默（圆环维持 chat_providers 空态）。
+   * 实现外置在 `helpers/occupancyPost`（纯投影：只读 Provider / 历史，只 post 一条消息，
+   * 不碰会话导航、清空与写盘）。本面板只留依赖接线，口径见该模块头注释。
    */
-  private async postHistoryOccupancy(): Promise<void> {
-    const agent = this._agent;
-    if (!agent) return;
-    try {
-      // 窗口容量：当前选中 LLM 的上下文上限（SSOT：与 pushProviders 同源 resolveContextWindow）
-      const providers = await this._providerStore.listMasked();
-      const activeName = this._providerStore.getActiveName();
-      const active = providers.find((p) => p.name === activeName);
-      const totalTokens = resolveContextWindow(active?.contextWindow);
-      // 对话消息序列：round-based（viewLoader）或 legacy 扁平路径统一提取
-      const history = collectOccupancyHistory(
-        !!this._viewLoader,
-        () => loadRoundBasedHistory(this._viewLoader, this.sessionStore, this._currentSessionId),
-        () => loadMessagesHistory(this.sessionStore, this._currentSessionId),
-      );
-      const dialogueTokens = estimateTokensMessages(history);
-      // 角色包固定开销：优先取内核当前激活角色包底盘占用（装配/切换即确定，冷启动也有真实值）；
-      // 该指标暂无时回退 occupancy 旧值（兼容极端时序），再回退 0。
-      const ctx = agent.getMetrics().context;
-      const rolePackBaseTokens = ctx.rolePackBaseTokens ?? ctx.occupancy?.rolePackBaseTokens ?? 0;
-      const occ = estimateOccupancy({
-        totalTokens,
-        rolePackBaseTokens,
-        // 历史会话重算无动态 system 注入（持久化历史只含 user+assistant）→ 显式 0
-        dynamicSystemTokens: 0,
-        dialogueTokens,
-        // 计数标准：以用户输入条数计（一个问答闭环=1，残缺回答如实记录），与内核 dialogueCount 口径一致（SSOT）
-        dialogueCount: history.filter((m) => m.role === 'user').length,
-        inputAnchorTokens: 0,
-      });
-      this.post({ type: 'context_occupancy', occupancy: occ });
-    } catch {
-      // 读取 Provider 失败不阻塞会话切换（圆环维持空态，非关键路径）
-    }
+  private postHistoryOccupancy(): Promise<void> {
+    return pushHistoryOccupancy({
+      agentContext: () => this._agent?.getMetrics().context,
+      listProviders: () => this._providerStore.listMasked(),
+      activeProviderName: () => this._providerStore.getActiveName(),
+      hasViewLoader: !!this._viewLoader,
+      loadRounds: () =>
+        loadRoundBasedHistory(this._viewLoader, this.sessionStore, this._currentSessionId),
+      loadLegacy: () => loadMessagesHistory(this.sessionStore, this._currentSessionId),
+      post: (msg) => this.post(msg),
+    });
   }
 
   /**
@@ -2944,8 +2921,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const sessionManager = agent.sessionManager;
     if (sessionManager) {
       const info = sessionManager.getCurrentSessionInfo();
-      if (info && `${info.date}-${info.session}` !== targetSessionId)
+      if (info && `${info.date}-${info.session}` !== targetSessionId) {
         await sessionManager.switchToSession(targetSessionId);
+      }
     }
     if (this._runtime.peek(targetSessionId)?.streaming === true) return busy;
     const now = new Date().toISOString();
@@ -3537,7 +3515,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 提问 chunk（question_pending）：事件优先驱动，chunk 幂等兜底。
         // 事件已驱动（内核先回调、后 yield chunk）→ 跳过；未驱动 → 攒缓存，流尾统一兜底渲染（避免逐条 post 后者覆盖前者）
         if (chunk.type === 'question_pending') {
-          if (!clarifyEventDriven) clarifyChunkQueue.push(...chunk.questions);
+          if (!clarifyEventDriven) {
+            clarifyChunkQueue.push(...chunk.questions);
+          }
           continue;
         }
         if (chunk.type === 'tool_pending') {
@@ -3874,7 +3854,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     // 流期间 view 重建过 → 新 webview 未投影本流（隐藏期消息被丢弃），数据已完整落盘 →
     // 补一次 replaySession 全量回放恢复完整回合
-    if (this._viewEpoch !== flowViewEpoch) this.replaySession();
+    if (this._viewEpoch !== flowViewEpoch) {
+      this.replaySession();
+    }
     // plan 快照对齐：generator close 后内核 clearPlanOnTurnEnd 已清 plan（暂停态 guard 不清），
     // 此处推一次快照让 webview 同步——正常/中断 → 空 items（顶部条收起）；
     // 暂停 → 保留当前 plan（paused 分支前面，plan 还没被清，继续供 resume 消费）

@@ -2695,17 +2695,30 @@ describe('空白草稿页的草稿（O5-B）', () => {
     expect(raw.get(UI_DRAFT_PAGE_KEY)).toBeUndefined();
   });
 
-  it('点「＋」后归属未刷新（仍带回上一会话 id）⇒ 仍记到空白页键（宿主事实优先）', () => {
+  it('切到空白页时防抖快照带回上一会话 ⇒ 那段字仍归上一会话（不挪到空白页）', () => {
     const raw = new Map<string, unknown>();
     const prev = '2026-11-15-prev-session';
     const h = setupPanel({}, [prev], createEphemeralSessionModeStore(), makeUi(raw));
     h.cast._draft.enter();
     expect(h.provider.getCurrentSessionId()).toBe('');
 
-    // 真机路径：webview 的归属还停在上一条会话 id（restore 尚未处理）——
-    // 若按「归属可解析」就写它，空白页的字会被记成那条会话的草稿（__draft-page__ 一次不走）
-    h.fireMessage({ type: 'composer_draft', sessionId: prev, text: '空白页打字' });
-    expect(raw.get(UI_COMPOSER_DRAFTS_KEY)).toEqual({ [DRAFT_PAGE_OWNER]: '空白页打字' });
+    // 真机时序：在 prev 里打字后 250ms 内点「＋」——定时器带的是「打字那一刻」的归属 prev。
+    // 宿主不得按「当前是空白页」改写归属：否则 prev 最后一段字丢失、空白页多出别人的话。
+    h.fireMessage({ type: 'composer_draft', sessionId: prev, text: '上一会话最后打的字' });
+    expect(raw.get(UI_COMPOSER_DRAFTS_KEY)).toEqual({ [prev]: '上一会话最后打的字' });
+  });
+
+  it('空白页的迟到回传（sessionId 为空）不许被改写成当前会话', () => {
+    const raw = new Map<string, unknown>();
+    const current = '2026-11-15-current';
+    const h = setupPanel({}, [current], createEphemeralSessionModeStore(), makeUi(raw));
+    // 页面已切到真会话；此时到达的是空白页在切走前调度的定时器快照（归属仍是 ''）
+    expect(h.provider.isDraftSession()).toBe(false);
+    expect(h.provider.getCurrentSessionId()).toBe(current);
+
+    h.fireMessage({ type: 'composer_draft', sessionId: '', text: '空白页最后打的字' });
+    // 空串照收：写空白页键，不写成当前会话的草稿（反向挪字同样不允许）
+    expect(raw.get(UI_COMPOSER_DRAFTS_KEY)).toEqual({ [DRAFT_PAGE_OWNER]: '空白页最后打的字' });
   });
 
   it('进入空白页必须下发归属（否则 webview 归属停在上一条会话）', () => {
