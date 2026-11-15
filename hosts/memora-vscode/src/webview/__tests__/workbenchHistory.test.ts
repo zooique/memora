@@ -14,10 +14,11 @@ import type { ProcessEvent, Round } from '@zooique/memora';
 import {
   rebuildWorkbenchChildren,
   WORKBENCH_DISPATCH_EXCERPT_CHARS,
-  WORKBENCH_DISPATCH_LOOKBACK_ROUNDS,
   WORKBENCH_REBUILD_MAX_ROUNDS,
   type WorkbenchHistorySources,
 } from '../helpers/workbenchHistory.js';
+// 反查窗口上限的真源在 shared（webview 文案也用这个数）
+import { WORKBENCH_DISPATCH_LOOKBACK_ROUNDS } from '../../shared/workbenchDto.js';
 // 摘要不手抄：直接用真实产生点产出的文本（格式契约由 workbenchSidContract.test.ts 钉住）
 import { serializeCreateSessionResult } from '../../extension/host/workSessionTools.js';
 

@@ -10,11 +10,12 @@
  */
 import * as l10n from '@vscode/l10n';
 import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
-import type {
-  WorkbenchJob,
-  WorkbenchJobStatus,
-  WorkbenchSnapshot,
-  WorkbenchStopReason,
+import {
+  WORKBENCH_DISPATCH_LOOKBACK_ROUNDS,
+  type WorkbenchJob,
+  type WorkbenchJobStatus,
+  type WorkbenchSnapshot,
+  type WorkbenchStopReason,
 } from '../../shared/workbenchDto.js';
 
 /** 视图依赖面（`document` 注入便于测试；`post` 由入口绑定到 acquire 的 api） */
@@ -83,7 +84,7 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
    * 不是覆盖缺失；已完成的记录本身就在清单里，空态解释句没有存在的余地。
    */
   const renderJobs = (snapshot: WorkbenchSnapshot): void => {
-    const { jobs, coverage, missingCount, filteredCount, scan } = snapshot;
+    const { jobs, coverage, missingCount, filteredCount, scan, dispatchTruncated } = snapshot;
     /** 是否因超上限只读了一部分（界面必须说清，不能当完整） */
     const truncated = scan.totalRounds > scan.scannedRounds;
     jobsList.textContent = '';
@@ -100,25 +101,42 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
                   'Older history was not read (only the latest {0} rounds)',
                   scan.scannedRounds,
                 )
-              : coverage === 'partial'
-                ? l10n.t('Some history could not be read')
-                : filteredCount > 0
-                  ? // 记录存在、但当前不由代理驱动（多为用户已收回）：如实说过滤，不改口成「没有」
-                    l10n.t(
-                      '{0} record(s) exist, but no agent is driving them right now',
-                      filteredCount,
-                    )
-                  : l10n.t('No work has been handed to the assistant yet');
+              : dispatchTruncated > 0
+                ? // 反查窗口截断：可能真的「派过但没读到」，不许落到「还没有交给助手的活」
+                  l10n.t('Older dispatches were not read in some sessions')
+                : coverage === 'partial'
+                  ? l10n.t('Some history could not be read')
+                  : filteredCount > 0
+                    ? // 记录存在、但当前不由代理驱动（多为用户已收回）：如实说过滤，不改口成「没有」
+                      l10n.t(
+                        '{0} record(s) exist, but no agent is driving them right now',
+                        filteredCount,
+                      )
+                    : l10n.t('No work has been handed to the assistant yet');
     }
     // 有清单时的读不全说明（空态已在上面的句子里说清，不重复）
     const notices: string[] = [];
     if (jobs.length > 0 && coverage === 'unreadable') {
       notices.push(l10n.t('Some history could not be read'));
     }
-    if (jobs.length > 0 && truncated) {
-      notices.push(
-        l10n.t('Older history was not read (only the latest {0} rounds)', scan.scannedRounds),
-      );
+    if (jobs.length > 0 && (truncated || dispatchTruncated > 0)) {
+      // 同一条「历史没读全」说明里交代两个窗口：创建者自己的轮窗口、目标会话的反查窗口
+      const parts: string[] = [];
+      if (truncated) {
+        parts.push(
+          l10n.t('Older history was not read (only the latest {0} rounds)', scan.scannedRounds),
+        );
+      }
+      if (dispatchTruncated > 0) {
+        parts.push(
+          l10n.t(
+            'Older dispatches were not read in {0} session(s) (only the latest {1} rounds each)',
+            dispatchTruncated,
+            WORKBENCH_DISPATCH_LOOKBACK_ROUNDS,
+          ),
+        );
+      }
+      notices.push(parts.join(' '));
     }
     if (jobs.length > 0 && missingCount > 0) {
       notices.push(l10n.t('{0} session(s) could not be found', missingCount));

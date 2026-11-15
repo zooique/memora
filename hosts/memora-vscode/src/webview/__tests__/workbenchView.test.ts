@@ -52,6 +52,7 @@ function snapshot(overrides: Partial<WorkbenchSnapshot> = {}): WorkbenchSnapshot
     filteredCount: 0,
     coverage: 'complete',
     missingCount: 0,
+    dispatchTruncated: 0,
     scan: { maxRounds: 60, totalRounds: 0, scannedRounds: 0 },
     ...overrides,
   };
@@ -122,6 +123,36 @@ describe('workbenchView — 空态：读不到 ≠ 没有', () => {
       }),
     );
     expect(jobsEmpty.textContent).toBe('Older history was not read (only the latest 60 rounds)');
+  });
+
+  it('反查窗口截断要挂在同一条「历史没读全」说明里（不新造提示位置）', () => {
+    const { view, jobsNotice } = mount();
+    view.render(
+      snapshot({
+        jobs: [job('session-a', { kind: 'running' })],
+        dispatchTruncated: 2,
+        scan: { maxRounds: 60, totalRounds: 5, scannedRounds: 5 },
+      }),
+    );
+    // 有清单时：进现有 notice 容器，且说清「哪些会话、每会话看多少轮」
+    expect(jobsNotice.hidden).toBe(false);
+    expect(jobsNotice.textContent).toContain(
+      'Older dispatches were not read in 2 session(s) (only the latest 20 rounds each)',
+    );
+  });
+
+  it('反查窗口截断 + 空清单 ⇒ 不得落到「还没有交给助手的活」', () => {
+    const { view, jobsEmpty } = mount();
+    view.render(
+      snapshot({
+        jobs: [],
+        filteredCount: 0,
+        dispatchTruncated: 1,
+        scan: { maxRounds: 60, totalRounds: 3, scannedRounds: 3 },
+      }),
+    );
+    // 旧派发可能在窗口外：如实说「更早的派发未读到」，不冒充「一条都没有」
+    expect(jobsEmpty.textContent).toBe('Older dispatches were not read in some sessions');
   });
 
   it('部分历史读不到：说「部分历史读不到」', () => {

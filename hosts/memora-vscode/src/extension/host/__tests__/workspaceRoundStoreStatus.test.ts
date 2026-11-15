@@ -14,7 +14,7 @@
  * 把 `getDispatch` 改成 `this.getById(roundId)?.dispatchedBy` ⇒ 用例④ 的「只读索引」段转红。
  */
 import { describe, it, expect } from 'vitest';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { IRoundStore, Round } from '@zooique/memora';
 import { WorkspaceRoundStore, hasRoundStatusIndex } from '../workspaceRoundStore.js';
@@ -99,5 +99,27 @@ describe('WorkspaceRoundStore 索引态读取（P1 会话终态投影）', () =>
     reloaded.load();
     expect(reloaded.getDispatch('round-d')).toEqual({ from: 'session-creator', via: 'delegate' });
     expect(reloaded.getDispatch('round-legacy')).toBeUndefined();
+  });
+
+  it('删掉索引文件也能从轮文件全量重建 dispatchedBy（判据：是缓存，不是第二真相源）', () => {
+    const dir = makeTempDir('memora-round-dispatch-cache-test-');
+    const store = new WorkspaceRoundStore(dir);
+    store.load();
+    store.save({
+      ...makeRound('round-cache', 'complete'),
+      dispatchedBy: { from: 'session-creator', via: 'create' },
+    });
+    store.save(makeRound('round-plain', 'complete'));
+
+    // 索引整份丢失（删文件 / 换机器只拷 rounds 目录）
+    unlinkSync(join(resolveProjectDataDir(dir), 'rounds', 'index.json'));
+
+    const rebuilt = new WorkspaceRoundStore(dir);
+    rebuilt.load();
+    // 补读只发生在「索引缺条目」这一支：status 与 dispatchedBy 必须都被补出来，
+    // 否则旧派发记录会在索引缺失时被判成「没派过」而无声消失
+    expect(rebuilt.getDispatch('round-cache')).toEqual({ from: 'session-creator', via: 'create' });
+    expect(rebuilt.getStatus('round-cache')).toBe('complete');
+    expect(rebuilt.getDispatch('round-plain')).toBeUndefined();
   });
 });

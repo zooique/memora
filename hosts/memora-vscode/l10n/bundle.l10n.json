@@ -1451,6 +1451,8 @@
   "Handed over, not started yet": "",
   "Created by assistant": "",
   "Dispatched here": "",
+  "Older dispatches were not read in some sessions": "",
+  "Older dispatches were not read in {0} session(s) (only the latest {1} rounds each)": "",
   "Did not finish last time": "",
   "No stop reason was recorded": "",
   "Status unavailable": "",

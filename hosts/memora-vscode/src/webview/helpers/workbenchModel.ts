@@ -154,6 +154,8 @@ export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): Workben
     filteredCount,
     coverage: resolveCoverage(inputs, missingCount),
     missingCount,
+    // 反查窗口截断的会话数：与 scan 分开报（两把尺子，别混成一个数）
+    dispatchTruncated: inputs.history.dispatchScan.truncated,
     scan: {
       maxRounds: WORKBENCH_REBUILD_MAX_ROUNDS,
       totalRounds: inputs.history.totalRounds,

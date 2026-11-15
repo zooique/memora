@@ -140,12 +140,28 @@ export interface WorkbenchSnapshot {
   coverage: WorkbenchCoverage;
   /** 历史里有 sid、但磁盘上已找不到的会话数（跳过并计数，不静默丢弃） */
   missingCount: number;
+  /**
+   * 反查「被派过活」时，因轮数超过回看上限而只扫了末尾一段的会话数
+   *
+   * 与 `scan` 是两把尺子：`scan` 说的是**创建者自己**的轮扫描窗口，这里说的是**目标会话**
+   * 的末尾回看窗口（每会话 20 轮、命中即停）。>0 表示更早的派发可能没读到——界面必须挂在
+   * 现有的「历史没读全」说明里说清，不能让用户只看到「少了几条」。
+   */
+  dispatchTruncated: number;
   /** 重建扫描口径（超上限时 webview 说清「只读了多少轮」） */
   scan: WorkbenchScanInfo;
 }
 
 /** 清单覆盖状态（三态；不是新状态源，只是「这次重建读到哪」的说明） */
 export type WorkbenchCoverage = 'complete' | 'partial' | 'unreadable';
+
+/**
+ * 反查「被派过活」时每个目标会话最多回看的轮数（从末尾往前、命中即停）
+ *
+ * 放在 shared 而不是 `helpers/workbenchHistory`：webview 也要用这个数说文案，
+ * 而 history 是宿主侧模块（会拖 `node:fs` / 内核值导入进浏览器包）。
+ */
+export const WORKBENCH_DISPATCH_LOOKBACK_ROUNDS = 20;
 
 /** 历史重建的扫描口径 */
 export interface WorkbenchScanInfo {

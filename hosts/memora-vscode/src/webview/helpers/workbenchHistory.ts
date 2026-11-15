@@ -33,7 +33,10 @@ import {
   CREATE_SESSION_TOOL_NAME,
   SEND_TO_SESSION_TOOL_NAME,
 } from '../../extension/host/workSessionTools.js';
-import type { WorkbenchCoverage } from '../../shared/workbenchDto.js';
+import {
+  WORKBENCH_DISPATCH_LOOKBACK_ROUNDS,
+  type WorkbenchCoverage,
+} from '../../shared/workbenchDto.js';
 
 /** 单次重建最多读多少轮（改这里必须同时改文案：界面会把这个数字说给用户） */
 export const WORKBENCH_REBUILD_MAX_ROUNDS = 60;
@@ -60,9 +63,6 @@ export interface WorkbenchHistorySources {
    */
   readRoundDispatch: (roundId: string) => Round['dispatchedBy'] | undefined;
 }
-
-/** 反查「被派过活」时每个会话最多回看的轮数（从末尾往前、命中即停） */
-export const WORKBENCH_DISPATCH_LOOKBACK_ROUNDS = 20;
 
 /** 重建出的子会话（sid 必有；title 可能缺省，由会话元数据兜底） */
 export interface WorkbenchHistoryChild {
