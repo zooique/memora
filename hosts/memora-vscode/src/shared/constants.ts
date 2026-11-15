@@ -25,16 +25,30 @@ export const ROLE_PACK_TEAMS_KEY = 'memora.rolePackTeams';
 export const CONFIRM_SCRIPTS_KEY = 'memora.confirmScripts';
 
 /**
- * 未发送输入草稿在 `workspaceState` 里的键（`Record<sessionId, string>`）
+ * 未发送输入草稿在 `workspaceState` 里的键（`Record<sessionId | 空白页标记, string>`）
  *
- * 归属**按会话走**：草稿是「那条会话还没发出去的话」，不是全局一坨。**空白草稿页
- * （「＋」后还没有会话 id）不落盘**——它没有归属，存下来会在重启后落到一条无关的新会话上。
+ * 归属**按会话走**：草稿是「那条会话还没发出去的话」，不是全局一坨。空白草稿页
+ * （「＋」后还没有会话 id）用固定标记 `DRAFT_PAGE_OWNER`（见 composerDrafts）落盘，
+ * **不借用任何 sessionId**——借用会让重启后的旧字落到一条无关会话上。
  *
- * 两条纪律：① 空文本一律删键，不留垃圾；② 会话被删除时同步 `forget`，否则会随会话数量
- * 无限累积。它不是 `composer_state`（那是「有没有字」的翻转信号），文本只走这条键与
+ * 三条纪律：① 空文本一律删键，不留垃圾；② 会话被删除时同步 `forget`，否则会随会话数量
+ * 无限累积；③ 空白页的键在「页面变成真会话」那一刻立即清掉（文本已发出，没有迁移价值）。
+ * 它不是 `composer_state`（那是「有没有字」的翻转信号），文本只走这条键与
  * `composer_draft` / `composer_draft_restore` 两条消息。
  */
 export const UI_COMPOSER_DRAFTS_KEY = 'memora.composerDrafts';
+
+/**
+ * 「上次关闭时停在空白草稿页」的标记（`workspaceState`，布尔）
+ *
+ * 为什么必须单独记一个布尔：会话停留指针（`lastActiveAt`）只描述**真会话**，空白页没有
+ * 会话身份，不写这一位就无法区分「上次停在空白页」与「上次停在真会话」——
+ * 前者要回到空白页并把草稿放回；后者绝不能被空白页的草稿抢戏。
+ *
+ * 写入点只有两个（草稿控制器的 enter / exit）：进空白页写 true，一旦有了会话 id
+ * 立即写 undefined（与 `composerDrafts` 清空白页键同一时刻，见面板发送分支）。
+ */
+export const UI_DRAFT_PAGE_KEY = 'memora.composerDraftPage';
 
 /**
  * 侧栏形态 + 座位绑定（`{ form, seatSessionId }`）在 `workspaceState` 里的键

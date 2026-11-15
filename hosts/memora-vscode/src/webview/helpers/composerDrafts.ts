@@ -1,12 +1,16 @@
 /**
  * 未发送输入草稿的存取（唯一入口）
  *
- * 归属按会话：`Record<sessionId, string>`，空串键 = 「＋」后的空白草稿页（还没有会话 id）。
+ * 归属按会话：`Record<sessionId | DRAFT_PAGE_OWNER, string>`。空白草稿页（「＋」后还没有
+ * 会话 id）用固定标记 `DRAFT_PAGE_OWNER` 作键——**不借用任何 sessionId**，也不新增第二种
+ * 存储：仍然是「一张表 + 一个 Memento 键」。
  * 存储只落 `workspaceState`（工作区级，与形态/座位同一个 Memento），不写 `.memora`。
  *
- * 三条纪律：
+ * 四条纪律：
  * - **空文本删键**：不留 `''` 垃圾，避免键数随会话增长；
  * - **会话删除即 `forget`**：调用点 = 面板删会话成功路径；
+ * - **空白页的键在页面变成真会话那一刻清掉**（面板发送分支）：文本已发出，迁移只会让
+ *   重启后的旧字复现到那条真会话上；
  * - **它不是 `composer_state`**：那个是「输入框有没有字」的翻转信号（只服务落定汇报不打断
  *   打字），文本搬运一律走 `composer_draft`（W→E）/ `composer_draft_restore`（E→W）。
  *
@@ -14,6 +18,24 @@
  */
 import type * as vscode from 'vscode';
 import { MAX_INPUT_CHARS, UI_COMPOSER_DRAFTS_KEY } from '../../shared/constants.js';
+
+/**
+ * 空白草稿页的固定归属标记（**不是 sessionId**）
+ *
+ * 空白页没有身份，但它的草稿同样要能落盘与回填。取一个真实会话 id 不会出现的字面量
+ * （id 形态见 `newSessionId`：`日期-s<base36>`，不含双下划线包裹）。
+ */
+export const DRAFT_PAGE_OWNER = '__draft-page__';
+
+/**
+ * 页归属 → 落盘键
+ *
+ * @param owner 页归属（`''` = 空白草稿页；其余 = 会话 id）
+ * @returns 存储键（真会话原样作键，保证存量数据不需要迁移）
+ */
+function storageKeyOf(owner: string): string {
+  return owner === '' ? DRAFT_PAGE_OWNER : owner;
+}
 
 /** 草稿存取外露面 */
 export interface ComposerDrafts {
@@ -59,30 +81,30 @@ export function createComposerDrafts(getState: () => vscode.Memento | undefined)
 
   return {
     read(sessionId) {
-      const text = readAll()[sessionId];
+      const text = readAll()[storageKeyOf(sessionId)];
       return typeof text === 'string' ? text : '';
     },
     accept(sessionId, text) {
-      // 空白草稿页（还没有会话 id）没有归属：不落盘，免得重启后落到一条无关的新会话上
-      if (!sessionId) return text.trim().length > 0;
+      const key = storageKeyOf(sessionId);
       // 与输入框长度上限同源：超长文本不落盘（否则一次粘贴会把工作区存储撑大）
       const capped = text.slice(0, MAX_INPUT_CHARS);
       const all = readAll();
       if (capped.trim().length === 0) {
-        if (!(sessionId in all)) return false;
-        delete all[sessionId];
+        if (!(key in all)) return false;
+        delete all[key];
       } else {
         // 内容没变就不写：防抖 250ms 内重复上报同一文本时不产生无意义的持久化写
-        if (all[sessionId] === capped) return true;
-        all[sessionId] = capped;
+        if (all[key] === capped) return true;
+        all[key] = capped;
       }
       writeAll(all);
       return capped.trim().length > 0;
     },
     clear(sessionId) {
+      const key = storageKeyOf(sessionId);
       const all = readAll();
-      if (!(sessionId in all)) return;
-      delete all[sessionId];
+      if (!(key in all)) return;
+      delete all[key];
       writeAll(all);
     },
     forget(sessionId) {

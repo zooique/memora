@@ -1725,6 +1725,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    */
   let draftOwner = '';
   /**
+   * 是否已经收到过一次归属（`composer_draft_restore`）
+   *
+   * 不能只靠 `msg.sessionId !== draftOwner` 判「要不要回填」：空白草稿页的归属两端都是
+   * `''`，首次恢复就会被误判成「同一会话的重复回放」而跳过，字放不回输入框。
+   */
+  let draftOwnerBound = false;
+  /**
    * 上报输入框是否有未发送文本
    *
    * 唯一消费方 = 落定汇报的「不抢用户正在打的字」判据（宿主存一个布尔，不参与发送 / 相位）。
@@ -3379,7 +3386,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       //
       // 同一会话的重复回放（截断 / 重新生成 / 反复点同一会话）直接忽略：输入框已经属于这条
       // 会话，用 250ms 前落盘的旧值覆盖会吞掉刚敲的字（并把光标弹到末尾）。
-      if (msg.sessionId !== draftOwner) {
+      if (!draftOwnerBound || msg.sessionId !== draftOwner) {
+        draftOwnerBound = true;
         draftOwner = msg.sessionId;
         input.value = msg.text;
         autoResize();

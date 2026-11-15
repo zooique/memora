@@ -14094,6 +14094,20 @@ describe('未发送草稿（composer_draft_restore / composer_draft）', () => {
     expect(postMessage).toHaveBeenCalled();
   });
 
+  it('空白页（归属为空）的草稿也能回填：首次恢复不能被「同会话」判据跳过', () => {
+    mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    expect(input.value).toBe('');
+
+    dispatch({ type: 'composer_draft_restore', sessionId: '', text: '空白页草稿' });
+    expect(input.value).toBe('空白页草稿');
+
+    // 首次之后回到「同会话跳过」：空白页的重复回放不覆盖正在敲的内容
+    input.value = '空白页草稿 + 刚敲的';
+    dispatch({ type: 'composer_draft_restore', sessionId: '', text: '空白页草稿' });
+    expect(input.value).toBe('空白页草稿 + 刚敲的');
+  });
+
   it('发送提交点立即上报空串删键（不等防抖；宿主不再做 await 之后的迟到删键）', () => {
     const { postMessage } = mountChatView();
     const input = document.getElementById('input') as HTMLTextAreaElement;

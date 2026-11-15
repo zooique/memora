@@ -95,6 +95,8 @@ import { deriveSessionProjection } from '../../shared/sessionProjection.js';
 import { dedupeRefs } from '../../shared/refKey.js'; // 引用去重判据单点（与 webview 的 addRefs 共用，勿各自实现）
 // 未发送草稿（按会话落 workspaceState）：只搬文本，不参与 composer_state 的翻转判据
 import { createComposerDrafts } from '../helpers/composerDrafts.js';
+// 「上次停在空白草稿页」标记：空白页没有会话身份，会话停留指针表达不了这件事
+import { UI_DRAFT_PAGE_KEY } from '../../shared/constants.js';
 // 插话受理三态的可见文案（INPUT-LIMIT-1 / INTERJECT-PERSIST-1）统一由 windowNotices 提供，
 // 面板内不嵌字面量：那里是窗口提示的单一真源（常量形态会在模块求值时定稿语言，故用函数）。
 
@@ -766,6 +768,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 初始会话 = **上次停留的会话**（导航指针），不可用时退回最近写入的会话；
     // 无历史不自动创建（新建唯一入口为标题条「＋」）。
     // 存在性校验与回退序全在 store.getInitialSessionId（SESSION-RESUME-1 判据单点），本处只消费结果。
+    // 上次停在空白草稿页（用户口径：回到空白页并把字放回去）：只读一位标记，稍后走
+    // 草稿控制器的 enter（它内部才动「当前会话」这个写点，不在这里新增第二种清空）。
+    const lastDraftPage = this.uiState?.get<boolean>(UI_DRAFT_PAGE_KEY) === true;
     this._currentSessionId = this.sessionStore.getInitialSessionId();
     // 无历史会话 ⇒ 启动即草稿：干净空白页，首次真正发送才建会话（有历史则回放上次停留会话）
     this._draft = new DraftSessionController(
@@ -778,10 +783,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         createSession: (id, rolePackName, mode) => this.createSession(id, rolePackName, mode),
         // 草稿未选角色时的「即将生效」角色 = 用户级默认；未设置则内核兜底契约包
         getDefaultRolePackName: resolveDraftRolePackName,
+        // 进 / 出空白页时记一位（重启后据此回到空白页）；未注入持久层 = 不记，行为同改造前
+        markDraftPage: (on) => void this.uiState?.update(UI_DRAFT_PAGE_KEY, on ? true : undefined),
       },
-      !this._currentSessionId,
+      !this._currentSessionId || lastDraftPage,
     );
     this._lockFinalizer = new PanelSessionLockFinalizer(this.sessionStore, this._sessionIdAccess);
+    // 上次停在空白页 ⇒ 先落回空白页（enter 内部经 finalizer 的唯一清空写点清 id），
+    // 再走形态恢复——恢复分支据此看到「当前无会话」，不会把旧字硬塞给最近一条真会话。
+    if (lastDraftPage) this._draft.enter();
     // 形态 + 座位成对恢复（实现在 helpers/uiFormPersistence.ts）：播种形态、把座位写回
     // SessionModeStore 并打「恢复」标签、必要时切到座位那条会话。必须在构造末尾调用——
     // 依赖的 `_draft` / `_uiFormOps` 已就位，且早于首次 render 与 agent 装配。
@@ -1295,8 +1305,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 宁可写一条随后可清的键，也不能把用户正在打的字丢掉（丢文本的代价远高于一条脏键）。
     else if (msg.type === 'composer_draft') {
       const known = this.sessionStore.isResolvable(msg.sessionId);
-      const owner = known ? msg.sessionId : this._currentSessionId;
-      if (owner) this._composerDrafts.accept(owner, msg.text);
+      // 空白页（归属为空）同样落盘：accept 内部映射到固定标记，不再走「没有 id 就丢」的老分支
+      this._composerDrafts.accept(known ? msg.sessionId : this._currentSessionId, msg.text);
     } else if (msg.type === 'open_settings_tab') {
       // 设置面板选项卡导航（空态引导 → 大模型 / 角色徽章 → 角色；只导航——切换执行仍走各视图单路径）。
       // **不维护「tab → 命令名」映射表**：那是第二真源，加一页要补一行且 protocol 得同步放宽。tab 直投命令。
@@ -1438,9 +1448,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._view = webviewView;
     // 重开自愈（B1）：销毁时已清空会话 id，按真源重新派生（拿锁在 ready 握手）。
     // 草稿态必须跳过：重开视图若按 `getInitialSessionId()` 派生，会把草稿悄悄退回上一个会话
-    if (!this._currentSessionId && !this.isDraft) {
+    if (!this._currentSessionId && !this.isDraft)
       this._currentSessionId = this.sessionStore.getInitialSessionId();
-    }
     this._lockFinalizer.onResolve();
     // 视图重建代数自增：本次流若跨重建，流尾据此补移植（见 _viewEpoch 注释）
     this._viewEpoch += 1;
@@ -1683,9 +1692,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 丢弃 reason 则用户只看到「拒绝」却不知为何。
       const reason = (event as { reason?: string }).reason;
       this._securityAuditTotal += 1;
-      if (type === 'path-deny' || type === 'write-decline') {
-        this._securityAuditDenied += 1;
-      }
+      if (type === 'path-deny' || type === 'write-decline') this._securityAuditDenied += 1;
       // 路径取 basename 防折叠区冗长（可读且不泄露完整目录结构）
       const base = path.split(/[\\/]/).pop() ?? path;
       this._recentSecurityAudits.push({ type, path: base, tool, reason });
@@ -1862,6 +1869,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._composerHasText = false;
     // 有会话 id ⇒ 必然已离开草稿（唯一退出写点）
     this._draft.exit();
+    // 离开空白页的同一时刻清掉它的草稿键：文本要么已发出、要么随页面一起作废。
+    // 不清就会留一条永不复位的孤儿键（重启时 lastDraftPage 已是 false，再没人读它）。
+    this._composerDrafts.clear('');
     this.sessionStore.setLastActiveSession(sessionId);
   }
 

@@ -42,7 +42,8 @@ import {
 // 形态上下文键的真源（收回同步形态时断言宿主侧也写了同一键，测试不自造字面量）
 import { UI_FORM_CONTEXT_KEY } from '../panels/assistantFormOps.js';
 // 未发送草稿的持久键（断言落盘形状用真源常量，不复制字面量）
-import { UI_COMPOSER_DRAFTS_KEY } from '../../shared/constants.js';
+import { UI_COMPOSER_DRAFTS_KEY, UI_DRAFT_PAGE_KEY } from '../../shared/constants.js';
+import { DRAFT_PAGE_OWNER } from '../helpers/composerDrafts.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
@@ -201,6 +202,8 @@ interface PanelHandle {
     _hostedNotifier: { remember(childSessionId: string, creatorSessionId: string): void };
     /** 显示会话输入框是否有未发送文本（宿主侧布尔，webview 重建时必须复位） */
     _composerHasText: boolean;
+    /** 草稿会话控制器（「＋」后的空白页态；测试断言「重启是否回到空白页」） */
+    _draft: { isDraft: boolean };
     runtimeFor(sessionId?: string): {
       streaming: boolean;
       abortController?: AbortController;
@@ -2576,5 +2579,91 @@ describe('未发送草稿按会话持久化（O5）', () => {
 
     h.fireMessage({ type: 'composer_draft', sessionId: '2026-01-01-deleted', text: '别丢' });
     expect((raw.get(UI_COMPOSER_DRAFTS_KEY) as Record<string, string>)[sid]).toBe('别丢');
+  });
+});
+
+describe('空白草稿页的草稿（O5-B）', () => {
+  /** Map 模拟工作区持久层（update(undefined) = 删键） */
+  function makeUi(raw: Map<string, unknown>) {
+    return {
+      get: (key: string) => raw.get(key),
+      update: async (key: string, value: unknown) => {
+        if (value === undefined) raw.delete(key);
+        else raw.set(key, value);
+      },
+    } as never;
+  }
+
+  it('空白页打字也落盘（固定标记，不借用 sessionId），重建后放回输入框', async () => {
+    const raw = new Map<string, unknown>();
+    const h = setupPanel({}, [], createEphemeralSessionModeStore(), makeUi(raw));
+    expect(h.provider.getCurrentSessionId()).toBe('');
+
+    h.fireMessage({ type: 'composer_draft', sessionId: '', text: '空白页的草稿' });
+    expect(raw.get(UI_COMPOSER_DRAFTS_KEY)).toEqual({ [DRAFT_PAGE_OWNER]: '空白页的草稿' });
+
+    // 视图重建 → 回放把空白页的草稿放回（归属仍是 ''）
+    h.posted.length = 0;
+    h.reopenView();
+    h.fireMessage({ type: 'ready' });
+    await vi.waitFor(
+      () => {
+        const restore = h.posted.find((m) => m.type === 'composer_draft_restore');
+        expect(restore?.text).toBe('空白页的草稿');
+        expect(restore?.sessionId).toBe('');
+      },
+      { timeout: 5000 },
+    );
+  });
+
+  it('上次停在空白页 ⇒ 重启回到空白页（即使工作区有会话）', () => {
+    const raw = new Map<string, unknown>();
+    raw.set(UI_DRAFT_PAGE_KEY, true);
+    const seat = '2026-11-15-existing-session';
+    const h = setupPanel({}, [seat], createEphemeralSessionModeStore(), makeUi(raw));
+
+    // 不许落到最近的真会话上：空白页的字只属于空白页
+    expect(h.provider.getCurrentSessionId()).toBe('');
+    expect(h.cast._draft.isDraft).toBe(true);
+  });
+
+  it('上次停在真会话 ⇒ 空白页的草稿不抢戏（回填的仍是该会话自己的草稿）', async () => {
+    const raw = new Map<string, unknown>();
+    raw.set(UI_COMPOSER_DRAFTS_KEY, { [DRAFT_PAGE_OWNER]: '空白页的旧字' });
+    const seat = '2026-11-15-real-session';
+    const h = setupPanel({}, [seat], createEphemeralSessionModeStore(), makeUi(raw));
+    expect(h.provider.getCurrentSessionId()).toBe(seat);
+
+    h.posted.length = 0;
+    h.reopenView();
+    h.fireMessage({ type: 'ready' });
+    await vi.waitFor(
+      () => {
+        const restore = h.posted.find((m) => m.type === 'composer_draft_restore');
+        expect(restore?.sessionId).toBe(seat);
+        // 该会话自己没有草稿：空白页那份绝不能被塞过来
+        expect(restore?.text).toBe('');
+      },
+      { timeout: 5000 },
+    );
+  });
+
+  it('离开空白页：标记复位、空白页键清掉（不留孤儿）', async () => {
+    const raw = new Map<string, unknown>();
+    const seat = '2026-11-15-leave-draft';
+    const h = setupPanel(
+      { [seat]: sessionAgent(seat) },
+      [],
+      createEphemeralSessionModeStore(),
+      makeUi(raw),
+    );
+    h.provider.setAgentFactory(async (_projectPath, sid) => sessionAgent(sid));
+    h.fireMessage({ type: 'composer_draft', sessionId: '', text: '没发出去的字' });
+    expect(raw.get(UI_COMPOSER_DRAFTS_KEY)).toEqual({ [DRAFT_PAGE_OWNER]: '没发出去的字' });
+
+    await h.provider.switchToSession(seat);
+    // 页面已不是空白页：旧字随页面作废，键与标记都必须复位
+    expect(raw.get(UI_COMPOSER_DRAFTS_KEY)).toBeUndefined();
+    expect(raw.get(UI_DRAFT_PAGE_KEY)).toBeUndefined();
   });
 });

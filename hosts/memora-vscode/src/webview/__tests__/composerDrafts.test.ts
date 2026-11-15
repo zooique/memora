@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
 import { MAX_INPUT_CHARS, UI_COMPOSER_DRAFTS_KEY } from '../../shared/constants.js';
-import { createComposerDrafts } from '../helpers/composerDrafts.js';
+import { createComposerDrafts, DRAFT_PAGE_OWNER } from '../helpers/composerDrafts.js';
 
 /** 用 Map 模拟工作区级持久层（`get` 同步、`update` 立即生效，便于断言落盘形状） */
 function makeState(initial?: Record<string, string>): {
@@ -47,10 +47,28 @@ describe('composerDrafts — 按会话归属', () => {
     expect(raw.get(UI_COMPOSER_DRAFTS_KEY)).toBeUndefined();
   });
 
-  it('空白草稿页（无会话 id）不落盘：免得重启后落到无关的新会话上', () => {
+  it('空白草稿页用固定标记落盘：不借用 sessionId，读取 / 清理走同一映射', () => {
     const { state, raw } = makeState();
     const drafts = createComposerDrafts(() => state);
+
     expect(drafts.accept('', '还没点发送的新会话草稿')).toBe(true);
+    // 键是固定标记：不是空串，也不是任何会话 id（借用 id 才会让重启后的旧字落到别人身上）
+    expect(raw.get(UI_COMPOSER_DRAFTS_KEY)).toEqual({
+      [DRAFT_PAGE_OWNER]: '还没点发送的新会话草稿',
+    });
+    expect(drafts.read('')).toBe('还没点发送的新会话草稿');
+    // 任何真会话都读不到它（「不许抢戏」的存储层保证）
+    expect(drafts.read('session-a')).toBe('');
+
+    // restore 的 sessionId 仍是「页归属」（''），webview 原样回传后再由本模块映射
+    expect(drafts.restore('')).toEqual({
+      type: 'composer_draft_restore',
+      sessionId: '',
+      text: '还没点发送的新会话草稿',
+    });
+
+    // 清空 / 离开空白页删的都是同一个键：不留孤儿
+    drafts.clear('');
     expect(raw.get(UI_COMPOSER_DRAFTS_KEY)).toBeUndefined();
   });
 

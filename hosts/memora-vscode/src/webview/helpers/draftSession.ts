@@ -40,6 +40,13 @@ export interface DraftSessionDeps {
   getDefaultRolePackName: () => string;
   /** 面板唯一的建会话路径（拿锁 / 装配 / 回放全在它里面；角色包名随 meta 一次性落盘） */
   createSession: (sessionId: string, rolePackName?: string, mode?: SessionMode) => Promise<boolean>;
+  /**
+   * 记「当前是否停在空白草稿页」（工作区级持久，未注入 = 不记，行为同改造前）
+   *
+   * 为什么需要它：会话停留指针只描述真会话，空白页没有 id。不单独记这一位，重启就分不清
+   * 「上次停在空白页」与「上次停在真会话」——前者要回空白页把草稿放回，后者不许被抢戏。
+   */
+  markDraftPage: (on: boolean) => void;
 }
 
 /**
@@ -85,6 +92,8 @@ export class DraftSessionController {
   /** 有会话 id ⇒ 必然已离开草稿（唯一退出写点） */
   exit(): void {
     this._draft = false;
+    // 离开空白页：标记与「空白页草稿键」由面板同一时刻清掉（见面板发送分支）
+    this.deps.markDraftPage(false);
     // 草稿选择随草稿一起消失：会话一旦建立，角色已落在该会话 meta 上（不把选择带进下一个草稿）
     this._rolePackName = undefined;
     this._mode = 'self';
@@ -113,6 +122,8 @@ export class DraftSessionController {
    */
   enter(mode: SessionMode = 'self'): void {
     this._draft = true;
+    // 记「停在空白页」：重启后据此回到空白页（否则回到最近真会话，草稿无处可放）
+    this.deps.markDraftPage(true);
     // 新草稿从「未选」起：不继承上一个会话 / 上一个草稿的角色选择
     this._rolePackName = undefined;
     this._mode = mode;
