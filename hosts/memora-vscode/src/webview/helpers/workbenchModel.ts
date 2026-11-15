@@ -29,6 +29,7 @@ import type {
   WorkbenchAgentIdentity,
   WorkbenchCoverage,
   WorkbenchJob,
+  WorkbenchSeatSource,
   WorkbenchSnapshot,
 } from '../../shared/workbenchDto.js';
 import { WORKBENCH_REBUILD_MAX_ROUNDS, type WorkbenchHistoryResult } from './workbenchHistory.js';
@@ -44,6 +45,13 @@ export type WorkbenchActivity = SessionActivity;
 export interface WorkbenchSnapshotInputs {
   /** 座位会话标识（工作台以一条托管会话为单位） */
   orchestratorId: string;
+  /**
+   * 座位来源（`live` = 本进程托管装配；`history` = 重启后按历史重建，无实时驱动方）
+   *
+   * 为 `history` 时**不按当前驱动权过滤清单**：重启后驱动集合必为空，若照旧过滤，
+   * 历史里读回来的记录会被全部挡掉——那等于把「我看不见」说成「你没有」。
+   */
+  seatSource: WorkbenchSeatSource;
   /** 代理名（装配期注入的发送者名，与 `RoundMessage.name` 同源） */
   agentName: string;
   /** 会话元数据读口（真源 = 宿主 SessionStore） */
@@ -101,9 +109,16 @@ export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): Workben
   const jobs: WorkbenchJob[] = [];
   /** 历史里有 sid、但磁盘上已找不到的会话数（跳过并计数，不静默丢） */
   let missingCount = 0;
+  /** 确实存在、但被「当前不由代理驱动」判据挡掉的记录数（空清单时如实说明用） */
+  let filteredCount = 0;
   for (const [sessionId, historyTitle] of merged) {
-    // 当前驱动权过滤：用户收回后即使账本 / 历史还记着，也不再归代理（唯一判据）
-    if (!inputs.isAgentDriven(sessionId)) continue;
+    // 当前驱动权过滤：用户收回后即使账本 / 历史还记着，也不再归代理（唯一判据）。
+    // 历史重建模式下没有实时驱动事实（重启后集合必空）⇒ 不做这道过滤，
+    // 只读呈现历史里读回来的记录；界面会另行说明「当前没有实时驱动方」。
+    if (inputs.seatSource === 'live' && !inputs.isAgentDriven(sessionId)) {
+      filteredCount += 1;
+      continue;
+    }
     const meta = inputs.readMeta(sessionId);
     // 元数据缺失 = 会话已删除 / 找不到：跳过但计数，界面明说「有 N 条找不到了」
     if (!meta) {
@@ -125,7 +140,9 @@ export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): Workben
   jobs.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return {
     orchestrator,
+    seatSource: inputs.seatSource,
     jobs,
+    filteredCount,
     coverage: resolveCoverage(inputs, missingCount),
     missingCount,
     scan: {

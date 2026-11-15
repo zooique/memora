@@ -116,6 +116,7 @@ function makeInputs(
   children: string[],
   orchestratorId: string,
   history: WorkbenchHistoryResult,
+  seatSource: WorkbenchSnapshotInputs['seatSource'] = 'live',
 ): WorkbenchSnapshotInputs {
   const meta = (sessionId: string): SessionMeta =>
     ({
@@ -126,6 +127,7 @@ function makeInputs(
     }) as SessionMeta;
   return {
     orchestratorId,
+    seatSource,
     agentName: 'Memora',
     readMeta: (sessionId) => meta(sessionId),
     readRolePackName: () => 'coder',
@@ -183,7 +185,8 @@ describe('MemoraWorkbenchPanel — 不保活生命周期', () => {
       extensionUri: {} as never,
       dataSource: {
         rebuildHistory,
-        buildInputs: (orchestratorId, history) => makeInputs(children, orchestratorId, history),
+        buildInputs: (orchestratorId, history, seatSource) =>
+          makeInputs(children, orchestratorId, history, seatSource),
       },
       openSession,
     });
@@ -304,5 +307,17 @@ describe('MemoraWorkbenchPanel — 不保活生命周期', () => {
     expect(lastPanel?.reveal).toHaveBeenCalled();
     const all = snapshots() as { snapshot: { orchestrator: { sessionId: string } } }[];
     expect(all.at(-1)?.snapshot.orchestrator.sessionId).toBe('session-other');
+  });
+
+  it('座位来源透传给快照：history = 重启后按历史重建（未传时缺省 live）', () => {
+    panel.open('session-agent', { seatSource: 'history' });
+    receiveMsg?.({ type: 'ready' });
+    const all = snapshots() as { snapshot: { seatSource: string } }[];
+    expect(all.at(-1)?.snapshot.seatSource).toBe('history');
+    // 未显式传来源的既有调用保持实时语义
+    panel.open('session-agent');
+    expect((snapshots().at(-1) as { snapshot: { seatSource: string } }).snapshot.seatSource).toBe(
+      'live',
+    );
   });
 });

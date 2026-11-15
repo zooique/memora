@@ -46,6 +46,8 @@ function snapshot(overrides: Partial<WorkbenchSnapshot> = {}): WorkbenchSnapshot
       managed: true,
     },
     jobs: [],
+    seatSource: 'live',
+    filteredCount: 0,
     coverage: 'complete',
     missingCount: 0,
     scan: { maxRounds: 60, totalRounds: 0, scannedRounds: 0 },
@@ -72,6 +74,7 @@ function job(sessionId: string, status: WorkbenchJobStatus): WorkbenchJob {
 function mount(): {
   view: WorkbenchView;
   post: ReturnType<typeof vi.fn>;
+  seatState: HTMLElement;
   jobsEmpty: HTMLElement;
   jobsNotice: HTMLElement;
   jobsList: HTMLElement;
@@ -82,6 +85,7 @@ function mount(): {
   return {
     view,
     post,
+    seatState: document.getElementById('seatState') as HTMLElement,
     jobsEmpty: document.getElementById('jobsEmpty') as HTMLElement,
     jobsNotice: document.getElementById('jobsNotice') as HTMLElement,
     jobsList: document.getElementById('jobsList') as HTMLElement,
@@ -129,6 +133,23 @@ describe('workbenchView — 空态：读不到 ≠ 没有', () => {
     view.render(snapshot({ coverage: 'complete' }));
     expect(jobsEmpty.hidden).toBe(false);
     expect(jobsEmpty.textContent).toBe('No work has been handed to the assistant yet');
+  });
+
+  it('有记录但被驱动权过滤：如实说过滤，不改口成「还没有」', () => {
+    const { view, jobsEmpty } = mount();
+    view.render(snapshot({ coverage: 'complete', filteredCount: 2 }));
+    expect(jobsEmpty.hidden).toBe(false);
+    expect(jobsEmpty.textContent).toBe('2 record(s) exist, but no agent is driving them right now');
+    expect(jobsEmpty.textContent).not.toBe('No work has been handed to the assistant yet');
+  });
+
+  it('重启后按历史重建：座位上明说「无实时驱动方」，不冒充实时画面', () => {
+    const { view, seatState } = mount();
+    view.render(snapshot({ seatSource: 'history' }));
+    expect(seatState.hidden).toBe(false);
+    expect(seatState.textContent).toBe(
+      'Rebuilt from history after restart; no live agent is driving it right now',
+    );
   });
 
   it('清单非空时隐藏空态，并把读不全的事实放进 notice 行', () => {

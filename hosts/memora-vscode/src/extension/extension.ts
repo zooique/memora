@@ -790,8 +790,10 @@ export function activate(context: vscode.ExtensionContext): void {
       // 打开工作台时重建一次（重启后账本为空，靠代理会话历史把清单补回来）：
       // 与主控工具共用同一读法，不新增持久化、不在启动时全量扫。
       rebuildHistory: rebuildWorkbenchHistory,
-      buildInputs: (orchestratorId, history) => ({
+      buildInputs: (orchestratorId, history, seatSource) => ({
         orchestratorId,
+        // 座位来源：live = 本进程托管表；history = 重启后按持久历史重建（无实时驱动方）
+        seatSource,
         // 代理名只取装配期注入的发送者名（与 RoundMessage.name 同源，不另造「助手昵称」）
         agentName: HOSTED_SENDER_NAME,
         readMeta: (sessionId) => sessionStore.getSessionMeta(sessionId),

@@ -17,6 +17,7 @@ import * as vscode from 'vscode';
 import { buildWorkbenchHtml } from './workbenchHtml.js';
 import { buildWorkbenchSnapshot, type WorkbenchSnapshotInputs } from '../helpers/workbenchModel.js';
 import type { WorkbenchHistoryResult } from '../helpers/workbenchHistory.js';
+import type { WorkbenchSeatSource } from '../../shared/workbenchDto.js';
 import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
@@ -36,7 +37,11 @@ export interface WorkbenchDataSource {
    */
   rebuildHistory(orchestratorId: string): WorkbenchHistoryResult;
   /** 组装一次快照的全部读口（`history` 是 open 时那次重建的缓存结果） */
-  buildInputs(orchestratorId: string, history: WorkbenchHistoryResult): WorkbenchSnapshotInputs;
+  buildInputs(
+    orchestratorId: string,
+    history: WorkbenchHistoryResult,
+    seatSource: WorkbenchSeatSource,
+  ): WorkbenchSnapshotInputs;
 }
 
 /** 面板依赖 */
@@ -65,6 +70,8 @@ export class MemoraWorkbenchPanel {
   private _panel: vscode.WebviewPanel | undefined;
   /** 当前绑定的座位会话 id */
   private _orchestratorId = '';
+  /** 当前座位的来源（live = 实时托管；history = 重启后按历史重建，无实时驱动方） */
+  private _seatSource: WorkbenchSeatSource = 'live';
   /** 当前座位的「打开时历史重建」缓存（undefined = 尚未 open / 需重建） */
   private _history: WorkbenchHistoryResult | undefined;
   /** 当前 webview 上下文是否已发 ready（隐藏即归零：上下文已销毁） */
@@ -89,9 +96,11 @@ export class MemoraWorkbenchPanel {
    * 打开（或改绑）工作台
    *
    * @param orchestratorId 座位会话 id（一条托管会话）
+   * @param options 座位来源；缺省 `live`（命令入口在进程内托管表为空时传 `history`）
    */
-  public open(orchestratorId: string): void {
+  public open(orchestratorId: string, options: { seatSource?: WorkbenchSeatSource } = {}): void {
     this._orchestratorId = orchestratorId;
+    this._seatSource = options.seatSource ?? 'live';
     // 每次「打开」都重建一次历史（换座位 / 重新打开都算）：清单可能来自上一次进程，
     // 账本是空的；这里读的是既有历史，不新增任何持久化。
     this._history = this._dataSource.rebuildHistory(orchestratorId);
@@ -168,7 +177,7 @@ export class MemoraWorkbenchPanel {
     const panel = this._panel;
     if (!panel || !this._ready || !this._history) return;
     const snapshot = buildWorkbenchSnapshot(
-      this._dataSource.buildInputs(this._orchestratorId, this._history),
+      this._dataSource.buildInputs(this._orchestratorId, this._history, this._seatSource),
     );
     void panel.webview.postMessage({
       type: 'workbench_snapshot',

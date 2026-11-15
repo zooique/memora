@@ -65,9 +65,13 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
       : '';
     seatRole.textContent = role;
     seatRole.hidden = !role;
-    const state = orchestrator.managed
-      ? ''
-      : l10n.t('This session is no longer a managed agent session');
+    const state =
+      // 重启后按历史重建：必须先说清这不是实时画面，且当前没有实时驱动方
+      snapshot.seatSource === 'history'
+        ? l10n.t('Rebuilt from history after restart; no live agent is driving it right now')
+        : orchestrator.managed
+          ? ''
+          : l10n.t('This session is no longer a managed agent session');
     seatState.textContent = state;
     seatState.hidden = !state;
   };
@@ -79,7 +83,7 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
    * 都只说明「没读到」，不说明「没有」。三种情况用不同句子，绝不把读失败渲染成空。
    */
   const renderJobs = (snapshot: WorkbenchSnapshot): void => {
-    const { jobs, coverage, missingCount, scan } = snapshot;
+    const { jobs, coverage, missingCount, filteredCount, scan } = snapshot;
     /** 是否因超上限只读了一部分（界面必须说清，不能当完整） */
     const truncated = scan.totalRounds > scan.scannedRounds;
     jobsList.textContent = '';
@@ -98,7 +102,13 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
                 )
               : coverage === 'partial'
                 ? l10n.t('Some history could not be read')
-                : l10n.t('No work has been handed to the assistant yet');
+                : filteredCount > 0
+                  ? // 记录存在、但当前不由代理驱动（多为用户已收回）：如实说过滤，不改口成「没有」
+                    l10n.t(
+                      '{0} record(s) exist, but no agent is driving them right now',
+                      filteredCount,
+                    )
+                  : l10n.t('No work has been handed to the assistant yet');
     }
     // 有清单时的读不全说明（空态已在上面的句子里说清，不重复）
     const notices: string[] = [];

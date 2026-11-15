@@ -88,12 +88,29 @@ export interface WorkbenchAgentIdentity {
   rolePackDisplayName?: string;
 }
 
+/**
+ * 座位来源（回答「这一屏是实时事实，还是重启后按历史重建」）
+ *
+ * - `live`：本进程仍按托管装配这条座位，状态读的是实时运行态；
+ * - `history`：进程内托管表已空（多为重启后），座位从持久历史里重建，**当前没有实时驱动方**。
+ */
+export type WorkbenchSeatSource = 'live' | 'history';
+
 /** 工作台全量快照（每次 `ready` 都整份重发，不做增量） */
 export interface WorkbenchSnapshot {
   /** 第一块：代理是谁 */
   orchestrator: WorkbenchAgentIdentity;
+  /** 座位来源（界面据此说清「实时」与「重启后按历史重建」） */
+  seatSource: WorkbenchSeatSource;
   /** 第二块：在管会话清单（空数组 = 空态，不摆空表格） */
   jobs: WorkbenchJob[];
+  /**
+   * 候选记录里因「当前不由代理驱动」而被过滤掉的数量
+   *
+   * 只统计**确实存在、但被驱动权判据挡掉**的记录（用户收回等）；用于空清单时如实
+   * 区分「一条都没有」与「有记录但被过滤」，避免把「我看不见」说成「你没有」。
+   */
+  filteredCount: number;
   /**
    * 清单覆盖状态——空清单时区分「一条都没有」与「读不到」
    *

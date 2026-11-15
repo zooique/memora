@@ -49,6 +49,7 @@ function errored(message: string): ProcessEvent {
 function baseInputs(overrides: Partial<WorkbenchSnapshotInputs> = {}): WorkbenchSnapshotInputs {
   return {
     orchestratorId: 'session-agent',
+    seatSource: 'live',
     agentName: 'Memora',
     readMeta: (sessionId) => meta(sessionId, '2026-11-14T10:00:00.000Z'),
     readRolePackName: () => undefined,
@@ -232,9 +233,31 @@ describe('buildWorkbenchSnapshot — 清单口径', () => {
       }),
     );
     expect(snapshot.jobs).toEqual([]);
-    // 主动收回不是数据缺失，不记 missingCount，也不把 coverage 拉成 partial
+    // 主动收回不是数据缺失，不记 missingCount，也不把 coverage 拉成 partial；
+    // 但必须留下「有记录、被驱动权过滤」的事实，界面据此说清而不是说「还没有」
+    expect(snapshot.filteredCount).toBe(1);
     expect(snapshot.missingCount).toBe(0);
     expect(snapshot.coverage).toBe('complete');
+  });
+
+  it('历史重建模式（无实时驱动方）：不按当前驱动权过滤，历史记录照样只读列出', () => {
+    const snapshot = buildWorkbenchSnapshot(
+      baseInputs({
+        seatSource: 'history',
+        // 重启后进程内驱动集合为空：照旧过滤会把历史记录全挡掉
+        isAgentDriven: () => false,
+        history: emptyHistory({
+          children: [{ sessionId: 'session-from-history', title: '整理周报' }],
+          totalRounds: 1,
+          scannedRounds: 1,
+        }),
+      }),
+    );
+    expect(snapshot.jobs.map((job) => job.sessionId)).toEqual(['session-from-history']);
+    // 座位来源原样透出，界面据此说清「重启后按历史重建」
+    expect(snapshot.seatSource).toBe('history');
+    // 重建模式没有实时驱动事实 ⇒ 不说「被过滤」
+    expect(snapshot.filteredCount).toBe(0);
   });
 
   it('历史里有 sid 但会话已删除：跳过并计数，清单不静默少一条', () => {
