@@ -80,6 +80,7 @@
   "Memora: images go with a new message": "",
   "Memora: only managed sessions can call send_to_session.": "",
   "Memora: the target session is running; the input was not sent.": "",
+  "Memora: another window is using the target session; the input was not sent.": "",
   "Memora: open a session first.": "",
   "Memora: this session is already yours.": "",
   "Memora: the session is running; take it back after it finishes.": "",

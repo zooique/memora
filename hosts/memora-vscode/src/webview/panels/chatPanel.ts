@@ -189,6 +189,8 @@ import { createChatSessionNavOps } from './chatSessionNavOps.js';
 import { createAssistantFormOps, UI_FORM_CONTEXT_KEY } from './assistantFormOps.js';
 // 主控建会话实现域（B9-D 拆法：完整闭环外置，面板只留注入依赖的薄壳）
 import { createHostedSessionWith } from '../helpers/hostedSessionCreate.js';
+// 派发写权核对（判据外置：不持目标会话锁就派发 = 孤儿轮，见该模块头）
+import { ensureDispatchWriteLock } from '../helpers/hostedDispatchLock.js';
 // 收回本会话实现域（B9-D 拆法）：运行期归属交接 + 形态同步 + 「收不回什么」的如实说明
 import { createRevokeManagedSessionOps } from '../helpers/revokeManagedSessionOps.js';
 // 会话作答域（用户作答 + 主控代答）：两条入口共用同一条执行链，判据与回执形态在 helper
@@ -2887,7 +2889,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * 三条硬约束（与 `workSessionTools.ts` 头注释同源）：① **不注入用户上下文**，只投调用方给的原文；② **不绕过并发闸**，目标是跑就回 `E_BUSY`，不排队；③ handler 不持有面板实例，只拿注入回调。
    * 受理语义：投递被接受即登记「目标会话当前由代理驱动」（停止 / 暂停 / 恢复、中断通知、工作台清单从此覆盖它）。
-   * 失败语义：`E_DENIED` = 调用方非托管（防御纵深）；`E_BUSY` = 目标在跑（await 后再判一次防竞态）；未知异常交给工具层统一映射。
+   * 失败语义：`E_DENIED` = 调用方非托管（防御纵深）；`E_BUSY` = 目标在跑（await 后再判一次防竞态）；
+   * `E_LOCKED` = 目标会话被另一个窗口占用（派发要在目标里建轮，先拿写锁，拿不到不受理）；
+   * 未知异常交给工具层统一映射。
    *
    * @param callingSessionId 发起派发的会话（判 `E_DENIED`）
    * @param targetSessionId 目标会话（判 `E_BUSY`、定流归属）
@@ -2917,7 +2921,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     };
     // ② 前置判忙：peek 不建记录（读操作不产生写副作用），值就是该会话的真实 stream 运行态
     if (this._runtime.peek(targetSessionId)?.streaming === true) return busy;
-    // ③ 取（或建）目标会话实例：装配可能在途，期间目标会话或已被别的入口开跑 ⇒ 落地前再判一次
+    // ③ 目标会话的写权：派发必然在目标会话里建新轮（内核 appendUser → appendRoundId），
+    //    而会话文件的整写有 fail-closed 跨进程锁守卫 —— 不持锁就写，只会 warn 后丢引用：
+    //    轮文件在、会话 roundIds 里没有它（孤儿轮），重启后这一轮从会话历史里消失。
+    //    条件就这么具体：目标文件**已存在**（重启前就有的会话）且本面板**未持锁**（没进过它），
+    //    而助手新建的会话因 createSession 已拿锁，所以只有「派给用户自建会话」会中招。
+    //    拿不到 = 另一个窗口正持有 ⇒ 如实拒收（不排队、不假装受理，判据见 hostedDispatchLock）。
+    const locked = await ensureDispatchWriteLock(
+      { acquire: (sessionId) => this._lockFinalizer.acquire(sessionId) },
+      targetSessionId,
+    );
+    if (locked) return locked;
+    // ④ 取（或建）目标会话实例：装配可能在途，期间目标会话或已被别的入口开跑 ⇒ 落地前再判一次
     const agent = await this.agentForSession(targetSessionId);
     // 与 sendInput 同一对齐判据：内核 appendUser 写的是 agent 当前会话，错位会写进别的会话；
     // 只在错位时切，且**不改面板显示源**（后台派发不得把用户界面拽到目标会话）

@@ -2184,6 +2184,66 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
     releaseGate();
     await running;
   });
+
+  it('受理前先拿目标会话写锁（不持锁建轮 = 孤儿轮，重启后该轮从会话历史消失）', async () => {
+    // 真机回归：派给「重启前就存在、本窗口没进过」的用户自建会话时，appendRoundId 被
+    // fail-closed 写锁守卫拦成 warn，轮文件在、会话 roundIds 里没有它 ⇒ 重启后话消失。
+    // 判据就一条：派发要在目标会话里建轮，就必须先持有它的写锁。
+    const roundId = 'round-lock';
+    const flow = (): AsyncGenerator<Chunk> => {
+      return (async function* () {
+        yield { type: 'thinking', phase: 'processing', roundId };
+        yield { type: 'step_boundary', roundId };
+      })();
+    };
+    const target = sessionAgent('2026-11-06-b', flow);
+    const modes = createEphemeralSessionModeStore();
+    modes.set('2026-11-06-a', 'managed');
+    const { provider, store, cast } = setupPanel({ '2026-11-06-b': target }, [], modes);
+    cast._currentSessionId = '2026-11-06-a';
+    // 与生产同形：实例已在投影表里（派发不该为它重新装配）
+    provider.setAgentFactory(
+      vi.fn(async (_projectPath: string, sessionId: string) => sessionAgent(sessionId)),
+    );
+    const acquireSpy = vi.spyOn(store, 'acquireSessionLock');
+
+    const result = await provider.dispatchHostedInput(
+      '2026-11-06-a',
+      '2026-11-06-b',
+      '派发原文',
+      '派发探针',
+    );
+    expect(result).toEqual({ ok: true, accepted: true });
+    expect(acquireSpy).toHaveBeenCalledWith('2026-11-06-b');
+    await vi.waitFor(() => expect(cast.runtimeFor('2026-11-06-b').streaming).toBe(false), {
+      timeout: 5000,
+    });
+  });
+
+  it('目标会话被另一个窗口占用（拿不到写锁）⇒ E_LOCKED，不受理也不登记驱动归属', async () => {
+    const target = sessionAgent('2026-11-06-b');
+    const chatSpy = vi.fn(target.chat.bind(target));
+    target.chat = chatSpy as unknown as SessionAgentStub['chat'];
+
+    const modes = createEphemeralSessionModeStore();
+    modes.set('2026-11-06-a', 'managed');
+    const { provider, store, cast } = setupPanel({ '2026-11-06-b': target }, [], modes);
+    cast._currentSessionId = '2026-11-06-a';
+    // 另一个进程持有该会话锁：本进程拿不到
+    vi.spyOn(store, 'acquireSessionLock').mockResolvedValue(false);
+
+    const result = await provider.dispatchHostedInput(
+      '2026-11-06-a',
+      '2026-11-06-b',
+      '不该落地',
+      '派发探针',
+    );
+    // 不假装受理：回执如实说「另一个窗口在用」，且没有起流、没有登记归属
+    expect(result).toMatchObject({ ok: false, code: 'E_LOCKED' });
+    expect(chatSpy).not.toHaveBeenCalled();
+    expect(modes.isAgentDriven('2026-11-06-b')).toBe(false);
+    expect(cast.runtimeFor('2026-11-06-b').streaming).toBe(false);
+  });
 });
 
 describe('托管落定通知 · 流收场投递给创建者（第三 / 第四切片）', () => {
