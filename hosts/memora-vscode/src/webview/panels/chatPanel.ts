@@ -3831,9 +3831,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 此处推一次快照让 webview 同步——正常/中断 → 空 items（顶部条收起）；
     // 暂停 → 保留当前 plan（paused 分支前面，plan 还没被清，继续供 resume 消费）
     this.postPlanUpdate();
-    // 托管子会话中断通知（第三切片）：本轮以 interrupted 收场 → 告诉创建它的主控，
-    // 让它下次说话时在上下文里看到「哪条会话、被谁停的」。只对「本进程记录过创建者的
-    // hosted 会话」生效；暂停可续跑、不是终态，不通知（判据在通知器内，走内核收场单点）。
+    // 托管子会话落定通知（第四切片）：本轮收场（成功 / 失败 / 中断）→ 告诉创建它的主控，
+    // 让它下次说话时在上下文里看到「哪条会话落定了、结论是什么」。只对「本进程记录过创建者的
+    // 代理驱动会话」生效；暂停可续跑、不是终态，不通知（判据在通知器内，走内核收场单点）。
     this._hostedNotifier.noteSettledFlow(
       sessionId,
       latestRoundId,

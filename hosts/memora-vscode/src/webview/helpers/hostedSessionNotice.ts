@@ -1,8 +1,11 @@
 /**
- * 代理接管会话的中断通知器（第三切片：中断通知）
+ * 代理接管会话的落定通知器（第三切片：中断通知 → 第四切片：会话级落定）
  *
- * 职责：把「某条归代理驱动的会话被停 / 异常终止」这一事实，投递给创建 / 派发它的主控会话，
- * 让主控**下次说话时**在上下文里看到（它空闲时不会自己刷新）。
+ * 职责：把「某条归代理驱动的会话本轮已落定」这一事实，投递给创建 / 派发它的主控会话，
+ * 让主控**下次说话时**在上下文里看到（它空闲时不会自己刷新）。落定结论三档：
+ *   - `success`：轮以 `complete` 收场（跑完了）；
+ *   - `failed`：轮以 `interrupted` 收场，且现场有 `error` 事件（跑挂了）；
+ *   - `interrupted`：轮以 `interrupted` 收场，但原因是用户停 / 超时 / 不可知（被打断）。
  *
  * 边界（刻意收窄）：
  *   - 不写会话历史、不造轮：复用内核 `AgentLoop.enqueueCommandResult` 的系统事件注入队列
@@ -12,7 +15,9 @@
  *     代理建会话（`create_session`）与代理派发接管（`send_to_session`）。
  *     `SessionMeta.origin` 只记出生事实（用户自建会话被派发后仍是 `'user'`），不作通知判据；
  *     用户自己选托管新建、且从未被派发过的会话没有创建者记录 ⇒ 不会向任何代理发通知；
- *   - 同一会话同一轮只写一条（重复的停止信号不再打扰主控）。
+ *   - 同一会话同一轮只写一条（成功 / 失败 / 中断共用同一去重键，重复信号不再打扰主控）；
+ *   - 事件只带身份 + 结论（+ 失败 / 中断原因），**不带正文**：结论细节由主控按需调
+ *     `list_work_sessions` / `read_memory_summary` 读，不在通知里另造一份摘要。
  */
 import {
   getSessionDisplayName,
@@ -55,6 +60,14 @@ export interface FlowEndNoticeInput {
 }
 
 /**
+ * 落定结论三档（只作 `deriveSettlement` 的内部判别依据，不对外暴露）
+ *
+ *   - `success` = 跑完了；`failed` = 跑挂了（有 error 事件）；
+ *   - `interrupted` = 被停 / 超时 / 原因不可知（可判定为「没跑完」，但不冒充失败）。
+ */
+type SettlementVerdict = 'success' | 'failed' | 'interrupted';
+
+/**
  * 把停手者翻译成中文事实句
  *
  * 事实层单独出文案（不复用 webview 的 l10n 展示键）：通知是给模型读的，
@@ -79,20 +92,44 @@ function describeStopper(derived: ReturnType<typeof deriveInterruptReason>): str
 }
 
 /**
- * 拼一条通知正文（会话标题 + 停手者 + sid/round，人不能只靠 id 认会话）
+ * 把一轮终态翻译成落定结论文案
+ *
+ * 判据全部走内核单点（`isRoundSuccessful` / `isRoundSettled`），宿主不自己比较状态字面量：
+ *   - 成功 = `complete`；
+ *   - 失败 = `interrupted` 且现场有 `error` 事件（`deriveInterruptReason` 的 `error` 档）；
+ *   - 其余 `interrupted` = 中断（用户停 / 超时 / 原因不可知）。
+ *
+ * 失败与中断刻意分开：主控汇报时「跑挂了」和「被叫停」是两种结论，不能混成一句「已停止」。
+ *
+ * @param round 盘上已收场的轮
+ * @param hostAborted 宿主这一轮是否真的 abort 过
+ * @returns 可直接拼进通知的结论文案
+ */
+function deriveSettlement(round: Round, hostAborted: boolean): string {
+  if (isRoundSuccessful(round.status)) return '成功';
+  const derived = deriveInterruptReason(round.processEvents ?? [], { hostAborted });
+  // error 事件 = 跑挂了；其余（user / timeout / unavailable）都算中断，不冒充失败
+  const verdict: SettlementVerdict = derived.stopper === 'error' ? 'failed' : 'interrupted';
+  return verdict === 'failed'
+    ? `失败（${describeStopper(derived)}）`
+    : `中断（${describeStopper(derived)}）`;
+}
+
+/**
+ * 拼一条通知正文（会话标题 + 落定结论 + sid/round，人不能只靠 id 认会话）
  */
 function formatNotice(
   title: string,
   sessionId: string,
   roundId: string | undefined,
-  stopperText: string,
+  detail: string,
 ): string {
   const roundSuffix = roundId ? `，round=${roundId}` : '';
-  return `[托管会话已停止] 会话《${title}》（sid=${sessionId}${roundSuffix}）：${stopperText}`;
+  return `[托管会话已落定] 会话《${title}》（sid=${sessionId}${roundSuffix}）：${detail}`;
 }
 
 /**
- * 代理接管会话的中断通知器（每个面板一个实例，状态仅存于本进程）
+ * 代理接管会话的落定通知器（每个面板一个实例，状态仅存于本进程）
  */
 export class HostedSessionNotifier {
   /** 子会话 → 接管它的主控会话（代理建会话或代理派发接管时登记） */
@@ -134,26 +171,27 @@ export class HostedSessionNotifier {
   }
 
   /**
-   * 流通用收尾：若本会话是代理开的且本轮非正常收场，通知创建者
+   * 流通用收尾：若本会话是代理开的且本轮已落定，把结论通知创建者
    *
-   * @param input 流尾素材（会话 / 轮 / 事件 / 是否宿主 abort）
+   * 成功 / 失败 / 中断三档都会通知（判据见 `deriveSettlement`）；暂停可续跑，
+   * 不是终态，直接跳过。
+   *
+   * @param input 流尾素材（会话 / 轮 / 是否宿主 abort）
    * @returns true = 真的投递了一条；false = 不该投 / 投不出去
    */
   noteFlowEnd(input: FlowEndNoticeInput): boolean {
-    // 暂停可续跑，不是终态；只有「已收场且未成功」（= interrupted）才通知。
+    // 暂停可续跑，不是终态；只有真正收场的轮才通知。
     // 判据一律调内核单点，宿主不自写状态字面量比较（roundStore 的判据单源守卫会拦）。
     if (input.paused || !input.round) return false;
     const round = input.round;
-    if (!isRoundSettled(round.status) || isRoundSuccessful(round.status)) return false;
+    if (!isRoundSettled(round.status)) return false;
     const target = this.resolveTarget(input.sessionId);
     if (!target) return false;
-    // 同一会话同一轮只写一条：重复的停止信号（如收尾分支再次触发）不再打扰主控
+    // 同一会话同一轮只写一条：成功 / 失败 / 中断共用同一去重键，重复信号不再打扰主控
     const key = `${input.sessionId}:${round.id}`;
     if (this.notified.has(key)) return false;
-    const derived = deriveInterruptReason(round.processEvents ?? [], {
-      hostAborted: input.hostAborted,
-    });
-    const text = formatNotice(target.title, input.sessionId, round.id, describeStopper(derived));
+    const detail = deriveSettlement(round, input.hostAborted);
+    const text = formatNotice(target.title, input.sessionId, round.id, detail);
     return this.deliver(target.creator, text, key);
   }
 
@@ -195,6 +233,8 @@ export class HostedSessionNotifier {
   /**
    * 同步抛错收尾（`runFlow` 的 catch）：没有轮、没有事件，原因就是抛出的异常本身
    *
+   * 这是「会话跑挂」的另一条落点（无 roundId），结论固定为失败。
+   *
    * @param input.sessionId 抛错的会话
    * @param input.error 抛出的异常
    * @returns true = 真的投递了一条
@@ -204,7 +244,12 @@ export class HostedSessionNotifier {
     if (!target) return false;
     // 无 roundId：不参与去重（不写 `sid:undefined`，那会永久吞掉该会话后续所有失败）
     const message = input.error instanceof Error ? input.error.message : String(input.error);
-    const text = formatNotice(target.title, input.sessionId, undefined, `异常终止：${message}`);
+    const text = formatNotice(
+      target.title,
+      input.sessionId,
+      undefined,
+      `失败（异常终止：${message}）`,
+    );
     return this.deliver(target.creator, text, undefined);
   }
 

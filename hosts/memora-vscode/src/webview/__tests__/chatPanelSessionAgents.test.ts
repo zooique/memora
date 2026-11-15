@@ -2070,7 +2070,7 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
   });
 });
 
-describe('托管中断通知 · 流收场投递给创建者（第三切片）', () => {
+describe('托管落定通知 · 流收场投递给创建者（第三 / 第四切片）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -2135,5 +2135,63 @@ describe('托管中断通知 · 流收场投递给创建者（第三切片）', 
     const text = enqueue.mock.calls[0][0] as string;
     expect(text).toContain('抓取任务');
     expect(text).toContain('用户主动停止');
+  });
+
+  it('代理开出的会话跑完 ⇒ 向创建者投一条「成功」落定事件', async () => {
+    const modes = createEphemeralSessionModeStore();
+    const creator = '2026-11-14-creator';
+    const child = '2026-11-14-child';
+    const enqueue = vi.fn();
+    // 创建者实例：只需一条可观察的系统事件队列
+    const creatorAgent = {
+      ...sessionAgent(creator),
+      agentLoop: { enqueueCommandResult: enqueue },
+    } as unknown as Agent;
+    const childAgent = sessionAgent(child);
+    const { provider, cast, store, roundStore } = setupPanel(
+      { [creator]: creatorAgent, [child]: childAgent },
+      [creator, child],
+      modes,
+    );
+    provider.setRoundStore(roundStore);
+    modes.set(creator, 'managed');
+    modes.markAgentDriven(child);
+    store.updateSessionMeta(child, { displayName: '抓取任务', origin: 'hosted' });
+    const roundId = 'round-child-done';
+    // 盘上事实：该轮以 complete 成功收场
+    roundStore.save({
+      id: roundId,
+      userMessage: {
+        id: `${roundId}-u`,
+        role: 'user',
+        content: '去抓取',
+        timestamp: '2026-11-14T10:00:00.000Z',
+      },
+      status: 'complete',
+      createdAt: '2026-11-14T10:00:00.000Z',
+      completedAt: '2026-11-14T10:00:05.000Z',
+      processEvents: [],
+    });
+    cast._hostedNotifier.remember(child, creator);
+    // 正常收场分支要等摘要事件解锁；替身同步回调，避免测试白等 5s 兜底
+    (childAgent.on as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (event: string, cb: (info: { roundId: string; success: boolean }) => void) => {
+        if (event === 'roundSummaryGenerated') cb({ roundId, success: true });
+      },
+    );
+
+    cast._currentSessionId = child;
+    cast._agent = childAgent;
+    const flow = (): AsyncGenerator<Chunk> =>
+      (async function* () {
+        yield { type: 'thinking', phase: 'processing', roundId };
+      })();
+    await cast.runFlow(flow, undefined, child);
+
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    const text = enqueue.mock.calls[0][0] as string;
+    expect(text).toContain('抓取任务');
+    expect(text).toContain(roundId);
+    expect(text).toContain('成功');
   });
 });

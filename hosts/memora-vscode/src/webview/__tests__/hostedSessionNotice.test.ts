@@ -1,9 +1,10 @@
 /**
- * 托管子会话中断通知器单测（第三切片）
+ * 托管子会话落定通知器单测（第三 / 第四切片）
  *
- * 钉六件事：用户停 → 原因归用户且只通知创建者；异常终止 → 原因归异常；
- * 用户自己的会话当前不归代理 → 不产生通知；代理派发接管的用户会话 → 照常通知；
- * 同一会话同一轮停两次只写一条；取不到原因时如实标「不可知」，不伪造「用户停」。
+ * 钉七件事：用户停 → 结论归中断且只通知创建者；异常终止 → 结论归失败并带回原文；
+ * 成功收场 → 结论归成功；用户自己的会话当前不归代理 → 不产生通知；
+ * 代理派发接管的用户会话 → 照常通知；同一会话同一轮重复信号只写一条；
+ * 取不到原因时如实标「不可知」，不伪造「用户停」。
  */
 import { describe, expect, it, vi } from 'vitest';
 import type { Agent, ProcessEvent, Round, RoundStatus, SessionMeta } from '@zooique/memora';
@@ -108,7 +109,7 @@ describe('HostedSessionNotifier', () => {
     expect(text).toContain('r1');
   });
 
-  it('异常终止 → 原因归异常，并带回原始错误文本', () => {
+  it('异常终止 → 结论归失败，并带回原始错误文本', () => {
     const h = harness();
     h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
     h.rounds.set(
@@ -121,7 +122,26 @@ describe('HostedSessionNotifier', () => {
 
     h.notifier.noteSettledFlow(CHILD, 'r2', false, false);
     const text = h.creatorQueue.mock.calls[0][0] as string;
+    expect(text).toContain('失败');
     expect(text).toContain('异常终止：模型返回 500');
+  });
+
+  it('成功收场 → 结论归成功（主控能收到「这条活干完了」）', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    h.rounds.set('r-success', round('r-success', 'complete', []));
+    h.notifier.remember(CHILD, CREATOR);
+
+    expect(h.notifier.noteSettledFlow(CHILD, 'r-success', false, false)).toBe(true);
+    expect(h.creatorQueue).toHaveBeenCalledTimes(1);
+    const text = h.creatorQueue.mock.calls[0][0] as string;
+    expect(text).toContain('抓取任务');
+    expect(text).toContain(CHILD);
+    expect(text).toContain('r-success');
+    expect(text).toContain('成功');
+    // 成功不是「中断」，不能把结论写成失败 / 中断
+    expect(text).not.toContain('失败');
+    expect(text).not.toContain('中断');
   });
 
   it('用户自己的会话当前不归代理 → 不产生通知（判据是驱动权，不看出生来源）', () => {
@@ -197,17 +217,14 @@ describe('HostedSessionNotifier', () => {
     expect(text).not.toContain('用户主动停止');
   });
 
-  it('暂停不是终态 / 成功收场 / 创建者已非托管 → 都不通知', () => {
+  it('暂停不是终态 / 创建者已非托管 → 都不通知', () => {
     const h = harness();
     h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
     h.rounds.set('r7', round('r7', 'interrupted', []));
-    h.rounds.set('r8', round('r8', 'complete', []));
     h.notifier.remember(CHILD, CREATOR);
 
     // 暂停可续跑
     expect(h.notifier.noteSettledFlow(CHILD, 'r7', true, false)).toBe(false);
-    // 成功收场
-    expect(h.notifier.noteSettledFlow(CHILD, 'r8', false, false)).toBe(false);
     // 创建者被收回托管（现在是普通会话，不拿代理的事实打扰它）
     h.managed.delete(CREATOR);
     expect(h.notifier.noteSettledFlow(CHILD, 'r7', false, true)).toBe(false);
