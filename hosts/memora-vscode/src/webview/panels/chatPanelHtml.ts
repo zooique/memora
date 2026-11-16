@@ -34,10 +34,23 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string, form: UiForm
        思考折叠块 + 发送按钮承载，「谁在回答」由 AI 消息头部标签 msg-ai-label 表达。
        面板结构为三层：消息区 → 活动区 → 输入区。 -->
 
+  <!-- 助手形态顶部身份条（2026-11-16 用户拍板，微信逻辑：身份在顶、对话居中、输入区干净）：
+       「助手模式」状态签 + 工作台入口从输入框上方移到面板顶部（原输入区上方一行退役）。
+       显隐**走 CSS 不走 hidden 属性**：首帧（脚本未跑）即正确形态不闪——hidden 属性要等
+       applyForm 才能解开，CSS 随 body[data-form] 同帧生效（0.11.0 首帧纪律不回退）。
+       自助形态零占位（默认 display:none），显隐规则全在 chatStyles 助手形态段。 -->
+  <div id="assistantModeBar" class="assistant-mode-bar">
+    <span class="assistant-mode-bar__tag"><span class="assistant-mode-bar__dot" aria-hidden="true"></span>${vscode.l10n.t('Assistant mode')}</span>
+    <button id="assistantWorkbenchBtn" class="assistant-mode-bar__link" type="button">${vscode.l10n.t('Workbench')}</button>
+  </div>
+
   <!-- 消息流：日期分隔线 + 消息 + 空状态引导 -->
   <!-- 会话标题条：
        左侧 = 会话标题 + 改名笔；右侧 = 新建会话「＋」+ 历史记录按钮。
-       无「清空对话」入口（删除会话记录覆盖该需求），会话导航全量在标题条。 -->
+       无「清空对话」入口（删除会话记录覆盖该需求），会话导航全量在标题条。
+       ⚠️ 助手形态下整条不显示（CSS display:none，同上首帧纪律）：2026-11-16 用户拍板——
+       该形态不需要会话名称/改名/历史入口（座位会话由助手安排，历史与工作台在自助形态
+       与编辑器面板仍是活的入口）。DOM 保留：切回自助形态即恢复。 -->
   <div id="sessionTitleBar" class="session-title-bar">
     <!-- ⚠️ title 只挂在内层标题文本上：容器级 title 会被所有无 title 的后代继承显示
          （历史下拉菜单挂在标题条内，空摘要条目悬停会误显示容器的「当前会话」） -->
@@ -232,15 +245,6 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string, form: UiForm
       <span class="btn-icon" data-icon="scroll-bottom"></span>
     </button>
     <div id="inputWrap">
-      <!-- 助手形态标识条（ASSISTANT-FORM）：输入框**上方**一行状态签，左侧 accent 圆点 +
-           「助手模式」（形态的唯一陈述点；不再用整句解释，切回路径由空态那一行承担）；
-           右侧是工作台的入口（工作台仍是编辑器区独立面板，不搬进侧栏——搬进来会伤自助
-           形态那套会话列表）。默认 hidden：自助形态零占位、零视觉变化；显隐由
-           chatView.applyForm 单点裁决。 -->
-      <div id="assistantModeBar" class="assistant-mode-bar" hidden>
-        <span class="assistant-mode-bar__tag"><span class="assistant-mode-bar__dot" aria-hidden="true"></span>${vscode.l10n.t('Assistant mode')}</span>
-        <button id="assistantWorkbenchBtn" class="assistant-mode-bar__link" type="button">${vscode.l10n.t('Workbench')}</button>
-      </div>
       <!-- 附件行（选择态行）：你亲手选的能力（skill）排在盒内文字上方——面单贴在信封上；
            盒外留给系统运行时条，两种来源由物理位置分界，不混住。空态 hidden 零高度。
            ⚠️ 能力选择 ≠ 附件：技能行保持独立（差异清单见台账 HOST-ATT-1） -->

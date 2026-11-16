@@ -3,10 +3,12 @@
  *
  * 被测的四条差异（用户拍板）：
  * ① 占位文字换成助手文案、切回逐字还原；② #inputWrap 换品牌色描边/淡底；
- * ③ 输入框左侧显形助手图标；④ 上方一行小字说明形态 + 工作台入口。
- * 第五条（隐藏运行控制排）是**纯 CSS**，jsdom 不算样式，改由文末的源码级作用域守卫锁：
- * 除一条基线外，凡碰到 #inputBox / .assistant-mode / #assistantMode 的规则都必须带
- * `body[data-form='assistant']` 前缀 —— 漏前缀 = 漏到自助形态（这是本特性的唯一泄漏口）。
+ * ③ 输入框左侧显形助手图标；④ 顶部身份条（助手模式 + 工作台入口，2026-11-16 从
+ * 输入框上方移到面板顶部）。
+ * 显隐分工：图标仍走 JS hidden（applyForm 翻）；身份条与标题条**走 CSS**（jsdom 不算
+ * 样式），改由文末的源码级作用域守卫锁：除两条基线外，凡碰到 #inputBox / .assistant-mode /
+ * #assistantMode 的规则都必须带 `body[data-form='assistant']` 前缀 —— 漏前缀 = 漏到
+ * 自助形态（这是本特性的唯一泄漏口）。
  */
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
@@ -26,47 +28,39 @@ function input(): HTMLTextAreaElement {
   return document.getElementById('input') as HTMLTextAreaElement;
 }
 
-/** 取形态标识条 */
-function modeBar(): HTMLElement {
-  return document.getElementById('assistantModeBar') as HTMLElement;
-}
-
 /** 取输入框左侧图标 */
 function modeIcon(): HTMLElement {
   return document.getElementById('assistantModeIcon') as HTMLElement;
 }
 
 describe('助手形态输入区（ASSISTANT-FORM）', () => {
-  it('默认即自助形态：占位逐字保持骨架原值，标识条与图标不显形', () => {
+  it('默认即自助形态：占位逐字保持骨架原值，图标不显形', () => {
     mountChatView();
     // 首帧形态由 body[data-form] 决定（生产由 buildHtml 写入，自助为缺省值）
     expect(document.body.dataset.form).toBe('self');
     expect(input().placeholder).toBe(SELF_PLACEHOLDER);
-    expect(modeBar().hidden).toBe(true);
     expect(modeIcon().hidden).toBe(true);
   });
 
-  it('收到 ui_form=assistant：占位换成助手文案，标识条与图标显形', () => {
+  it('收到 ui_form=assistant：占位换成助手文案，图标显形', () => {
     mountChatView();
     dispatch({ type: 'ui_form', form: 'assistant' });
     expect(document.body.dataset.form).toBe('assistant');
     expect(input().placeholder).toBe(ASSISTANT_PLACEHOLDER);
-    expect(modeBar().hidden).toBe(false);
     expect(modeIcon().hidden).toBe(false);
   });
 
-  it('切回自助形态：占位**逐字**还原（与骨架原文严格相等），标识条与图标重新隐去', () => {
+  it('切回自助形态：占位**逐字**还原（与骨架原文严格相等），图标重新隐去', () => {
     mountChatView();
     dispatch({ type: 'ui_form', form: 'assistant' });
     dispatch({ type: 'ui_form', form: 'self' });
     expect(document.body.dataset.form).toBe('self');
     // 严格相等而非包含：任何「脚本里再存一份自助文案」的写法都会在这里漂移暴露
     expect(input().placeholder).toBe(SELF_PLACEHOLDER);
-    expect(modeBar().hidden).toBe(true);
     expect(modeIcon().hidden).toBe(true);
   });
 
-  it('标识条上的工作台入口只上报意图（选座判据在宿主）', () => {
+  it('顶部身份条上的工作台入口只上报意图（选座判据在宿主）', () => {
     const { postMessage } = mountChatView();
     dispatch({ type: 'ui_form', form: 'assistant' });
     document.getElementById('assistantWorkbenchBtn')!.click();
@@ -98,7 +92,9 @@ describe('助手形态样式作用域守卫（漏前缀 = 漏到自助形态）'
     const assistantOnly = /#inputBox|\.assistant-mode|#assistantMode/;
     /** 允许的作用域前缀（前缀匹配：前缀之后还跟着后代选择器是正常形态） */
     const scoped = /^body\[data-form=['"]assistant['"]\](\s|$)/;
-    /** 唯一豁免：包裹层基线（display:contents 不生成盒子，等价于「没有这一层」） */
+    /** 基线豁免（显隐与布局的自助形态默认值，均为「无规则时的自然态」的显式化）：
+     * ① 包裹层 display:contents（不生成盒子，等价于「没有这一层」）；
+     * ② 顶部身份条 display:none（显隐全走 CSS 的默认隐藏面，hidden 属性机制已退役） */
     let baselineCount = 0;
     const offenders: string[] = [];
     for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
@@ -111,12 +107,16 @@ describe('助手形态样式作用域守卫（漏前缀 = 漏到自助形态）'
           baselineCount += 1;
           continue;
         }
+        if (part === '.assistant-mode-bar' && /display:\s*none/.test(body)) {
+          baselineCount += 1;
+          continue;
+        }
         offenders.push(part);
       }
     }
     // 无前缀的泄漏规则必须为空（有则打印具体选择器，便于直接定位）
     expect(offenders).toEqual([]);
-    // 基线必须存在且仅一条：改成两条说明有人在别处又开了无前缀口子
-    expect(baselineCount).toBe(1);
+    // 基线必须存在且仅两条：改成三条说明有人在别处又开了无前缀口子
+    expect(baselineCount).toBe(2);
   });
 });

@@ -1647,16 +1647,27 @@ export const chatStyles = `
    * 不删 DOM：能力（内部停止 / 暂停）照旧可达，只是不给这个形态摆按钮。 */
   /* 基线：包裹层不生成盒子 ⇒ 自助形态的输入区布局与加入本层之前逐像素一致 */
   #inputBox { display: contents; }
-  /* 标识条：输入框上方一行小字 + 工作台入口（hidden 属性由脚本按形态翻） */
+  /* 基线（第二条）：顶部身份条自助形态零占位——显隐全走 CSS（不走 hidden 属性）：
+   * 首帧（脚本未跑）即正确形态不闪，hidden 属性要等 applyForm 才解开（0.11.0 首帧纪律）。
+   * 守卫 assistantFormView 白名单同步此基线。 */
+  .assistant-mode-bar { display: none; }
+  /* 顶部身份条（2026-11-16 用户拍板，微信逻辑）：身份条从输入框上方移到面板顶部——
+   * 「身份在顶、对话居中、输入区干净」。骨架位置 = body 顶部第一个元素（标题条之前），
+   * 版式节奏与标题条同款（竖向 --sp-2 / 横向 --sp-5）。 */
   body[data-form='assistant'] .assistant-mode-bar {
     display: flex;
     align-items: center;
     gap: var(--sp-2, 6px);
-    padding: var(--sp-3, 8px) var(--sp-6, 16px) 0;
+    padding: var(--sp-2, 6px) var(--sp-5, 12px);
     font-size: var(--font-sm, 11px);
     line-height: var(--lh-normal);
     color: var(--text-secondary);
+    flex: 0 0 auto;
   }
+  /* 助手形态下会话标题条整条不显示：该形态不需要会话名称/改名笔/新建/历史入口
+   * （2026-11-16 用户拍板；座位会话由助手安排，历史与工作台在自助形态与编辑器面板
+   * 仍是活的入口）。DOM 保留，切回自助形态即恢复。与身份条互斥显隐，同一首帧纪律。 */
+  body[data-form='assistant'] .session-title-bar { display: none; }
   /* 形态状态签：从「11px 小字承载最重要的事实」升级为可扫的一点一行——
    * 左侧 accent 圆点负责「一眼看到形态」，文字回到 primary（比周围的 secondary 更亮）。
    * accent 在此**只当装饰点**（不承载文字，不参与对比度）；文字仍走前景档。 */

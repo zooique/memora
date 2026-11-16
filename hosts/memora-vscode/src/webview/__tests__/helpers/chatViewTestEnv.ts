@@ -15,6 +15,12 @@ import { createChatView } from '../../scripts/chatView.js';
 
 /** 覆盖 createChatView 全部 getElementById 引用的最小 HTML 骨架 */
 const HTML = `
+  <!-- 助手形态顶部身份条：与生产骨架同步（body 顶部第一个元素、无 hidden 属性，
+       显隐走 CSS）；#assistantWorkbenchBtn 是工作台的唯一侧栏入口 -->
+  <div id="assistantModeBar" class="assistant-mode-bar">
+    <span class="assistant-mode-bar__tag"><span class="assistant-mode-bar__dot" aria-hidden="true"></span>Assistant mode</span>
+    <button id="assistantWorkbenchBtn" class="assistant-mode-bar__link" type="button">Workbench</button>
+  </div>
   <div id="sessionTitleBar" class="session-title-bar">
     <!-- title 与生产骨架同步：只挂内层标题文本（容器级 title 会被无 title 后代继承，历史菜单条目悬停误显示） -->
     <span id="sessionTitleText" title="当前会话"></span>
@@ -109,12 +115,6 @@ const HTML = `
       <div id="skillChips" class="skill-chip-row" hidden></div>
       <!-- 附件行：活动文件 / 注入 / 图片 / 引用回复 / 引用 chip 单点渲染（图片行已并入，2026-11-11） -->
       <div id="refChips" class="skill-chip-row" hidden></div>
-      <!-- 助手形态标识条（ASSISTANT-FORM）：与生产骨架同步——默认 hidden，形态由 body[data-form]
-           与 applyForm 决定；#assistantWorkbenchBtn 是工作台的唯一侧栏入口 -->
-      <div id="assistantModeBar" class="assistant-mode-bar" hidden>
-        <span class="assistant-mode-bar__tag"><span class="assistant-mode-bar__dot" aria-hidden="true"></span>Assistant mode</span>
-        <button id="assistantWorkbenchBtn" class="assistant-mode-bar__link" type="button">Workbench</button>
-      </div>
       <!-- 输入框包裹层 + 左侧助手图标（生产同构：默认 display:contents / 图标 hidden） -->
       <div id="inputBox" class="input-box">
         <span id="assistantModeIcon" class="assistant-mode-icon" aria-hidden="true" hidden><span data-icon="assistant"></span></span>

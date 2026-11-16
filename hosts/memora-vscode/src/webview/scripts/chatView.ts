@@ -205,9 +205,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const historySearch = document.getElementById('historySearch') as HTMLInputElement;
   const input = document.getElementById('input') as HTMLTextAreaElement;
   const send = document.getElementById('send') as HTMLButtonElement;
-  // 助手形态输入区（ASSISTANT-FORM）：标识条 + 输入框左图标 + 工作台入口。
-  // 自助形态三者恒 hidden（无显隐切换成本，也不参与任何布局） ⇒ 自助面零影响。
-  const assistantModeBar = document.getElementById('assistantModeBar') as HTMLElement;
+  // 助手形态输入区（ASSISTANT-FORM）：输入框左图标 + 工作台入口。
+  // 自助形态图标恒 hidden（无显隐切换成本，也不参与任何布局） ⇒ 自助面零影响。
+  // 标识条（assistantModeBar）显隐走 CSS（chatStyles 基线 + body[data-form] 作用域），
+  // 不进 JS——首帧（脚本未跑）即正确形态不闪，hidden 属性机制已退役。
   const assistantModeIcon = document.getElementById('assistantModeIcon') as HTMLElement;
   const assistantWorkbenchBtn = document.getElementById(
     'assistantWorkbenchBtn',
@@ -3715,8 +3716,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 侧栏形态的唯一落点（自助 ⇄ 助手）
    *
    * 三条纪律：
-   * - **表现层单点**：body[data-form] + 三处 hidden（标识条 / 图标 / 新建会话按钮）+ 占位文字，全在这里翻；别在消息分支里
+   * - **表现层单点**：body[data-form] + 两处 hidden（标识图标 / 新建会话按钮）+ 占位文字，全在这里翻；别在消息分支里
    *   各翻一处（形态一改就要改 N 处，漏一处即半套形态）。
+   *   标识条与标题条的显隐**不在本函数**：二者走 CSS（body[data-form] 作用域，chatStyles
+   *   助手形态段）——首帧即正确形态不闪，等本函数翻 hidden 必闪一帧（0.11.0 首帧纪律）。
    * - **占位原值只认 HTML**：切走前已由 `selfPlaceholder` 记下，切回逐字还原。
    * - **不持有形态**：本函数纯写入；当前形态由宿主 `ui_form` 决定（webview 不记、不猜、不落
    *   本地存储——否则重启后剩一个「假助手形态」，与「形态不记住」拍板相反）。
@@ -3727,7 +3730,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     input.placeholder = assistant
       ? l10n.t('Tell the assistant what you want done')
       : selfPlaceholder;
-    assistantModeBar.hidden = !assistant;
     assistantModeIcon.hidden = !assistant;
     // 助手形态里的会话由助手安排：用户侧「＋」不出现（宿主侧另有同一判据的拒收，见
     // chatPanel 的 `new_session` 分支）。切回自助形态即恢复。

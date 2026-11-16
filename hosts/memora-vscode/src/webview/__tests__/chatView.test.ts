@@ -2395,6 +2395,11 @@ describe('UI-TOAST-1 瞬态提示浮层化（活动条出流 · 不挤占消息�
     // 签的文字回到前景档；只有装饰圆点用 accent（accent 是按钮底色，不当文字色）
     expect(css).toMatch(/\.assistant-mode-bar__tag \{[^}]*color: var\(--text-primary\)/);
     expect(css).toMatch(/\.assistant-mode-bar__dot \{[^}]*background: var\(--accent\)/);
+    // 2026-11-16 用户拍板（微信逻辑）：身份条移到面板顶部（骨架 body 顶部第一个元素），
+    // 显隐走 CSS 不走 hidden 属性（首帧即正确形态不闪）；助手形态下会话标题条
+    //（会话名称/改名笔/新建/历史）整条隐藏。两条规则缺一即回退。
+    expect(css).toMatch(/\.assistant-mode-bar \{\s*display:\s*none;/);
+    expect(css).toMatch(/body\[data-form='assistant'\] \.session-title-bar \{\s*display:\s*none;\s*\}/);
   });
 
   it('CSS 源码守卫：托管卡底色走卡片主题面 + 左缘强调条，聚焦换三边描边色', () => {
