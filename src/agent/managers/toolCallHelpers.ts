@@ -163,9 +163,9 @@ export function isRetryableToolError(input: ToolOutcome | string): boolean {
 export type ToolStatus = 'ok' | 'failed' | 'blocked';
 
 /**
- * blocked 的原因（**12 值穷尽 · 与 status 正交**——只回答「为什么没成功」）。
+ * blocked 的原因（**13 值穷尽 · 与 status 正交**——只回答「为什么没成功」）。
  *
- * 为什么是独立维度而非第 4 个 status 值：12 种主动挡下**全部是「没成功」**，无例外；
+ * 为什么是独立维度而非第 4 个 status 值：13 种主动挡下**全部是「没成功」**，无例外；
  * 它们之间差别回答的是「为什么没成功」。两个正交问题硬塞一个字段 ⇒ 字段随护栏增加
  * 持续膨胀且语义退化。新增值须对应真实新语义，**禁止硬塞进既有值**。
  */
@@ -182,6 +182,19 @@ export type BlockedReason =
   | 'invalid_intel_note' // remember_intel 参数为空
   // ── 执行层闸门族（ToolRunner denied/skip + ToolExecutor 暴露闸）──
   | 'permission_denied' //  宿主审批拒绝 / fail-closed
+  /**
+   * 待用户授权：**不是拒绝，是「没开始」**。
+   *
+   * 与 `permission_denied` 的分工（两者都挡下，但吞掉这一区别会让代理行为错乱）：
+   * - `permission_denied`＝这条操作**不许做**（恒拦 / 用户点了拒绝 / fail-closed）⇒ 代理应换路子；
+   * - `auth_required`＝这条操作**可以做，但需要用户点头**（不可逆操作进了异步授权）⇒
+   *   代理应把它转述给用户请求授权，拿到授权后重试同一操作。
+   *
+   * 生产者只有一处：`SecurityGuard.confirmGate` 收到宿主回调的 `'deferred'` 时冒泡上来
+   * （宿主判据见 `confirmCoordinator`：托管轮 + always-ask + 未授权）。
+   * `hasRealFailure` 恒 false——挡下是主动的，背后没有任何执行失败。
+   */
+  | 'auth_required'
   | 'readonly_denied' //    只读模式禁写工具
   | 'idempotent_skip' //    outbox 幂等：已执行过
   | 'not_exposed'; //       工具已注册但本轮未暴露（EXPOSURE-GATE-1 执行闸）

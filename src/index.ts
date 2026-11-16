@@ -289,6 +289,9 @@ export type { SkillEntry } from '@/skill/types.js';
 
 // ─── 安全层导出 ────────────────────────────────────────────
 // 审计日志类型（SecurityGuard.onAudit 回调的 event 参数）
+// `ConfirmDeferral` / `WriteConfirmationResult` **刻意不导出**：它们在 `WriteConfirmationRequest`
+// 的签名里，宿主实现回调时由类型推导自动可用（写 `return 'deferred'` 即可获得校验），
+// 单独导出等于无消费方的公共面扩张（PUBLIC-API-SURFACE-1 向 A 明确要求）。
 export type {
   AuditEvent,
   AuditListener,

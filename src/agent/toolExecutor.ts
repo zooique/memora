@@ -8,7 +8,7 @@
  * ToolExecutor 聚焦工具注册 / 分发 / 参数校验。
  */
 import { readFile } from 'node:fs/promises';
-import type { SecurityGuard } from '@/security/pathGuard.js';
+import type { SecurityGuard, WriteConfirmationResult } from '@/security/pathGuard.js';
 import { requireConfirmingEntry, type ConfirmingEntry } from '@/security/confirmEntries.js';
 import { toolError, configError, MemoraError, ToolErrorCode } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
@@ -1262,7 +1262,9 @@ export class ToolExecutor {
    * @param tool 工具名
    * @param description 面向用户的描述
    * @param content 脚本面**将被执行的正文**（命令面不传；补齐 CMD-1-BYPASS 用）
-   * @returns 是否获确认放行
+   * @returns 确认三态：`true` 放行 / `false` 拒绝 / `'deferred'` **待用户授权**
+   *   （宿主把不可逆操作转成异步授权，本轮不阻塞——调用方须单列该分支，
+   *   绝不可与 `false` 合并，否则会把「在等人点头」渲染成「被禁止」）
    */
   private async confirmByEntry(
     entry: ConfirmingEntry,
@@ -1270,7 +1272,7 @@ export class ToolExecutor {
     tool: string,
     description?: string,
     content?: string,
-  ): Promise<boolean> {
+  ): Promise<WriteConfirmationResult> {
     if (entry === 'command') {
       return this.security.confirmCommandRun(target, tool, description);
     }
@@ -1667,6 +1669,15 @@ export class ToolExecutor {
             : `执行内联代码（${execLanguage}，${execCode.length} 字符，宿主沙箱）`,
           execCode,
         );
+        if (execConfirmed === 'deferred') {
+          // 待用户授权 ≠ 拒绝：本轮不执行、也不阻塞（宿主把决定推迟到用户下次表态）。
+          // 文案必须让 LLM 明确「该去请求授权」而不是「这条路不通、换一条」——两者动作相反。
+          const deferredText =
+            '[ERR:SCRIPT_AUTH_DEFERRED] 代码执行待用户授权：正文命中恒询问清单（不可逆操作）。' +
+            '本轮未执行、未阻塞；请把这条操作转述给用户并请求授权，用户明确同意后再重试。';
+          emitOutcome?.(blockedOutcome('auth_required', deferredText));
+          return deferredText;
+        }
         if (!execConfirmed) {
           // 用户/系统拒绝执行 = 主动挡下（permission_denied），非执行失败。
           // 措辞与 run_command 的 declineText 同款（命中恒拦 / 用户拒绝 / fail-closed 三因共用）：
@@ -1978,6 +1989,14 @@ export class ToolExecutor {
           `执行技能 ${skillName} 的脚本 ${scriptPath ?? ''}`,
           skillScriptContent,
         );
+        if (execConfirmed === 'deferred') {
+          // 待用户授权 ≠ 拒绝（同 run_code 分支）：请用户授权，不是换路子
+          const deferredText =
+            '[ERR:SCRIPT_AUTH_DEFERRED] 技能脚本执行待用户授权：正文命中恒询问清单（不可逆操作）。' +
+            '本轮未执行、未阻塞；请把这条操作转述给用户并请求授权，用户明确同意后再重试。';
+          emitOutcome?.(blockedOutcome('auth_required', deferredText));
+          return deferredText;
+        }
         if (!execConfirmed) {
           // 用户/系统拒绝执行 = 主动挡下（permission_denied），非执行失败。
           // 措辞与 run_command 同款：裁决返回 false 时不区分成因（恒拦 / 拒答 / fail-closed）。
@@ -2043,6 +2062,14 @@ export class ToolExecutor {
           `运行项目脚本 ${scriptPath}`,
           scriptContent,
         );
+        if (confirmed === 'deferred') {
+          // 待用户授权 ≠ 拒绝（同 run_code 分支）：请用户授权，不是换路子
+          const deferredText =
+            '[ERR:SCRIPT_AUTH_DEFERRED] 脚本运行待用户授权：正文命中恒询问清单（不可逆操作）。' +
+            '本轮未执行、未阻塞；请把这条操作转述给用户并请求授权，用户明确同意后再重试。';
+          emitOutcome?.(blockedOutcome('auth_required', deferredText));
+          return deferredText;
+        }
         if (!confirmed) {
           // 用户/系统拒绝执行 = 主动挡下（permission_denied），非执行失败。
           // 措辞与 run_command 同款：裁决返回 false 时不区分成因（恒拦 / 拒答 / fail-closed）。
@@ -2132,6 +2159,15 @@ export class ToolExecutor {
           'run_command',
           `在工作区执行命令：${command}`,
         );
+        if (confirmed === 'deferred') {
+          // 待用户授权 ≠ 拒绝：命令**没有**执行，也没阻塞，只是把决定交给用户。
+          // 带命令原文：LLM 转述时能一字不差地告诉用户「要跑的是这条」，避免它自己改写。
+          const deferredText =
+            `[ERR:COMMAND_AUTH_DEFERRED] 命令待用户授权：「${command}」属不可逆操作（恒询问清单），需用户明确同意。` +
+            '本轮未执行、未阻塞；请把这条命令原文转述给用户并请求授权，用户明确同意后再重试。';
+          emitOutcome?.(blockedOutcome('auth_required', deferredText));
+          return deferredText;
+        }
         if (!confirmed) {
           const declineText =
             '[ERR:COMMAND_DECLINE] 命令未获执行许可（命中恒拦黑名单 / 用户拒绝 / 未注入确认回调 fail-closed）。' +

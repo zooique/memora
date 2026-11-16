@@ -1113,6 +1113,7 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'permission',
       'targetPath',
       'tool',
+      'verdict',
     ],
   },
   MemoraError: {
