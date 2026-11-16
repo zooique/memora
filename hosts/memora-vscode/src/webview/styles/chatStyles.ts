@@ -1749,12 +1749,12 @@ export const chatStyles = `
   body[data-form='assistant'] #inputWrap:has(.skill-chip-row:not([hidden])) .assistant-mode-icon {
     padding-top: var(--sp-2, 6px);
   }
-  /* 运行控制排：自助形态一个不少，助手形态一个不留（发送键自身三态保留） */
-  body[data-form='assistant'] .composer-left,
+  /* 输入区减法（2026-11-16 用户拍板「自助输入框做减法」）：复用自助输入框全部能力——
+   * skill / 模型 / 润色 / 图片（.composer-left）与附件气泡行照常显示（host 链路无形态
+   * 判据，恢复显示即恢复功能）；只去两样：暂停键（运行控制）与状态行左侧徽章群
+   * （角色/能力徽章是自助会话语义，助手座位无角色）。占用圆环跟模型配套，保留。 */
   body[data-form='assistant'] #pauseBtn,
-  body[data-form='assistant'] .composer-row--status { display: none !important; }
-  /* 左侧清空后 space-between 会把发送键甩到最左；改右对齐，与自助形态同一视觉落点 */
-  body[data-form='assistant'] .composer-row--main { justify-content: flex-end; }
+  body[data-form='assistant'] .composer-status { display: none !important; }
   /* 输入区布局：左侧功能群 + 右侧发送按钮 + 状态行
    * 对齐 visual-design-philosopher：发送按钮突出化（最大最亮），其他功能弱化。 */
   #inputFooter {

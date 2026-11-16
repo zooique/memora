@@ -106,6 +106,23 @@ describe('助手形态输入区（ASSISTANT-FORM）', () => {
     dispatch({ type: 'session_title', title: '新会话', draft: true, defaultMode: 'managed' });
     expect(document.querySelector('.empty-mode-hint')).toBeNull();
   });
+
+  it('输入区减法口径（2026-11-16 拍板）：只去暂停键与徽章群，模型/skill/图片/占用圆环保留', () => {
+    // jsdom 不算样式 ⇒ 源码级守卫钉住减法边界，防回退到「一个不留」旧口径
+    const css = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf8');
+    /** 助手形态作用域的 display:none 规则（选择器串 + 规则体） */
+    const hiddenRules = [...css.matchAll(/body\[data-form='assistant'\][^{}]*\{[^}]*display:\s*none/g)].map(
+      (m) => m[0] as string,
+    );
+    // 恢复面：功能群（skill/模型/润色/图片）与状态行整行不得在助手作用域隐藏
+    const restored = hiddenRules.filter((r) => r.includes('.composer-left') || r.includes('.composer-row--status'));
+    expect(restored).toEqual([]);
+    // 减法面：暂停键（运行控制）与徽章群（角色/能力）必须隐藏（同一规则的选择器组）
+    const keptRule = hiddenRules.find((r) => r.includes('#pauseBtn') && r.includes('.composer-status'));
+    expect(keptRule).toBeDefined();
+    // 右对齐补偿已退役：左块恢复 ⇒ composer-row--main 回两端分布（不得再有 flex-end 覆盖）
+    expect(css).not.toMatch(/body\[data-form='assistant'\][^{}]*\.composer-row--main[^{}]*flex-end/);
+  });
 });
 
 describe('助手形态样式作用域守卫（漏前缀 = 漏到自助形态）', () => {
