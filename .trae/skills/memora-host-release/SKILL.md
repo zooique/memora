@@ -1,6 +1,6 @@
 ---
 name: memora-host-release
-description: "VS Code 宿主插件（hosts/memora-vscode）的发版执行流程：Step 0 前置闸（发版前质量审查：审上一宿主 tag→HEAD 的 git 区间 + 未提交改动，按 SSOT / 自然生长 / 不带伤 修完放行；再验内核先行）→ 文档对齐（宿主文档 + CHANGELOG 宿主区）→ 版本号核对（tag vscode@X.Y.Z ↔ 宿主 package.json）→ 台账归档（宿主项）→ 打 tag 触发 host-release.yml（build 内核 dist + 出 vsix + GitHub Release 自动）→ Open VSX / VS Code Marketplace 手动分发 → 市场展示面核对（Changelog 标签 / Resources 链接 / 分类词表 … 版本号可见 ≠ 页面完整）。触发场景：用户说『发宿主版 / 宿主发版 / vscode@ 发版 / 插件上架 / 扩展发布』时。"
+description: "VS Code 宿主插件（hosts/memora-vscode）的发版执行流程：Step 0 前置闸（发版前质量审查：审上一宿主 tag→HEAD 的 git 区间 + 未提交改动，按 SSOT / 自然生长 / 不带伤 修完放行；再验内核先行）→ 文档对齐（宿主文档 + CHANGELOG 宿主区）→ 版本号核对（tag vscode@X.Y.Z ↔ 宿主 package.json）→ 台账归档（宿主项）→ 打 tag 触发 host-release.yml（build 内核 dist + 出 vsix + GitHub Release 自动）→ Open VSX / VS Code Marketplace 自动分发（Trusted Publishing）→ 市场展示面核对（Changelog 标签 / Resources 链接 / 分类词表 … 版本号可见 ≠ 页面完整）。触发场景：用户说『发宿主版 / 宿主发版 / vscode@ 发版 / 插件上架 / 扩展发布』时。"
 agent_created: true
 ---
 
@@ -105,18 +105,19 @@ agent_created: true
    - 无 npm 2FA 审批（宿主不发 npm；内核那段已在发内核时批过）。
 4. 🔴 **CI 红后修 workflow / 测试 ⇒ 旧 tag 作废，删掉重打**：tag 触发的 CI 用 **tag 指向 commit 里的 workflow 文件版本**——改完 push 到 main 后重跑旧 run 用的还是旧 workflow，必须删远端+本地 tag → 在含修复的新 HEAD 重打 → 再推（0.2.0 实证两次：`pnpm install --offline` 冷 store 炸、平台相关用例 ubuntu 红）。
 
-### Step 5：手动分发（宿主专属，CI 不做）
+### Step 5：分发出口核对（三市场 live 态）
 
 > 🔴 **判据纪律：上架成败只认市场 live 态，不认 run 状态 API、不认页面快照**（2026-10-29 / 10-30 双实证）。
 > - **Actions run 状态 API 有快照延迟**：`api.github.com/.../runs/<id>` 的 `status` 长期停在 `in_progress`、`conclusion` 恒 `null`、`updated_at` 冻结在某一刻、不随 step 完成刷新（0.4.0 实证：冻结 14:00:50Z，而末步实际 14:05:21Z 才退出）。据它判「失败」⇒ 会去删 tag 重打，而 Open VSX 同版本不可重发（见 ②）⇒ 灾难。
 > - **判成功的两个真信号**：GitHub Release 已建且挂上正确 asset + Open VSX 公开 API `version` 翻到目标版本。二者为真即发布已成功，run 页面随后自会翻绿。
-> - **Marketplace 页面有传播延迟**：手动上传后抓扩展页，正文可能仍是上一版 README（0.4.0 实证：页面仍写随包内核 `5.1.0`，而仓库 README 已是 `5.2.0`）⇒ **不可据此判上传失败**。沿用惯例：**版本号以扩展页 Version History 为准，台账不写死版本快照**。
+> - **Marketplace 页面有传播延迟**：发布后抓扩展页，正文可能仍是上一版 README（0.4.0 手动上传实证：页面仍写随包内核 `5.1.0`，而仓库 README 已是 `5.2.0`；服务端延迟，与上传方式无关）⇒ **不可据此判上传失败**。沿用惯例：**版本号以扩展页 Version History 为准，台账不写死版本快照**。
 
-1. **① GitHub Release**：`host-release.yml` 已自动创建/更新 Release 并挂 `.vsix` asset。核对 Release 存在 + asset 名正确（`memora-vscode-<VER>.vsix`）+ **body 结构化齐全**——workflow 注入「随包内核代次 / sha256 / 字节数 / Marketplace 手动上传提示」四项（0.2.0 实证缺口：body 只剩 auto changelog 链接，「随包内核代次」这条对账信息在发布面丢失，只活在 CHANGELOG 里）。
+1. **① GitHub Release**：`host-release.yml` 已自动创建/更新 Release 并挂 `.vsix` asset。核对 Release 存在 + asset 名正确（`memora-vscode-<VER>.vsix`）+ **body 结构化齐全**——workflow 注入「随包内核代次 / sha256 / 字节数 / Marketplace 自动发布说明」四项（0.2.0 实证缺口：body 只剩 auto changelog 链接，「随包内核代次」这条对账信息在发布面丢失，只活在 CHANGELOG 里）。
 2. **② Open VSX**：✅ **已自动化（2026-10-26）**——`host-release.yml` 末尾两步已带（发布 + 回查），打 `vscode@*` tag 即发；前置（namespace ownership / 手动首发 0.2.0 / Trusted Publisher 登记）均已完成。核对 = 回查步断言 <https://open-vsx.org/api/zooique/memora-vscode> 的 `version` == 本次 tag 版本。
    - 🔴 **发版前必须升 `hosts/memora-vscode/package.json` 的 version**：Open VSX 版本号**永久保留**（删除后仍保留），同版本不可重发 ⇒ 已发的 0.2.0 若重打 tag，门禁与 GitHub Release 都能过、**只有 Open VSX 那步红**。
    - 🔴 **Trusted Publisher 按 workflow 文件名匹配**（`host-release.yml`，非数字 ID）⇒ 本文件**不得改名**（改名须删掉 Open VSX 注册重来）。
-3. **③ VS Code Marketplace**：🔒 **定案保持手动上传**（全局 PAT 2026-12-01 退役；稳的 Entra ID 路线需 Azure 订阅 = 国外银行卡拦路石；干净路线 `vsce publish --oidc` 尚未进稳定版且 Marketplace 侧无策略注册 UI）。每版传一次 `.vsix`，成本可忽略 ⇒ 手动最优。
+3. **③ VS Code Marketplace**：✅ **已接入 Trusted Publishing（2026-11-16）**——后台策略 `host-release`（zooique / memora / host-release.yml，Active）已建，`host-release.yml` 末步 `vsce publish --oidc -i <同一过闸vsix>` 发同一产物；打 `vscode@*` tag 即自动发。原「定案保持手动」（2026-10-23）的依据「`--oidc` 未进稳定版 + 无策略注册 UI」已失效（VS Code 1.144 起官方支持，vsce ≥4.0.2）。
+   - ⚠️ **首跑未验证**（截至 2026-11-16 无成功 run）：失败先核策略三字段（owner/repo/workflow 文件名）与后台逐字匹配；兜底 = 手动上传（下两条流程不变，两套互不冲突）。
    - 上传物 = **① 的同一个 GitHub Release asset**（下载后直接传），**不本地重出包**。
    - 🔴 **「上传物 = 同一 asset」禁按字节 sha256 判**（2026-11-01 实测证伪）：Marketplace 对上传包做**服务端重打包 + gzip 传输**，字节必然变（0.5.0：2,020,850 → 1,994,559；同源 0.4.0 同比例）⇒ sha256 比对**永远不等**，只会把判断带向「传错包」，而市场同版本不可覆盖（见 ② 的「同版本重发」坑）= 死路。**对账真源改为内容级**：两包各自解包后 `diff -r` 零差异 + 包内 `extension/package.json` 的 `name`/`version`/`publisher` 匹配；sha256 只用于 GitHub Release asset 自身完整性（workflow body 那项）。
 4. **④ 市场展示面核对（不是只对版本号）** —— 0.4.0 实证缺口：版本号对，但扩展详情页的 **Changelog 标签是空的**，Resources 区**没有报问题入口**。版本号由 Marketplace 的 Version History 自己记，**必然可见**；展示面则全靠包内容物与 `package.json`，不会自愈。逐条扫：
@@ -142,7 +143,7 @@ agent_created: true
    - 🔴 **先做中间层反证，再信那个 `200`**：本机加速代理会把该域名 DNS 改写到 `127.0.0.1`（响应头 `Server: FastGithub`，`--noproxy '*'` 也绕不过）⇒ 必须用**必然不存在的版本**（如 `0.9.9`）请求同一端点，只有它返回 `404` 才能证明端点是按版本真实应答、目标版本的 `200` 不是兜底缓存。
    - **台账写法**：外部服务状态是**时点快照**，不是终态——要么等稳定再写，要么写「观测时刻 + 待刷新后订正」。2026-11-01 反例：把「索引仍回 0.4.0」写进归档，3 分钟后就过期，白跑一次纯订正提交（本条是上文「判据纪律」块末条「台账不写死版本快照」的同族实证）。
 3. `git show --stat` 核对本次提交文件归属 ↔ 标题（PowerShell 回显中文乱码是显示层，勿据此重提交；字节用 `git log -1 --format=%B | od -c` 校验）。
-4. 🔴 **Marketplace 手动上传完成后，回头订正归档里的「未执行」标记**（0.4.0 实证缺口，且**大概率跨会话**——用户上传往往在发版次日）：
+4. 🔴 **Marketplace 手动兜底上传完成后，回头订正归档里的「未执行」标记**（0.4.0 实证缺口；③ 已自动化后仅当兜底走手动时适用，且**大概率跨会话**——用户上传往往在发版次日）：
    - Step 6 第 1 条订正为「已发布」时，若 Marketplace 尚未上传，头标会留下一句「**未执行** = VS Code Marketplace 手动上传」。这是**一次性快照，不会自动跟进后续收口**；用户上传完成后须订正 `tasks/archive/<x.y.z>-host.md` 头标 + `tasks/archive/README.md` 归档表该行**两处**，补执行日期与「上传物 = 同一 asset、未本地重出包」。
    - **连带回扫上一版**：该标记从写下到被订正跨越整个发版周期，0.3.0 的同类标记自 2026-10-27 遗留到 2026-10-30 才暴露，且长期与本文件 H6 正文收据**自相矛盾**。订正本版时顺手 grep 前一版归档头 + 归档表，一并清掉同类遗留。
    - ⚠️ grep `未执行` 会命中大量无关语义（「尚未执行」「断言中断未执行」等）⇒ **逐条判语义，严禁批量替换**。
@@ -154,7 +155,7 @@ agent_created: true
 - 🔴 **宿主 package.json 路径**：`hosts/memora-vscode/package.json`，别改根 `package.json`。
 - 🔴 **CHANGELOG 双区**：宿主发版只动 `## [Unreleased] · 宿主` 区，内核区（`## [5.0.0] …`）不动。
 - 🔴 **host-release.yml 不含 `verify:changelog` / `verify:publish-docs`** ⇒ 须人工跑/核对（内核有、宿主无，这是两链最易踩的差异）。
-- 🔴 **Open VSX Trusted Publisher 绑定 workflow 文件名** ⇒ `host-release.yml` 不得改名。
+- 🔴 **Open VSX 与 VS Marketplace 的 Trusted Publishing 都绑定 workflow 文件名** ⇒ `host-release.yml` 不得改名（改名两边注册都要重来）。
 - 🔴 **Windows 上 Bash 跑 git 写操作会污染索引**（曾致 `tasks/` 十余文件被误标删除）——归档/提交/打 tag 用 PowerShell 直接命令或 `node -e`，忌用 Bash 流。push 若 PowerShell 拦 credential-manager（网络 git 静默 EXIT=128）走 Bash `env -u NODE_OPTIONS git push`，**不设 `LEFTHOOK=0`**——pre-push 默认必须跑；确需绕行按 `memora-kernel-release-readiness` 提交环节的三件（用户显式授权并引原话 / 写明原因 / 补跑同一门禁并进收据）。
 - 🔴 **CI 冷 store 勿用 `--offline`**（0.2.0 首跑实证，run 39889566947）：根与宿主是两个独立 pnpm 工程（无 workspace），CI 只装了根依赖；宿主 lockfile 239 包中 ~187 个根没有（vsce/@vscode 系）⇒ 冷 store offline 解析必炸。workflow 安装步已定 `--frozen-lockfile`，**勿改回 `--offline`**；本地 store 已暖，本地跑 `--offline` 仍可。
 - 🔴 **平台相关 API 的断言写 `runIf(平台)` 互斥孪生**（0.2.0 二跑实证，run 39890131524）：`path.relative` / findFiles `fsPath` 等语义随 OS 变，反斜杠形态只在 Windows 运行时出现，ubuntu 上喂 Windows 路径必错。win32 用例 `runIf(process.platform === 'win32')` + POSIX 孪生 `runIf(!win32)` 各跑真实形态——**不产生隐藏 skip**，任一平台都有在跑的用例。

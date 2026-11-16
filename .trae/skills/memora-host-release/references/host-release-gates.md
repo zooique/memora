@@ -42,14 +42,14 @@
 
 tag push 事件以 **tag 指向 commit 中的 workflow 文件**起跑；push 修复到 main 后重跑旧 run 仍用旧 workflow。正确顺序：删远端+本地 tag → 在含修复的新 HEAD 重打 → 再推。0.2.0 因此重打 tag 两次。
 
-## 分发出口（按 2026-10-23 调研结论定案）
+## 分发出口（③ 于 2026-11-16 改接 Trusted Publishing，①② 按 2026-10-23 定案）
 
 | 出口 | 现状 | 备注 |
 |---|---|---|
-| ① GitHub Release asset | ✅ 本 workflow 已带（零外部账号门槛） | 幂等：`gh release upload --clobber`；asset 名 `memora-vscode-<VER>.vsix`；**body 结构化**（`--notes-file` 正文 + `--generate-notes` 追加）：随包内核代次 / sha256 / 字节数 / Marketplace 手动上传提示（0.2.0 实证缺口回补：纯 `--generate-notes` 只剩 auto changelog 链接，内核代次对账信息在发布面丢失） |
+| ① GitHub Release asset | ✅ 本 workflow 已带（零外部账号门槛） | 幂等：`gh release upload --clobber`；asset 名 `memora-vscode-<VER>.vsix`；**body 结构化**（`--notes-file` 正文 + `--generate-notes` 追加）：随包内核代次 / sha256 / 字节数 / Marketplace 自动发布说明（0.2.0 实证缺口回补：纯 `--generate-notes` 只剩 auto changelog 链接，内核代次对账信息在发布面丢失） |
 | ② Open VSX | ✅ **已开通（2026-10-26）**：namespace ownership / 手动首发 0.2.0 / Trusted Publisher 登记均已完成，`host-release.yml` 末尾两步 = 发布 + 回查（OIDC 零密钥） | 🔴 实现三约束：① **必须传 vsix 路径**（裸跑 `npx ovsx publish --trusted-publishing` = ovsx 用 vsce 在 CWD **重新打包再发布**，发出去的不是过闸产物，且 vsce 依赖遍历**只支持 npm / yarn v1、不支持 pnpm**）；② **必须 `if: github.event_name == 'push'`**（Trusted Publisher **不绑定分支或 tag**，无闸则 `workflow_dispatch` 预演会真发到公开市场）；③ Open VSX 按 **workflow 文件名** `host-release.yml` 匹配 ⇒ **不得改名**（改名须删注册重来）。另：版本号**永久保留**，已发的 0.2.0 不可重发 |
-| ③ VS Code Marketplace | 🔒 **定案保持手动上传，CI 路线放弃** | 全局 PAT 2026-12-01 退役；Entra ID 需 Azure 订阅（国外银行卡拦路石）；`vsce publish --oidc` 未进稳定版且无 Marketplace 策略注册 UI；手动每版传一次 `.vsix` 成本可忽略 |
+| ③ VS Code Marketplace | ✅ **已接入 Trusted Publishing（2026-11-16）**：后台策略 `host-release`（zooique / memora / host-release.yml，Active）+ `host-release.yml` 末步 `vsce publish --oidc -i <已打包vsix>` | ⚠️ 首跑未验证（截至 2026-11-16 无成功 run）；`--oidc` 需 vsce ≥4.0.2（devDependency ^3.9.2 不支持 ⇒ CI 用 npx 锁 4.1.1）；**必须 `-i` 发已打包产物**（裸 publish 会重打包踩 pnpm，同出口②约束）；**必须 `if: push`**（防 `workflow_dispatch` 预演真发，版本不可回收）；失败兜底 = 手动上传同一 asset。原「定案保持手动」（2026-10-23）的依据「--oidc 未进稳定版 + 无策略 UI」已失效 |
 
 ## 改名红线
 
-Open VSX 的 Trusted Publishers 按 **workflow 文件名**匹配（按名字，非数字 ID）⇒ 本文件 `host-release.yml` 一旦在 Open VSX 注册，**不得改名**。改名必须删掉 Open VSX 注册重来——出口②开通后此约束生效。
+Open VSX 与 VS Marketplace 的 Trusted Publishing 均按 **workflow 文件名**匹配（按名字，非数字 ID）⇒ 本文件 `host-release.yml` 一旦在任一市场注册，**不得改名**。改名必须删掉两边注册重来——出口②③开通后此约束生效。

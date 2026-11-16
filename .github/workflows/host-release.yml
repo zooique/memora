@@ -25,14 +25,15 @@
 #      ⇒ 每次发版**必须先升** hosts/memora-vscode/package.json 的 version。
 #      这是 tag↔version 闸之外的第二道硬约束：已发的 0.2.0 若再打一次 tag，
 #      门禁全绿、Release 也能挂，但 Open VSX 那步必红。
-#   ③ **VS Code Marketplace**——🔒 **定案：保持手动上传，CI 路线放弃**。
-#      ⚠️ 全局 PAT 于 **2026-12-01 退役**（仅剩约 6 周），搭 PAT 自动发布即搭即拆；
-#      稳的 Entra ID 路线需要 Azure 订阅 ⇒ 重新触发已撞过的「国外银行卡」拦路石；
-#      干净路线 `vsce publish --oidc` 尚未进稳定版且 Marketplace 侧无策略注册 UI，
-#      现不可用。手动上传已验证（0.1.0 上架），每版传一次 .vsix，成本可忽略 ⇒ 手动最优。
+#   ③ **VS Code Marketplace**——✅ 已接入 Trusted Publishing（OIDC 自动发布，2026-11-16）。
+#      后台策略 `host-release`（zooique / memora / host-release.yml）已建，状态 Active；
+#      本 workflow 末步 = `vsce publish --oidc -i <已打包vsix>`（发同一过闸产物，不重打包）。
+#      ⚠️ 原「定案：保持手动上传」（2026-10-23）依据是「--oidc 未进稳定版 + 无策略注册 UI」，
+#      该依据已失效（VS Code 1.144 起官方支持，vsce ≥4.0.2）⇒ 2026-11-16 改接 OIDC。
+#      ⚠️ 首跑未验证（截至 2026-11-16 无成功 run）；失败时手动上传 .vsix 兜底，两套互不冲突。
 #
-# ⚠️ 改名红线：Open VSX 的 Trusted Publishers 按 **workflow 文件名**匹配（按名字，非数字 ID）
-#   ⇒ 本文件 `host-release.yml` 一旦在 Open VSX 注册，**不得改名**（改名必须删掉注册重来）。
+# ⚠️ 改名红线：Open VSX 与 VS Marketplace 的 Trusted Publishing 均按 **workflow 文件名**匹配（按名字，非数字 ID）
+#   ⇒ 本文件 `host-release.yml` 一旦在任一市场注册，**不得改名**（改名必须删掉注册重来）。
 
 name: Host Release → GitHub Release
 
@@ -54,7 +55,7 @@ on:
 permissions:
   # contents: write —— 创建 Release 并上传 vsix asset 需要
   contents: write
-  # id-token: write —— 预留给 Open VSX Trusted Publishing（出口②开通后即生效，无需改权限）
+  # id-token: write —— Open VSX 与 VS Marketplace 两个 Trusted Publishing（出口②③）共用的 OIDC 申请权限
   id-token: write
 
 jobs:
@@ -193,7 +194,7 @@ jobs:
           {
             echo "> **随包内核代次 = \`@zooique/memora@${KERNEL}\`**（esbuild 内联 dist；内核自身变更见内核 CHANGELOG 区）。"
             echo "> 产物完整性：sha256 = \`${{ steps.artifact.outputs.sha256 }}\`（$(wc -c < "$FILE") 字节）。"
-            echo "> 安装：下载 .vsix 后 \`code --install-extension memora-vscode-${VER}.vsix\`；VS Code Marketplace 按定案保持手动上传，上架状态以市场为准。"
+            echo "> 安装：下载 .vsix 后 \`code --install-extension memora-vscode-${VER}.vsix\`；VS Code Marketplace 由本 workflow 自动发布（Trusted Publishing），上架状态以扩展页 Version History 为准。"
           } > "$NOTES"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG 已存在 → 覆盖上传同名 asset"
@@ -255,3 +256,25 @@ jobs:
           done
           echo "::error::Open VSX 上未见到 $VER（发布步未报错但市场未更新）——人工核对 https://open-vsx.org/extension/zooique/memora-vscode"
           exit 1
+
+      # ── 出口③：VS Code Marketplace（Trusted Publishing · OIDC 零密钥）──────────────
+      #
+      # 前置（2026-11-16 接入，均已完成）：
+      #   ① Marketplace 后台策略 `host-release` 已建（owner zooique / repo memora /
+      #     workflow host-release.yml，状态 Active，公有仓立即生效）；
+      #   ② 本 workflow permissions 已带 id-token: write（上方，与出口②共用）。
+      #
+      # ⚠️ 为什么 `--oidc -i <vsix>` 而不是裸 `publish --oidc`：与出口② ovsx 同理——
+      #   裸 publish 会用 vsce 在 CWD **重新打包再发布**（vsce 依赖遍历只支持 npm/yarn v1，
+      #   本仓库 pnpm 必踩），发出去的不是上面过了门禁、算了 sha256 的那个 vsix。
+      #   `-i/--packagePath` = 直接发已打包产物（vsce 4.x 参数，`publish --help` 实测在册）。
+      # ⚠️ 为什么锁 @vscode/vsce@4.1.1：与 ovsx@1.3.0 同纪律——发布链不被上游变更偷袭；
+      #   --oidc 需 vsce ≥4.0.2，宿主 devDependency ^3.9.2 不支持 ⇒ 只能走 npx 固定版本。
+      # ⚠️ 为什么 if: push：与出口②同理——workflow_dispatch 预演不得真发（版本号不可回收）。
+      # ⚠️ 首跑未验证（2026-11-16 接入，尚无成功 run）：失败先核后台策略三字段与本
+      #   workflow 文件名逐字匹配；兜底 = 手动上传同一 Release asset（两套互不冲突）。
+      - name: 发布到 VS Code Marketplace（Trusted Publishing · OIDC 零密钥）
+        if: github.event_name == 'push'
+        env:
+          VSIX: ${{ steps.artifact.outputs.file }}
+        run: npx --yes @vscode/vsce@4.1.1 publish --oidc -i "$VSIX"

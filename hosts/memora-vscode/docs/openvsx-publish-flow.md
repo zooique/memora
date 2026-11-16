@@ -228,23 +228,21 @@ CI 跑完门禁 → 自动出 vsix → 挂 GitHub Release → 发到 Open VSX �
 
 ## 八、当前状态与下一步
 
-- ✅ VS Code Marketplace：已上架（手动上传），publisher `zooique`；当前版本以扩展页 Version History 为准
+- ✅ VS Code Marketplace：已上架，publisher `zooique`（首发手动上传；2026-11-16 起改由 CI Trusted Publishing 自动发布）；当前版本以扩展页 Version History 为准
 - ✅ **Open VSX**：已上架（<https://open-vsx.org/extension/zooique/memora-vscode>，当前版本以该页为准）；
   namespace `zooique` **已 verified**、Trusted Publisher **已登记**、`host-release.yml`
   **已加发布步 + 回查步** ⇒ 打 `vscode@*` tag 即自动发布（自动链已实跑验证）。
   发版前建议顺序：先用 `workflow_dispatch` 空跑一次（门禁全跑，**不会发布**——发布步有 `if: push` 闸），
   确认 CI 冷环境无差异后再升 version 打 tag。
-- 🔒 **VS Marketplace 自动化：定案不做，保持手动上传**（2026-10-23 复核）。理由：
-  ① 干净路线 `vsce publish --oidc`（GitHub OIDC 直连 Marketplace、零密钥、免订阅）
-    尚未进 @vscode/vsce 稳定版，且 Marketplace 侧**没有策略注册 UI**
-    （`microsoft/vscode-vsce#976` 类问题）→ 现在不可用；
-  ② 稳路线 `vsce publish --azure-credential`（Entra 托管标识）需要 **Azure 订阅**
-    ⇒ 重新触发已撞过的「国外银行卡」拦路石，个人开发者负 ROI；
-  ③ 旧路线 `vsce publish -p $VSCE_PAT` 现在能用，但全局 PAT **2026-12-01 退役**
-    （仅剩约 6 周），搭了即拆。
-  手动上传已验证可用（0.1.0 上架），每版 marketplace.visualstudio.com/manage 传一次
-  .vsix，成本可忽略 ⇒ 手动为最优解。未来唯一可升级路径是 `--oidc` 路线，
-  待 Marketplace 开放策略注册 UI 后再评估（约 2026-12-01 前后回看）。
+- ✅ **VS Marketplace 自动化：已接入 Trusted Publishing（2026-11-16）**。后台策略 `host-release`
+  （zooique / memora / host-release.yml）已建且 Active；`host-release.yml` 末步
+  `npx @vscode/vsce@4.1.1 publish --oidc -i <同一过闸vsix>` 发同一产物（不重打包）。
+  ⚠️ 首跑未验证（截至 2026-11-16 无成功 run）；失败兜底 = 手动上传同一 Release asset。
+  原定案（2026-10-23「自动化不做，保持手动」）的核心依据「`--oidc` 未进稳定版 +
+  Marketplace 无策略注册 UI」**已失效**（VS Code 1.144 起官方支持，vsce ≥4.0.2，
+  manage 页有 Trusted Publishing UI）；Entra 需订阅 / 全局 PAT 2026-12-01 退役
+  两条仍在 ⇒ OIDC 是唯一在走的干净路线。手动上传已验证可用（0.1.0 上架），
+  保留为兜底，两套互不冲突。
 - ✅ GitHub Release 自动分发：已能用（打 `vscode@*` tag 即出包）
 
 > 相关：`.github/workflows/host-release.yml`（宿主发布链）、

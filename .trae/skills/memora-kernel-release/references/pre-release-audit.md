@@ -268,7 +268,7 @@ git rev-list --count ($prev + '..HEAD')      # 区间 commit 数（实测，禁�
 | 轴 | 产物与渠道 | 不可逆点 | 阻断最晚时点 |
 | --- | --- | --- | --- |
 | 内核 | tag `vX.Y.Z` → `release.yml` → npm tarball（staged publish + 本人 2FA） | 已 published 不可重发；已 staged 可 Reject 后重打同 tag | **tag 前**（tag 后到 staged 仍可 Reject，但成本已升高） |
-| 宿主 | tag `vscode@X.Y.Z` → `host-release.yml` → `.vsix`（GitHub Release asset）+ 自动发 Open VSX + Marketplace 手动上传同一 asset | 两个市场对已发布版本号均拒绝重发（Open VSX 永久保留）；tag 后**无 2FA 那种人工审批闸**，CI 绿灯即自动上架 | **必须 tag 前**——tag 后无人工拦截 |
+| 宿主 | tag `vscode@X.Y.Z` → `host-release.yml` → `.vsix`（GitHub Release asset）+ 自动发 Open VSX + 自动发 Marketplace（Trusted Publishing，2026-11-16 接入） | 两个市场对已发布版本号均拒绝重发（Open VSX 永久保留）；tag 后**无 2FA 那种人工审批闸**，CI 绿灯即自动上架 | **必须 tag 前**——tag 后无人工拦截 |
 
 ---
 
