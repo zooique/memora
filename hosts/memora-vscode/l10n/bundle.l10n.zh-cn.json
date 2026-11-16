@@ -1484,5 +1484,21 @@
   "Memora: the target session has no live instance to resume.": "Memora：目标会话没有可恢复的活实例。",
   "Memora: failed to resume the session.": "Memora：恢复会话失败。",
   "Failed to open the workbench: {0}": "打开工作台失败：{0}",
-  "A managed session has just settled. Read the settlement notice in context, then report to me: which session it was, how it ended (one sentence), and whether you suggest a next step or need my decision.": "有一条托管会话刚落定。请读上下文里的落定通知，然后向我汇报：是哪条会话、结果如何（一句话），以及你建议的下一步或需要我决定的事。"
+  "A managed session has just settled. Read the settlement notice in context, then report to me: which session it was, how it ended (one sentence), and whether you suggest a next step or need my decision.": "有一条托管会话刚落定。请读上下文里的落定通知，然后向我汇报：是哪条会话、结果如何（一句话），以及你建议的下一步或需要我决定的事。",
+  "Authorized": "已授权",
+  "Authorization denied": "授权被拒绝",
+  "The user approved running \"{0}\". Please continue the task with it.": "用户已批准运行「{0}」。请据此继续任务。",
+  "The user denied running \"{0}\". Do not retry it; use another approach or finish this step.": "用户拒绝运行「{0}」。不要重试；换一种方式或结束本步。",
+  "Assistant requests authorization": "助手请求授权",
+  "Deny": "拒绝",
+  "Allow": "允许",
+  "Answered, waiting for the next…": "已回答，等待下一个问题…",
+  "View progress": "查看运行情况",
+  "Hide progress": "收起运行情况",
+  "No round has started yet": "还没有开始任何一轮",
+  "The latest round could not be read": "无法读取末轮",
+  "Round {0} of {1} · {2}": "第 {0} 轮 / 共 {1} 轮 · {2}",
+  "For live step-by-step output, open the session": "如需实时逐步输出，请打开会话",
+  "Advancing…": "正在推进…",
+  "Awaiting your answer": "等待你的回答"
 }

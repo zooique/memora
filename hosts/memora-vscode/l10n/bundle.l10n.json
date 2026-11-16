@@ -1484,5 +1484,21 @@
   "Memora: the target session has no live instance to resume.": "",
   "Memora: failed to resume the session.": "",
   "Failed to open the workbench: {0}": "",
-  "A managed session has just settled. Read the settlement notice in context, then report to me: which session it was, how it ended (one sentence), and whether you suggest a next step or need my decision.": ""
+  "A managed session has just settled. Read the settlement notice in context, then report to me: which session it was, how it ended (one sentence), and whether you suggest a next step or need my decision.": "",
+  "Authorized": "Authorized",
+  "Authorization denied": "Authorization denied",
+  "The user approved running \"{0}\". Please continue the task with it.": "The user approved running \"{0}\". Please continue the task with it.",
+  "The user denied running \"{0}\". Do not retry it; use another approach or finish this step.": "The user denied running \"{0}\". Do not retry it; use another approach or finish this step.",
+  "Assistant requests authorization": "Assistant requests authorization",
+  "Deny": "Deny",
+  "Allow": "Allow",
+  "Answered, waiting for the next…": "Answered, waiting for the next…",
+  "View progress": "View progress",
+  "Hide progress": "Hide progress",
+  "No round has started yet": "No round has started yet",
+  "The latest round could not be read": "The latest round could not be read",
+  "Round {0} of {1} · {2}": "Round {0} of {1} · {2}",
+  "For live step-by-step output, open the session": "For live step-by-step output, open the session",
+  "Advancing…": "Advancing…",
+  "Awaiting your answer": "Awaiting your answer"
 }

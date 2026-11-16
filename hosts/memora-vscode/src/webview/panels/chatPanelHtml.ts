@@ -41,6 +41,9 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string, form: UiForm
        自助形态零占位（默认 display:none），显隐规则全在 chatStyles 助手形态段。 -->
   <div id="assistantModeBar" class="assistant-mode-bar">
     <span class="assistant-mode-bar__tag"><span class="assistant-mode-bar__dot" aria-hidden="true"></span>${vscode.l10n.t('Assistant mode')}</span>
+    <!-- 顶部运行状态签（微信「正在输入…」的对应物）：文案由 hostedStatusView 域写入；
+         首帧无会话在跑 ⇒ hidden，等 turn_update / 过程事件到达才显形。自助形态整条身份条隐藏。 -->
+    <span id="assistantState" class="assistant-mode-bar__state" hidden></span>
     <button id="assistantWorkbenchBtn" class="assistant-mode-bar__link" type="button">${vscode.l10n.t('Workbench')}</button>
   </div>
 

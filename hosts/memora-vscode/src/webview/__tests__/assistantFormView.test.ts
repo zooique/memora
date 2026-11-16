@@ -137,6 +137,27 @@ describe('助手形态输入区（ASSISTANT-FORM）', () => {
     expect(send.classList.contains('loading')).toBe(true);
     expect(send.title).toContain('Stop');
   });
+
+  it('顶部状态签：助手座位运行中显形、切回自助清空（微信「正在输入…」对应物）', () => {
+    mountChatView();
+    const state = document.getElementById('assistantState') as HTMLElement;
+    // 首帧无轮在跑：清空不占位
+    expect(state.hidden).toBe(true);
+    expect(state.textContent).toBe('');
+
+    dispatch({ type: 'ui_form', form: 'assistant' });
+    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' } });
+    expect(state.hidden).toBe(false);
+    expect(state.textContent).toBe('Advancing…');
+
+    // 收场清空；切回自助再无托管状态残留
+    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'settled' } });
+    expect(state.hidden).toBe(true);
+    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' } });
+    dispatch({ type: 'ui_form', form: 'self' });
+    expect(state.hidden).toBe(true);
+    expect(state.textContent).toBe('');
+  });
 });
 
 describe('助手形态样式作用域守卫（漏前缀 = 漏到自助形态）', () => {
@@ -177,5 +198,26 @@ describe('助手形态样式作用域守卫（漏前缀 = 漏到自助形态）'
     expect(offenders).toEqual([]);
     // 基线必须存在且仅两条：改成三条说明有人在别处又开了无前缀口子
     expect(baselineCount).toBe(2);
+  });
+
+  it('消息流微信化：气泡面 + 过程隐藏 + 顶部状态签（源码级防回退）', () => {
+    const html = readFileSync(join(__dirname, '..', 'panels', 'chatPanelHtml.ts'), 'utf8');
+    // 状态节点必须在顶部身份条内（早于标题条），否则「顶部显示状态」无处落地
+    expect(html).toContain('id="assistantState"');
+    expect(html.indexOf('id="assistantState"')).toBeLessThan(html.indexOf('id="sessionTitleBar"'));
+
+    const hiddenRules = [...css.matchAll(/body\[data-form='assistant'\][^{}]*\{[^}]*display:\s*none/g)].map(
+      (m) => m[0] as string,
+    );
+    // 过程隐藏面：身份标签 / 运行块 / 过程流三类同条规则收起
+    const processRule = hiddenRules.find(
+      (r) => r.includes('.msg-ai-label') && r.includes('.round-block') && r.includes('.process-flow'),
+    );
+    expect(processRule).toBeDefined();
+    // 交互卡不是「运行过程」：提问卡不得被助手作用域隐藏（确认/授权在 dock 层另管）
+    expect(css).not.toMatch(/body\[data-form='assistant'\][^{}]*\.ask-inline[^{}]*\{[^}]*display:\s*none/);
+    // 气泡面：AI 回复在助手作用域内改左侧气泡并给背景
+    expect(css).toMatch(/body\[data-form='assistant'\] \.msg\.assistant\s*\{[^}]*align-self:\s*flex-start/);
+    expect(css).toMatch(/body\[data-form='assistant'\] \.msg\.assistant\s*\{[^}]*background:\s*var\(--surface-card\)/);
   });
 });

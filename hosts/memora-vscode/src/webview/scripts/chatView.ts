@@ -120,6 +120,7 @@ import { createPickerView } from './pickerView.js';
 import { createSkillPickerView } from './skillPickerView.js';
 import { createQaRowView } from './qaRowView.js';
 import { createEmptyStateView } from './emptyStateView.js';
+import { createHostedStatusView } from './hostedStatusView.js';
 import {
   createRoleBadgeView,
   roleBadgeAria,
@@ -1101,6 +1102,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 不物理搬运，仅删平铺容器，避免重复 DOM 与「折也不重插」的搬运成本）。
    */
   function renderProcessFlow(events: ProcessEvent[]): void {
+    // 顶部状态与过程相位同源同拍：过程一到就重算，避免消息区已「推进」而顶栏仍「思考」
+    hostedStatusView.refresh();
     const flow = ensureProcessFlow();
     if (!flow) return;
     // 1) 轻量状态行：单条，优先级 = 进行中工具（「正在执行：xxx」行动叙述）> 最新 thinking 相位；
@@ -1376,6 +1379,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    */
   let skeletonState: SkeletonState = { phase: 'idle' };
 
+  // 顶部运行状态签（托管会话微信化）：读同一份骨架状态 + 本轮过程事件，写身份条状态位。
+  // 三处刷新：骨架状态单写点 / 过程事件渲染 / 形态切换——任何一处漏掉都会留下过期文案。
+  const hostedStatusView = createHostedStatusView({
+    node: document.getElementById('assistantState') as HTMLElement,
+    getForm: () => (document.body.dataset.form === 'assistant' ? 'assistant' : 'self'),
+    getState: () => skeletonState,
+    getEvents: () => currentEvents,
+  });
+
   /**
    * 骨架状态单写点：更新容器 → 重算按钮语义 → 施加导航可用态。
    * `send.disabled`（syncSendEnabled）与结构锁（updateSessionControlsLock）仍由调用方按各自
@@ -1393,6 +1405,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 重建后 replayed turn_update 也经本函数 → 折叠/展开恢复时不会残留禁用态。
     newSessionBtn.disabled = false;
     historyBtn.disabled = false;
+    hostedStatusView.refresh();
   }
 
   /**
@@ -3748,6 +3761,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 按钮语义随形态重算：切到助手去掉停止态（微信心智，发送了就脱手）；
     // 切回自助恢复运行时控制（停止/暂停矩阵）
     syncButtonSemantics();
+    // 顶部状态签随形态收放：切回自助不显示托管状态，切回助手按当前骨架重算
+    hostedStatusView.refresh();
   }
 
   // textarea 自适应高度（Enter 发送 / Shift+Enter 换行）

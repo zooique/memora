@@ -19,6 +19,7 @@ const HTML = `
        显隐走 CSS）；#assistantWorkbenchBtn 是工作台的唯一侧栏入口 -->
   <div id="assistantModeBar" class="assistant-mode-bar">
     <span class="assistant-mode-bar__tag"><span class="assistant-mode-bar__dot" aria-hidden="true"></span>Assistant mode</span>
+    <span id="assistantState" class="assistant-mode-bar__state" hidden></span>
     <button id="assistantWorkbenchBtn" class="assistant-mode-bar__link" type="button">Workbench</button>
   </div>
   <div id="sessionTitleBar" class="session-title-bar">

@@ -1755,6 +1755,30 @@ export const chatStyles = `
    * （角色/能力徽章是自助会话语义，助手座位无角色）。占用圆环跟模型配套，保留。 */
   body[data-form='assistant'] #pauseBtn,
   body[data-form='assistant'] .composer-status { display: none !important; }
+  /* 托管会话 = 微信气泡流（2026-11-16 用户拍板）：消息区只留两类气泡与顶部状态。
+   * 运行过程不在链路上露面——工具折叠行、相位行、叙述行、正文尾状态字一并收起；
+   * 交互卡（提问 .ask-inline / 写确认 / 授权）是独立 DOM，不受本段影响。
+   * 显隐仍走 CSS 随 body[data-form] 同帧生效（首帧纪律，不回退到 hidden 翻转）。 */
+  body[data-form='assistant'] .msg-ai-label,
+  body[data-form='assistant'] .round-block,
+  body[data-form='assistant'] .process-flow,
+  body[data-form='assistant'] .msg-body[data-status]::after,
+  body[data-form='assistant'] .msg-body[data-terminus]::after { display: none !important; }
+  /* AI 回复改左侧气泡：与 .msg.user 的右侧气泡对称，正文排版唯一来源不变。
+   * 身份标签已收起（顶部身份条承载「是谁」），气泡内只留正文。 */
+  body[data-form='assistant'] .msg.assistant {
+    align-self: flex-start;
+    max-width: 85%;
+    background: var(--surface-card);
+    color: var(--text-primary);
+    padding: var(--sp-3, 8px) var(--sp-5, 12px);
+    border-radius: var(--radius-lg, 8px) var(--radius-lg, 8px) var(--radius-lg, 8px) var(--radius-sm, 2px);
+  }
+  /* 顶部状态签：微信「正在输入…」的对应物，文案由 hostedStatusView 域写入 */
+  body[data-form='assistant'] .assistant-mode-bar__state {
+    color: var(--text-secondary);
+    font-style: italic;
+  }
   /* 输入区布局：左侧功能群 + 右侧发送按钮 + 状态行
    * 对齐 visual-design-philosopher：发送按钮突出化（最大最亮），其他功能弱化。 */
   #inputFooter {
