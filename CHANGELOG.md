@@ -8,9 +8,9 @@
 >
 > 本文件 2026-10-19 起按 `CHLOG-TRIM-1` 精简：只记「改了什么 + 为什么 + 对消费者的影响」；逐批拍板过程、变异验证收据、台账叙事的 SSOT 在仓库台账 `tasks/待完成任务.md` 对应 ID 条目（npm 包不含），此处只留 ID 锚保交叉引用。
 
-## [7.3.0] · 2026-11-14
+## [7.3.0] · 2026-11-16
 
-> 收 **7.2.0（2026-11-12）之后**的内核变更。本版集中扩张「会话与轮次来源」的数据层：`Round.origin` / `SessionMeta.origin`（输入来源，二值、可选、零迁移）、`Round.dispatchedBy`（派发归属）、`SessionMeta.declaredPaths`（开活范围声明），并让 `Agent.chat()` 与 `forkSession()` 把来源透传到落盘与视图投影。本片只打通数据层，界面渲染属后续版本。
+> 收 **7.2.0（2026-11-12）之后**的内核变更。本版集中扩张「会话与轮次来源」的数据层：`Round.origin` / `SessionMeta.origin`（输入来源，二值、可选、零迁移）、`Round.dispatchedBy`（派发归属）、`SessionMeta.declaredPaths`（开活范围声明），并让 `Agent.chat()` 与 `forkSession()` 把来源透传到落盘与视图投影。另开放 `SkillManager` 导出，供宿主在无会话实例时编目技能池。本片只打通数据层，界面渲染属后续版本。
 
 ### Added（内核）
 
@@ -18,6 +18,7 @@
 - **`metrics.plan` 新增 `taskTableUpdateCount`**（`5da524cf` · **消费者可感知 · 观测面扩张**）：plan 指标此前只有建表次数（`taskTableWriteCount`），`task_table_update` 的触发率只能人工核对，「建了表却从不推进」判不出来。现按工具名分列累加，一次 update 不虚增 write；不改事件流、不改工具契约，宿主侧零消费方。**对消费者**：`agent.getMetrics().plan` 多出 `taskTableUpdateCount`，既有字段值与含义不变。
 - **`Round.dispatchedBy` 记录派发归属**（`15d81031` · **消费者可感知 · 数据模型扩张**）：「这一轮是助手从哪条会话、以什么动作送进来的」此前只在宿主内存，重启即丢、无法反查。现 `Round.dispatchedBy` 记 `{ from, via }`：`from` = 创建者会话 id（不是本轮所属的目标会话），`via` = `'delegate'`（派发到已有会话）/ `'create'`（助手新建会话后的首轮）；`appendUser` 新增可选入参透传。只记**真的落了轮**的动作——被拒 / 超时 / 目标不存在在走到建轮前就结束，天然不写本字段。**对消费者**：可选字段，历史轮没有它，`undefined` 本身就是「不知道创建者」的事实（回填等于伪造）；不读该字段的既有调用行为逐字不变。
 - **`SessionMeta.declaredPaths` 记录开活范围声明**（`aeef2c61` · **消费者可感知 · 数据模型扩张**）：托管开活时声明「这条活动哪块路径」，供范围门禁判重叠。声明存会话元数据（创建时与标题同批写入），读侧直接读元数据、**不反推历史轮次**（历史有 60 轮上限，窗口一满声明就查不到）。已规范化（统一 `/`、小写；`''` = 整仓）。**对消费者**：可选字段；`forkSession` 不复制（分叉是另一条活，范围须重声明）；老会话读不到 ⇒ 按「没有声明」如实降级，不猜范围；**记录不是权限**，不表达父子关系。
+- **导出 `SkillManager` 供宿主「无 Agent 的配置面编目」**（`8be558a6` · **消费者可感知 · 公开面扩张**）：先例同 `RolePackManager`——装配期由 `Agent` 内部构造，而宿主在**没有会话实例**时（启动落在草稿页）仍需独立扫描 `<configDir>/skills` 做技能清单投影。仅新增导出一项，不新增方法、不改既有签名。**对消费者**：可用 `new SkillManager(configDir)` 只读扫描技能池，需自行按装配期顺序 `load()` → 设禁用集 → `loadExtraDir(...)`（顺序错则同名覆盖方向与装配结果不一致）。
 
 ### Changed（内核）
 
@@ -29,12 +30,6 @@
 - **日志脱敏递归覆盖数组**（`78f7e37c` · **消费者可感知 · 安全面**）：`redactSensitiveKeys` 此前遇到数组直接透传，`logger.info({ args: [{ apiKey: 'sk-xxx' }] })` 里的敏感键会原样进日志。现按元素递归脱敏且保持数组形态（不重建为 `{0:…}`）。**对消费者**：数组载荷里的 `apiKey` / `token` 等同样显示为 `[REDACTED]`；对象分支与非敏感值不变。
 - **DDG 跳转链接剥前缀兼容绝对地址**（`560210df` · **消费者可感知**）：DuckDuckGo 返回 `https://duckduckgo.com/l/?uddg=…` 时，旧正则只剥协议相对形式，残留的 `https:` 会拼出 `https:https://…` 畸形 URL。现兼容协议相对 / `https://` / `http://` 三种前缀。**对消费者**：绝对地址形态的搜索结果能正常打开，不再产出畸形链接。
 - **POSIX 上 `kill ESRCH` 归为「根已先行退出」，中断不再误报终止失败**（`90806c85` · `22759bd8` · `920f9498` · **消费者可感知**）：POSIX 杀进程树时，目标若在终止指令到达前自行退出，`kill(-pid)` 抛 ESRCH，旧实现一律记 `error`，与 Windows `taskkill 128` 归 `alreadyExited` 的语义不对称。现 ESRCH → `{ ok: false, alreadyExited: true }`；中断回调按 `alreadyExited` 分档，已确认根先行退出走 INFO，其余（如 EPERM、目标可能仍存活）仍 WARN。同一处改动的余波：ESRCH 判成「已先行退出」后 `terminationError` 不再留空，补一句原因句（与 Windows `taskkill 128` 同构），避免消费端用 `error ?? '进程树终止未确认'` 把「已先行退出」写成「未确认」、并让 `formatExecutionResult` 拼出重复病句；「已先行退出 ≠ 进程树已清空」的语义边界不变。**对消费者**：`ProcessTreeKillResult.alreadyExited` 在 POSIX 上不再误报；正常竞态不再打「终止失败」WARN，失败结果也总带可读原因。
-
-## [Unreleased] · 内核
-
-### Added（内核）
-
-- **导出 `SkillManager` 供宿主「无 Agent 的配置面编目」**（**消费者可感知 · 公开面扩张**）：先例同 `RolePackManager`——装配期由 `Agent` 内部构造，而宿主在**没有会话实例**时（启动落在草稿页）仍需独立扫描 `<configDir>/skills` 做技能清单投影。仅新增导出一项，不新增方法、不改既有签名。**对消费者**：可用 `new SkillManager(configDir)` 只读扫描技能池，需自行按装配期顺序 `load()` → 设禁用集 → `loadExtraDir(...)`（顺序错则同名覆盖方向与装配结果不一致）。
 
 ## [Unreleased] · 宿主
 
