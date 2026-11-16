@@ -351,3 +351,57 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
     }
   });
 });
+
+describe('deriveButtonSemantics · 助手座位（微信心智，发送了就脱手）', () => {
+  /** 全状态枚举（含 pausePending 变体，锁「助手座位无运行时」的全格不变量） */
+  const ALL_STATES: SkeletonState[] = [
+    { phase: 'idle' },
+    { phase: 'running' },
+    { phase: 'waiting', reason: 'pause' },
+    { phase: 'waiting', reason: 'pause', pausePending: true },
+    { phase: 'waiting', reason: 'ask' },
+    { phase: 'settled' },
+  ];
+
+  it('不变量：助手座位 send.loading 恒 false（永不进停止态）且 pause 恒 null', () => {
+    for (const state of ALL_STATES) {
+      const spec = deriveButtonSemantics({ state, hasInput: false, form: 'assistant' });
+      expect(spec.send.loading).toBe(false);
+      expect(spec.pause).toBeNull();
+    }
+  });
+
+  it('thinking + 有输入：发送补充（排队到 step 边界）——连发走 interjection 排队', () => {
+    const spec = deriveButtonSemantics({
+      state: { phase: 'running' },
+      hasInput: true,
+      form: 'assistant',
+    });
+    expect(spec.send).toEqual({
+      loading: false,
+      title: 'Send follow-up (queued until step boundary)',
+      ariaLabel: 'Send follow-up',
+      disabled: false,
+    });
+  });
+
+  it('thinking + 空输入：禁用的发送键（微信空消息不可发），不是停止■', () => {
+    const spec = deriveButtonSemantics({
+      state: { phase: 'running' },
+      hasInput: false,
+      form: 'assistant',
+    });
+    expect(spec.send).toEqual({
+      loading: false,
+      title: 'Send (Enter)',
+      ariaLabel: 'Send',
+      disabled: true,
+    });
+  });
+
+  it('缺省 form = 自助矩阵原样（thinking + 空输入仍是停止■，回归对照）', () => {
+    const spec = deriveButtonSemantics({ state: { phase: 'running' }, hasInput: false });
+    expect(spec.send.loading).toBe(true);
+    expect(spec.send.title).toBe('Stop generating');
+  });
+});

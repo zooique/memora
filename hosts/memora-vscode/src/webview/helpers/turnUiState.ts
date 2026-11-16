@@ -11,7 +11,7 @@
  */
 
 // TurnState 纯类型导入（仅编译期用，esbuild 剥离，不影响 browser bundle）
-import type { TurnState } from '../../shared/protocol.js';
+import type { TurnState, UiForm } from '../../shared/protocol.js';
 // webview 侧本地化器（namespace 导入是守卫 ⑯ 的形态要求）
 import * as l10n from '@vscode/l10n';
 
@@ -104,6 +104,10 @@ export interface ButtonSemanticsInput {
   state: SkeletonState;
   /** 输入框是否有非空内容（决定发送按钮是「停止」还是「补充/发送」） */
   hasInput: boolean;
+  /** 面板形态（缺省 `'self'`）：助手座位 = 微信心智模型——发送了就脱手，**没有运行时**。
+   *  发送键恒为发送语义（空输入禁用、有输入排队），暂停键恒无职责；连发走 interjection
+   *  排队（链路两形态共用）。自助保持原矩阵（运行时控制是自助会话的既有能力）。 */
+  form?: UiForm;
 }
 
 /**
@@ -139,8 +143,25 @@ export interface ButtonSemantics {
  */
 export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemantics {
   const { state, hasInput } = input;
+  const form: UiForm = input.form ?? 'self';
   const sessionUiState = deriveSessionUiState(state);
   const pausePending = derivePausePending(state);
+
+  // 助手座位 = 微信心智模型（2026-11-16 用户拍板）：发送了就脱手，没有运行时。
+  // 发送键恒为发送语义——空输入禁用（微信空消息不可发），有输入 = 排队（interjection
+  // 链路两形态共用，thinking 态走「Send follow-up (queued)」路径）；暂停键恒无职责。
+  // 挂起态在助手座位理论不可达（无 pause 入口），真出现也按发送语义兜底、不宣告硬停止。
+  if (form === 'assistant') {
+    return {
+      pause: null,
+      send: {
+        loading: false,
+        title: hasInput ? l10n.t('Send follow-up (queued until step boundary)') : l10n.t('Send (Enter)'),
+        ariaLabel: hasInput ? l10n.t('Send follow-up') : l10n.t('Send'),
+        disabled: !hasInput,
+      },
+    };
+  }
 
   if (sessionUiState === 'thinking') {
     return {

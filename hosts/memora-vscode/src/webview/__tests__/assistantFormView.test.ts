@@ -123,6 +123,20 @@ describe('助手形态输入区（ASSISTANT-FORM）', () => {
     // 右对齐补偿已退役：左块恢复 ⇒ composer-row--main 回两端分布（不得再有 flex-end 覆盖）
     expect(css).not.toMatch(/body\[data-form='assistant'\][^{}]*\.composer-row--main[^{}]*flex-end/);
   });
+
+  it('助手形态生成中发送键恒为发送态（脱手模型，无停止■）', () => {
+    mountChatView();
+    dispatch({ type: 'ui_form', form: 'assistant' });
+    // 生成中（running）+ 空输入：按钮禁用但仍是发送语义，不得变成停止方块
+    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' } });
+    const send = document.getElementById('send') as HTMLButtonElement;
+    expect(send.classList.contains('loading')).toBe(false);
+    expect(send.title).toContain('Send');
+    // 切回自助：同一运行态下恢复停止语义（形态进矩阵，切换重算）
+    dispatch({ type: 'ui_form', form: 'self' });
+    expect(send.classList.contains('loading')).toBe(true);
+    expect(send.title).toContain('Stop');
+  });
 });
 
 describe('助手形态样式作用域守卫（漏前缀 = 漏到自助形态）', () => {

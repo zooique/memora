@@ -1415,6 +1415,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return deriveButtonSemantics({
       state: skeletonState,
       hasInput: input.value.trim().length > 0,
+      // 形态进矩阵：助手座位无运行时（发送了就脱手），发送键恒发送语义
+      form: document.body.dataset.form === 'assistant' ? 'assistant' : 'self',
     });
   }
 
@@ -3743,6 +3745,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     emptyStateView.updateRole(currentRoleName, currentRolePacks);
     emptyStateView.update();
+    // 按钮语义随形态重算：切到助手去掉停止态（微信心智，发送了就脱手）；
+    // 切回自助恢复运行时控制（停止/暂停矩阵）
+    syncButtonSemantics();
   }
 
   // textarea 自适应高度（Enter 发送 / Shift+Enter 换行）
