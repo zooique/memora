@@ -147,6 +147,9 @@ import { createPendingWaitView } from './pendingWaitView.js';
 import { createAskInlineView } from './askInlineView.js';
 // 确认审批卡：内容填充 / 末段倒计时 / 按钮裁决收口于 writeConfirmCardView（C-3 域外置）
 import { createWriteConfirmCardView } from './writeConfirmCardView.js';
+// 授权请求卡（HOSTED-CONFIRM-AUTH-1）：命令原文渲染 / 允许拒绝裁决收口于 authRequestCardView
+// （与确认卡同 Dock 体系但条目独立：无超时 / 按命令原文 / 归属托管座位）
+import { createAuthRequestCardView } from './authRequestCardView.js';
 
 /** chatView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface ChatViewDeps {
@@ -1471,6 +1474,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // （方案 §九 A2）。
   const DOCK_PRIORITY = {
     confirm: 10,
+    // 授权卡（HOSTED-CONFIRM-AUTH-1）：低于 confirm——两类卡同场时内核确认恒主位
+    //（确认卡被收纳 = 超时自动拒，代价不对称；授权卡无超时，被收纳可从图标条点开），
+    // 高于 fileChanges——授权请求等的是用户拍板，优先于常规状态条
+    auth: 9,
     fileChanges: 3,
     pendingQueue: 2,
     activity: 1,
@@ -1547,6 +1554,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     setDockActive: (active) => setDockActive('confirm', active),
     postAnswer: (requestId, approved) => {
       vscode.postMessage({ type: 'write_confirm_answer', requestId, approved });
+    },
+  });
+  // 授权请求卡（HOSTED-CONFIRM-AUTH-1）：与确认卡同 Dock 体系、独立条目。
+  // 优先级 auth(9) < confirm(10)——内核确认在场时授权卡被收纳（图标条可点开）。
+  const authRequestView = createAuthRequestCardView({
+    document,
+    registerDockEntry: (el) => registerDockEntry('auth', el),
+    setDockActive: (active) => setDockActive('auth', active),
+    postAnswer: (requestId, approved) => {
+      vscode.postMessage({ type: 'auth_answer', requestId, approved });
     },
   });
 
@@ -3647,6 +3664,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'write_confirm_closed') {
       // 请求已终结（裁决 / 超时自动拒绝）→ 收卡；requestId 不匹配即丢弃（当前卡可能已切到更新的请求）
       writeConfirmView.closeIfMatches(msg.requestId);
+    } else if (msg.type === 'auth_request') {
+      // 授权请求卡（HOSTED-CONFIRM-AUTH-1）：always-ask 命令的「问一句再执行」——
+      // 渲染命令原文 + 来源会话，允许/拒绝回传 auth_answer；多请求由宿主 FIFO 串行送审
+      authRequestView.render(msg);
+    } else if (msg.type === 'auth_closed') {
+      // 授权请求已终结（裁决 / 会话删除兜底 / 新请求顶替）→ 收卡；requestId 不匹配即丢弃
+      authRequestView.closeIfMatches(msg.requestId);
     } else if (msg.type === 'ui_form') {
       // 侧栏形态（宿主是真源）：只落表现。宿主在 ready 时必推一次 ⇒ 视图重建后形态不会丢。
       applyForm(msg.form);

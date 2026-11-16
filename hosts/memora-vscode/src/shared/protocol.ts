@@ -824,6 +824,15 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'write_confirm_answer'; approved: boolean; requestId: string }
   /**
+   * 授权应答（W→E · 对 auth_request 的应答 · HOSTED-CONFIRM-AUTH-1）
+   *
+   * 用户在托管座位时间线的授权卡上点「允许 / 拒绝」后回传。允许 = 宿主写授权条目
+   * （绑定工作会话 + 命令原文，TTL 内同命令重试放行）并叫醒代理继续；拒绝 = 只通知
+   * 代理改道，不写条目。宿主按 requestId 反查请求条目：查无 / 已终结一律静默丢弃
+   * （与 write_confirm_answer 的迟到回执同纪律）。
+   */
+  | { type: 'auth_answer'; requestId: string; approved: boolean }
+  /**
    * 设置白名单额外允许路径（allowed_paths_set 消息处理）
    *
    * 由设置面板「允许路径白名单」增删后整体下发：host 持久化到**用户级**设置
@@ -1903,6 +1912,43 @@ export type ExtensionToWebviewMessage =
    * —— 属「终态仍可交互」的僵尸交互，项目纪律不留（对照后台任务行终态去掉「终止」按钮）。
    */
   | { type: 'write_confirm_closed'; requestId: string }
+  /**
+   * 授权请求（E→W · 异步授权流 · HOSTED-CONFIRM-AUTH-1）
+   *
+   * 托管会话（代理驱动）撞上 `always-ask` 档命令（如 `git push` / `npm publish`）且**无有效
+   * 授权**时，宿主不代批、不弹内核确认卡，而是把命令**转述成一条授权请求**推到托管座位
+   * 时间线，同时内核收到 `deferred`（待授权）——该轮工具结果落 `blocked(auth_required)`，
+   * 代理那一轮正常落定并向用户解释。用户点「允许」后宿主写授权条目并叫醒代理重试；
+   * 重试同一命令时经授权条目放行（走既有代批链路，决策留痕同源）。
+   *
+   * 与 `write_confirm_request` 的三重分野（禁合并）：
+   *   ① 载荷是**命令原文**（`command`），不是文件路径 + diff——授权的是「执行这条命令」；
+   *   ② 无 `timeoutMs`——授权请求**不设超时**（内核 deferred 不挂起等待，没有超时额度
+   *      可烧；条目生命周期 = TTL + 会话删除清理，见 confirmAuthFlow）；
+   *   ③ 归属是**托管座位**的时间线（用户在那里拍板），不是命令所属的工作会话——
+   *      与确认卡「归属会话」的寻址规则刻意不同。
+   *
+   * `sessionLabel` = 命令所属**工作会话**的展示名（卡片上回答「是哪条活要推」）。
+   */
+  | {
+      type: 'auth_request';
+      /** 请求身份（宿主单点生成；answer 回传与 auth_closed 都按它对齐） */
+      requestId: string;
+      /** 待授权命令**原文**（授权条目按原文绑定：改一个字符 = 新授权请求） */
+      command: string;
+      /** 工具名（run_command / run_code / run_project_script / run_skill_script），展示用 */
+      tool: string;
+      /** 命令所属工作会话的展示名（卡片标注「哪条活」；取不到时退回会话 id） */
+      sessionLabel: string;
+    }
+  /**
+   * 授权终结通知（E→W：请求已被裁决或失效，webview 必须收起授权卡）
+   *
+   * 来源三种：用户点了允许/拒绝（answer 收到）；宿主侧条目被会话删除清理兜底终结；
+   * 同会话同命令的**新**授权请求顶替旧条目（幂等收敛）。不推这条 = 卡片残留僵尸交互
+   * （与 write_confirm_closed 同一条纪律）。`outcome` 供 webview 等待态提示裁决方向。
+   */
+  | { type: 'auth_closed'; requestId: string; outcome: 'granted' | 'denied' | 'void' }
   /**
    * 安全设置状态推送（设置面板加载 / 开关切换后）
    *

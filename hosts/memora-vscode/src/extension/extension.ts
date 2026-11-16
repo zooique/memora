@@ -25,6 +25,8 @@ import { resolveProjectDataDir } from './host/projectDataDir.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
 import { SessionModeStore } from './host/sessionModeStore.js';
 import { readSessionRolePackName } from './host/sessionRolePack.js';
+// 托管发送者名（单一真源下沉 host 层：授权叫醒与装配共用，见 hostedSenderName.ts）
+import { HOSTED_SENDER_NAME } from './host/hostedSenderName.js';
 // 会话标题口径（与历史列表 / 标题条同一回落链：工作台不另写一套）
 import { sessionDisplayTitle } from './host/sessionTitle.js';
 import {
@@ -272,10 +274,10 @@ interface AssemblyDeps {
 /**
  * 托管输入的发送者名（v0 唯一注入点）
  *
- * 当前没有「助手名」用户配置；先集中在此常量，接入配置后只改这一处。
- * `send_to_session` 的 handler 不得再写字面量（否则就是第二份真源）。
+ * 已下沉到 `host/hostedSenderName.ts`（HOSTED-CONFIRM-AUTH-1）：授权流叫醒代理
+ * （chatPanel 侧 confirmAuthFlow）共用同一个名字，而 chatPanel 不得反向 import 本文件
+ * （循环依赖）⇒ 常量移到 host 层无依赖文件，本处只 import。
  */
-const HOSTED_SENDER_NAME = 'Memora';
 
 /**
  * 唯一的装配选项构建点

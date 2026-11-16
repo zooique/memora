@@ -710,6 +710,58 @@ export const chatStyles = `
   .write-confirm-card__hint {
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
   }
+  /* ── 授权请求卡（HOSTED-CONFIRM-AUTH-1）──
+   * 视觉语言与 write-confirm-card 同族（同一 Dock 体系的 A 类面板），但类名独立——
+   * 两条判据流（授权无超时 / 按命令原文 / 归属托管座位 vs 确认有超时 / 路径+diff /
+   * 归属请求会话），样式合并会让后续按流调优时互相牵制。token 全复用，不新增色板。 */
+  .auth-request-card {
+    margin: 0 0 var(--sp-3, 8px);
+    padding: var(--sp-5, 12px);
+    min-height: var(--input-wrap-min-h, 128px);
+    box-sizing: border-box;
+    background: var(--surface-input, #3c3c3c);
+    border: var(--line-input);
+    border-radius: var(--radius-xl, 14px);
+    box-shadow: var(--shadow-card, 0 2px 8px rgba(0,0,0,.15));
+    /* 命令原文可为多行脚本：上限取半屏，超限卡内滚（与确认卡同口径） */
+    max-height: min(50vh, var(--dim-2xl));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .auth-request-card__body { display: flex; flex-direction: column; gap: var(--sp-2, 6px); min-width: 0; }
+  .auth-request-card__head { display: flex; align-items: baseline; gap: var(--sp-2, 6px); min-width: 0; }
+  .auth-request-card__title {
+    flex-shrink: 0; font-size: var(--font-sm, 11px); font-weight: 600;
+    color: var(--text-primary, #cccccc);
+  }
+  .auth-request-card__session {
+    flex: 1 1 auto; min-width: 0; text-align: right;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
+    unicode-bidi: plaintext;
+  }
+  .auth-request-card__command {
+    margin: 0; padding: var(--sp-3, 8px);
+    white-space: pre-wrap; word-break: break-all;
+    background: var(--surface-input, #3c3c3c);
+    color: var(--text-primary, #cccccc);
+    border: var(--line-input);
+    border-radius: var(--radius, 6px);
+    font-size: var(--font-md, 12px);
+    max-height: var(--dim-lg); overflow-y: auto;
+  }
+  .auth-request-card__hint { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
+  .auth-request-card__actions { display: flex; gap: var(--sp-3, 8px); justify-content: flex-end; }
+  .auth-request-card__btn--ok, .auth-request-card__btn--reject {
+    font-size: var(--font-md, 12px);
+    border: none; border-radius: var(--radius-sm, 2px);
+    padding: var(--sp-1, 4px) var(--sp-5, 12px); cursor: pointer;
+  }
+  .auth-request-card__btn--ok { background: var(--status-pass, #4ec9b0); color: var(--accent-foreground, #fff); }
+  .auth-request-card__btn--reject { background: var(--surface-input, #3c3c3c); color: var(--text-primary, #cccccc); }
+  /* 等待态：与确认卡同款（disabled + 降透明度；[hidden] 由 tokens.ts 全局兜底） */
+  .auth-request-card[data-pending='true'] { opacity: var(--op-5); }
+  .auth-request-card__btn[disabled] { cursor: default; opacity: var(--op-5); }
   /* 运行时输入条目行：question-answer / supplement / timeout 统一形态，
    * 对齐 thought/tool 过程行视觉（左缘 + 圆角 + 弱化字色）；非折叠块——内容恒可见，来源以 tag
    * 区分（「你答 / 你补充 / 未回答」）。 */

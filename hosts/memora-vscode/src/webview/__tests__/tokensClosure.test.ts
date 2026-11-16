@@ -626,7 +626,10 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // 二态改由「形状 + 颜色」两个明确通道承载；实数经 scripts/count-token-refs.mjs 实锤。
     // 19：IMG-2 Q3 上传按钮置灰态 .image-attach-btn.is-vision-off opacity: var(--op-3)
     // +1（2026-10-28）——置灰 = 禁用态语义（op-3 的既有语义位），非「弱化装饰」。
-    'op-': 19, // 输入区控件去边框（2026-11-02）：.ctl[aria-disabled] 承接上传按钮置灰 opacity +1，
+    // 21：授权请求卡（HOSTED-CONFIRM-AUTH-1）等待态卡体 + 按钮 disabled 两处
+    // opacity: var(--op-5) +2（2026-11-16；与确认卡等待态同款语义位——已裁决的卡降透明度，
+    // 不造新档；实数经 scripts/count-token-refs.mjs 实锤同步）。
+    'op-': 21, // 输入区控件去边框（2026-11-02）：.ctl[aria-disabled] 承接上传按钮置灰 opacity +1，
     //            .image-attach-btn.is-vision-off 自写 opacity 退役 -1 ⇒ 净不变（19，机械实测同步）。
     'icon-': 17,
     // 24：助手形态状态签（chatStyles）左侧 accent 圆点宽/高各引 var(--dot-sm) +2
@@ -643,7 +646,10 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // 89：托管卡整圈描边回归 —— 聚焦规则改的就是描边颜色，只剩左缘条时点进前后像素无变化
     // （真机实测），assistant 形态 #inputWrap 补 1px var(--line-solid) +1（2026-11-15；
     // 实数经 scripts/count-token-refs.mjs 实锤同步）。
-    'line-': 89, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
+    // 91：授权请求卡（HOSTED-CONFIRM-AUTH-1）卡体 border 与命令原文块 border 各引
+    // var(--line-input) +2（2026-11-16；与确认卡同族既有令牌，未新造颜色；实数经
+    // scripts/count-token-refs.mjs 实锤同步）。
+    'line-': 91, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
     //             var(--line-solid) +1 ⇒ 79→80（UI-STATUS-DIVIDE-1，与
     //             `.context-ring__injection` 同一既有令牌，未新造颜色）；
     //             实数经 scripts/count-token-refs.mjs 实锤同步。
@@ -680,7 +686,11 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //             原稿裸值 148px 在刻度里无档，按「不造并列值」复用邻近档）+1（2026-10-30）
     //             DIM-28（0.9.0 会话级钉住）：.skill-chip.is-large 的 max-width 引 var(--dim-3xl)
     //             （钉住大技能时放宽，让「此文 N 万字，每轮都会发送」提示完整可读）+1（2026-11-08）
-    'dim-': 28,
+    //             30：授权请求卡（HOSTED-CONFIRM-AUTH-1）卡体 max-height 引 var(--dim-2xl)
+    //             （与确认卡「半屏上限」同一既有语义位）+1、命令原文块 max-height 引
+    //             var(--dim-lg)（同确认卡 diff 块限高档）+1 ⇒ 28→30（2026-11-16，
+    //             实数经 scripts/count-token-refs.mjs 实锤同步）。
+    'dim-': 30,
   } as const;
 
   for (const family of Object.keys(EXPECTED) as (keyof typeof EXPECTED)[]) {

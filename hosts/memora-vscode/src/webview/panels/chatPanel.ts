@@ -243,6 +243,14 @@ import type { FileChangeSink } from '../../extension/host/fileChangeTracker.js';
 import { ActiveFileTracker } from '../../extension/host/activeFileTracker.js';
 // HOST-SPLIT-1 第 2 刀：确认队列域（自本文件迁出；注入 getAgent / post 两个依赖）
 import { ConfirmCoordinator } from '../../extension/host/confirmCoordinator.js';
+// HOSTED-CONFIRM-AUTH-1：异步授权流（always-ask 命令「问一句再执行」；分流判据经
+// ConfirmDeps.authFlow 进协调器 handler 第一步，生命周期三钩子由协调器转发）
+// 授权流装配工厂（域逻辑与装配闭包分离的过闸拆法，见 confirmAuthFlowWiring.ts）
+import { createChatPanelAuthFlow } from '../../extension/host/confirmAuthFlowWiring.js';
+// 托管发送者名单一真源（授权叫醒与 send_to_session 装配共用，见 hostedSenderName.ts）
+import { HOSTED_SENDER_NAME } from '../../extension/host/hostedSenderName.js';
+// 安全审计收集器（订阅/累计/快照/退订收口，自本文件外置的行数闸门拆法）
+import { createSecurityAuditCollector } from '../../extension/host/securityAuditCollector.js';
 // HOST-SPLIT-1 第 4 刀：ask 提问域（自本文件迁出；注入 5 个依赖：getAgent / isAskWaiting /
 // getTurnState / post / runFlow——runFlow 是 18 行包装，**不是** consumeFlow 主循环）
 import { AskCoordinator } from '../../extension/host/askCoordinator.js';
@@ -591,17 +599,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *  重建过」——重建后新 webview 没有本流的实时投影，落盘完成后须补一次 replaySession 刷全。 */
   private _viewEpoch = 0;
   /**
-   * 路径守卫安全审计累计（安全/装配透明）
+   * 路径守卫安全审计收集器（安全/装配透明）
    *
-   * 由 agent.security.onAudit 订阅累计：total 总审计次数、denied 拒绝次数。
+   * 订阅/累计/快照/退订收口于 `extension/host/securityAuditCollector.ts`（自本文件外置）：
    * audit 事件为内核 SecurityGuard 在路径读/写审批时产出（路径守卫是当前唯一安全信号）。
    */
-  private _securityAuditTotal = 0;
-  private _securityAuditDenied = 0;
-  private _recentSecurityAudits: { type: string; path: string; tool?: string; reason?: string }[] =
-    [];
-  /** 安全审计订阅取消函数（幂等管理，防重复绑定） */
-  private _securityAuditUnsub: (() => void) | undefined;
+  private readonly _securityAudit = createSecurityAuditCollector();
   /**
    * 会话级可观测事件的订阅作用域（E5：面板 × 所属 Agent 实例）
    *
@@ -634,11 +637,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     showMetrics: () =>
       vscode.workspace.getConfiguration('memora').get<boolean>('showMetrics', false),
     // 安全审计累加（概要的「有事件才携带」判据归外置域，本处只给原始计数）
-    getSecurityAudit: () => ({
-      total: this._securityAuditTotal,
-      denied: this._securityAuditDenied,
-      recent: this._recentSecurityAudits,
-    }),
+    getSecurityAudit: () => this._securityAudit.snapshot(),
     // 指标指纹 / 操作流（真源 = 宿主 tracer 单例；本处只透传读取）
     getFingerprints: () => vscodeTracer.getLatestFingerprints(),
     getRecentTrace: () => vscodeTracer.getRecentTraces(20),
@@ -737,6 +736,27 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private readonly _attention = createVscodeAttention();
 
   /**
+   * 异步授权流（HOSTED-CONFIRM-AUTH-1）：`always-ask` 命令「问一句再执行」——
+   * 分流经 ConfirmDeps.authFlow 进协调器 handler 第一步（always-ask + 代理驱动 + 无授权
+   * ⇒ 授权请求推托管座位 + 内核收 deferred）。装配闭包外置于 confirmAuthFlowWiring.ts
+   * （过闸拆法，与 hostedDispatchRun 同案）；声明必须先于 `_confirm`（初始化顺序）。
+   */
+  private readonly _authFlow = createChatPanelAuthFlow(
+    {
+      // 判据真源与 _confirm.isAgentDrivenSession 同一闭包；座位设计上唯一（见 sessionModeStore）
+      isAgentDrivenSession: (sid) => this.sessionModes.isAgentControlled(sid),
+      getManagedSeatId: () => this.sessionModes.listManagedSessionIds()[0],
+      currentForeground: () => this._currentSessionId,
+      getMeta: (sessionId) => this.sessionStore.getSessionMeta(sessionId),
+      post: (msg) => this.post(msg),
+      onAttention: (info) => this._attention.onConfirmShown({ requestId: info.requestId }),
+      dispatch: (seatId, targetSessionId, text, senderName) =>
+        this.dispatchHostedInput(seatId, targetSessionId, text, senderName),
+    },
+    HOSTED_SENDER_NAME,
+  );
+
+  /**
    * 确认请求协调器（HOST-SPLIT-1 第 2 刀迁出域，真源见 `extension/host/confirmCoordinator.ts`）
    *
    * **注入而非继承**：协调器要往 webview 推 write_confirm_request 审批卡，且需读**最新** agent
@@ -756,6 +776,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 只把「谁来按」换成代理代按批准（后台卡上不了屏，挂着只会等超时被拒）；
     // 自助会话判据恒 false ⇒ 排队/计时/上屏/超时逐字不变
     isAgentDrivenSession: (sid) => this.sessionModes.isAgentControlled(sid),
+    authFlow: this._authFlow, // HOSTED-CONFIRM-AUTH-1：handler 第一步分流 always-ask
   });
 
   /**
@@ -1455,6 +1476,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // （HOST-SPLIT-1 第 2 刀：应答处理整体迁至协调器 `answer`——顺序保持
       //   resolve → 决策留痕 → 终结+泵下一条，见 confirmCoordinator.ts 的 JSDoc）
       this._confirm.answer(msg.requestId, msg.approved);
+    } else if (msg.type === 'auth_answer') {
+      // 授权卡回传（HOSTED-CONFIRM-AUTH-1）：整体迁至授权流 `answer`（查无此条静默丢弃）
+      this._authFlow.answer(msg.requestId, msg.approved);
     } else if (msg.type === 'confirm_all_file_changes') {
       // 对话区常驻条「全部确认」：复用已注册命令（纯内存清理，零风险，无需二次确认）
       void vscode.commands.executeCommand(CONFIRM_ALL_FILE_CHANGES_COMMAND);
@@ -1544,8 +1568,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.unbindAgentNoticeEvents();
       // 安全审计订阅同属 agent.security 上的长期监听：一并释放，重新装配时由
       // bindSecurityAudit 幂等重绑。
-      this._securityAuditUnsub?.();
-      this._securityAuditUnsub = undefined;
+      this._securityAudit.dispose();
       // 批 3：按持有集逐个放锁（流中会话挂起，收场后归还）；**不注销、不 close** 任何实例
       // （实例归登记表所有，视图折叠/重开不得让旧会话的活实例变成 use-after-close）
       this._lockFinalizer.onDispose((id) => this.runtimeFor(id).streaming);
@@ -1734,29 +1757,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 累计 total/denied 计数 + 保留最近若干条供可观测折叠区展示。幂等：先取消旧订阅再绑新。
    */
   private bindSecurityAudit(): void {
-    if (this._securityAuditUnsub) {
-      this._securityAuditUnsub();
-      this._securityAuditUnsub = undefined;
-    }
-    const guard = this._agent?.security;
-    if (!guard) return;
-    // 回调累积计数 + 保底最近 3 条（duck-type 匹配内核 AuditEvent，避免强依赖内部类型）
-    this._securityAuditUnsub = guard.onAudit((event) => {
-      const type = (event as { type?: string }).type ?? 'audit';
-      const path = (event as { path?: string }).path ?? '';
-      const tool = (event as { tool?: string }).tool;
-      // 透出内核拒绝原因（pathGuard path-deny 含 reason 如「命中黑名单」「路径越界」）；
-      // 丢弃 reason 则用户只看到「拒绝」却不知为何。
-      const reason = (event as { reason?: string }).reason;
-      this._securityAuditTotal += 1;
-      if (type === 'path-deny' || type === 'write-decline') {
-        this._securityAuditDenied += 1;
-      }
-      // 路径取 basename 防折叠区冗长（可读且不泄露完整目录结构）
-      const base = path.split(/[\\/]/).pop() ?? path;
-      this._recentSecurityAudits.push({ type, path: base, tool, reason });
-      if (this._recentSecurityAudits.length > 3) this._recentSecurityAudits.shift();
-    });
+    // 订阅/累计/快照/退订真源已外置（securityAuditCollector.ts）；本薄壳只接最新守卫
+    this._securityAudit.bind(this._agent?.security);
   }
 
   /**

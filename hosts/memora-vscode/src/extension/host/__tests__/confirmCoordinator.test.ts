@@ -68,7 +68,10 @@ function agentStub() {
   } as unknown as Agent;
   return {
     agent,
-    trigger: (info: ConfirmInfo): Promise<boolean> => {
+    // 返回类型随内核 WriteConfirmationRequest 推导（三态后 = boolean | 'deferred'）：
+    // 桩不窄化返回值——授权流分流（HOSTED-CONFIRM-AUTH-1）会让 handler 返 'deferred'，
+    // 测试按需对返回值断言，桩不替调用方收敛类型
+    trigger: (info: ConfirmInfo): ReturnType<WriteConfirmationRequest> => {
       if (!handler) throw new Error('onWriteConfirmation 未注入');
       return handler(info);
     },
@@ -966,5 +969,89 @@ describe('ConfirmCoordinator · answerFor 按会话应答（R0-c）', () => {
     await Promise.resolve();
     expect(settled).toBe(true);
     expect(coordinator.answerFor('s-a', requestId, true)).toBe(false);
+  });
+});
+
+// ─── 异步授权分流（HOSTED-CONFIRM-AUTH-1）─────────────────────────
+// handler 第一步问 authFlow.maybeDefer：命中 ⇒ 授权流自己受理（授权请求推托管座位），
+// 协调器不入队、内核收 deferred；未命中 ⇒ 既有链路逐字不变。
+describe('ConfirmCoordinator · 异步授权分流（authFlow）', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** 可编程 authFlow 桩（只暴露协调器消费的窄面） */
+  function authFlowStub(mode: 'defer' | 'pass') {
+    return {
+      maybeDefer: vi.fn(() => (mode === 'defer' ? ('deferred' as const) : null)),
+      flushForSeat: vi.fn(),
+      repostForSeat: vi.fn(),
+      disposeSession: vi.fn(),
+    };
+  }
+
+  it('authFlow 命中 ⇒ handler 返 deferred 且不入队（无审批卡、无决策记录）', async () => {
+    const posted: Posted[] = [];
+    const stub = agentStub();
+    const authFlow = authFlowStub('defer');
+    const coordinator = new ConfirmCoordinator({
+      getAgent: () => stub.agent,
+      post: (msg) => posted.push(msg as unknown as Posted),
+      authFlow,
+    });
+    stub.agent && coordinator.bindSession('work-1', stub.agent);
+
+    const settled = stub.trigger(confirmInfo());
+    await expect(settled).resolves.toBe('deferred');
+    expect(posted.find((m) => m.type === 'write_confirm_request')).toBeUndefined();
+    expect(posted.find((m) => m.kind === 'decision')).toBeUndefined();
+    expect(coordinator.pendingCount('work-1')).toBe(0);
+    // 分流判据只问一次（handler 第一步），载荷原样透传
+    expect(authFlow.maybeDefer).toHaveBeenCalledTimes(1);
+  });
+
+  it('authFlow 放行 ⇒ 既有入队链路逐字不变（兼容性）', async () => {
+    const posted: Posted[] = [];
+    const stub = agentStub();
+    const authFlow = authFlowStub('pass');
+    const coordinator = new ConfirmCoordinator({
+      getAgent: () => stub.agent,
+      post: (msg) => posted.push(msg as unknown as Posted),
+      authFlow,
+    });
+    stub.agent && coordinator.bindSession('work-1', stub.agent);
+    // 卡只推前台会话：显式切前台（真实链路 = 座位前台时撞卡）
+    coordinator.setForeground('work-1');
+
+    const settled = stub.trigger(confirmInfo());
+    expect(
+      posted.filter((m) => m.type === 'write_confirm_request'),
+    ).toHaveLength(1);
+    coordinator.answer(
+      (posted.find((m) => m.type === 'write_confirm_request') as { requestId: string })
+        .requestId,
+      true,
+    );
+    await expect(settled).resolves.toBe(true);
+  });
+
+  it('不注入 authFlow ⇒ 行为与改造前逐字一致（既有装配零改动）', async () => {
+    const posted: Posted[] = [];
+    const stub = agentStub();
+    const coordinator = new ConfirmCoordinator({
+      getAgent: () => stub.agent,
+      post: (msg) => posted.push(msg as unknown as Posted),
+    });
+    stub.agent && coordinator.bindSession('work-1', stub.agent);
+    coordinator.setForeground('work-1');
+
+    const settled = stub.trigger(confirmInfo());
+    expect(posted.filter((m) => m.type === 'write_confirm_request')).toHaveLength(1);
+    coordinator.answer(
+      (posted.find((m) => m.type === 'write_confirm_request') as { requestId: string })
+        .requestId,
+      false,
+    );
+    await expect(settled).resolves.toBe(false);
   });
 });

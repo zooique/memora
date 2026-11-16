@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import type { Agent, WriteConfirmationRequest } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { getToolDisplayName } from '../../webview/helpers/toolNameMap.js';
+import type { ConfirmAuthFlow } from './confirmAuthFlow.js';
 
 /**
  * confirm 确认等待超时（ms）：无响应 → **自动拒绝**（fail-closed）。0/负值 = 禁用超时。
@@ -86,6 +87,15 @@ export interface ConfirmDeps {
    * **可选**：不注入 = 零行为（既有测试与其它装配点无需改动）。
    */
   isAgentDrivenSession?: (sessionId: string) => boolean;
+  /**
+   * 异步授权流（`always-ask` 命令的「问一句再执行」· HOSTED-CONFIRM-AUTH-1）
+   *
+   * handler 第一步先问它：命中（always-ask + 代理驱动 + 无授权）⇒ 授权请求已推托管座位，
+   * 本协调器**不入队**（内核收 `deferred`，该轮正常落定）；其余照常走既有链路，行为逐字不变。
+   * 生命周期三钩子（前台切换 / 视图重建 / 会话删除）由本协调器转发——授权卡与确认卡共用
+   * 「防跨会话串台」的时机体系，但条目/队列/裁决各自独立（两条判据流，见 confirmAuthFlow）。
+   */
+  authFlow?: ConfirmAuthFlow;
 }
 
 /**
@@ -180,11 +190,17 @@ export class ConfirmCoordinator {
   bindSession(sessionId: string, agent: Agent | undefined): void {
     const guard = agent?.security;
     if (!guard) return;
-    // 注入确认回调（幂等：onWriteConfirmation 内部覆盖赋值，无重复注册风险）
-    const handler: WriteConfirmationRequest = (info) =>
-      new Promise<boolean>((resolve) => {
+    // 注入确认回调（幂等：onWriteConfirmation 内部覆盖赋值，无重复注册风险）。
+    // 分流第一步（HOSTED-CONFIRM-AUTH-1）：always-ask + 代理驱动 + 无授权 ⇒ 授权请求
+    // 已由 authFlow 推托管座位，此处返 'deferred'（内核不挂起等待，该轮正常落定）；
+    // 其余照常入队——deferred 永不进队列（_enqueue 的 resolve 仍是 boolean 空间）。
+    const handler: WriteConfirmationRequest = (info) => {
+      const deferred = this._deps.authFlow?.maybeDefer(sessionId, info);
+      if (deferred === 'deferred') return Promise.resolve('deferred');
+      return new Promise<boolean>((resolve) => {
         this._enqueue(sessionId, info, resolve);
       });
+    };
     guard.onWriteConfirmation(handler);
   }
 
@@ -223,6 +239,9 @@ export class ConfirmCoordinator {
     // 该会话在后台期间产生的决策记录（如超时自动拒）此刻补进**它自己的**时间线：
     // 用户在后台期间不会看到这些行，切回来必须能看到「它替你拒了什么」。
     this._flushPendingDecisions(sessionId);
+    // 授权流补推（HOSTED-CONFIRM-AUTH-1）：切入的是托管座位且无在途卡 ⇒ 推暂存队首。
+    // 授权卡与确认卡共此时机但条目独立（authFlow 自判座位归属）。
+    this._deps.authFlow?.flushForSeat(sessionId);
   }
 
   /**
@@ -249,6 +268,8 @@ export class ConfirmCoordinator {
   repostForeground(): void {
     const state = this._sessions.get(this._foreground);
     if (state?.current) this._show(state.current);
+    // 授权卡补推（HOSTED-CONFIRM-AUTH-1）：有在途请求重推、无在途且暂存非空 ⇒ 推队首
+    this._deps.authFlow?.repostForSeat(this._foreground);
   }
 
   /**
@@ -531,6 +552,9 @@ export class ConfirmCoordinator {
     // ③ 整会话条目摘除：此后 pendingCount 恒 0，迟到回执经 `answer` 查无此会话 ⇒ 零副作用
     this._sessions.delete(sessionId);
     this._deps.onPendingChanged?.(sessionId, 0);
+    // 授权流同步清理（HOSTED-CONFIRM-AUTH-1）：该会话的授权条目与请求一并摘除，
+    // 在途授权卡（若是它的）推 closed 兜底——不收卡 = 僵尸交互（与 ① 同一纪律）。
+    this._deps.authFlow?.disposeSession(sessionId);
   }
 
   /**

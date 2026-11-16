@@ -69,8 +69,17 @@ import { join } from 'node:path';
  *  「有没有字」的翻转（一个布尔），拿它搬文本会让「恢复旧草稿」被误读成「用户正在打字」；
  *  也不能搭 `input`（发送动作）或 `session_history`（历史回放）的便车。
  *  实测 145，阈值同口径重算 146。
+ *  2026-11-16 异步授权流（`HOSTED-CONFIRM-AUTH-1`）+3：新增 `auth_request`（E→W
+ *  授权请求卡）、`auth_answer`（W→E 允许/拒绝回传）与 `auth_closed`（E→W 终结通知）。
+ *  三条不可合并：授权卡与内核确认卡（`write_confirm_request` 族）是**两条判据流**——
+ *  前者是代理转述的「要不要允许这条不可逆命令」（无超时、归属托管座位、按命令原文授权），
+ *  后者是内核确认闸的「批准/拒绝这一次执行」（有超时、归属请求会话）；载荷形态（命令原文
+ *  vs 路径+diff）与生命周期（TTL vs CONFIRM_TIMEOUT_MS）均不同源，合并即把两套判据
+ *  揉进一个载荷。`auth_closed` 单列而不搭 `write_confirm_closed`：requestId 空间独立，
+ *  复用会让确认卡的收卡逻辑误关授权卡。
+ *  实测 148，阈值同口径重算 149。
  */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 146;
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 149;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {
