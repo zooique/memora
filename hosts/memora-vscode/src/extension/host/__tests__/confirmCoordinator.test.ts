@@ -30,7 +30,7 @@ vi.mock('vscode', () => ({
 }));
 
 import type { Agent, WriteConfirmationRequest } from '@zooique/memora';
-import { ConfirmCoordinator } from '../confirmCoordinator.js';
+import { ConfirmCoordinator, type ConfirmAuthFlowPort } from '../confirmCoordinator.js';
 import { createAttentionNotifier } from '../attentionNotice.js';
 
 /** 载荷特征串：反向守卫用它确认 description（diff 全文）从未进决策记录 */
@@ -980,8 +980,8 @@ describe('ConfirmCoordinator · 异步授权分流（authFlow）', () => {
     vi.useRealTimers();
   });
 
-  /** 可编程 authFlow 桩（只暴露协调器消费的窄面） */
-  function authFlowStub(mode: 'defer' | 'pass') {
+  /** 可编程 authFlow 桩（只实现协调器消费的窄面 = ConfirmAuthFlowPort 四方法） */
+  function authFlowStub(mode: 'defer' | 'pass'): ConfirmAuthFlowPort {
     return {
       maybeDefer: vi.fn(() => (mode === 'defer' ? ('deferred' as const) : null)),
       flushForSeat: vi.fn(),

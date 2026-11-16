@@ -1,8 +1,26 @@
 import * as vscode from 'vscode';
-import type { Agent, WriteConfirmationRequest } from '@zooique/memora';
+import type { Agent, WriteConfirmationRequest, WriteConfirmationInfo } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { getToolDisplayName } from '../../webview/helpers/toolNameMap.js';
-import type { ConfirmAuthFlow } from './confirmAuthFlow.js';
+
+/**
+ * 授权流消费面（依赖面 = 消费面 · SSOT）
+ *
+ * 协调器只调用这四个方法；`ConfirmAuthFlow` 的授权条目、暂存队列等私有态**不进依赖契约**
+ * ——若用具体类当依赖类型，测试替身就得伪造私有成员才能通过类型检查。
+ * `ConfirmAuthFlow` 结构满足本接口（方法签名同源），生产注入与测试替身共用同一契约；
+ * 分流语义与生命周期转发约定见 `confirmAuthFlow.ts` 域注释。
+ */
+export interface ConfirmAuthFlowPort {
+  /** handler 第一步分流：命中（always-ask + 代理驱动 + 无授权）⇒ 返 'deferred' 且授权请求已推托管座位 */
+  maybeDefer(sessionId: string, info: WriteConfirmationInfo): 'deferred' | null;
+  /** 座位切回前台：补推暂存的授权请求 */
+  flushForSeat(sessionId: string): void;
+  /** webview 视图重建：重推该座位的活跃授权卡 */
+  repostForSeat(sessionId: string): void;
+  /** 会话删除：清空该会话全部授权条目与请求 */
+  disposeSession(sessionId: string): void;
+}
 
 /**
  * confirm 确认等待超时（ms）：无响应 → **自动拒绝**（fail-closed）。0/负值 = 禁用超时。
@@ -95,7 +113,7 @@ export interface ConfirmDeps {
    * 生命周期三钩子（前台切换 / 视图重建 / 会话删除）由本协调器转发——授权卡与确认卡共用
    * 「防跨会话串台」的时机体系，但条目/队列/裁决各自独立（两条判据流，见 confirmAuthFlow）。
    */
-  authFlow?: ConfirmAuthFlow;
+  authFlow?: ConfirmAuthFlowPort;
 }
 
 /**

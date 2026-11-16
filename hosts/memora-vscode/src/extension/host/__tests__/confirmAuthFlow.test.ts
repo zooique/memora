@@ -5,13 +5,25 @@
  * + 前台/暂存投递。域不 import vscode ⇒ 全依赖注入，无 mock vscode 负担。
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import type { WriteConfirmationRequest } from '@zooique/memora';
 import { ConfirmAuthFlow } from '../confirmAuthFlow.js';
 
-/** 构造内核确认载荷（命令面 always-ask 默认；targetPath = 命令原文） */
-function info(overrides: { verdict?: 'always-ask' | 'normal'; targetPath?: string; tool?: string } = {}) {
+/**
+ * 构造内核确认载荷（命令面 always-ask 默认；targetPath = 命令原文）
+ *
+ * 字段形态对齐生产 `confirmGate` 的命令面构造：owner 档、always-ask ⇒ needsConfirm=true、
+ * 命令面不传 diff ⇒ hasDiff=false——替身只造生产构造得出来的对象，不造类型上存在、
+ * 运行时不可能的形态。返回类型从内核 `WriteConfirmationRequest` 形参推导，不自抄接口。
+ */
+function info(
+  overrides: { verdict?: 'always-ask' | 'normal'; targetPath?: string; tool?: string } = {},
+): Parameters<WriteConfirmationRequest>[0] {
   return {
     targetPath: overrides.targetPath ?? 'git push origin main',
     tool: overrides.tool ?? 'run_command',
+    permission: 'owner',
+    needsConfirm: true,
+    hasDiff: false,
     verdict: overrides.verdict ?? 'always-ask',
   };
 }
