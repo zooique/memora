@@ -408,7 +408,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const qaRowView = createQaRowView({ document });
   // 角色徽章行（CHATVIEW-SLIM-3 第三刀）：零状态 DOM 构造，deps 注入两个徽章节点
   const roleBadgeView = createRoleBadgeView({ document, roleBadge, capabilityBadge });
-  // 空状态呈现域（空态外置）：开关 / 角色化文案 / 示例 chips / 未配置模型引导
+  // 空状态呈现域（空态外置）：开关 / 角色化文案 / 示例 chips / 未配置模型引导。
+  // getForm 注入形态真源（applyForm 是唯一写点）——域内单点裁决自助/助手空态口径
   const emptyStateView = createEmptyStateView({
     document,
     emptyState,
@@ -417,6 +418,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     emptySuggestions,
     messages,
     postMessage: (msg) => vscode.postMessage(msg as WebviewToExtensionMessage),
+    getForm: () => (document.body.dataset.form === 'assistant' ? 'assistant' : 'self'),
   });
 
   // StatusDock 挂载条域容器（待发送 / 文件改动 / 后台任务三条件，第 6 刀外置，见 statusBarsView.ts）
@@ -3734,6 +3736,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 助手形态里的会话由助手安排：用户侧「＋」不出现（宿主侧另有同一判据的拒收，见
     // chatPanel 的 `new_session` 分支）。切回自助形态即恢复。
     newSessionBtn.hidden = assistant;
+    // 空态口径随形态重裁决（emptyStateView 域内单点判形态）：切到助手隐藏自助角色
+    // 空态/草稿提示；切回自助恢复角色化空态（updateRole 域内已判形态，此处无分支）
+    if (assistant) {
+      emptyStateView.setDefaultMode(undefined);
+    }
+    emptyStateView.updateRole(currentRoleName, currentRolePacks);
+    emptyStateView.update();
   }
 
   // textarea 自适应高度（Enter 发送 / Shift+Enter 换行）

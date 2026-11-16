@@ -1,17 +1,23 @@
 /**
- * emptyStateView · 草稿默认模式提示
+ * emptyStateView · 草稿默认模式提示 + 助手形态空态口径
  *
- * 钉三条边界，而不是「元素能创建」：
+ * 钉三条边界（草稿提示），而不是「元素能创建」：
  * ① 仅 `'managed'` 渲染，文案必须说明「可切回自助」；
  * ② `'self'` / undefined 移除元素（普通用户不受打扰，且切会话不残留）；
  * ③ 重复投影幂等（进入 / 重建 / 建会话失败回滚共用同一次 setDefaultMode）。
+ *
+ * 另钉助手形态三条（ASSISTANT-FORM，2026-11-16 泄漏修复）：
+ * ④ 角色化空态（「开始与 XX 对话」+ 角色 chips）是自助会话语义，助手座位不渲染；
+ * ⑤ 未配置模型的 onboarding 引导是功能引导，助手座位保留（唯一例外）；
+ * ⑥ 托管草稿提示在助手座位一律清除（助手座位没有「托管草稿」语义）。
  */
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createEmptyStateView } from '../scripts/emptyStateView.js';
+import type { UiForm } from '../../shared/protocol.js';
 
 /** 最小骨架：与 chatPanelHtml 的空态结构同形，只铺本域读取的节点 */
-function setup(): ReturnType<typeof createEmptyStateView> {
+function setup(form: UiForm | (() => UiForm) = 'self'): ReturnType<typeof createEmptyStateView> {
   document.body.innerHTML = `
     <div id="emptyState">
       <div id="emptyTitle"></div>
@@ -28,6 +34,8 @@ function setup(): ReturnType<typeof createEmptyStateView> {
     emptySuggestions: document.getElementById('emptySuggestions') as HTMLElement,
     messages: document.getElementById('messages') as HTMLElement,
     postMessage: () => {},
+    // 形态真源读数：函数形式 = 可变形态（测跨形态切换的动态裁决）
+    getForm: typeof form === 'function' ? form : () => form,
   });
 }
 
@@ -70,5 +78,65 @@ describe('emptyStateView · 草稿默认模式提示', () => {
     view.setDefaultMode('managed');
     view.setDefaultMode('managed');
     expect(document.querySelectorAll('.empty-mode-hint')).toHaveLength(1);
+  });
+});
+
+describe('emptyStateView · 助手形态空态口径（ASSISTANT-FORM）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('④ 助手座位不渲染角色化空态：updateRole 不写标题/提示，chips 清空，空态整块隐藏', () => {
+    const view = setup('assistant');
+    view.updateRole('共鸣小说家', [{ displayName: '共鸣小说家', description: '小说角色' }]);
+
+    // 标题/提示不写角色内容（保持空串——「开始与 XX 对话」不得出现在助手座位）
+    expect(document.getElementById('emptyTitle')?.textContent).toBe('');
+    expect(document.getElementById('emptyHint')?.textContent).toBe('');
+    // 示例 chips（自助角色的提问）清空
+    expect(document.getElementById('emptySuggestions')?.children).toHaveLength(0);
+    // 空态整块隐藏：助手座位无消息 = 干净空白（微信式），不是一张自助空态卡
+    expect(document.getElementById('emptyState')?.hidden).toBe(true);
+  });
+
+  it('⑤ onboarding 是唯一例外：未配置模型时助手座位仍显示引导', () => {
+    const view = setup('assistant');
+    view.onboarding();
+    view.update();
+    // onboarding 按钮在场 ⇒ 空态显形（功能性引导两个形态都要）
+    expect(document.getElementById('emptyState')?.hidden).toBe(false);
+    expect(document.querySelector('.empty-onboard-btn')).not.toBeNull();
+    // onboarding 之后角色推送到达：不得清掉 onboarding 文案（updateRole 只清 chips）
+    const title = document.getElementById('emptyTitle')?.textContent;
+    view.updateRole('共鸣小说家', []);
+    expect(document.getElementById('emptyTitle')?.textContent).toBe(title);
+    expect(document.getElementById('emptyState')?.hidden).toBe(false);
+  });
+
+  it('⑥ 托管草稿提示在助手座位一律清除（含自助投影后切助手）', () => {
+    const view = setup('assistant');
+    view.setDefaultMode('managed');
+    expect(document.querySelector('.empty-mode-hint')).toBeNull();
+    // 同一次 mount 内跨形态：自助投影出提示 → 切助手 → 再投影调用即清除（动态裁决）
+    let form: UiForm = 'self';
+    const switchable = setup(() => form);
+    switchable.setDefaultMode('managed');
+    expect(document.querySelector('.empty-mode-hint')).not.toBeNull();
+    form = 'assistant';
+    switchable.setDefaultMode(undefined);
+    expect(document.querySelector('.empty-mode-hint')).toBeNull();
+  });
+
+  it('自助形态不受影响：角色化空态照常渲染（回归对照）', () => {
+    const view = setup('self');
+    view.updateRole('共鸣小说家', [{ displayName: '共鸣小说家' }]);
+    expect(document.getElementById('emptyTitle')?.textContent).toContain('共鸣小说家');
+    expect(document.getElementById('emptySuggestions')?.children.length).toBeGreaterThan(0);
+    // 显隐只归 update() 管（updateRole 是纯文案域，历史语义不变）
+    view.update();
+    expect(document.getElementById('emptyState')?.hidden).toBe(false);
+    // 自助形态下托管草稿提示照常投影（助手形态的限制不外溢）
+    view.setDefaultMode('managed');
+    expect(document.querySelector('.empty-mode-hint')).not.toBeNull();
   });
 });

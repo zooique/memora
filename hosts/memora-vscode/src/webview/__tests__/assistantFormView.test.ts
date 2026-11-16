@@ -78,6 +78,34 @@ describe('助手形态输入区（ASSISTANT-FORM）', () => {
     dispatch({ type: 'ui_form', form: 'self' });
     expect(newSessionBtn.hidden).toBe(false);
   });
+
+  it('空态口径随形态隔离：自助角色空态不得泄漏进助手座位（2026-11-16 泄漏修复）', () => {
+    mountChatView();
+    // 自助形态下角色推送 → 空态角色化（正常形态）
+    dispatch({ type: 'chat_role_pack', rolePack: '共鸣小说家' });
+    expect(document.getElementById('emptyState')?.hidden).toBe(false);
+    expect(document.getElementById('emptyTitle')?.textContent).toContain('共鸣小说家');
+    // 切助手形态：空态整块隐藏 + 上次自助渲染的角色文案**清除**（不留残余，不靠 hidden 藏）
+    dispatch({ type: 'ui_form', form: 'assistant' });
+    expect(document.getElementById('emptyState')?.hidden).toBe(true);
+    expect(document.getElementById('emptyTitle')?.textContent).not.toContain('共鸣小说家');
+    // 助手形态下角色推送照常到达（宿主仍推 chat_role_pack 供消息头标签用）：
+    // 空态不被重新渲染成角色卡
+    dispatch({ type: 'chat_role_pack', rolePack: '共鸣小说家' });
+    expect(document.getElementById('emptyState')?.hidden).toBe(true);
+    // 切回自助：角色化空态恢复（空态域内单点判形态，切回即重裁决）
+    dispatch({ type: 'ui_form', form: 'self' });
+    expect(document.getElementById('emptyState')?.hidden).toBe(false);
+    expect(document.getElementById('emptyTitle')?.textContent).toContain('共鸣小说家');
+  });
+
+  it('助手形态下托管草稿提示不投影（草稿提示是自助会话语义）', () => {
+    mountChatView();
+    dispatch({ type: 'ui_form', form: 'assistant' });
+    // 助手座位收到「draft + managed」标题推送：不得出现「回到我自己」提示行
+    dispatch({ type: 'session_title', title: '新会话', draft: true, defaultMode: 'managed' });
+    expect(document.querySelector('.empty-mode-hint')).toBeNull();
+  });
 });
 
 describe('助手形态样式作用域守卫（漏前缀 = 漏到自助形态）', () => {

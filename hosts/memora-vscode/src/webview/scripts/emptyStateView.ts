@@ -5,9 +5,14 @@
  * 零自有状态：全部读注入节点；角色态（name / packs）由调用方传参，不持第二份镜像
  * （currentRoleName / currentRolePacks 真源仍在 chatView 的协议消息处理器）。
  * chips 点击委托仍在 chatView（读 dataset.prompt 填输入框，属输入域不属空态域）。
+ *
+ * 形态裁决（ASSISTANT-FORM）：角色化空态/示例 chips/托管草稿提示都是**自助会话**的语义，
+ * 助手座位不渲染（形态真源由 deps.getForm 注入，本域单点裁决——调用点不判形态，
+ * 判据散点即本轮「共鸣小说家泄漏进助手座位」的根因，不得回退）。
+ * 唯一例外 = 未配置模型的 onboarding 引导：它是功能性引导，两个形态都要。
  */
 import * as l10n from '@vscode/l10n';
-import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
+import type { UiForm, WebviewToExtensionMessage } from '../../shared/protocol.js';
 
 /** 空状态示例提问项（点击填入输入框） */
 interface Suggestion {
@@ -84,6 +89,8 @@ export interface EmptyStateViewDeps {
   messages: HTMLElement;
   /** 消息投递单点（onboarding 按钮 post open_settings_tab） */
   postMessage: (msg: WebviewToExtensionMessage) => void;
+  /** 形态真源读数（chatView 是唯一写点：applyForm 写 body[data-form]，本域动态读不缓存） */
+  getForm(): UiForm;
 }
 
 /**
@@ -120,7 +127,14 @@ export function createEmptyStateView(deps: EmptyStateViewDeps): {
    * 现存唯一调用点 = chatView init 末尾（update → updateRole 紧邻，中间无 await / 定时器）。
    */
   function update(): void {
-    emptyState.hidden = messages.querySelector('.msg') !== null;
+    const hasMsg = messages.querySelector('.msg') !== null;
+    // 助手座位：角色化空态不渲染 ⇒ 无消息时干净空白（微信式）；唯一例外是
+    // 未配置模型的 onboarding 引导在场（功能性引导，两个形态共用）
+    if (deps.getForm() === 'assistant') {
+      emptyState.hidden = hasMsg || emptyState.querySelector('.empty-onboard-btn') === null;
+      return;
+    }
+    emptyState.hidden = hasMsg;
   }
 
   /**
@@ -130,6 +144,19 @@ export function createEmptyStateView(deps: EmptyStateViewDeps): {
    * 改为标题用角色显示名、提示用角色定位描述（manifest.description，可选），随角色生长。
    */
   function updateRole(name: string, packs: { displayName: string; description?: string }[]): void {
+    // 助手座位不渲染角色化空态：「开始与 XX 对话」标题、角色描述、示例 chips 全是
+    // 自助会话语义（角色包不属于助手座位）。上次自助渲染的标题/提示一并清掉——
+    // 形态切换不留残余（自助与托管完全隔绝），不靠 hidden 藏文案。
+    // onboarding 在场例外：文案归 onboarding 管（清了会伤它），只清 chips。
+    if (deps.getForm() === 'assistant') {
+      emptySuggestions.textContent = '';
+      if (emptyState.querySelector('.empty-onboard-btn') === null) {
+        emptyTitle.textContent = '';
+        emptyHint.textContent = '';
+      }
+      update();
+      return;
+    }
     emptyTitle.textContent = l10n.t('Chat with {0}', name || 'AI');
     // 角色定位描述优先；无描述时回退默认引导文案（textContent 赋值防注入）
     const activePack = packs.find((p) => p.displayName === name);
@@ -182,6 +209,11 @@ export function createEmptyStateView(deps: EmptyStateViewDeps): {
    */
   function setDefaultMode(mode?: 'self' | 'managed'): void {
     const existing = emptyState.querySelector<HTMLElement>('.empty-mode-hint');
+    // 助手座位没有「托管草稿」语义：草稿提示是自助会话发起托管用的，助手座位一律清除
+    if (deps.getForm() === 'assistant') {
+      existing?.remove();
+      return;
+    }
     if (mode !== 'managed') {
       existing?.remove(); // self / 真实会话：清掉上一次草稿的提示，防残留
       return;
