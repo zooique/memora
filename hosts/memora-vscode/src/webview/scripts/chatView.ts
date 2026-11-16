@@ -3689,9 +3689,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'auth_closed') {
       // 授权请求已终结（裁决 / 会话删除兜底 / 新请求顶替）→ 收卡；requestId 不匹配即丢弃
       authRequestView.closeIfMatches(msg.requestId);
-    } else if (msg.type === 'ui_form') {
-      // 侧栏形态（宿主是真源）：只落表现。宿主在 ready 时必推一次 ⇒ 视图重建后形态不会丢。
-      applyForm(msg.form);
     }
   }
 
@@ -3720,8 +3717,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   window.addEventListener('message', onMessage);
-  // 首帧形态：骨架里的 body[data-form] 已由宿主渲染时写入（视图重建不必等 ui_form 才纠正），
-  // 这里补齐同一形态的其余表现（占位原文来自 HTML，故自助形态下本调用是幂等的）。
+  // 形态是挂载常量：宿主 buildHtml 已把 form 写进 body[data-form]（侧栏恒 self、托管页 assistant）。
+  // 这里按骨架补齐同一形态的脚本侧表现（占位 / 图标 / 空态 / 按钮语义 / 状态签）；
+  // 无运行时切换消息——形态变化 = 换一个视图挂载，不再原地翻面。
   applyForm(document.body.dataset.form === 'assistant' ? 'assistant' : 'self');
 
   // 选区复制兜底（Layer A）：挂一次即可，幂等。修复「选中对话记录后 Ctrl+C /
@@ -3730,16 +3728,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   installSelectionCopyGuard();
 
   /**
-   * 侧栏形态的唯一落点（自助 ⇄ 助手）
+   * 挂载形态的脚本侧落点（自助 / 助手二选一，随视图挂载调用一次）
    *
    * 三条纪律：
-   * - **表现层单点**：body[data-form] + 两处 hidden（标识图标 / 新建会话按钮）+ 占位文字，全在这里翻；别在消息分支里
-   *   各翻一处（形态一改就要改 N 处，漏一处即半套形态）。
+   * - **表现层单点**：两处 hidden（标识图标 / 新建会话按钮）+ 占位文字 + 空态 / 按钮语义 /
+   *   状态签，全在这里按挂载形态写入；别在消息分支里各翻一处（漏一处即半套形态）。
    *   标识条与标题条的显隐**不在本函数**：二者走 CSS（body[data-form] 作用域，chatStyles
    *   助手形态段）——首帧即正确形态不闪，等本函数翻 hidden 必闪一帧（0.11.0 首帧纪律）。
-   * - **占位原值只认 HTML**：切走前已由 `selfPlaceholder` 记下，切回逐字还原。
-   * - **不持有形态**：本函数纯写入；当前形态由宿主 `ui_form` 决定（webview 不记、不猜、不落
-   *   本地存储——否则重启后剩一个「假助手形态」，与「形态不记住」拍板相反）。
+   * - **占位原值只认 HTML**：自助占位原文由骨架记下，助手文案由 l10n 取；不另存副本。
+   * - **形态是常量**：form 来自骨架的 body[data-form]（宿主 buildHtml 写死），webview 不记、
+   *   不猜、不落本地存储，也没有运行时切换消息——换形态 = 换一个视图挂载。
    */
   function applyForm(form: UiForm): void {
     const assistant = form === 'assistant';

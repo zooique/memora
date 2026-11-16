@@ -84,7 +84,6 @@ import type {
   TurnState,
   PendingQuestionDto,
   LlmProviderConfig,
-  UiForm,
   SkillDto,
 } from '../../shared/protocol.js';
 // 错误文案映射单一真理源（与 webview 重放渲染共用，防文案双源漂移）
@@ -96,8 +95,6 @@ import { dedupeRefs } from '../../shared/refKey.js'; // 引用去重判据单点
 import { createComposerDrafts, persistDraftPageMark } from '../helpers/composerDrafts.js';
 // 「上次停在空白草稿页」标记：空白页没有会话身份，会话停留指针表达不了这件事
 import { UI_DRAFT_PAGE_KEY } from '../../shared/constants.js';
-// 助手形态下用户侧新建会话的统一提示（与命令面板共用一句，禁各写一份）
-import { assistantModeCreatesSessionsNotice } from '../../shared/assistantModeNotice.js';
 // 插话受理三态的可见文案（INPUT-LIMIT-1 / INTERJECT-PERSIST-1）统一由 windowNotices 提供，
 // 面板内不嵌字面量：那里是窗口提示的单一真源（常量形态会在模块求值时定稿语言，故用函数）。
 
@@ -188,8 +185,6 @@ import { createChatRefOps } from './chatRefOps.js';
 import { createChatTurnStructureOps, truncateFailNotice } from './chatTurnStructureOps.js';
 // 会话导航域（B9-D-4 按 op 组外置）：分叉 / 改名 / 切换共用「拿锁 → 换显示源 → 回放」
 import { createChatSessionNavOps } from './chatSessionNavOps.js';
-// 侧栏形态域（自助 ⇄ 助手）：形态状态 + 上下文键镜像 + 进/出助手时的会话接线
-import { createAssistantFormOps, UI_FORM_CONTEXT_KEY } from './assistantFormOps.js';
 // 主控建会话实现域（B9-D 拆法：完整闭环外置，面板只留注入依赖的薄壳）
 import { createHostedSessionWith } from '../helpers/hostedSessionCreate.js';
 // 派发执行域（校验 / 判忙 / 写权租约 / 对齐 / 起流闭环外置，面板只注入窄依赖）
@@ -301,30 +296,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 右键「添加到对话」引用缓冲：对话视图未就绪时暂存，ready 后补发（与 _pendingPrefill 同构） */
   private _pendingRefs?: ChatRef[];
   /**
-   * 侧栏形态域（自助 ⇄ 助手）：形态状态、菜单 context key、进/出助手时的会话接线
-   *
-   * 全部依赖都是**延迟闭包**：本字段初始化早于 `_navOps` / `sessionModes` 可用的时刻，
-   * 构造期捕获实例会拿到 undefined（与 `_navOps` 同一纪律）。
-   */
-  private readonly _uiFormOps = createAssistantFormOps({
-    post: (msg) => this.post(msg),
-    currentSessionId: () => this._currentSessionId,
-    isDraft: () => this.isDraft,
-    isManaged: (sessionId) => this.sessionModes.isManaged(sessionId),
-    // 发送当口归属提示的判据：与收回 / 停止 / 工作台同一份「现在谁在支配」
-    isAgentControlled: (sessionId) => this.sessionModes.isAgentControlled(sessionId),
-    listManagedSessionIds: () => this.sessionModes.listManagedSessionIds(),
-    switchToSession: (sessionId) => this.switchToSession(sessionId),
-    newSessionFromCommand: (mode) => this.newSessionFromCommand(mode),
-    setContext: (uiForm) =>
-      // 菜单 when 判据只认这个键：形态一变必须同步写，否则标题栏按钮与实际形态相反
-      void vscode.commands.executeCommand('setContext', UI_FORM_CONTEXT_KEY, uiForm),
-    // 「形态 + 座位」的持久层（单向回写，运行期真源仍是内存值，见 uiFormPersistence）
-    uiState: () => this.uiState,
-    sessionFacts: (sessionId) => this.sessionStore.sessionFacts(sessionId),
-    restoreSeat: (sessionId) => this.sessionModes.restoreManaged(sessionId),
-  });
-  /**
    * 收回本会话域（外置实现）：运行期归属交接 + 形态同步 + 「收不回什么」的如实说明
    *
    * 依赖同样全是**延迟闭包**（本字段初始化早于 `_hostedNotifier` / `workbench` 等成员可用）。
@@ -347,7 +318,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._agentReady = null;
     },
     post: (msg) => this.post(msg),
-    forceSelfForm: () => this._uiFormOps.forceSelf(),
     childrenOf: (sessionId) => this._hostedNotifier.childrenOf(sessionId),
     pendingReportCount: (sessionId) => this._hostedNotifier.pendingReportCount(sessionId),
     isChildStreaming: (sessionId) => this.workbench.isStreaming(sessionId),
@@ -808,16 +778,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     /**
      * 会话模式容器（extension 注入；缺省 = 进程内实例，仅「上次模式」不跨重启）。
      *
-     * ⚠️ 与来源标记的张力：mode 本身不落盘；**唯一起点**是 `restoreOnce` 恢复的那条座位
-     * （2026-11-15 起「形态 + 座位成对恢复」，其余会话重启仍回落 `'self'`）。而 `origin`
-     * 是持久事实：托管会话重启后不再以主控身份运行，历史仍标记 `'hosted'`——两者不同步是设计允许的。
+     * 形态不再是会话级状态：侧栏恒自助、托管走独立编辑器页（HOSTED-UI-SEAT-DECOUPLE-1），
+     * 本容器只描述「这一条会话此刻由谁支配」。`origin` 是持久事实：托管会话重启后不再以
+     * 主控身份运行，历史仍标记 `'hosted'`——两者不同步是设计允许的。
      */
     private readonly sessionModes: SessionModeStore = createEphemeralSessionModeStore(),
     /**
-     * 工作区级持久层（`workspaceState`）：形态 + 座位的**种子来源**
-     *
-     * 缺省 undefined = 不恢复（单测 / 嵌入宿主行为与改造前一致：重启回自助）。
-     * 只读一次（构造末尾的 `restoreOnce`），运行期不再读——见 `uiFormPersistence` 头注释。
+     * 工作区级持久层（`workspaceState`）：只服务「上次停留在空白草稿页」标记
+     * （`UI_DRAFT_PAGE_KEY`）。形态 / 座位持久化随侧栏换肤一起退役，本参数不再承担那部分。
      */
     private readonly uiState?: vscode.Memento,
   ) {
@@ -853,11 +821,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 上次停在空白页 ⇒ 先落回空白页（enter 内部经 finalizer 的唯一清空写点清 id），
     // 再走形态恢复——恢复分支据此看到「当前无会话」，不会把旧字硬塞给最近一条真会话。
     if (lastDraftPage) this._draft.enter();
-    // 形态 + 座位恢复（实现在 helpers/uiFormPersistence.ts）：只播种形态、把座位登记回
-    // SessionModeStore —— **只读**，不切页面 / 不写盘 / 不删键（用户口径 A：页面优先）。
-    // 必须在构造末尾调用：依赖的 `_draft` / `_uiFormOps` 已就位，且早于首次 render 与 agent 装配。
     // 激活期结束：此后所有导航（用户切会话 / 建会话）都正常写「上次停留」
-    this._uiFormOps.restoreOnce();
     this._booting = false;
     // 文档上下文不在此处预取（发送时实时读活动编辑器，见 snapshotDocContext）。
     // 曾用 onDidChangeActiveTextEditor 缓存——盖不住「同一文件被编辑」，脏态停在「打开时干净」⇒ 每轮拿磁盘旧版当真相（P0 撒谎源）。
@@ -985,25 +949,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   public isDraftSession(): boolean {
     return this.isDraft;
-  }
-
-  /**
-   * 当前侧栏形态（`extension` 的形态命令与渲染入口的唯一读取口）
-   *
-   * 持久化（2026-11-15 起）：切换时**单向回写** workspaceState（`memora.uiForm`），
-   * 供下次启动恢复形态 + 座位；运行期真源仍是内存值（见 helpers/uiFormPersistence.ts）。
-   */
-  public getUiForm(): UiForm {
-    return this._uiFormOps.current();
-  }
-
-  /**
-   * 切换侧栏形态（形态唯一写点：写状态 → context key → 下发 `ui_form` → 换会话）
-   *
-   * 换会话的判据全在 `assistantFormOps`（同形态重复点击 = 无操作）。
-   */
-  public async setUiForm(form: UiForm): Promise<void> {
-    await this._uiFormOps.set(form);
   }
 
   /**
@@ -1395,17 +1340,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._activeFile.setActiveFileAttach(msg.enabled);
     } else if (msg.type === 'new_session') {
       // 标题条「＋」新建会话 → 切入空会话，旧会话归档进历史。
-      // 助手形态例外：会话由助手安排（`create_session` / `send_to_session`），用户侧再开一条
-      // 会造出第二条托管会话、把工作台逼成「看哪条座位」。webview 已隐藏「＋」，宿主这里
-      // 仍须拒收——判据放在执行面，旧视图 / 其他触发面绕不过去。
-      if (this.getUiForm() === 'assistant') {
-        this.post({
-          type: 'notice',
-          level: 'info',
-          message: assistantModeCreatesSessionsNotice(),
-        });
-        return;
-      }
       void this.newSessionFromCommand();
     } else if (msg.type === 'fork_session') {
       // AI 回复底部「分叉」按钮 → 从指定 Round 位置分叉新会话
@@ -2166,12 +2100,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // CSP script-src 用 webview.cspSource（本地资源源）而非 'self'：
     // asWebviewUri 生成的外部脚本 URL 的 origin 是 https://*.vscode-resource.vscode-cdn.net，
     // 与 webview 文档自身 origin 不同，'self' 无法匹配 → 脚本被 CSP 拦截（历史加载/回放失效根因）
-    // 形态随骨架一次性下发（data-form）：视图重建时首帧即助手形态，不必等 ui_form 纠正
-    this._view.webview.html = buildHtml(
-      scriptUri,
-      this._view.webview.cspSource,
-      this._uiFormOps.current(),
-    );
+    // 侧栏恒自助：form 是挂载常量（托管走独立编辑器页，见 HOSTED-UI-SEAT-DECOUPLE-1），
+    // 不再随运行时切换。buildHtml 的 form 参数保留给托管页复用同一骨架。
+    this._view.webview.html = buildHtml(scriptUri, this._view.webview.cspSource, 'self');
   }
 
   /**
@@ -2186,10 +2117,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     //     回放会**填回**该会话留存的草稿（composer_draft_restore），但那只是文本、不是「正在打字」
     //     ⇒ 这里仍必须复位成 false，等用户真敲第一下由 composer_state 重新上行。
     this._composerHasText = false;
-    // ⓪ 侧栏形态补推（时间面漏面，同 ④~⑧）：形态只在切换时下发，视图折叠/重开会重建 HTML，
-    //    新 webview 的初值恒为自助 ⇒ 不补推就「折叠一次，助手形态被悄悄切回自助」。
-    //    必须放在草稿早退**之前**：草稿路径不经过下面的回放链，漏在这里就永远补不上。
-    this._uiFormOps.repush();
     // 草稿态（webview 重建，面板对象存活）：只重建草稿页。
     // 不能走启动归属裁决——它按「无当前会话」会退回/新建会话，那会在草稿期落记录。
     if (this.isDraft) {
@@ -2827,9 +2754,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       case 'send': {
         const text = msg.text?.trim() ?? '';
         if (!text) return;
-        // 归属提示（真机：收回托管后输入框仍是助手外观，发出去的话没人接、也没有任何说明）：
-        // 形态声称「跟助手说话」而归属已收回 ⇒ 当场说明并给恢复入口（不拦发送，见 ops 注释）
-        this._uiFormOps.warnIfOwnershipLost();
         // IMG-5 顺延补做：上一轮已收场 ⇒ 新 turn 起点是唯一必然可用的安全点。补做仍失败**不拦
         // 发送**：一级门禁会给可见文案（含「改用支持图片的模型」指引），比静默吞掉或卡输入更诚实。
         if (this._providerStale) await this.applyActiveProviderRefresh();

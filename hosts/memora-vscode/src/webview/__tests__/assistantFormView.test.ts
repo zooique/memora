@@ -1,11 +1,11 @@
 /**
  * 助手形态输入区（ASSISTANT-FORM）行为与作用域守卫
  *
- * 被测的四条差异（用户拍板）：
- * ① 占位文字换成助手文案、切回逐字还原；② #inputWrap 换品牌色描边/淡底；
- * ③ 输入框左侧显形助手图标；④ 顶部身份条（助手模式 + 工作台入口，2026-11-16 从
- * 输入框上方移到面板顶部）。
- * 显隐分工：图标仍走 JS hidden（applyForm 翻）；身份条与标题条**走 CSS**（jsdom 不算
+ * 形态是**挂载常量**（HOSTED-UI-SEAT-DECOUPLE-1）：侧栏挂 self、托管页挂 assistant，
+ * 换形态 = 换一个 webview 挂载，不再有运行时 ui_form 切换消息。被测差异：
+ * ① 占位文字按形态取文案；② #inputWrap 换品牌色描边/淡底；③ 输入框左侧显形助手图标；
+ * ④ 顶部身份条（助手模式 + 工作台入口）。
+ * 显隐分工：图标仍走 JS hidden（挂载时 applyForm 写）；身份条与标题条**走 CSS**（jsdom 不算
  * 样式），改由文末的源码级作用域守卫锁：除两条基线外，凡碰到 #inputBox / .assistant-mode /
  * #assistantMode 的规则都必须带 `body[data-form='assistant']` 前缀 —— 漏前缀 = 漏到
  * 自助形态（这是本特性的唯一泄漏口）。
@@ -42,66 +42,63 @@ describe('助手形态输入区（ASSISTANT-FORM）', () => {
     expect(modeIcon().hidden).toBe(true);
   });
 
-  it('收到 ui_form=assistant：占位换成助手文案，图标显形', () => {
-    mountChatView();
-    dispatch({ type: 'ui_form', form: 'assistant' });
+  it('挂载 assistant 形态：占位换成助手文案，图标显形', () => {
+    mountChatView('assistant');
     expect(document.body.dataset.form).toBe('assistant');
     expect(input().placeholder).toBe(ASSISTANT_PLACEHOLDER);
     expect(modeIcon().hidden).toBe(false);
   });
 
-  it('切回自助形态：占位**逐字**还原（与骨架原文严格相等），图标重新隐去', () => {
-    mountChatView();
-    dispatch({ type: 'ui_form', form: 'assistant' });
-    dispatch({ type: 'ui_form', form: 'self' });
+  it('两种形态各自挂载：自助占位逐字来自骨架原文，助手占位来自 l10n', () => {
+    mountChatView('assistant');
+    // 严格相等而非包含：任何「脚本里再存一份占位文案」的写法都会在这里漂移暴露
+    expect(input().placeholder).toBe(ASSISTANT_PLACEHOLDER);
+    expect(modeIcon().hidden).toBe(false);
+    // 另起一次挂载 = 自助视图（形态是常量，不再原地翻面）
+    mountChatView('self');
     expect(document.body.dataset.form).toBe('self');
-    // 严格相等而非包含：任何「脚本里再存一份自助文案」的写法都会在这里漂移暴露
     expect(input().placeholder).toBe(SELF_PLACEHOLDER);
     expect(modeIcon().hidden).toBe(true);
   });
 
   it('顶部身份条上的工作台入口只上报意图（选座判据在宿主）', () => {
-    const { postMessage } = mountChatView();
-    dispatch({ type: 'ui_form', form: 'assistant' });
+    const { postMessage } = mountChatView('assistant');
     document.getElementById('assistantWorkbenchBtn')!.click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'assistant_open_workbench' });
   });
 
-  it('助手形态隐藏标题条「＋」（会话由助手安排），切回自助即恢复', () => {
-    mountChatView();
-    const newSessionBtn = document.getElementById('newSessionBtn') as HTMLElement;
-    // 自助形态：新建入口在
-    expect(newSessionBtn.hidden).toBe(false);
-    dispatch({ type: 'ui_form', form: 'assistant' });
+  it('助手形态隐藏标题条「＋」（会话由助手安排），自助形态保留', () => {
+    mountChatView('assistant');
     // 助手形态：不出现（防用户自己再开一条托管会话）
-    expect(newSessionBtn.hidden).toBe(true);
-    dispatch({ type: 'ui_form', form: 'self' });
-    expect(newSessionBtn.hidden).toBe(false);
+    expect((document.getElementById('newSessionBtn') as HTMLElement).hidden).toBe(true);
+    // 另起自助视图：新建入口在
+    mountChatView('self');
+    expect((document.getElementById('newSessionBtn') as HTMLElement).hidden).toBe(false);
   });
 
   it('空态口径随形态隔离：自助角色空态不得泄漏进助手座位（2026-11-16 泄漏修复）', () => {
-    mountChatView();
-    // 自助形态下角色推送 → 空态角色化（正常形态）
+    // 自助视图：角色推送 → 空态角色化（正常形态）
+    mountChatView('self');
     dispatch({ type: 'chat_role_pack', rolePack: '共鸣小说家' });
     expect(document.getElementById('emptyState')?.hidden).toBe(false);
     expect(document.getElementById('emptyTitle')?.textContent).toContain('共鸣小说家');
-    // 切助手形态：空态整块隐藏 + 上次自助渲染的角色文案**清除**（不留残余，不靠 hidden 藏）
-    dispatch({ type: 'ui_form', form: 'assistant' });
+    // 助手视图：空态整块隐藏（新挂载无残余，不靠 hidden 藏上次自助渲染）
+    mountChatView('assistant');
     expect(document.getElementById('emptyState')?.hidden).toBe(true);
     expect(document.getElementById('emptyTitle')?.textContent).not.toContain('共鸣小说家');
     // 助手形态下角色推送照常到达（宿主仍推 chat_role_pack 供消息头标签用）：
     // 空态不被重新渲染成角色卡
     dispatch({ type: 'chat_role_pack', rolePack: '共鸣小说家' });
     expect(document.getElementById('emptyState')?.hidden).toBe(true);
-    // 切回自助：角色化空态恢复（空态域内单点判形态，切回即重裁决）
-    dispatch({ type: 'ui_form', form: 'self' });
+    // 回到自助视图：角色化空态成立（空态域内单点判形态）
+    mountChatView('self');
+    dispatch({ type: 'chat_role_pack', rolePack: '共鸣小说家' });
     expect(document.getElementById('emptyState')?.hidden).toBe(false);
     expect(document.getElementById('emptyTitle')?.textContent).toContain('共鸣小说家');
   });
 
   it('助手形态下托管草稿提示不投影（草稿提示是自助会话语义）', () => {
-    mountChatView();
-    dispatch({ type: 'ui_form', form: 'assistant' });
+    mountChatView('assistant');
     // 助手座位收到「draft + managed」标题推送：不得出现「回到我自己」提示行
     dispatch({ type: 'session_title', title: '新会话', draft: true, defaultMode: 'managed' });
     expect(document.querySelector('.empty-mode-hint')).toBeNull();
@@ -125,38 +122,40 @@ describe('助手形态输入区（ASSISTANT-FORM）', () => {
   });
 
   it('助手形态生成中发送键恒为发送态（脱手模型，无停止■）', () => {
-    mountChatView();
-    dispatch({ type: 'ui_form', form: 'assistant' });
+    mountChatView('assistant');
     // 生成中（running）+ 空输入：按钮禁用但仍是发送语义，不得变成停止方块
     dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' } });
     const send = document.getElementById('send') as HTMLButtonElement;
     expect(send.classList.contains('loading')).toBe(false);
     expect(send.title).toContain('Send');
-    // 切回自助：同一运行态下恢复停止语义（形态进矩阵，切换重算）
-    dispatch({ type: 'ui_form', form: 'self' });
-    expect(send.classList.contains('loading')).toBe(true);
-    expect(send.title).toContain('Stop');
+    // 自助视图：同一运行态下是停止语义（形态进矩阵，挂载时定稿）
+    mountChatView('self');
+    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' } });
+    const selfSend = document.getElementById('send') as HTMLButtonElement;
+    expect(selfSend.classList.contains('loading')).toBe(true);
+    expect(selfSend.title).toContain('Stop');
   });
 
-  it('顶部状态签：助手座位运行中显形、切回自助清空（微信「正在输入…」对应物）', () => {
-    mountChatView();
+  it('顶部状态签：助手座位运行中显形、自助视图不显示（微信「正在输入…」对应物）', () => {
+    mountChatView('assistant');
     const state = document.getElementById('assistantState') as HTMLElement;
     // 首帧无轮在跑：清空不占位
     expect(state.hidden).toBe(true);
     expect(state.textContent).toBe('');
 
-    dispatch({ type: 'ui_form', form: 'assistant' });
     dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' } });
     expect(state.hidden).toBe(false);
     expect(state.textContent).toBe('Advancing…');
 
-    // 收场清空；切回自助再无托管状态残留
+    // 收场清空
     dispatch({ type: 'turn_update', rounds: [], state: { phase: 'settled' } });
     expect(state.hidden).toBe(true);
+    // 自助视图：即使有轮在跑也不显示托管状态签
+    mountChatView('self');
     dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' } });
-    dispatch({ type: 'ui_form', form: 'self' });
-    expect(state.hidden).toBe(true);
-    expect(state.textContent).toBe('');
+    const selfState = document.getElementById('assistantState') as HTMLElement;
+    expect(selfState.hidden).toBe(true);
+    expect(selfState.textContent).toBe('');
   });
 });
 

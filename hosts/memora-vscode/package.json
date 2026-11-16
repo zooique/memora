@@ -74,16 +74,6 @@
         "icon": "$(briefcase)"
       },
       {
-        "command": "memora.form.assistant",
-        "title": "%command.formAssistant.title%",
-        "icon": "$(robot)"
-      },
-      {
-        "command": "memora.form.self",
-        "title": "%command.formSelf.title%",
-        "icon": "$(comment-discussion)"
-      },
-      {
         "command": "memora.attachImage",
         "title": "%command.attachImage.title%"
       },
@@ -384,16 +374,6 @@
           "command": "memora.openSettings",
           "when": "view == memora.chat",
           "group": "navigation"
-        },
-        {
-          "command": "memora.form.assistant",
-          "when": "view == memora.chat && memora.form != 'assistant'",
-          "group": "navigation@8"
-        },
-        {
-          "command": "memora.form.self",
-          "when": "view == memora.chat && memora.form == 'assistant'",
-          "group": "navigation@8"
         }
       ],
       "explorer/context": [

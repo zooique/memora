@@ -78,8 +78,11 @@ import { join } from 'node:path';
  *  揉进一个载荷。`auth_closed` 单列而不搭 `write_confirm_closed`：requestId 空间独立，
  *  复用会让确认卡的收卡逻辑误关授权卡。
  *  实测 148，阈值同口径重算 149。
+ *  2026-11-16 侧栏形态退役（`HOSTED-UI-SEAT-DECOUPLE-1`）−1：删 `ui_form`（E→W 形态下行）——
+ *  形态从「侧栏运行时切换」降为「视图挂载常量」，换形态 = 换一个 webview 挂载，不再有运行时消息。
+ *  实测 147，阈值同口径重算 148。
  */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 149;
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 148;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {

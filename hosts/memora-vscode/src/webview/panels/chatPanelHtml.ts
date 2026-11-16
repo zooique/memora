@@ -16,9 +16,9 @@ import type { UiForm } from '../../shared/protocol.js';
 /** 生成 Webview HTML（含消息区 / 输入框 + 模型下拉框 / 主动提问框）
  *  @param scriptUri 外部脚本 chatView.js 的 asWebviewUri（CSP script-src cspSource 加载）
  *  @param cspSource webview 本地资源源（webview.cspSource，供 CSP script-src 放行 asWebviewUri 外部脚本）
- *  @param form 侧栏形态（真源 = 宿主 `_uiFormOps`）：只落成 body 的 data-form 属性，
- *  让助手形态的样式与文案在**首帧**即正确——否则视图重建后会先画一遍自助形态再被
- *  `ui_form` 消息纠正（可见闪烁）。自助形态（缺省）与既往 HTML 逐字等价。 */
+ *  @param form 挂载形态常量：侧栏恒 'self'、托管编辑器页恒 'assistant'
+ *  （HOSTED-UI-SEAT-DECOUPLE-1）。只落成 body 的 data-form 属性，样式与文案在**首帧**即正确；
+ *  不再有运行时形态切换消息——换形态 = 换一个 webview 挂载。缺省 self 与既往 HTML 逐字等价。 */
 export function buildHtml(scriptUri: vscode.Uri, cspSource: string, form: UiForm = 'self'): string {
   return `${buildHtmlHead({
     lang: resolveHtmlLang(vscode.env?.language),

@@ -13,8 +13,6 @@ import type { Agent } from '@zooique/memora';
 import type { MemoraChatViewProvider } from '../../webview/panels/chatPanel.js';
 import type { SessionMode, SessionModeStore } from '../host/sessionModeStore.js';
 import { openChatCommand } from './openChat.js';
-// 助手形态下用户侧新建会话的统一提示（与面板「＋」共用一句，禁各写一份）
-import { assistantModeCreatesSessionsNotice } from '../../shared/assistantModeNotice.js';
 
 /** QuickPick 项：`value` 是唯一载荷；label / description 只做展示 */
 type ModePickItem = vscode.QuickPickItem & { value: SessionMode };
@@ -31,12 +29,6 @@ export async function newSessionCommand(
   chatProvider: MemoraChatViewProvider,
   sessionModes: SessionModeStore,
 ): Promise<void> {
-  // 助手形态里会话由助手安排：命令面板与标题条「＋」同一判据、同一句提示。
-  // 否则用户在这里选「托管」就会造出第二条托管会话，工作台又要问「看哪条座位」。
-  if (chatProvider.getUiForm() === 'assistant') {
-    void vscode.window.showInformationMessage(assistantModeCreatesSessionsNotice());
-    return;
-  }
   const lastMode = sessionModes.getLastMode();
 
   /** 自助模式项：origin 落 'user'；文案说「我自己聊」，不出现模式名 */

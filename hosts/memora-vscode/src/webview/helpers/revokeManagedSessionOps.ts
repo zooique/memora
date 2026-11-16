@@ -56,8 +56,6 @@ export interface RevokeManagedSessionDeps {
   resetDisplayedAgent: () => void;
   /** 投递一条面板通知（`post` 单点） */
   post: (msg: ExtensionToWebviewMessage) => void;
-  /** 就地回自助形态（含 context key 与 `ui_form` 两处同步，不换会话） */
-  forceSelfForm: () => void;
   /** 该会话开出去的子会话（创建者账本，仅本进程） */
   childrenOf: (sessionId: string) => readonly string[];
   /** 该创建者名下尚未浮现的落定汇报条数（收回后不会再送到这里） */
@@ -124,8 +122,6 @@ export async function revokeManagedSessionWith(
   // ① 先落运行期事实（重装读的是这一份）；② 摘表 → 回收 → 重装（顺序理由见函数头）
   deps.sessionModes.set(sid, 'self');
   deps.sessionModes.clearAgentDriven(sid);
-  // 形态与归属同步：只翻当前显示会话这一屏（收回别的会话不动眼前这一页）
-  if (deps.currentSessionId() === sid) deps.forceSelfForm();
   deps.forgetAgent(sid);
   await deps.releaseAgent(sid);
   try {

@@ -1381,16 +1381,6 @@ export type ExtensionToWebviewMessage =
       defaultMode?: 'self' | 'managed';
     }
   /**
-   * 侧栏形态（E→W，形态命令 / webview 就绪时下发）
-   *
-   * 形态真源在宿主（`MemoraChatViewProvider._uiForm`）：webview 只**显示**，不得自行
-   * 记住或推断形态（重启回自助 + 视图重建后按宿主当前值还原，两处都得听宿主）。
-   *
-   * ⚠️ 不合并进 `session_title`：形态与「哪条会话」正交——草稿路径没有 `session_title`
-   * 之外的字段可搭车，且形态变化不改变会话标题，搭车会迫使两处各自判「要不要重发」。
-   */
-  | { type: 'ui_form'; form: UiForm }
-  /**
    * 把某会话留存的未发送文本放回输入框（E→W，随回放一起下发）
    *
    * 只填框，**不回发** `composer_state`：留存的旧草稿不是「用户此刻在打字」，不能让宿主

@@ -50,35 +50,6 @@ export const UI_COMPOSER_DRAFTS_KEY = 'memora.composerDrafts';
  */
 export const UI_DRAFT_PAGE_KEY = 'memora.composerDraftPage';
 
-/**
- * 侧栏形态 + 座位绑定（`{ form, seatSessionId }`）在 `workspaceState` 里的键
- *
- * 作用域**故意是工作区级**：形态属于「这个项目窗口怎么开着」。用 globalState 会把 A 项目的
- * 托管形态带到 B 项目（那边没有对应会话，恢复出来是空壳）；也不写 `.memora`——那是项目数据，
- * UI 偏好不该混进去。
- *
- * ⚠️ 只当**种子**：构造期读一次，运行期真源仍是 `assistantFormOps` 的内存值，回写单向发出。
- * 若哪天有人在运行期再读一次本键，那就是第二真相源。
- */
-export const UI_FORM_STATE_KEY = 'memora.uiForm';
-
-/**
- * 持久化的形态状态（`UI_FORM_STATE_KEY` 的值形状）
- *
- * 脏数据（缺字段 / 非法 form）一律**整体**回落 `self`，不猜半个值。
- */
-export interface PersistedUiFormState {
-  /** 关闭时面板所处的形态 */
-  form: 'self' | 'assistant';
-  /**
-   * 助手形态绑定的座位会话 id
-   *
-   * 空串 = 当时在**托管草稿**里（还没有会话）。恢复时若本字段为空但存在「上次停留会话」，
-   * 只有该会话出生来源是 `hosted` 才认它（见 `uiFormPersistence` 的注释）。
-   */
-  seatSessionId: string;
-}
-
 /** 回收站保留期（天）：`memora.cleanupMemories` 命令与设置面板「清理过期」共用的单一真理源，
  *  改保留期只改此处。内核不持定时器，保留期策略归宿主，
  *  且只在用户显式触发清理时生效（无自动清理）。 */

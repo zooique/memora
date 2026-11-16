@@ -61,8 +61,6 @@ import { projectSessionStatus } from '../shared/sessionStatus.js';
 import type { WorkbenchJobStatus } from '../shared/workbenchDto.js';
 // 「打开工作台」命令（命令面板 + 助手形态输入区按钮共用；标题栏不再提供按钮，自助形态无此入口）
 import { registerOpenWorkbenchCommand } from './commands/openWorkbench.js';
-// 侧栏形态切换（自助 ⇄ 助手）：两条命令 + context key，菜单侧由 package.json#view/title 裁决
-import { registerAssistantFormCommands } from './commands/assistantForm.js';
 // 设置面板 tab 标识的类型真源（`shared/settingsTabs.ts`）：命令参数与 protocol 共用同一联合，
 // 本文件不手写字面量清单（加一页不必回来补签名）
 import type { SettingsTab } from '../shared/settingsTabs.js';
@@ -904,8 +902,6 @@ export function activate(context: vscode.ExtensionContext): void {
   registerNewSessionCommand(context, getAgent, chatProvider, sessionModes); // 新建会话（选择模式）
   // 收回本会话：撤销助手代理（mode → self，强制按自助重装；历史标记不动）
   registerRevokeManagedSessionCommand(context, chatProvider);
-  // 侧栏形态切换：自助 ⇄ 助手（形态不落盘，启动恒回自助）
-  registerAssistantFormCommands(context, chatProvider);
   // 命令：添加图片到对话（IMG-2 Q3）：拾取编排（开框/读盘/落盘/回执）全归 chatPanel.pickAndAttachImages 单点
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.attachImage', () => chatProvider.pickAndAttachImages()),

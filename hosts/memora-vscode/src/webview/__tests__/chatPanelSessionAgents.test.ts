@@ -34,19 +34,9 @@ import { readSessionRolePackName } from '../../extension/host/sessionRolePack.js
 import type * as vscode from 'vscode';
 // 共享 vscode mock 的运行时引用：默认角色包用例要按用例改写 getConfiguration；
 // window 用于删除会话路径的确认框替身（confirmModal 只认 confirmLabel 返回值）
-import {
-  workspace as mockedWorkspace,
-  commands as mockedCommands,
-  window as mockedWindow,
-} from 'vscode';
-// 形态上下文键的真源（收回同步形态时断言宿主侧也写了同一键，测试不自造字面量）
-import { UI_FORM_CONTEXT_KEY } from '../panels/assistantFormOps.js';
+import { workspace as mockedWorkspace, window as mockedWindow } from 'vscode';
 // 未发送草稿的持久键（断言落盘形状用真源常量，不复制字面量）
-import {
-  UI_COMPOSER_DRAFTS_KEY,
-  UI_DRAFT_PAGE_KEY,
-  UI_FORM_STATE_KEY,
-} from '../../shared/constants.js';
+import { UI_COMPOSER_DRAFTS_KEY, UI_DRAFT_PAGE_KEY } from '../../shared/constants.js';
 import { DRAFT_PAGE_OWNER } from '../helpers/composerDrafts.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
@@ -73,7 +63,6 @@ const tStub = vi.hoisted(() => (msg: string, ...args: unknown[]): string => {
 
 vi.mock('vscode', async () => ({
   l10n: { t: tStub },
-  // 形态切换写上下文键（`setContext`）；收回同步形态的用例要断言这一处也被写了
   commands: { executeCommand: vi.fn() },
   // 视图重开走真实 render（buildHtmlHead 读 vscode.env.language）
   env: { language: 'zh-cn' },
@@ -492,33 +481,6 @@ describe('撤销并交还 · revokeManagedSession', () => {
     expect(factory).not.toHaveBeenCalled();
   });
 
-  it('收回当前显示会话：形态同步回自助（状态 + context key + ui_form 三处）', async () => {
-    const modes = createEphemeralSessionModeStore();
-    const sid = '2026-11-06-form';
-    const { provider, posted } = setupPanel({ [sid]: sessionAgent(sid) }, [sid], modes);
-    modes.set(sid, 'managed');
-    provider.setAgentReleaser(async () => {});
-    provider.setAgentFactory(async () => sessionAgent(sid));
-    // 先真的进助手形态（生产唯一写点）；此后侧栏就是助手外观
-    await provider.setUiForm('assistant');
-    expect(provider.getUiForm()).toBe('assistant');
-    // 清掉进形态那一笔，只看收回这一笔的形态同步
-    vi.mocked(mockedCommands.executeCommand).mockClear();
-    posted.length = 0;
-
-    expect(await provider.revokeManagedSession()).toBe(true);
-    // 形态状态 = 自助（不是只改外观）
-    expect(provider.getUiForm()).toBe('self');
-    // webview 侧：下发 ui_form（只改宿主状态会让标题栏菜单与实际形态相反）
-    expect(posted).toContainEqual({ type: 'ui_form', form: 'self' });
-    // 宿主侧：context key 同步写
-    expect(vi.mocked(mockedCommands.executeCommand)).toHaveBeenCalledWith(
-      'setContext',
-      UI_FORM_CONTEXT_KEY,
-      'self',
-    );
-  });
-
   it('收回时还有派出去仍在跑的会话：如实说明它们的结果不会再报回这条会话', async () => {
     const modes = createEphemeralSessionModeStore();
     const sid = '2026-11-06-seat';
@@ -543,37 +505,6 @@ describe('撤销并交还 · revokeManagedSession', () => {
     ).toBe(true);
   });
 
-  it('发送当口：助手形态 × 会话已不归助手 ⇒ 当场说明并给恢复入口（不静默吞掉）', async () => {
-    const modes = createEphemeralSessionModeStore();
-    const sid = '2026-11-06-lost';
-    const { provider, posted, cast, fireMessage } = setupPanel(
-      { [sid]: sessionAgent(sid) },
-      [sid],
-      modes,
-    );
-    modes.set(sid, 'managed');
-    provider.setAgentFactory(async () => sessionAgent(sid));
-    await provider.setUiForm('assistant');
-    // 显示源显式绑到该会话（setupPanel 只登记投影表，`_agent` 由绑定动作写入）
-    cast._agent = cast._sessionAgents.get(sid);
-    // 构造真机窗口：归属已交还，形态还停在助手（新版收回会同步形态，这里专门验兜底）
-    modes.set(sid, 'self');
-    modes.clearAgentDriven(sid);
-    posted.length = 0;
-
-    fireMessage({ type: 'input', kind: 'send', text: '在吗' });
-    // 消息入口是异步处理（生产按 void 调用），等一轮宏任务再断言
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(
-      posted.some(
-        (msg) =>
-          msg.type === 'notice' &&
-          (msg.message ?? '').includes('taken back from the assistant') &&
-          (msg.message ?? '').includes('self-service chat'),
-      ),
-    ).toBe(true);
-  });
 });
 
 describe('代理能开会话 · createHostedSession', () => {
@@ -2430,109 +2361,6 @@ describe('webview 重建 · 宿主「用户正在打字」布尔复位', () => {
   });
 });
 
-/**
- * 工作区级持久层替身（恢复路径只读 `memora.uiForm` 一个键）
- *
- * @param value 持久值（undefined = 没存过）
- */
-function uiStateOf(value: unknown): vscode.Memento {
-  // update 也要给：恢复路径会把「纠正后的值」回写（回落自助 / 绑定座位各写一次）
-  return { get: () => value, update: async () => undefined } as never;
-}
-
-describe('形态 + 座位成对恢复（重启后照旧）', () => {
-  it('记住的是助手形态 + 座位：重启后仍是助手，且座位写回为 managed / restored', () => {
-    const seat = '2026-11-15-seat';
-    const modes = createEphemeralSessionModeStore();
-    const { provider } = setupPanel(
-      {},
-      [seat],
-      modes,
-      uiStateOf({
-        form: 'assistant',
-        seatSessionId: seat,
-      }),
-    );
-
-    expect(provider.getUiForm()).toBe('assistant');
-    // 成对：只恢复外观不恢复座位，会重演「界面说托管、实际没人接」
-    expect(modes.isManaged(seat)).toBe(true);
-    // 打「恢复」标签：工作台据此说「恢复了座位」而不是「已收回」
-    expect(modes.isRestored(seat)).toBe(true);
-    expect(provider.getCurrentSessionId()).toBe(seat);
-  });
-
-  it('形态恢复成助手但上次看的是别的会话：视图留在原页，座位只登记（口径 A）', () => {
-    const seat = '2026-11-15-seat';
-    const other = '2026-11-15-other';
-    const modes = createEphemeralSessionModeStore();
-    const { provider, store } = setupPanel(
-      {},
-      [other, seat],
-      modes,
-      uiStateOf({
-        form: 'assistant',
-        seatSessionId: seat,
-      }),
-    );
-
-    // 页面优先：恢复不改当前显示会话（切走会离开用户关窗时看的那一页）
-    expect(provider.getCurrentSessionId()).toBe(other);
-    expect(store.getInitialSessionId()).toBe(other);
-    // 座位照旧登记：工作台里该看得见还看得见，形态也是助手
-    expect(provider.getUiForm()).toBe('assistant');
-    expect(modes.isManaged(seat)).toBe(true);
-    expect(modes.isRestored(seat)).toBe(true);
-  });
-
-  it('座位会话已被删除：回落自助，不把成自动会话恢复成托管', () => {
-    const other = '2026-11-15-other';
-    const modes = createEphemeralSessionModeStore();
-    const { provider } = setupPanel(
-      {},
-      [other],
-      modes,
-      uiStateOf({
-        form: 'assistant',
-        seatSessionId: '2026-11-15-gone',
-      }),
-    );
-
-    expect(provider.getUiForm()).toBe('self');
-    expect(modes.isManaged('2026-11-15-gone')).toBe(false);
-  });
-
-  it('没有持久值（老工作区 / 未注入）：行为与改造前一致，重启回自助', () => {
-    const seat = '2026-11-15-seat';
-    const modes = createEphemeralSessionModeStore();
-    const { provider } = setupPanel({}, [seat], modes);
-
-    expect(provider.getUiForm()).toBe('self');
-    expect(modes.isManaged(seat)).toBe(false);
-  });
-
-  it('切形态即回写（不攒到关闭时才写）：助手写座位、回自助清座位', async () => {
-    /** 捕获每次 workspaceState 写入（键 + 值） */
-    const writes: [string, unknown][] = [];
-    const ui = {
-      get: () => undefined,
-      update: async (key: string, value: unknown) => {
-        writes.push([key, value]);
-      },
-    } as never;
-    const { provider } = setupPanel({}, ['2026-11-15-seat'], createEphemeralSessionModeStore(), ui);
-
-    await provider.setUiForm('assistant');
-    // 进助手没有可接管的会话 ⇒ 托管草稿：座位此刻为空串，首句落会话后仍是空串
-    // （下次启动按「座位为空 + 当前会话托管出生」认回来，见 uiFormPersistence）
-    expect(writes.at(-1)).toEqual(['memora.uiForm', { form: 'assistant', seatSessionId: '' }]);
-
-    await provider.setUiForm('self');
-    // 回自助必须把座位清空，否则下次启动会把一条自助会话恢复成托管
-    expect(writes.at(-1)).toEqual(['memora.uiForm', { form: 'self', seatSessionId: '' }]);
-  });
-});
-
 describe('未发送草稿按会话持久化（O5）', () => {
   it('上行文本按归属落盘、清空即删键、视图重建把草稿填回输入框', async () => {
     const seat = '2026-11-15-draft-seat';
@@ -2737,24 +2565,19 @@ describe('空白草稿页的草稿（O5-B）', () => {
     expect(h.cast._draft.isDraft).toBe(true);
   });
 
-  it('助手形态 + 上次停在空白页 + 有座位：回空白页、字与标记都在，座位只登记（真机回归）', () => {
+  it('上次停在空白页 + 有会话：回空白页、字与标记都在（真机回归）', () => {
     const raw = new Map<string, unknown>();
     const seat = '2026-11-15-seat';
-    // 真机现场：上一轮是助手会话（座位登记着），用户点「＋」打了字就关窗（停在空白页）
-    raw.set(UI_FORM_STATE_KEY, { form: 'assistant', seatSessionId: seat });
+    // 真机现场：工作区有真会话，用户点「＋」打了字就关窗（停在空白页）
     raw.set(UI_DRAFT_PAGE_KEY, true);
     raw.set(UI_COMPOSER_DRAFTS_KEY, { [DRAFT_PAGE_OWNER]: '空白页打的字' });
-    const modes = createEphemeralSessionModeStore();
-    const h = setupPanel({}, [seat], modes, makeUi(raw));
+    const h = setupPanel({}, [seat], createEphemeralSessionModeStore(), makeUi(raw));
 
-    // 页面优先：仍在空白页——没被座位恢复切走，字与「上次停在空白页」标记都没被清
+    // 仍停在空白页：字与「上次停在空白页」标记都没被清
     expect(h.provider.getCurrentSessionId()).toBe('');
     expect(h.cast._draft.isDraft).toBe(true);
     expect(raw.get(UI_DRAFT_PAGE_KEY)).toBe(true);
     expect(raw.get(UI_COMPOSER_DRAFTS_KEY)).toEqual({ [DRAFT_PAGE_OWNER]: '空白页打的字' });
-    // 座位照旧登记（形态还是助手）：工作台里该看得见还看得见
-    expect(h.provider.getUiForm()).toBe('assistant');
-    expect(modes.isManaged(seat)).toBe(true);
   });
 
   it('上次停在真会话 ⇒ 空白页的草稿不抢戏（回填的仍是该会话自己的草稿）', async () => {
