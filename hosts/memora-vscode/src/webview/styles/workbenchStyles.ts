@@ -200,6 +200,60 @@ body {
   outline-offset: var(--sp-hair);
 }
 
+/* 「查看运行情况」：与「去这个会话」同级弱化展示（局部展开用，不上行消息） */
+.wb-job__toggle {
+  border: var(--border-panel) solid var(--sp-hair);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-0) var(--sp-4);
+  background: var(--btn-secondary-bg);
+  color: var(--btn-secondary-fg);
+  font-family: inherit;
+  font-size: 0.88em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.wb-job__toggle:focus-visible {
+  outline: var(--sp-hair) solid var(--border-focus);
+  outline-offset: var(--sp-hair);
+}
+
+/* 末轮运行情况：整行展开（窄列优先纵向，不挤右侧按钮） */
+.wb-job__progress {
+  flex: 1 1 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-left: var(--sp-hair) solid var(--border-panel);
+  color: var(--text-primary);
+  font-size: 0.88em;
+  word-break: break-word;
+}
+
+.wb-progress__heading {
+  color: var(--text-secondary);
+  font-size: 0.9em;
+}
+
+.wb-progress__request {
+  white-space: pre-wrap;
+}
+
+.wb-progress__response {
+  white-space: pre-wrap;
+  padding-left: var(--sp-3);
+  border-left: var(--sp-hair) solid var(--border-panel);
+  color: var(--text-secondary);
+}
+
+.wb-progress__note,
+.wb-progress__none {
+  color: var(--text-secondary);
+  font-size: 0.9em;
+}
+
 /* 窄窗口：整行改纵向，右块占满宽度并保持右对齐（不再依赖 overflow 裁切） */
 @media (max-width: 420px) {
   .wb-job {

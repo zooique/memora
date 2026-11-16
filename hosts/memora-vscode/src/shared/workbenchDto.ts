@@ -55,6 +55,31 @@ export type WorkbenchJobStatus =
   | { kind: 'unreadable' }
   | { kind: 'stopped'; stop: WorkbenchStopReason };
 
+/**
+ * 末轮运行情况摘要（工作台就地展开用；只读既有事实，不是逐字实时流）
+ *
+ * ⚠️ 边界（2026-11-16 拍板）：内核 `processEvents` / `assistantMessage` 是闭环完成时刻
+ * Write-once 定型——**运行中的轮读盘读不到逐 chunk 过程**。这里只投影末轮已落盘的事实：
+ * 用户输入 +（完成轮的）回答片段 + 轮状态 + 时间。要逐字流须另加宿主内存 buffer 推送，
+ * 与本摘要无关。字段名刻意避开名为 `type` 的字段（协议计数守卫按该字段的字面量计数）。
+ */
+export interface WorkbenchLatestRound {
+  /** 轮 id（与原轮锚点一致，不另造标识） */
+  roundId: string;
+  /** 末轮用户输入原文（宿主截断后传入；读不到整轮时由调用方不填本对象） */
+  request: string;
+  /** 完成轮的回答片段（仅 complete 状态可能有；运行中/未完成不伪造） */
+  response?: string;
+  /** 轮状态原文（内核 RoundStatus；webview 只显示，不据此重新推断会话状态） */
+  status: string;
+  /** 轮创建时间（ISO 8601） */
+  createdAt: string;
+  /** 该会话的轮总数（展示「第 N / 共 M 轮」的分母；真源 = readRoundIds 长度） */
+  totalRounds: number;
+  /** 该轮在有序轮列表中的序号（从 1 起） */
+  index: number;
+}
+
 /** 一条「最近在办什么」 */
 export interface WorkbenchJob {
   /** 会话标识（点击「去这个会话」的载荷） */
@@ -73,6 +98,8 @@ export interface WorkbenchJob {
    * 界面不给来源标签，也不猜成某一种。
    */
   via?: 'create' | 'delegate';
+  /** 末轮运行情况摘要（读不到整轮时不填；界面据此显示「无法读取末轮」，不伪造） */
+  latest?: WorkbenchLatestRound;
 }
 
 /**

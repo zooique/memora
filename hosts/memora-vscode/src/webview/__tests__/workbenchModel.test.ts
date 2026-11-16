@@ -387,3 +387,83 @@ describe('buildWorkbenchSnapshot — 清单口径', () => {
     expect(snapshot.jobs.map((job) => job.sessionId)).toEqual(['session-new', 'session-old']);
   });
 });
+
+describe('工作台末轮运行情况摘要（WorkbenchJob.latest）', () => {
+  /** 构造可投影的整轮（id / 状态 / 用户输入 / 回答 / 时间） */
+  function fullRound(
+    id: string,
+    status: RoundStatus,
+    userText: string,
+    answer?: string,
+  ): Round {
+    return {
+      id,
+      status,
+      userMessage: { id: `msg-${id}`, role: 'user', content: userText, timestamp: '2026-11-16T10:00:00.000Z' },
+      ...(answer
+        ? { assistantMessage: { id: `msg-a-${id}`, role: 'assistant', content: answer, timestamp: '2026-11-16T10:01:00.000Z' } }
+        : {}),
+      createdAt: '2026-11-16T10:00:00.000Z',
+    } as unknown as Round;
+  }
+
+  const withChild = (overrides: Partial<WorkbenchSnapshotInputs>): WorkbenchSnapshotInputs =>
+    baseInputs({ childrenOf: () => ['session-child'], ...overrides });
+
+  it('完成轮：摘要带用户输入 + 回答片段 + 轮序号（分母 = 轮 id 列表长度）', () => {
+    const snapshot = buildWorkbenchSnapshot(
+      withChild({
+        readRoundIds: () => ['round-1', 'round-2'],
+        readRound: (id) => fullRound(id, 'complete', '调查情报 A', '结论：A 已核实'),
+        readRoundStatus: () => 'complete',
+      }),
+    );
+    expect(snapshot.jobs[0]?.latest).toMatchObject({
+      roundId: 'round-2',
+      request: '调查情报 A',
+      response: '结论：A 已核实',
+      status: 'complete',
+      totalRounds: 2,
+      index: 2,
+    });
+  });
+
+  it('运行中轮：只有用户输入与状态，不伪造回答（Write-once 边界）', () => {
+    const snapshot = buildWorkbenchSnapshot(
+      withChild({
+        readRoundIds: () => ['round-1'],
+        // 即便替身里给回答字段，pending 状态也不投影（内核运行中轮本就没有落盘回答）
+        readRound: (id) => fullRound(id, 'pending', '正在做的事', '伪造的回答'),
+        readRoundStatus: () => 'pending',
+      }),
+    );
+    const latest = snapshot.jobs[0]?.latest;
+    expect(latest?.request).toBe('正在做的事');
+    expect(latest?.status).toBe('pending');
+    expect(latest?.response).toBeUndefined();
+  });
+
+  it('无轮 / 末轮读不到：整条不填（界面据此说「无法读取末轮」，不冒充空摘要）', () => {
+    const noRounds = buildWorkbenchSnapshot(withChild({ readRoundIds: () => [] }));
+    expect(noRounds.jobs[0]?.latest).toBeUndefined();
+    const unreadable = buildWorkbenchSnapshot(
+      withChild({ readRoundIds: () => ['round-x'], readRound: () => undefined }),
+    );
+    expect(unreadable.jobs[0]?.latest).toBeUndefined();
+  });
+
+  it('超长文本截断（摘要不撑爆窄列），截断后仍保留首段事实', () => {
+    const long = '很长用户输入'.repeat(60);
+    const snapshot = buildWorkbenchSnapshot(
+      withChild({
+        readRoundIds: () => ['round-1'],
+        readRound: (id) => fullRound(id, 'complete', long),
+        readRoundStatus: () => 'complete',
+      }),
+    );
+    const request = snapshot.jobs[0]?.latest?.request ?? '';
+    expect(request.length).toBeLessThan(long.length);
+    expect(request.endsWith('…')).toBe(true);
+    expect(request.startsWith('很长用户输入')).toBe(true);
+  });
+});

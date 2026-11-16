@@ -30,6 +30,7 @@ import {
   filtersByLiveDriver,
   type WorkbenchAgentIdentity,
   type WorkbenchJob,
+  type WorkbenchLatestRound,
   type WorkbenchSeatSource,
   type WorkbenchSnapshot,
 } from '../../shared/workbenchDto.js';
@@ -133,6 +134,7 @@ export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): Workben
       missingCount += 1;
       continue;
     }
+    const latest = projectLatest(inputs, sessionId);
     jobs.push({
       sessionId,
       // 标题口径：会话自己起过名 → 用它（与历史列表一致）；没名字时用创建时给的标题；
@@ -145,6 +147,8 @@ export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): Workben
       updatedAt: meta.updatedAt,
       // 来源分档：create（助手开的）/ delegate（被派过活）；分不出来源就不给标签
       ...(origin.via ? { via: origin.via } : {}),
+      // 末轮运行情况摘要（就地展开用；读不到如实不填，界面另行说明）
+      ...(latest ? { latest } : {}),
     });
   }
   jobs.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -165,6 +169,48 @@ export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): Workben
       totalRounds: inputs.history.totalRounds,
       scannedRounds: inputs.history.scannedRounds,
     },
+  };
+}
+
+/** 摘要文本上限（防止一轮长文把工作台列表撑爆；超出用省略号，不截断事实来源） */
+const LATEST_TEXT_LIMIT = 280;
+
+/** 摘要截断：保留开头（用户输入/回答的起首最说明问题），超出加省略号 */
+function clip(text: string): string {
+  const trimmed = text.trim();
+  return trimmed.length > LATEST_TEXT_LIMIT ? `${trimmed.slice(0, LATEST_TEXT_LIMIT)}…` : trimmed;
+}
+
+/**
+ * 末轮运行情况摘要（工作台就地展开的数据源）
+ *
+ * 口径纪律：
+ * - **只读既有事实**：轮 id 列表与整轮都来自注入读口，本函数不读盘、不缓存；
+ * - **逐字流读不到就不造**：内核 `processEvents` / `assistantMessage` 在闭环完成时刻
+ *   Write-once 定型，运行中的轮只有用户输入可投影——回答字段只在 `complete` 且有
+ *   `assistantMessage` 时填，别的状态一律不写（空字段 ≠ 空回答的事实）。
+ * - **读不到就整条不填**：整轮读不到时返回 undefined，由界面说「无法读取末轮」，
+ *   不拿状态字符串冒充运行情况。
+ */
+function projectLatest(inputs: WorkbenchSnapshotInputs, sessionId: string): WorkbenchLatestRound | undefined {
+  const ids = inputs.readRoundIds(sessionId);
+  if (ids.length === 0) return undefined;
+  const roundId = ids[ids.length - 1];
+  if (!roundId) return undefined;
+  const round = inputs.readRound(roundId);
+  if (!round) return undefined;
+  const request = round.userMessage?.content;
+  if (typeof request !== 'string') return undefined;
+  const status = inputs.readRoundStatus(roundId) ?? round.status;
+  const answer = status === 'complete' ? round.assistantMessage?.content : undefined;
+  return {
+    roundId,
+    request: clip(request),
+    ...(typeof answer === 'string' && answer.trim() ? { response: clip(answer) } : {}),
+    status,
+    createdAt: round.createdAt,
+    totalRounds: ids.length,
+    index: ids.length,
   };
 }
 

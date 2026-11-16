@@ -262,6 +262,27 @@ function renderJob(document: Document, deps: WorkbenchViewDeps, job: WorkbenchJo
     badge.textContent = described.badge.label;
     side.appendChild(badge);
   }
+  // 末轮运行情况：就地展开（无 latest = 如实说读不到，不摆空白框）
+  const detail = document.createElement('div');
+  detail.className = 'wb-job__progress';
+  detail.hidden = true;
+  detail.appendChild(renderProgress(document, job));
+
+  // 「查看运行情况」：纯本地展开（不上行消息、不改会话状态）——工作台是可丢弃的只读
+  // 投影，3 秒快照重建后展开态自然收起，避免展示一份过期的末轮摘要。
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'wb-job__toggle';
+  toggle.textContent = l10n.t('View progress');
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.addEventListener('click', () => {
+    const expanded = toggle.getAttribute('aria-expanded') === 'true';
+    toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+    toggle.textContent = expanded ? l10n.t('View progress') : l10n.t('Hide progress');
+    detail.hidden = expanded;
+  });
+  side.appendChild(toggle);
+
   const open = document.createElement('button');
   open.type = 'button';
   open.className = 'wb-job__open';
@@ -270,8 +291,48 @@ function renderJob(document: Document, deps: WorkbenchViewDeps, job: WorkbenchJo
     deps.post({ type: 'workbench_open_session', sessionId: job.sessionId });
   });
   side.appendChild(open);
-  item.append(main, side);
+
+  item.append(main, side, detail);
   return item;
+}
+
+/**
+ * 末轮运行情况块（只读摘要；文案按事实分档，不把「运行中」说成已完成）
+ */
+function renderProgress(document: Document, job: WorkbenchJob): DocumentFragment {
+  const frag = document.createDocumentFragment();
+  const latest = job.latest;
+  if (!latest) {
+    const none = document.createElement('div');
+    none.className = 'wb-progress__none';
+    none.textContent = job.status.kind === 'queued'
+      ? l10n.t('No round has started yet')
+      : l10n.t('The latest round could not be read');
+    frag.appendChild(none);
+    return frag;
+  }
+  const heading = document.createElement('div');
+  heading.className = 'wb-progress__heading';
+  heading.textContent = l10n.t('Round {0} of {1} · {2}', latest.index, latest.totalRounds, latest.status);
+  frag.appendChild(heading);
+
+  const request = document.createElement('div');
+  request.className = 'wb-progress__request';
+  request.textContent = latest.request;
+  frag.appendChild(request);
+
+  // 回答片段只在 complete 且有内容时显示——运行中/中断轮不给「回答」，那是伪造
+  if (latest.response) {
+    const response = document.createElement('div');
+    response.className = 'wb-progress__response';
+    response.textContent = latest.response;
+    frag.appendChild(response);
+  }
+  const note = document.createElement('div');
+  note.className = 'wb-progress__note';
+  note.textContent = l10n.t('For live step-by-step output, open the session');
+  frag.appendChild(note);
+  return frag;
 }
 
 /**

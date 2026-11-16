@@ -510,12 +510,66 @@ describe('workbenchView — 只读与上行契约', () => {
     view.ready();
     expect(post).toHaveBeenCalledWith({ type: 'ready' });
     view.render(snapshot({ jobs: [job('session-child', { kind: 'completed' })] }));
-    const button = jobsList.querySelector('button');
-    expect(button?.textContent).toBe('Go to this session');
+    const button = jobsList.querySelector('.wb-job__open') as HTMLButtonElement;
+    expect(button.textContent).toBe('Go to this session');
     button?.click();
     expect(post).toHaveBeenCalledWith({
       type: 'workbench_open_session',
       sessionId: 'session-child',
     });
+  });
+
+  it('点击「查看运行情况」就地展开/收起末轮摘要（纯本地，零上行消息）', () => {
+    const { view, post, jobsList } = mount();
+    view.render(
+      snapshot({
+        jobs: [
+          {
+            ...job('session-child', { kind: 'running' }),
+            latest: {
+              roundId: 'round-2',
+              request: '调查情报 A',
+              response: '结论：A 已核实',
+              status: 'complete',
+              createdAt: '2026-11-16T10:00:00.000Z',
+              totalRounds: 2,
+              index: 2,
+            },
+          },
+        ],
+      }),
+    );
+    const toggle = jobsList.querySelector('.wb-job__toggle') as HTMLButtonElement;
+    const progress = jobsList.querySelector('.wb-job__progress') as HTMLElement;
+    expect(progress.hidden).toBe(true);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    toggle.click();
+    expect(progress.hidden).toBe(false);
+    expect(progress.textContent).toContain('调查情报 A');
+    expect(progress.textContent).toContain('结论：A 已核实');
+    expect(toggle.textContent).toBe('Hide progress');
+    // 纯本地切换：没有任何新上行消息
+    expect(post).not.toHaveBeenCalled();
+    toggle.click();
+    expect(progress.hidden).toBe(true);
+    expect(toggle.textContent).toBe('View progress');
+  });
+
+  it('读不到末轮时如实提示，不摆空白展开框；打开会话按钮仍在', () => {
+    const { view, jobsList } = mount();
+    view.render(snapshot({ jobs: [job('session-child', { kind: 'queued' })] }));
+    const progress = jobsList.querySelector('.wb-job__progress') as HTMLElement;
+    expect(progress.textContent).toContain('No round has started yet');
+    expect(jobsList.querySelector('.wb-job__open')?.textContent).toBe('Go to this session');
+  });
+
+  it('快照整块重建后展开态回退为收起（工作台不保活，不留陈旧展开区）', () => {
+    const { view, jobsList } = mount();
+    view.render(snapshot({ jobs: [job('session-child', { kind: 'completed' })] }));
+    const toggle = jobsList.querySelector('.wb-job__toggle') as HTMLButtonElement;
+    toggle.click();
+    expect((jobsList.querySelector('.wb-job__progress') as HTMLElement).hidden).toBe(false);
+    view.render(snapshot({ jobs: [job('session-child', { kind: 'completed' })] }));
+    expect((jobsList.querySelector('.wb-job__progress') as HTMLElement).hidden).toBe(true);
   });
 });
