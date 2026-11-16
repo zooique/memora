@@ -74,6 +74,11 @@
         "icon": "$(briefcase)"
       },
       {
+        "command": "memora.openHosted",
+        "title": "%command.openHosted.title%",
+        "icon": "$(comment-discussion)"
+      },
+      {
         "command": "memora.attachImage",
         "title": "%command.attachImage.title%"
       },
@@ -370,6 +375,11 @@
     },
     "menus": {
       "view/title": [
+        {
+          "command": "memora.openHosted",
+          "when": "view == memora.chat",
+          "group": "navigation@0"
+        },
         {
           "command": "memora.openSettings",
           "when": "view == memora.chat",

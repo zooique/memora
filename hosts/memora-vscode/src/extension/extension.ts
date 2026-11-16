@@ -51,6 +51,9 @@ import { formatDiagnosticsSnapshot } from '../webview/panels/hostDiagnostics.js'
 import { MemoraSettingsPanel } from '../webview/panels/settingsPanel.js';
 // 工作台面板（编辑器区只读；第三切片/第四切片：座位身份 + 在管会话清单）
 import { MemoraWorkbenchPanel } from '../webview/panels/workbenchPanel.js';
+// 托管页（编辑器区微信式对话前端；与侧栏共享同一会话状态机，form='assistant'）
+import { MemoraHostedPanel } from '../webview/panels/hostedPanel.js';
+import { registerOpenHostedCommand } from './commands/openHosted.js';
 // 工作台清单的历史重建（读既有过程事件；不落新账、不在启动时扫）
 import {
   rebuildWorkbenchChildren,
@@ -866,6 +869,13 @@ export function activate(context: vscode.ExtensionContext): void {
     sessionModes,
     sessionStore,
   });
+
+  // 托管页：编辑器区微信式对话前端；注册时挂到 chatProvider 的广播器，共享同一会话状态机。
+  const hostedPanel = new MemoraHostedPanel({
+    extensionUri: context.extensionUri,
+    chatProvider,
+  });
+  registerOpenHostedCommand(context, hostedPanel);
 
   // 设置面板：editor tab 形态；装配复用 chat 面板同一登记表 SSOT，草稿只碰草稿内存（落盘随建会话 meta）
   const settingsProvider = new MemoraSettingsPanel(context.extensionUri, providerStore);

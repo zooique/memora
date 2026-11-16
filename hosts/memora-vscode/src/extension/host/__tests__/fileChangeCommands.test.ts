@@ -224,6 +224,9 @@ const REGISTER_SOURCES = [
   // 注册点七：commands/openWorkbench.ts（2026-11-14 工作台 v0：`memora.openWorkbench`
   // 注册随命令外置，extension.ts 行数闸；命令本身仍只有一处注册）
   resolve(PKG_ROOT, 'src/extension/commands/openWorkbench.ts'),
+  // 注册点十：commands/openHosted.ts（2026-11-16 托管页独立落点：`memora.openHosted`
+  // 注册随命令外置，extension.ts 行数闸；命令本身仍只有一处注册）
+  resolve(PKG_ROOT, 'src/extension/commands/openHosted.ts'),
   // 注册点七：commands/newSession.ts（2026-11-14 托管模式 v0：`memora.newSession` 注册随命令外置，
   // extension.ts 已贴 max-lines 上限；命令本身仍只有一处注册）
   resolve(PKG_ROOT, 'src/extension/commands/newSession.ts'),

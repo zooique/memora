@@ -93,6 +93,9 @@ import { deriveSessionProjection } from '../../shared/sessionProjection.js';
 import { dedupeRefs } from '../../shared/refKey.js'; // 引用去重判据单点（与 webview 的 addRefs 共用，勿各自实现）
 // 未发送草稿（按会话落 workspaceState）：只搬文本，不参与 composer_state 的翻转判据
 import { createComposerDrafts, persistDraftPageMark } from '../helpers/composerDrafts.js';
+// 多视图广播（HOSTED-UI-SEAT-DECOUPLE-1）：同一会话的侧栏 + 托管编辑器页共用一份状态机，
+// 本器只扇出 postMessage；后台闸判据由本类现场提供，器内不复制任何状态。
+import { createViewBroadcaster, type ViewBroadcaster } from '../helpers/viewBroadcaster.js';
 // 「上次停在空白草稿页」标记：空白页没有会话身份，会话停留指针表达不了这件事
 import { UI_DRAFT_PAGE_KEY } from '../../shared/constants.js';
 // 插话受理三态的可见文案（INPUT-LIMIT-1 / INTERJECT-PERSIST-1）统一由 windowNotices 提供，
@@ -289,8 +292,13 @@ export {
 export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'memora.chat';
 
-  /** 当前 webview（视图被关闭时 undefined） */
+  /** 当前侧栏 webview（视图被关闭时 undefined） */
   private _view: vscode.WebviewView | undefined;
+  /**
+   * 多视图广播器（侧栏 + 托管编辑器页）：会话状态机唯一，本器只把宿主消息扇出到挂着的视图。
+   * 后台闸判据闭包延迟取（构造期 `this.isBackgroundFlow` 依赖尚未就位的字段），调用时才求值。
+   */
+  private readonly _views: ViewBroadcaster = createViewBroadcaster(() => this.isBackgroundFlow());
   /** 角色 handoff 预填缓冲：对话视图未就绪时暂存，ready 后补发（消除时序竞态） */
   private _pendingPrefill?: string;
   /** 右键「添加到对话」引用缓冲：对话视图未就绪时暂存，ready 后补发（与 _pendingPrefill 同构） */
@@ -939,6 +947,31 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 当前显示会话标识（extension 解析「命令作用于哪个会话」的唯一读取口） */
   public getCurrentSessionId(): string {
     return this._currentSessionId;
+  }
+
+  /**
+   * 挂载一个附属视图（HOSTED-UI-SEAT-DECOUPLE-1）：托管编辑器页把它的 webview 交进来，
+   * 从此与本面板共享唯一状态机——宿主广播的消息会同时投到侧栏与该页。
+   * 返回注销句柄，托管页 dispose 时必须调用，避免向已销毁 webview 投递。
+   */
+  public registerAdditionalView(webview: vscode.Webview): vscode.Disposable {
+    return this._views.register(webview);
+  }
+
+  /**
+   * 托管页上行消息入口：转发到与侧栏**同一个** handleWebviewMessage。
+   *
+   * 托管页与侧栏看同一条会话、共用一份状态机，故输入 / 确认 / 提问作答 / composer 态
+   * 全部走同一条判据链——这正是「在托管页对话就自动操作侧栏会话」的实现：不是另起一套
+   * agent / 会话状态，而是换一个取景的前端把消息送进同一台引擎。
+   */
+  public routeHostedMessage(msg: WebviewToExtensionMessage): void {
+    this.handleWebviewMessage(msg);
+  }
+
+  /** 当前广播器挂载的视图数（测试 / 诊断用） */
+  public get mountedViewCount(): number {
+    return this._views.size();
   }
 
   /**
@@ -2581,10 +2614,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     return this._flowGate.isBackground(this._currentSessionId);
   }
 
-  /** 向 webview 发送消息（后台流的投递一律丢弃：判据见 `isBackgroundFlow`） */
+  /**
+   * 向已挂载的视图广播（后台流的会话级投递一律丢弃：判据见 `isBackgroundFlow`）
+   *
+   * 多视图（HOSTED-UI-SEAT-DECOUPLE-1）：侧栏注册于 `resolveWebviewView`，托管编辑器页
+   * 注册于 `registerAdditionalView`。两视图共享本面板的唯一状态机，各自按 body[data-form]
+   * 取景渲染；本处只扇出，不做视图判断、不复制消息。
+   */
   private post(msg: ExtensionToWebviewMessage): void {
-    if (this.isBackgroundFlow()) return;
-    void this._view?.webview.postMessage(msg);
+    // 侧栏 _view 是主视图（显式传，零回归）；托管页等附加视图由广播器扇出。
+    this._views.post(msg, this._view?.webview);
   }
 
   /**
@@ -2612,8 +2651,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       force,
       // 刻意绕过 `post()` 的后台闸：本条是**跨会话的全局信号**，不属于任何正在跑的流的界面投影；
       // 若被丢弃，「后台会话等到提问 ⇒ 入口角标亮」这条判据永远不可能成立。
+      // 多视图：走 postRaw 扇出到侧栏 + 托管页——两视图的会话角标都要随全局信号更新。
       post: (snapshot) => {
-        void this._view?.webview.postMessage({ type: 'session_activity', ...snapshot });
+        this._views.postRaw({ type: 'session_activity', ...snapshot }, this._view?.webview);
       },
     });
   }

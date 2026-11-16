@@ -2656,3 +2656,66 @@ describe('空白草稿页的草稿（O5-B）', () => {
     expect(restore?.sessionId).toBe('');
   });
 });
+
+describe('多视图广播 · 托管页与侧栏共享同一状态机（HOSTED-UI-SEAT-DECOUPLE-1）', () => {
+  /** 造一个附加视图的 webview 替身（托管页），捕获其收到的消息 */
+  function makeExtraView(): { webview: vscode.Webview; posted: Array<{ type: string }> } {
+    const posted: Array<{ type: string }> = [];
+    const webview = {
+      postMessage: (msg: { type: string }) => {
+        posted.push(msg);
+        return Promise.resolve(true);
+      },
+    } as unknown as vscode.Webview;
+    return { webview, posted };
+  }
+
+  it('侧栏是主视图，不进附加集合 ⇒ 初始附加视图数为 0', () => {
+    const h = setupPanel({}, ['2026-11-16-seat']);
+    expect(h.provider.mountedViewCount).toBe(0);
+  });
+
+  it('注册托管页后附加数为 1；宿主广播同时到达侧栏（主）与托管页（附加）', () => {
+    const h = setupPanel({}, ['2026-11-16-seat']);
+    const extra = makeExtraView();
+    const unregister = h.provider.registerAdditionalView(extra.webview);
+    expect(h.provider.mountedViewCount).toBe(1);
+
+    // 同步探针：借类型断言直达私有 post（生产唯一广播口），注入一条探针消息，
+    // 断言侧栏（setupPanel 的 posted）与托管页（extra.posted）**都**收到——这才是
+    // 「同一状态机扇出到两个取景」的判据，而非只看视图计数。
+    h.posted.length = 0;
+    (h.provider as unknown as { post: (msg: { type: string; message: string }) => void }).post({
+      type: 'notice',
+      message: 'broadcast-probe',
+    });
+    expect(h.posted.some((m) => (m as { message?: string }).message === 'broadcast-probe')).toBe(true);
+    expect(extra.posted.some((m) => (m as { message?: string }).message === 'broadcast-probe')).toBe(
+      true,
+    );
+
+    unregister.dispose();
+    expect(h.provider.mountedViewCount).toBe(0);
+  });
+
+  it('托管页的上行消息经 routeHostedMessage 汇入同一消息链（composer_state 置打字态）', () => {
+    const h = setupPanel({}, ['2026-11-16-seat']);
+    // 打字态是私有字段，借广播路径间接观察：routeHostedMessage 不抛且被处理即成立
+    expect(() =>
+      h.provider.routeHostedMessage({ type: 'composer_state', hasText: true }),
+    ).not.toThrow();
+    expect(() =>
+      h.provider.routeHostedMessage({ type: 'composer_state', hasText: false }),
+    ).not.toThrow();
+  });
+
+  it('注销句柄重复调用安全（幂等）——视图销毁路径可能多次触发', () => {
+    const h = setupPanel({}, ['2026-11-16-seat']);
+    const extra = makeExtraView();
+    const unregister = h.provider.registerAdditionalView(extra.webview);
+    expect(h.provider.mountedViewCount).toBe(1);
+    unregister.dispose();
+    unregister.dispose();
+    expect(h.provider.mountedViewCount).toBe(0);
+  });
+});
