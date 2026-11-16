@@ -13,6 +13,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 // 临时目录统一入口：建目录 + 模块顶层注册清理（禁止裸 mkdtempSync，见 helpers/tmpDir.ts）
 import { makeTempDir } from '../../__tests__/helpers/tmpDir.js';
@@ -26,6 +27,8 @@ import type {
 } from '@zooique/memora';
 import type { ChatRef, RoundView, TurnState } from '../../shared/protocol.js';
 import { stripInjectedContextPrefix } from '../helpers/docContext.js';
+// 草稿配置面控制器（生产由 extension 组装；本文件按同一契约注入以验草稿页清单）
+import { DraftConfigSurface } from '../helpers/draftConfigSurface.js';
 import { todayDate, resolveContextWindow, LOOP_CONSTANTS, MemoraError } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
@@ -135,6 +138,8 @@ function agentStub(): {
 function setup(
   imageCache?: ImageCache,
   workspacePath = '/mock/workspace',
+  /** Provider 存储替身（缺省空列表；「模型下拉非空」类用例注入真数据） */
+  providerStoreOverride?: unknown,
 ): {
   store: WorkspaceSessionStore;
   roundStore: WorkspaceRoundStore;
@@ -149,11 +154,11 @@ function setup(
   store.load();
 
   // providerStore 桩：listMasked / getActiveName（pushProviders 用）+ getActive（meta 取证包流首快照用）
-  const providerStore = {
+  const providerStore = (providerStoreOverride ?? {
     listMasked: async () => [],
     getActiveName: () => undefined,
     getActive: async () => undefined,
-  } as never;
+  }) as never;
 
   const provider = new MemoraChatViewProvider(
     { fsPath: '/mock/uri' } as never,
@@ -532,6 +537,77 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     const title = ofType<{ type: string; title: string; draft?: boolean }>(posted, 'session_title');
     expect(title[0]?.title).toBe('New session');
     expect(title[0]?.draft).toBe(true);
+  });
+
+  it('草稿页（无 Agent）也推送模型列表与技能清单（启动落在空白页时不再空下拉）', async () => {
+    // 真磁盘技能：验的是「草稿也能扫出清单」，不桩扫描器（桩掉就测成桩自己的语义）
+    const root = makeTempDir('memora-draft-ready-');
+    const configDir = join(root, 'config');
+    mkdirSync(join(configDir, 'skills'), { recursive: true });
+    writeFileSync(
+      join(configDir, 'skills', 'draft-skill.md'),
+      '---\nname: 草稿技能\ndescription: d\n---\n正文',
+      'utf8',
+    );
+    // Provider 真值：设置里已配置的 LLM（列表非空是本用例的第一判据）
+    const providerStore = {
+      listMasked: async () => [
+        { name: 'main', displayName: '主模型', contextWindow: 64000, supportsVision: false },
+      ],
+      getActiveName: () => 'main',
+      getActive: async () => undefined,
+    };
+    const { provider, posted } = setup(undefined, '/mock/workspace', providerStore);
+    const { agent } = agentStub();
+    const agentFactory = vi.fn().mockResolvedValue(agent);
+    provider.setAgentFactory(agentFactory);
+    // 技能目录（生产由 extension 注入）
+    provider.setSkillDirs(configDir, join(root, 'user-skills'));
+    // 草稿配置面：生产由 extension.ts 组装后注入 push 回调；此处按同一契约最小重建
+    const surface = new DraftConfigSurface(
+      () => [provider.isDraftSession(), provider.getDraftRolePackName() ?? ''],
+      () => ({
+        configDir,
+        userSkillsDir: join(root, 'user-skills'),
+        loadRolePackManager: async () => ({ listSkills: () => [] }) as never,
+      }),
+      (skills) => provider.postSkillList(skills),
+    );
+    provider.setDraftSkillPush(() => surface.push());
+    // 禁用集读配置：默认 mock 恒返回 false，本用例临时按真实语义返回默认值（空数组）。
+    // 用完**必须还原**：`clearAllMocks` 只清调用记录、不清实现，泄漏会让后续用例读到不同配置语义。
+    const cfgMock = vscode.workspace.getConfiguration as unknown as {
+      getMockImplementation(): (() => unknown) | undefined;
+      mockImplementation(fn: () => unknown): void;
+      mockReturnValue(v: unknown): void;
+    };
+    const prevImpl = cfgMock.getMockImplementation();
+    cfgMock.mockReturnValue({ get: (_key: string, def?: unknown) => def });
+    try {
+      // 启动落在草稿页的生产入口：webview ready → 草稿分支回放
+      await (provider as unknown as { handleWebviewReady(): Promise<void> }).handleWebviewReady();
+      // 技能聚合是异步的：等它落定（否则断言读到的是上一帧）
+      await vi.waitFor(() => {
+        expect(ofType(posted, 'skills_loaded').length).toBeGreaterThan(0);
+      });
+
+      // 红线未破：草稿仍不装配 Agent
+      expect(agentFactory).not.toHaveBeenCalled();
+      expect(provider.isDraftSession()).toBe(true);
+      // 模型列表：设置里配置的 LLM 已上屏
+      const providers = ofType<{
+        type: string;
+        providers: { name: string }[];
+        activeName?: string;
+      }>(posted, 'chat_providers');
+      expect(providers.at(-1)?.providers.map((p) => p.name)).toContain('main');
+      expect(providers.at(-1)?.activeName).toBe('main');
+      // 技能清单：内置技能经真实内核 SkillManager 扫到
+      const skills = ofType<{ type: string; skills: { name: string }[] }>(posted, 'skills_loaded');
+      expect(skills.at(-1)?.skills.map((s) => s.name)).toContain('草稿技能');
+    } finally {
+      if (prevImpl) cfgMock.mockImplementation(prevImpl);
+    }
   });
 
   it('切换会话 → 按会话取实例 + 重放该会话历史 + 推送标题', async () => {

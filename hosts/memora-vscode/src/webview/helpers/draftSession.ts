@@ -56,6 +56,14 @@ export interface DraftSessionDeps {
    * 一次都没走到，就是这里缺了一手）。
    */
   restoreComposerDraft: () => void;
+  /**
+   * 草稿页配置面重推（模型列表 + 技能清单；无 Agent 也成立）
+   *
+   * 挂在这里而不是各调用点：进入草稿（「＋」）与 webview 刷新都经 `project()` 投影，
+   * 配置面属同一份「草稿页长什么样」——两处各推一次就会漂移。
+   * 未注入 = 不推（行为同改造前，兼容既有最小替身测试）。
+   */
+  pushConfigSurface?: () => void;
 }
 
 /**
@@ -203,5 +211,7 @@ export class DraftSessionController {
     // 归属与草稿一起下发（见 deps.restoreComposerDraft）：空白页的文本只能落在空白页键上
     this.deps.restoreComposerDraft();
     if (historyLoaded) this.deps.post({ type: 'history_loaded' });
+    // 配置面（模型列表 / 技能清单）与会话无关：草稿页同样要出，供用户选完再开正式会话
+    this.deps.pushConfigSurface?.();
   }
 }

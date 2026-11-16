@@ -85,6 +85,7 @@ import type {
   PendingQuestionDto,
   LlmProviderConfig,
   UiForm,
+  SkillDto,
 } from '../../shared/protocol.js';
 // 错误文案映射单一真理源（与 webview 重放渲染共用，防文案双源漂移）
 import { type PendingLiveRound } from '../../shared/turnProjection.js';
@@ -513,6 +514,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._userSkillsDir = userSkillsDir;
     this._projectSkillsDir = projectSkillsDir;
   }
+  /** 草稿技能推送（宿主注入：`DraftConfigSurface.push`；草稿页无 Agent 时的清单出口） */
+  private _pushDraftSkills?: () => Promise<void>;
+  public setDraftSkillPush(push: () => Promise<void>): void {
+    this._pushDraftSkills = push;
+  }
+  /** 草稿投影里的配置面重推（模型列表 + 技能清单） */
+  private _pushConfigSurface = (): void => {
+    void this.pushProviders();
+    void this._pushDraftSkills?.();
+  };
+  /** 草稿技能清单投递口（`DraftConfigSurface` 的唯一出口；与 `pushSkillList` 同一消息形态） */
+  public postSkillList(skills: SkillDto[]): void {
+    this.post({ type: 'skills_loaded', skills });
+  }
   /** 角色包目录编目（宿主注入；建会话校验默认包用，冷启动无实例时同样可读） */
   private _readRolePackCatalog?: RolePackCatalogReader;
   public setRolePackCatalog(reader: RolePackCatalogReader): void {
@@ -808,6 +823,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         markDraftPage: (on) => persistDraftPageMark(this.uiState, on),
         // 空白页归属随投影下发：不发则 webview 归属停在上一条会话（空白页的字会被写错归属）
         restoreComposerDraft: () => this.post(this._composerDrafts.restore('')),
+        // 配置面（模型列表 / 技能清单）随草稿投影一并重推：与会话无关，草稿页同样要出
+        pushConfigSurface: this._pushConfigSurface,
       },
       !this._currentSessionId || lastDraftPage,
     );
@@ -1113,6 +1130,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * `pushSkillList` 内已有 guard 直接返回 —— 两条路径均不抛，调用方无需 try。
    */
   public refreshSkillList(): void {
+    // 草稿页**且未装配 Agent**：走配置面聚合（自身带草稿态守卫）——否则在草稿页改禁用集 / 重载技能，下拉停在旧快照
+    if (this.isDraft && !this._agent) void this._pushDraftSkills?.();
     this.pushSkillList();
   }
 
@@ -1881,6 +1900,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 命令面板显式传 mode ⇒ 选择结果优先。真正落 origin 在 `createSession`。
    */
   public async newSessionFromCommand(mode?: SessionMode): Promise<void> {
+    // 进入草稿：project() 会连同配置面（模型列表 / 技能清单）一起重推
     this._draft.enter(mode ?? this.sessionModes.getLastMode());
   }
 
@@ -1891,6 +1911,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   public setDraftRolePack(name: string): void {
     if (!this._draft.isDraft) return;
     this._draft.selectRolePack(name);
+    // 角色包换了 ⇒ 内嵌技能集随之变化：不重推就仍是上一个角色的技能（下拉与徽章分叉）
+    void this._pushDraftSkills?.();
   }
 
   /** 草稿期当前角色名（undefined = 未选 ⇒ 设置页显示内核兜底包；真实会话返回 undefined） */
@@ -2325,6 +2347,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 草稿态（webview 重载但面板对象存活）→ 重建**草稿页**：不读 store、不投影任何会话内容。
     // 面板销毁/进程重启后草稿不在（只存在面板内存），此处只服务「刷新 webview」这一种情形。
     if (this.isDraft) {
+      // 配置面（模型列表 / 技能清单）已由 project() 的 pushConfigSurface 一并重推
       this._draft.replay(true);
       return;
     }

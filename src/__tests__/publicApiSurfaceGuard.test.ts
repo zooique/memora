@@ -346,6 +346,8 @@ const PUBLIC_SURFACE_SNAPSHOT: readonly string[] = [
   'SessionSummary',
   'SessionView',
   'SkillEntry',
+  // 技能管理器（2026-11-16）：宿主「无 Agent 的配置面编目」独立构造用（草稿页技能清单）
+  'SkillManager',
   'SourceValidationSeverity',
   'StrategyKeyFace',
   'TRACE_SPANS',

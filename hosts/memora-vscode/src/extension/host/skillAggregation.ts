@@ -24,7 +24,14 @@ export type SkillSource = 'builtin' | 'rolepack' | 'user' | 'project';
 
 /** 多源聚合所需上下文 */
 export interface SkillAggregateContext {
-  agent: Agent;
+  /**
+   * 技能源（两个内核管理器）
+   *
+   * 已装配会话传真 `Agent`（天然满足本形状）；**草稿页（无 Agent）** 传宿主独立构造的
+   * `{ skills, rolePackManager }`（见 `webview/helpers/draftConfigSurface.ts`）——
+   * 两处共用本聚合函数，来源差异只在这一项。
+   */
+  agent: Pick<Agent, 'skills' | 'rolePackManager'>;
   /** 系统内置配置目录（<configDir>/skills/ 所在父目录） */
   configDir: string;
   /** 用户本地技能目录 */

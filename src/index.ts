@@ -57,6 +57,9 @@ export { WRITE_PATH_EXTRACTORS } from '@/agent/toolResultCache.js';
 export type { RolePackMeta } from '@/role-pack/types.js';
 export { BUILTIN_FALLBACK_PACK, MAX_TEAM_MEMBERS } from '@/role-pack/constants.js';
 export { RolePackManager } from '@/role-pack/rolePackManager.js';
+// 技能管理器：宿主「无 Agent 的配置面编目」用（草稿页技能清单 / 冷启动无会话实例）。
+// 与 RolePackManager 同一先例：装配期 Agent 内部构造该类，宿主只读式独立构造（不碰会话/写盘）。
+export { SkillManager } from '@/skill/skillManager.js';
 // UI 键面唯一来源：宿主角色编辑 UI 从这里取键名/控件形态/值域，禁自维护键清单副本
 export { describeStrategyKeys } from '@/role-pack/strategyKeys.js';
 export type { StrategyKeyFace } from '@/role-pack/strategyKeys.js';

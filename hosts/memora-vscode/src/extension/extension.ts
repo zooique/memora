@@ -35,7 +35,11 @@ import {
 import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
 import { AgentRegistry } from './host/agentRegistry.js';
 import { broadcastRolePackTeams } from './host/rolePackTeams.js';
-import { attachRolePackCatalog } from './host/rolePackCatalog.js';
+import { attachRolePackCatalog, createRolePackLoader } from './host/rolePackCatalog.js';
+// 草稿页配置面（无 Agent 的技能清单聚合）：来源在 host 侧组装，面板只持 push 回调
+import { DraftConfigSurface } from '../webview/helpers/draftConfigSurface.js';
+// 「新建会话默认角色包」单点读口（草稿页无显式选择时用它取「即将生效的角色包」）
+import { resolveDraftRolePackName } from './host/rolePackDefault.js';
 import { MemoryGcScheduler } from './host/memoryGcScheduler.js';
 import { ImageCache } from './host/imageCache.js';
 import { createImageReadPort } from './host/imageReadPort.js';
@@ -745,6 +749,30 @@ export function activate(context: vscode.ExtensionContext): void {
     projectRolePacksDir: projectDirsAtActivation.rolePacks,
   };
   attachRolePackCatalog(chatProvider, rolePackCatalogDirs);
+  // 草稿页配置面（无 Agent）：技能清单按「草稿即将生效的角色包 + 全局池」独立聚合。
+  // 面板只持有 push 回调，来源与聚合顺序都在 host 侧（项目目录每次现读 ⇒ 授予信任后自动生效）。
+  const draftConfigSurface = new DraftConfigSurface(
+    () => [
+      chatProvider.isDraftSession(),
+      chatProvider.getDraftRolePackName() ?? resolveDraftRolePackName(),
+    ],
+    () => {
+      // 项目级目录每次现读信任门（授予信任后无需重建面板，草稿页清单自动跟上）
+      const dirs = readProjectAssetDirs();
+      return {
+        configDir,
+        userSkillsDir,
+        projectSkillsDir: dirs.skills,
+        loadRolePackManager: createRolePackLoader({
+          configDir,
+          userRolePacksDir,
+          projectRolePacksDir: dirs.rolePacks,
+        }),
+      };
+    },
+    (skills) => chatProvider.postSkillList(skills),
+  );
+  chatProvider.setDraftSkillPush(() => draftConfigSurface.push());
   // 打开面板即懒装配 Agent（不依赖 open 命令）；复用同一 sessionStore（SSOT），路径同源
   chatProvider.setAgentFactory((_projectPath, sessionId) => {
     // 工厂只做「按会话取/建 + 一次性联动」，不持有实例：复用与在途去重归登记表

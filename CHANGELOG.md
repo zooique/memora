@@ -24,6 +24,12 @@
 - **DDG 跳转链接剥前缀兼容绝对地址**（`560210df` · **消费者可感知**）：DuckDuckGo 返回 `https://duckduckgo.com/l/?uddg=…` 时，旧正则只剥协议相对形式，残留的 `https:` 会拼出 `https:https://…` 畸形 URL。现兼容协议相对 / `https://` / `http://` 三种前缀。**对消费者**：绝对地址形态的搜索结果能正常打开，不再产出畸形链接。
 - **POSIX 上 `kill ESRCH` 归为「根已先行退出」，中断不再误报终止失败**（`90806c85` · `22759bd8` · `920f9498` · **消费者可感知**）：POSIX 杀进程树时，目标若在终止指令到达前自行退出，`kill(-pid)` 抛 ESRCH，旧实现一律记 `error`，与 Windows `taskkill 128` 归 `alreadyExited` 的语义不对称。现 ESRCH → `{ ok: false, alreadyExited: true }`；中断回调按 `alreadyExited` 分档，已确认根先行退出走 INFO，其余（如 EPERM、目标可能仍存活）仍 WARN。同一处改动的余波：ESRCH 判成「已先行退出」后 `terminationError` 不再留空，补一句原因句（与 Windows `taskkill 128` 同构），避免消费端用 `error ?? '进程树终止未确认'` 把「已先行退出」写成「未确认」、并让 `formatExecutionResult` 拼出重复病句；「已先行退出 ≠ 进程树已清空」的语义边界不变。**对消费者**：`ProcessTreeKillResult.alreadyExited` 在 POSIX 上不再误报；正常竞态不再打「终止失败」WARN，失败结果也总带可读原因。
 
+## [Unreleased] · 内核
+
+### Added（内核）
+
+- **导出 `SkillManager` 供宿主「无 Agent 的配置面编目」**（**消费者可感知 · 公开面扩张**）：先例同 `RolePackManager`——装配期由 `Agent` 内部构造，而宿主在**没有会话实例**时（启动落在草稿页）仍需独立扫描 `<configDir>/skills` 做技能清单投影。仅新增导出一项，不新增方法、不改既有签名。**对消费者**：可用 `new SkillManager(configDir)` 只读扫描技能池，需自行按装配期顺序 `load()` → 设禁用集 → `loadExtraDir(...)`（顺序错则同名覆盖方向与装配结果不一致）。
+
 ## [Unreleased] · 宿主
 
 > 收 `vscode@0.10.0`（2026-11-12）之后尚未发版的**宿主**变更；发版时改为带日期的版本标题。
@@ -34,6 +40,7 @@
 
 ### Fixed（宿主）
 
+- **草稿页（无会话）也加载模型列表与技能清单**（**消费者可感知**）：此前启动若落在空白草稿页（`lastDraftPage` 标记 / 本工作区无历史），`replaySession()` 的草稿分支直接返回，`chat_providers` 与 `skills_loaded` 一条都不推，表现为底部模型下拉与输入区技能下拉全空；切任一历史会话立刻恢复。现草稿分支补推这两条配置面投影，技能清单用内核 `SkillManager` + 角色包加载器**独立聚合**（与会话页共用同一个 `listVisibleSkills` 去重 / 排序 / 禁用判据），草稿仍不装配 Agent、不建空会话记录。**对消费者**：停在草稿页即可看到设置里配置的 LLM 与「草稿默认角色包技能 + 全局技能（内置 / 用户 / 项目）」，选完直接发消息开正式会话；点「＋」、在设置页换角色包后清单同步刷新。
 - **非法 `contextWindow` 不再毒化会话，也不再被保存/删除顺带抹掉**（`d6b2f238` · `300cfe3b` · **消费者可感知**）：`contextWindow` 手写成 `0` / 负数 / 非整数时，内核 `resolveContextWindow` 的 `??` 不兜 `0`，会把它当真窗口——`availableTokens` / `remainingTokens` 均为 `0`，每轮都判「输入过大」并跳过召回与最近对话注入，表现为会话像失忆。现 `ProviderStore` 的读面（`list` / `listMasked` / `getActive` / `getBackground` / `getActiveVision`）统一经 `readConfig` 归一：非整数或落在 `1024–128000` 之外一律按「未配置」处理，交给内核回落默认窗口；同一 `(服务名, 原始值)` 首次出现时在输出面板打一条告警，不弹 UI。写入面 `save` / `remove` 改为按磁盘原样取表，只改目标条——此前整表经归一再写回，会静默抹掉**其他**服务的非法 `contextWindow`，后续迁移还会把它当成「没配过」灌入旧全局值。**对消费者**：手改 `settings.json` 或从旧配置迁移留下的非法窗口值不再让会话失忆；保存 / 删除一个服务不再改写另一个服务的配置。
 
 ## [7.2.0] · 2026-11-12

@@ -1062,6 +1062,42 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'packageRoot',
     ],
   },
+  // 2026-11-16 · 草稿页配置面编目：SkillManager 自「可达层」升入导出面（公开成员集不变，
+  // 与 REACHABLE_MEMBERS 原冻结清单逐字对齐）。定性 = 真能力：宿主在**无会话实例**时
+  // （启动落在草稿页）用它独立扫 `<configDir>/skills` 出技能清单，否则草稿页技能下拉全空；
+  // 只读能力（load / loadExtraDir / list / setDisabledSkills），不碰会话与写盘。
+  SkillManager: {
+    kind: 'class',
+    members: [
+      'buildSkillList',
+      'buildSystemPrompt',
+      'formatSkillForPrompt',
+      'get',
+      'get disabledSkillNames',
+      // 2026-11-02 ASSET-PROJECT-SCOPE-1：覆盖分账只读快照（用户覆盖 / 项目覆盖互不混账，
+      // 宿主与测试据此核对「项目覆盖不计入用户覆盖」）
+      'get projectOverrideNames',
+      'get userOverrideNames',
+      'getScriptPath',
+      'listAvailable',
+      'listResources',
+      'listScripts',
+      'load',
+      'loadExtraDir',
+      'readResource',
+      'register',
+      // 🔴 2026-11-02 USER-SKILL-RESYNC-1（定性 = 真能力，非 no-op 谎报）：
+      //   `reload`（覆写基类，统一重扫 configDir + 已登记用户目录 + 项目级目录，三段）与 `resyncUserSkills`
+      //   （设置页「刷新技能」的唯一内核落点，形态对齐 RolePackManager.resyncUserPacks）。
+      //   缺此两者时，用户目录新增文件后不重启宿主永不生效（「建了不生效」的真伤）。
+      //   真消费者 = 宿主 settingsPanel.refreshSkills（`agent.skills.resyncUserSkills()`），
+      //   由宿主侧 vitest 用例守住；内核侧由 skillManager.test.ts 的重扫用例守住。
+      'reload',
+      'resyncUserSkills',
+      'setDisabledSkills',
+      'validateFile',
+    ],
+  }, // 来源 Agent.skills / 宿主草稿配置面 / 文件 src/skill/skillManager.ts
   AuditEvent: {
     kind: 'interface',
     members: ['decision', 'path', 'reason', 'source', 'timestamp', 'tool', 'type'],
@@ -1226,38 +1262,8 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
       'setNoOverwriteRoots',
     ],
   }, // 来源 Agent.security / 宿主调用 6 个 / 文件 F:\zooique\memora\src\security\pathGuard.ts
-  SkillManager: {
-    kind: 'class',
-    members: [
-      'buildSkillList',
-      'buildSystemPrompt',
-      'formatSkillForPrompt',
-      'get',
-      'get disabledSkillNames',
-      // 2026-11-02 ASSET-PROJECT-SCOPE-1：覆盖分账只读快照（用户覆盖 / 项目覆盖互不混账，
-      // 宿主与测试据此核对「项目覆盖不计入用户覆盖」）
-      'get projectOverrideNames',
-      'get userOverrideNames',
-      'getScriptPath',
-      'listAvailable',
-      'listResources',
-      'listScripts',
-      'load',
-      'loadExtraDir',
-      'readResource',
-      'register',
-      // 🔴 2026-11-02 USER-SKILL-RESYNC-1（新成员定性 = 真能力，非 no-op 谎报）：
-      //   `reload`（覆写基类，统一重扫 configDir + 已登记用户目录 + 项目级目录，三段）与 `resyncUserSkills`
-      //   （设置页「刷新技能」的唯一内核落点，形态对齐 RolePackManager.resyncUserPacks）。
-      //   缺此两者时，用户目录新增文件后不重启宿主永不生效（「建了不生效」的真伤）。
-      //   真消费者 = 宿主 settingsPanel.refreshSkills（`agent.skills.resyncUserSkills()`），
-      //   由宿主侧 vitest 用例守住；内核侧由 skillManager.test.ts 的重扫用例守住。
-      'reload',
-      'resyncUserSkills',
-      'setDisabledSkills',
-      'validateFile',
-    ],
-  }, // 来源 Agent.skills / 宿主调用 7 个 / 文件 F:\zooique\memora\src\skill\skillManager.ts
+  // SkillManager 已于 2026-11-16 升入导出面（EXPECTED 内登记，成员集逐字保留）——
+  // 「可达但不导出」的旧登记此处退役，避免同一类两面重复冻结。
   TextPolishManager: {
     kind: 'class',
     members: ['polish', 'setBackgroundProvider'],
@@ -1401,7 +1407,7 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `\nEXPECTED 符号数 = ${count}，与本用例期望不符。\n` +
         `若本次确有增删符号：先在 EXPECTED 表反映差异 + 完成 §3.2.1 定性，再同步本数字；\n` +
         `若未增删：说明改动误触了基线表，撤销。`,
-    ).toBe(79);
+    ).toBe(80);
   });
 
   it('成员面与冻结基线一致（增删即红；红须按 §3.2.1 定性后显式更新 EXPECTED）', () => {
