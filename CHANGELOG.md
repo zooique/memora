@@ -10,12 +10,18 @@
 
 ## [7.3.0] · 2026-11-14
 
-> 收 **7.2.0（2026-11-12）之后**的内核变更。本版新增「会话与输入的来源标记」：`Round.origin` / `SessionMeta.origin`（二值、可选、零迁移），并让 `Agent.chat()` 与 `forkSession()` 能把来源透传到落盘与视图投影。本片只打通数据层，界面渲染属后续版本。
+> 收 **7.2.0（2026-11-12）之后**的内核变更。本版集中扩张「会话与轮次来源」的数据层：`Round.origin` / `SessionMeta.origin`（输入来源，二值、可选、零迁移）、`Round.dispatchedBy`（派发归属）、`SessionMeta.declaredPaths`（开活范围声明），并让 `Agent.chat()` 与 `forkSession()` 把来源透传到落盘与视图投影。本片只打通数据层，界面渲染属后续版本。
 
 ### Added（内核）
 
 - **`Round.origin` / `SessionMeta.origin` 新增 `'user' | 'hosted'` 来源标记**（`origin` · **消费者可感知 · 数据模型扩张**）：把「这次输入 / 这个会话由谁发起」变成一等字段，供宿主区分真人输入与托管通道输入。`Agent.chat()` 新增可选第 4 参 `{ origin, senderName }`，经 `runChat → prepare → appendUser` 写入 `Round.origin` 与 `RoundMessage.name`；`forkSession()` 新增可选第 3 参传入新会话自身来源（**不从父会话继承**），历史轮的 origin 随 Round ID 指针复制天然保留。零迁移：旧数据的 `undefined` 就地解释为 `'user'`，不回填（回填等于伪造历史）。**对消费者**：两字段均可选，不传或旧数据读取行为逐字不变；`loadRoundBasedMessages` 仍只取 `role/content/attachments`，模型面零影响。
 - **`metrics.plan` 新增 `taskTableUpdateCount`**（`5da524cf` · **消费者可感知 · 观测面扩张**）：plan 指标此前只有建表次数（`taskTableWriteCount`），`task_table_update` 的触发率只能人工核对，「建了表却从不推进」判不出来。现按工具名分列累加，一次 update 不虚增 write；不改事件流、不改工具契约，宿主侧零消费方。**对消费者**：`agent.getMetrics().plan` 多出 `taskTableUpdateCount`，既有字段值与含义不变。
+- **`Round.dispatchedBy` 记录派发归属**（`15d81031` · **消费者可感知 · 数据模型扩张**）：「这一轮是助手从哪条会话、以什么动作送进来的」此前只在宿主内存，重启即丢、无法反查。现 `Round.dispatchedBy` 记 `{ from, via }`：`from` = 创建者会话 id（不是本轮所属的目标会话），`via` = `'delegate'`（派发到已有会话）/ `'create'`（助手新建会话后的首轮）；`appendUser` 新增可选入参透传。只记**真的落了轮**的动作——被拒 / 超时 / 目标不存在在走到建轮前就结束，天然不写本字段。**对消费者**：可选字段，历史轮没有它，`undefined` 本身就是「不知道创建者」的事实（回填等于伪造）；不读该字段的既有调用行为逐字不变。
+- **`SessionMeta.declaredPaths` 记录开活范围声明**（`aeef2c61` · **消费者可感知 · 数据模型扩张**）：托管开活时声明「这条活动哪块路径」，供范围门禁判重叠。声明存会话元数据（创建时与标题同批写入），读侧直接读元数据、**不反推历史轮次**（历史有 60 轮上限，窗口一满声明就查不到）。已规范化（统一 `/`、小写；`''` = 整仓）。**对消费者**：可选字段；`forkSession` 不复制（分叉是另一条活，范围须重声明）；老会话读不到 ⇒ 按「没有声明」如实降级，不猜范围；**记录不是权限**，不表达父子关系。
+
+### Changed（内核）
+
+- **`ask_user` 作答回填文案去掉「用户回答」主语**（`781705df` · **消费者可感知 · 语义订正**）：子会话的提问可能由主控代理代答，原 tool result `[ASK_ANSWER] 用户回答：X` 会在它的上下文里写下一句假话（作答者不是用户）。现改为 `[ASK_ANSWER] 回答：X`：只陈述回答本身，不声称是谁答的。`[ASK_ANSWER]` 前缀、tool 配对、提问 / 回答落盘形态均不变。**对消费者**：自助模式下用户本人作答时同句为真、语义不变；差异仅在无人代答的场景下多了一个中性说法。
 
 ### Fixed（内核）
 
