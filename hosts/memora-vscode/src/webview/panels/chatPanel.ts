@@ -961,9 +961,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 托管页上行消息入口：转发到与侧栏**同一个** handleWebviewMessage。
    *
-   * 托管页与侧栏看同一条会话、共用一份状态机，故输入 / 确认 / 提问作答 / composer 态
-   * 全部走同一条判据链——这正是「在托管页对话就自动操作侧栏会话」的实现：不是另起一套
-   * agent / 会话状态，而是换一个取景的前端把消息送进同一台引擎。
+   * 输入 / 确认 / 提问作答 / composer 态全部走同一条判据链——不另起一套 agent、不复制
+   * 确认代批逻辑。⚠️ 但目标会话必须区分（台账 HOSTED-SEAT-SESSION-1）：托管页的输入该进
+   * 助手会话，侧栏的输入该进当前工作会话；现行 `handleInput` 一律作用于 `_currentSessionId`，
+   * 于是托管页说话会打到侧栏正看的那条工作会话上。修法与投递层同一笔（每视图绑会话）。
    */
   public routeHostedMessage(msg: WebviewToExtensionMessage): void {
     this.handleWebviewMessage(msg);
