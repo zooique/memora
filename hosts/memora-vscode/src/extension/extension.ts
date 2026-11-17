@@ -80,6 +80,8 @@ import type {
 } from './host/workSessionTools.js';
 // 代答回调契约（工具面独立模块）：与工具 handler 同一联合类型
 import type { HostedQuestionAnswerer } from './host/answerSessionQuestionTool.js';
+// 装配层直通包装：参数表由 `HostedSessionCreator` 类型派生（不手抄形参表，见模块头注释）
+import { lazyHostedSessionCreator } from './host/lazyHostedSessionCreator.js';
 import { runDemoCommand } from './commands/demo.js';
 import { reloadSkillsCommand } from './commands/reloadSkills.js';
 import { cleanupMemoriesCommand, memoryStatsCommand, runGcCommand } from './commands/memory.js';
@@ -653,8 +655,9 @@ export function activate(context: vscode.ExtensionContext): void {
     dispatchHostedInput: (calling, target, text, sender) =>
       chatProvider.dispatchHostedInput(calling, target, text, sender),
     // 建会话同法：工具 handler → 面板既有新建路径（角色包校验、标题与范围声明落盘都在面板内）
-    createHostedSession: (calling, rolePack, title, text, sender, paths) =>
-      chatProvider.createHostedSession(calling, rolePack, title, text, sender, paths),
+    // ⚠️ 必须经 lazyHostedSessionCreator 装配，不得手写形参表：手抄会静默吞掉新增的可选参数
+    // （2026-11-17 真机实测：mandate 在此被丢，workOrder 永不落盘，而 TS 不报错）
+    createHostedSession: lazyHostedSessionCreator(() => chatProvider.createHostedSession),
     // 停止 / 暂停 / 恢复同法：工具 handler → 面板运行控制窄面（同一真源 `_runOps`）
     stopHostedSession: (calling, target) =>
       chatProvider.hostedRunControl.stopHostedSession(calling, target),
