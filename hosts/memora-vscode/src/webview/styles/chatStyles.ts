@@ -1771,6 +1771,27 @@ export const chatStyles = `
    * 基础样式的 user-select:none 是过程行语义，这里恢复可选中：选中文字才能右键
    * 「引用回复」把内容追加进输入区（复用既有 quoteReply，零新协议）。 */
   body[data-form='assistant'] .round-block__input { user-select: text; }
+  /* ASSISTANT-FOOTER-HOVER-1：回答底栏对齐用户消息操作栏的心智（微信式）——
+   * 默认隐去、鼠标停在整轮问答上（或键盘聚焦按钮）才浮现；按钮 + 时间 + 终态标签
+   * 成组靠右（单边对齐），基础形态的两端分布与恒显逐字不变。
+   * 范式与用户操作栏同构（opacity + 位移 + focus-within），不造第二套交互：
+   * 那边 hover 气泡容器，这边 hover 整轮容器，都是「碰到这条消息才露操作」。
+   * 注：助手形态状态由顶部状态条承载，底栏终态标签随底栏一起 hover 才显，属微信心智
+   * 取舍；自助形态的终态恒显（TERMINUS-SSOT-1）不在本作用域，逐字不动。 */
+  body[data-form='assistant'] .round-group__footer:not(.is-pending) {
+    justify-content: flex-end;
+    opacity: 0;
+    transform: translateY(-2px);
+    transition: opacity var(--dur-base) ease, transform var(--dur-base) ease;
+  }
+  body[data-form='assistant'] .round-group:hover .round-group__footer:not(.is-pending),
+  body[data-form='assistant'] .round-group__footer:not(.is-pending):focus-within {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  /* 取消 auto margin：否则 flex-end 仍被 auto 吸走余量、把时间重推成两端分布（单边不成立）。
+   * 限定 footer 与助手作用域，自助消息操作栏的同类样式不受影响。 */
+  body[data-form='assistant'] .round-group__footer .msg-time { margin-left: 0; }
   /* AI 回复改左侧气泡：与 .msg.user 的右侧气泡对称，正文排版唯一来源不变。
    * 身份标签已收起（顶部身份条承载「是谁」），气泡内只留正文。 */
   body[data-form='assistant'] .msg.assistant {

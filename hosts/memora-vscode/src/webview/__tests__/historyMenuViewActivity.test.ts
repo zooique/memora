@@ -267,10 +267,7 @@ const HOST_ROOT = existsSync(resolve(process.cwd(), 'src/webview/panels'))
 /** 生产 HTML 是手写夹具的镜像源：只锁夹具会漏掉「生产没这个节点 ⇒ 域工厂初始化即抛错」 */
 describe('生产模板第三组 tab 源码守卫（HOSTED-LIST-GROUP-1）', () => {
   it('生产 HTML 真有第三组 tab，且未带 .treedd__item（点击委托会收起浮层）', () => {
-    const src = readFileSync(
-      resolve(HOST_ROOT, 'src/webview/panels/chatPanelHtml.ts'),
-      'utf8',
-    );
+    const src = readFileSync(resolve(HOST_ROOT, 'src/webview/panels/chatPanelHtml.ts'), 'utf8');
     const tag = src.split('\n').find((line) => line.includes('id="historyTabHosted"')) ?? '';
     expect(tag).toContain('data-view="hosted"');
     expect(tag).not.toContain('treedd__item');

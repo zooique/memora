@@ -156,7 +156,9 @@ export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemant
       pause: null,
       send: {
         loading: false,
-        title: hasInput ? l10n.t('Send follow-up (queued until step boundary)') : l10n.t('Send (Enter)'),
+        title: hasInput
+          ? l10n.t('Send follow-up (queued until step boundary)')
+          : l10n.t('Send (Enter)'),
         ariaLabel: hasInput ? l10n.t('Send follow-up') : l10n.t('Send'),
         disabled: !hasInput,
       },

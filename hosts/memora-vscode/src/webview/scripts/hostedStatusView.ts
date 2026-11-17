@@ -76,7 +76,8 @@ export function createHostedStatusView(deps: HostedStatusViewDeps): HostedStatus
   let lastText = '';
 
   function refresh(): void {
-    const kind = deps.getForm() === 'assistant' ? deriveHostedStatus(deps.getState(), deps.getEvents()) : null;
+    const kind =
+      deps.getForm() === 'assistant' ? deriveHostedStatus(deps.getState(), deps.getEvents()) : null;
     const text = kind === null ? '' : l10n.t(STATUS_LABEL[kind]);
     if (text === lastText) return;
     lastText = text;

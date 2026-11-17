@@ -9,6 +9,7 @@
  *   ③ 微信气泡不标来源——「由 X 发送」标签在本形态隐藏；
  *   ④ 「添加到输入区」复用既有右键「引用回复」，零新协议 / 零新菜单项。
  *
+ * ⑤ ⑥ 为源码守卫：底栏减法不碰真源表、底栏 hover 显现 + 单边靠右（ASSISTANT-FOOTER-HOVER-1）。
  * 变异验证：三处判据各改坏一次，确认精确命中后恢复（见台账条目）。
  */
 // @vitest-environment jsdom
@@ -80,10 +81,14 @@ describe('助手窗微信心智对齐（ASSISTANT-WECHAT-UX-1）', () => {
     expect(src).toMatch(/const flow = !assistantForm && flowEl\?\.isConnected/);
     expect(src).toMatch(/const assistantForm = document\.body\.dataset\.form === 'assistant'/);
     // details 重建跳过
-    expect(src).toMatch(/if \(document\.body\.dataset\.form !== 'assistant'\) \{\s*const renderedInputTs/);
+    expect(src).toMatch(
+      /if \(document\.body\.dataset\.form !== 'assistant'\) \{\s*const renderedInputTs/,
+    );
     // 回收删除两处都带 form 判据（出现两次）
     const guardedRemoves = [
-      ...src.matchAll(/roundBlockEl\?\.isConnected && document\.body\.dataset\.form !== 'assistant'[\s\S]{0,120}?round-block__input\[data-round-id/g),
+      ...src.matchAll(
+        /roundBlockEl\?\.isConnected && document\.body\.dataset\.form !== 'assistant'[\s\S]{0,120}?round-block__input\[data-round-id/g,
+      ),
     ];
     expect(guardedRemoves.length).toBe(2);
   });
@@ -130,7 +135,12 @@ describe('助手窗微信心智对齐（ASSISTANT-WECHAT-UX-1）', () => {
       toString: () => '答案原文',
     } as unknown as Selection);
     document.querySelector('.msg.assistant')?.dispatchEvent(
-      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }),
+      new MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 10,
+        clientY: 10,
+      }),
     );
     const item = document.querySelector<HTMLElement>('[data-ctxmenu-id="quote-reply"]');
     expect(item).not.toBeNull();
@@ -154,9 +164,7 @@ describe('助手窗微信心智对齐（ASSISTANT-WECHAT-UX-1）', () => {
             content: '帮我做件事',
             timestamp: '2026-11-17T13:00:00.000Z',
           },
-          processEvents: [
-            { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
-          ],
+          processEvents: [{ type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } }],
           interactiveInputs: [
             { content: '重启前的补充', ts: '2026-11-17T13:00:03.000Z', kind: 'supplement' },
           ],
@@ -182,5 +190,26 @@ describe('助手窗微信心智对齐（ASSISTANT-WECHAT-UX-1）', () => {
     // form 判据在呈现层，self 为缺省：新增按钮仍从真源 foreach 派生
     expect(footer).toMatch(/form = 'self'/);
     expect(footer).toMatch(/if \(form === 'self'\) \{[\s\S]*?ROUND_ACTIONS\.forEach/);
+  });
+
+  it('⑥ 底栏 hover 显现 + 单边靠右：助手形态与用户操作栏同构，self 两端分布逐字不变', () => {
+    const css = readFileSync(CSS_SRC, 'utf8');
+    // 助手形态：底栏默认隐去（is-pending 除外，恒不显示）
+    expect(css).toMatch(
+      /body\[data-form='assistant'\] \.round-group__footer:not\(\.is-pending\) \{\s*justify-content: flex-end;\s*opacity: 0;/,
+    );
+    // hover 整轮 / focus-within 两路显形，复刻用户操作栏的交互范式
+    expect(css).toMatch(
+      /body\[data-form='assistant'\] \.round-group:hover \.round-group__footer:not\(\.is-pending\),\s*body\[data-form='assistant'\] \.round-group__footer:not\(\.is-pending\):focus-within \{\s*opacity: 1;/,
+    );
+    // 单边成立关键：覆盖基础两端分布的 auto margin 为 0
+    expect(css).toMatch(
+      /body\[data-form='assistant'\] \.round-group__footer \.msg-time \{ margin-left: 0; \}/,
+    );
+    // 不带伤：self 的两端分布基础规则仍在（chatView 终态守卫亦守此条）
+    expect(css).toMatch(/\.round-group__footer \.msg-time \{ margin-left: auto; \}/);
+    expect(css).toMatch(
+      /\.round-group__footer \{\s*display: flex; align-items: center; justify-content: space-between;/,
+    );
   });
 });

@@ -480,7 +480,9 @@ describe('HostedSessionNotifier · 助手身份跨重启（HOSTED-IDENTITY-PERSI
  */
 describe('HostedSessionNotifier · 等你作答（HOSTED-ASK-ROUTE-1）', () => {
   /** 造一批在途提问（题面 + 选项 + 题身份） */
-  function questions(...specs: Array<{ id?: string; q: string; options?: string[] }>): PendingQuestionDto[] {
+  function questions(
+    ...specs: Array<{ id?: string; q: string; options?: string[] }>
+  ): PendingQuestionDto[] {
     return specs.map((s, i) => ({
       slot: `slot-${i}`,
       ...(s.id ? { askCallId: s.id } : {}),
@@ -521,9 +523,9 @@ describe('HostedSessionNotifier · 等你作答（HOSTED-ASK-ROUTE-1）', () => 
     h.notifier.remember(CHILD, CREATOR);
     h.setCanWake(false);
 
-    expect(h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: questions({ q: '选哪个？' }) })).toBe(
-      true,
-    );
+    expect(
+      h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: questions({ q: '选哪个？' }) }),
+    ).toBe(true);
     expect(h.creatorQueue).not.toHaveBeenCalled();
     expect(h.wakeCreator).not.toHaveBeenCalled();
     expect(h.notifier.pendingReportCount(CREATOR)).toBe(1);
@@ -542,9 +544,9 @@ describe('HostedSessionNotifier · 等你作答（HOSTED-ASK-ROUTE-1）', () => 
     h.notifier.remember(CHILD, CREATOR);
     h.setCreatorAssembled(false);
 
-    expect(h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: questions({ q: '确认？' }) })).toBe(
-      false,
-    );
+    expect(
+      h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: questions({ q: '确认？' }) }),
+    ).toBe(false);
     expect(h.creatorQueue).not.toHaveBeenCalled();
     expect(h.notifier.pendingReportCount(CREATOR)).toBe(1);
 
@@ -561,9 +563,9 @@ describe('HostedSessionNotifier · 等你作答（HOSTED-ASK-ROUTE-1）', () => 
     h.notifier.remember(CHILD, CREATOR);
     h.driven.delete(CHILD);
 
-    expect(h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: questions({ q: '选哪个？' }) })).toBe(
-      false,
-    );
+    expect(
+      h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: questions({ q: '选哪个？' }) }),
+    ).toBe(false);
     expect(h.creatorQueue).not.toHaveBeenCalled();
     expect(h.wakeCreator).not.toHaveBeenCalled();
   });
@@ -572,9 +574,9 @@ describe('HostedSessionNotifier · 等你作答（HOSTED-ASK-ROUTE-1）', () => 
     const h = harness();
     h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
     // 不 remember：无创建者
-    expect(h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: questions({ q: '选哪个？' }) })).toBe(
-      false,
-    );
+    expect(
+      h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: questions({ q: '选哪个？' }) }),
+    ).toBe(false);
     expect(h.creatorQueue).not.toHaveBeenCalled();
   });
 
@@ -591,7 +593,10 @@ describe('HostedSessionNotifier · 等你作答（HOSTED-ASK-ROUTE-1）', () => 
 
     // 换一批（新题身份）→ 新键，可再次叫醒
     expect(
-      h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: questions({ id: 'q-2', q: '再选一个？' }) }),
+      h.notifier.noteNeedsAnswer({
+        sessionId: CHILD,
+        questions: questions({ id: 'q-2', q: '再选一个？' }),
+      }),
     ).toBe(true);
     expect(h.creatorQueue).toHaveBeenCalledTimes(2);
     expect(h.wakeCreator).toHaveBeenCalledTimes(2);

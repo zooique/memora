@@ -390,18 +390,25 @@ describe('buildWorkbenchSnapshot — 清单口径', () => {
 
 describe('工作台末轮运行情况摘要（WorkbenchJob.latest）', () => {
   /** 构造可投影的整轮（id / 状态 / 用户输入 / 回答 / 时间） */
-  function fullRound(
-    id: string,
-    status: RoundStatus,
-    userText: string,
-    answer?: string,
-  ): Round {
+  function fullRound(id: string, status: RoundStatus, userText: string, answer?: string): Round {
     return {
       id,
       status,
-      userMessage: { id: `msg-${id}`, role: 'user', content: userText, timestamp: '2026-11-16T10:00:00.000Z' },
+      userMessage: {
+        id: `msg-${id}`,
+        role: 'user',
+        content: userText,
+        timestamp: '2026-11-16T10:00:00.000Z',
+      },
       ...(answer
-        ? { assistantMessage: { id: `msg-a-${id}`, role: 'assistant', content: answer, timestamp: '2026-11-16T10:01:00.000Z' } }
+        ? {
+            assistantMessage: {
+              id: `msg-a-${id}`,
+              role: 'assistant',
+              content: answer,
+              timestamp: '2026-11-16T10:01:00.000Z',
+            },
+          }
         : {}),
       createdAt: '2026-11-16T10:00:00.000Z',
     } as unknown as Round;

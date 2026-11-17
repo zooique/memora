@@ -54,10 +54,7 @@ describe('session_list_data 来源投影（HOSTED-LIST-GROUP-1）', () => {
       undefined,
       '2026-11-17-assistant',
     );
-    expect(msg.sessions.map((s) => s.sessionId)).toEqual([
-      '2026-11-17-hosted',
-      '2026-11-17-user',
-    ]);
+    expect(msg.sessions.map((s) => s.sessionId)).toEqual(['2026-11-17-hosted', '2026-11-17-user']);
     expect(msg.sessions[0].origin).toBe('hosted');
     expect(msg.sessions[1].origin).toBe('user');
   });
@@ -118,7 +115,13 @@ describe('托管文档 · SessionMeta 字段口径两字段化', () => {
   }
 
   it('① 两文档零「三字段必须同批写入」承诺式表述', () => {
-    const banned = ['三个可选字段', '三个字段', '三字段', 'workOrder/workStatus/subscribed', '同批写入三字段'];
+    const banned = [
+      '三个可选字段',
+      '三个字段',
+      '三字段',
+      'workOrder/workStatus/subscribed',
+      '同批写入三字段',
+    ];
     for (const name of DOCS) {
       const doc = loadDoc(name);
       for (const phrase of banned) {
@@ -152,7 +155,10 @@ describe('托管文档 · SessionMeta 字段口径两字段化', () => {
         .split('\n')
         .filter((line) => line.includes('subscribed'))
         .filter((line) => !RETIRE_MARKERS.some((marker) => line.includes(marker)));
-      expect(offending, `${name} 出现无退役标记的 subscribed 承诺句: ${offending.join(' | ')}`).toEqual([]);
+      expect(
+        offending,
+        `${name} 出现无退役标记的 subscribed 承诺句: ${offending.join(' | ')}`,
+      ).toEqual([]);
     }
   });
 });

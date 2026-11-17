@@ -59,9 +59,7 @@ export function buildSessionListMessage(
   // 分组交给 webview 按 origin 过滤（与 archivedIds 同型：单数据源 + 前端过滤）。
   const metas = store
     .listSessionMetas()
-    .filter(
-      (m) => m.sessionId !== currentSessionId && m.sessionId !== assistantSessionId,
-    )
+    .filter((m) => m.sessionId !== currentSessionId && m.sessionId !== assistantSessionId)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return {
     type: 'session_list_data',

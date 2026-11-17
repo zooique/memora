@@ -50,7 +50,10 @@ export interface AuthFlowWiringDeps {
  * @param senderName 托管发送者名（单一真源 `HOSTED_SENDER_NAME`，面板传入——叫醒轮
  *   落盘 `RoundMessage.name` 与 send_to_session 装配同源）
  */
-export function createChatPanelAuthFlow(deps: AuthFlowWiringDeps, senderName: string): ConfirmAuthFlow {
+export function createChatPanelAuthFlow(
+  deps: AuthFlowWiringDeps,
+  senderName: string,
+): ConfirmAuthFlow {
   return new ConfirmAuthFlow({
     isAgentDrivenSession: deps.isAgentDrivenSession,
     getManagedSeatId: deps.getManagedSeatId,

@@ -16,6 +16,7 @@
  */
 import {
   getSessionDisplayName,
+  isRoundSuccessful,
   type Round,
   type RoundStatus,
   type SessionMeta,
@@ -192,7 +193,10 @@ function clip(text: string): string {
  * - **读不到就整条不填**：整轮读不到时返回 undefined，由界面说「无法读取末轮」，
  *   不拿状态字符串冒充运行情况。
  */
-function projectLatest(inputs: WorkbenchSnapshotInputs, sessionId: string): WorkbenchLatestRound | undefined {
+function projectLatest(
+  inputs: WorkbenchSnapshotInputs,
+  sessionId: string,
+): WorkbenchLatestRound | undefined {
   const ids = inputs.readRoundIds(sessionId);
   if (ids.length === 0) return undefined;
   const roundId = ids[ids.length - 1];
@@ -202,7 +206,9 @@ function projectLatest(inputs: WorkbenchSnapshotInputs, sessionId: string): Work
   const request = round.userMessage?.content;
   if (typeof request !== 'string') return undefined;
   const status = inputs.readRoundStatus(roundId) ?? round.status;
-  const answer = status === 'complete' ? round.assistantMessage?.content : undefined;
+  // 回答字段只在「成功收场」时填：判据调内核单点 isRoundSuccessful（同 sessionList /
+  // hostedSessionNotice），不自写 status === 'complete'（roundStore 判据单源守卫）。
+  const answer = isRoundSuccessful(status) ? round.assistantMessage?.content : undefined;
   return {
     roundId,
     request: clip(request),

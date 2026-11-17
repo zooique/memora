@@ -229,6 +229,14 @@ const TOOL_RESULT_TAGS: Readonly<Record<string, string>> = {
   ERR_PLAN_ITEM_NOT_FOUND: '任务项不存在（计划表寻址失败）',
   ERR_SCRIPT_DECLINE: '代码执行未获确认（fail-closed，未执行）',
   ERR_COMMAND_DECLINE: '命令未获许可（未获执行许可：黑名单 / 用户拒绝 / 未注入确认回调）',
+  // 异步授权三态的 deferred 分支（11-16 硬门禁形态）：工具**未执行、未阻塞**，status=blocked
+  // （auth_required），LLM 须转述原文请求授权而非换路子。⚠️ 该形态已被 2026-11-17 定案
+  // `HOSTED-CONFIRM-SOFT-1` 作废（改软约束 + 统一不弹卡），随之退役时本两条一并删除——
+  // 登记只为「代码尚在产出、守卫双向对账不断裂」，不是承认它是现行形态。
+  ERR_SCRIPT_AUTH_DEFERRED:
+    '脚本执行待用户授权（旧异步授权形态，未执行；随 HOSTED-CONFIRM-SOFT-1 退役）',
+  ERR_COMMAND_AUTH_DEFERRED:
+    '命令待用户授权（旧异步授权形态，未执行；随 HOSTED-CONFIRM-SOFT-1 退役）',
   ERR_TOOL_DECLINE:
     '自定义工具未获许可（confirmPolicy 过闸：用户拒绝 / 未注入确认回调 fail-closed）',
   ERR_PATH_DENIED: '路径越界（脚本路径超出项目根，安全护栏拦截）',

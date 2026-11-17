@@ -176,7 +176,10 @@ function sessionFilePath(projectPath: string, sessionId: string): string {
 function readRoundIds(projectPath: string, sessionId: string): string[] {
   // roundIds 真相 = journal（每行一个；JSON 只装属性）
   try {
-    const raw = readFileSync(sessionFilePath(projectPath, sessionId).replace(/\.json$/, '.rounds'), 'utf8');
+    const raw = readFileSync(
+      sessionFilePath(projectPath, sessionId).replace(/\.json$/, '.rounds'),
+      'utf8',
+    );
     return raw.split('\n').filter((line) => line.length > 0);
   } catch {
     return []; // 文件不存在 = 从未追加过轮，不是读取失败

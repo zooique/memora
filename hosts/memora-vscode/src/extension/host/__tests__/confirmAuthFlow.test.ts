@@ -61,7 +61,11 @@ function makeHarness(opts: { seatForeground?: boolean; agentDriven?: boolean } =
 }
 
 /** 从 post 列表取第一条 auth_request 载荷（无则抛错——测试意图显式失败） */
-function firstAuthRequest(posted: Array<Record<string, unknown>>): { requestId: string; command: string; sessionLabel: string } {
+function firstAuthRequest(posted: Array<Record<string, unknown>>): {
+  requestId: string;
+  command: string;
+  sessionLabel: string;
+} {
   const msg = posted.find((m) => m.type === 'auth_request');
   if (!msg) throw new Error('expected an auth_request post');
   return msg as unknown as { requestId: string; command: string; sessionLabel: string };
@@ -125,7 +129,7 @@ describe('ConfirmAuthFlow · answer 裁决闭环', () => {
     const closed = posted.find((m) => m.type === 'auth_closed');
     expect(closed?.outcome).toBe('granted');
     const notice = posted.find((m) => m.type === 'notice');
-    expect((notice?.message as string)).toContain('Authorized');
+    expect(notice?.message as string).toContain('Authorized');
   });
 
   it('拒绝 ⇒ 不写条目（同命令再撞仍转授权请求）+ 叫醒改道文案', () => {

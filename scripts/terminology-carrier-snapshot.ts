@@ -500,6 +500,8 @@ const BASELINE_CODE: readonly string[] = [
   'step-1',
   'step-active-1',
   'step-atomic-persistence',
+  // 2026-11-17：工作台「逐步输出」提示的英文短语（step 阵营，非任务表语义）
+  'step-by-step',
   'step-pending-2',
   'step0',
   'step1',

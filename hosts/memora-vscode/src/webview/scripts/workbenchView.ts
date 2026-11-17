@@ -305,15 +305,21 @@ function renderProgress(document: Document, job: WorkbenchJob): DocumentFragment
   if (!latest) {
     const none = document.createElement('div');
     none.className = 'wb-progress__none';
-    none.textContent = job.status.kind === 'queued'
-      ? l10n.t('No round has started yet')
-      : l10n.t('The latest round could not be read');
+    none.textContent =
+      job.status.kind === 'queued'
+        ? l10n.t('No round has started yet')
+        : l10n.t('The latest round could not be read');
     frag.appendChild(none);
     return frag;
   }
   const heading = document.createElement('div');
   heading.className = 'wb-progress__heading';
-  heading.textContent = l10n.t('Round {0} of {1} · {2}', latest.index, latest.totalRounds, latest.status);
+  heading.textContent = l10n.t(
+    'Round {0} of {1} · {2}',
+    latest.index,
+    latest.totalRounds,
+    latest.status,
+  );
   frag.appendChild(heading);
 
   const request = document.createElement('div');
