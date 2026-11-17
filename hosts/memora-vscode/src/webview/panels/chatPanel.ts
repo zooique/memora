@@ -2296,10 +2296,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         this.sessionStore
           .listSessionMetas()
           // 让位候选同样不得落到助手会话上（助手会话不是侧栏导航目标，2026-11-17 定案）
+          // origin='hosted' 的工作会话也不进候选——那是代理调度用的后台会话，不是用户导航目标
           .filter(
             (m) =>
               m.sessionId !== preferred &&
               m.sessionId !== this.getAssistantSessionId() &&
+              m.origin !== 'hosted' &&
               !this.sessionStore.isArchived(m.sessionId),
           )
           .map((m) => m.sessionId),

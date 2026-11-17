@@ -51,9 +51,15 @@ export function buildSessionListMessage(
   assistantSessionId?: string,
 ): SessionListMessage {
   // 非当前会话，按更新时间降序（当前会话不进历史记录是设计收敛，不是过滤失误）
+  // origin='hosted' 是代理开的工作会话（主控调度用），不属于用户的自助历史记录 → 一并排除
   const metas = store
     .listSessionMetas()
-    .filter((m) => m.sessionId !== currentSessionId && m.sessionId !== assistantSessionId)
+    .filter(
+      (m) =>
+        m.sessionId !== currentSessionId &&
+        m.sessionId !== assistantSessionId &&
+        m.origin !== 'hosted',
+    )
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return {
     type: 'session_list_data',
