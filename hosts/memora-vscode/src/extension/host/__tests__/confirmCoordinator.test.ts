@@ -60,6 +60,7 @@ type Posted = Record<string, unknown>;
 function agentStub() {
   let handler: WriteConfirmationRequest | undefined;
   const agent = {
+    currentRoundId: () => 'round-test',
     security: {
       onWriteConfirmation: (h: WriteConfirmationRequest) => {
         handler = h;
@@ -793,28 +794,23 @@ describe('ConfirmCoordinator · disposeSession 会话删除清理（E4 批 3）'
 });
 
 /**
- * 代理驱动会话自动放行（`isAgentDrivenSession`）
+ * 带戳轮确认统一代批（HOSTED-CONFIRM-SOFT-1）
  *
- * 事实背景：后台会话的卡上不了屏（防跨会话串台），只能挂到 30 分钟超时被
- * fail-closed 自动拒——代理发起的写入/命令白等半小时然后失败。
- *
- * 判据：
- *   ① 请求**照常走链路**：入队、按前台规则推送（前台推卡 / 后台不推）、该起计时就起计时；
- *   ② 差别只在「谁来按」：代理驱动的会话由代理代按批准，与用户点击同一条 `answerFor` 通路；
- *   ③ 裁决文案不另加标记：代批与用户亲手批准都写「Approved」，来源归属由会话级 / 轮级
- *      气泡上的来源盖章表达（2026-11-15 用户拍板）；
- *   ④ 自助会话（判据 false / 未注入）⇒ 排队、上屏、超时、留痕逐字不变。
+ * 判据按轮读 `Round.origin === 'hosted'`，不复用会话级驱动权：同一会话里用户亲手发的轮
+ * 必须保持排队 / 上屏 / 等用户裁决。带戳轮命中后零弹卡、零计时、零离屏提醒、零 deferred，
+ * 但仍走 `answerFor` 唯一应答入口与 `_logDecision` 唯一留痕发点。
  */
-describe('ConfirmCoordinator · 代理驱动会话由代理代按（isAgentDrivenSession）', () => {
+describe('ConfirmCoordinator · 带戳轮统一代按（HOSTED-CONFIRM-SOFT-1）', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  /** 带代理驱动判据的协调器（按 sid 精确匹配「驱动集合」） */
-  function makeManagedCoordinator(managed: string[]) {
+  /** 按「当前轮是否带戳」注入判据的协调器；可选授权流替身用于反证零 deferred */
+  function makeHostedCoordinator(hosted: boolean, authFlow?: ConfirmAuthFlowPort) {
     const posted: Posted[] = [];
     const pendingChanges: Array<{ sessionId: string; count: number }> = [];
     const shown: Array<{ requestId: string; label: string }> = [];
+    const getRoundOrigin = vi.fn(() => (hosted ? ('hosted' as const) : undefined));
     const coordinator = new ConfirmCoordinator({
       getAgent: () => undefined,
       post: (msg) => {
@@ -822,13 +818,15 @@ describe('ConfirmCoordinator · 代理驱动会话由代理代按（isAgentDrive
       },
       onPendingChanged: (sessionId, count) => pendingChanges.push({ sessionId, count }),
       onConfirmShown: (info) => shown.push(info),
-      isAgentDrivenSession: (sid) => managed.includes(sid),
+      getRoundOrigin,
+      authFlow,
     });
     return {
       coordinator,
       posted,
       pendingChanges,
       shown,
+      getRoundOrigin,
       requests: () =>
         posted.filter((m) => m.type === 'write_confirm_request') as Array<{
           requestId: string;
@@ -838,78 +836,87 @@ describe('ConfirmCoordinator · 代理驱动会话由代理代按（isAgentDrive
     };
   }
 
-  it('后台托管会话：照常入队（计数 + 离屏提醒都发），由代理代按批准，切回补上屏', async () => {
+  it('后台带戳轮：直接批准，零卡 / 零计时 / 零提醒，决策记录仍落该会话', async () => {
     vi.useFakeTimers();
-    const h = makeManagedCoordinator(['s-managed']);
+    const h = makeHostedCoordinator(true);
     const stub = agentStub();
-    h.coordinator.bindSession('s-managed', stub.agent); // 前台仍是默认 ''（后台）
+    h.coordinator.bindSession('s-hosted', stub.agent); // 前台仍是默认 ''（后台）
 
-    const settled = stub.trigger(confirmInfo());
-
-    // ① 请求真的进过队列：待处理计数 1 → 0（不是入队前就 resolve 的旁路）
-    await expect(settled).resolves.toBe(true);
-    expect(h.pendingChanges[0]).toEqual({ sessionId: 's-managed', count: 1 });
-    expect(h.pendingChanges.at(-1)).toEqual({ sessionId: 's-managed', count: 0 });
-    expect(h.coordinator.pendingCount('s-managed')).toBe(0);
-    // ② 卡不上屏（前台规则），但离屏提醒照发——请求存在这件事仍被感知
+    await expect(stub.trigger(confirmInfo())).resolves.toBe(true);
+    expect(h.coordinator.pendingCount('s-hosted')).toBe(0);
     expect(h.requests()).toHaveLength(0);
     expect(h.closed()).toHaveLength(0);
-    expect(h.shown).toHaveLength(1);
-    // ③ 后台决策记录不写当前屏幕（防串台），切回该会话补上屏一次普通批准记录
+    expect(h.shown).toHaveLength(0);
+    expect(h.pendingChanges).toHaveLength(0);
+    // 后台决策不写当前屏幕（防串台）；切回该会话补上屏一次普通批准记录
     expect(h.decisions()).toHaveLength(0);
-    h.coordinator.setForeground('s-managed');
+    h.coordinator.setForeground('s-hosted');
     const decisions = h.decisions();
     expect(decisions).toHaveLength(1);
-    // 裁决文案与用户亲手批准一致：不另加「托管代批」标记
     expect(String(decisions[0].message)).toContain('Approved');
     expect(String(decisions[0].message)).not.toContain('managed');
     expect(String(decisions[0].message)).toContain('foo.md');
-    // 载荷纪律沿用既有单点：不记 description 全文
     expect(String(decisions[0].message)).not.toContain(CARGO_MARKER);
-    // 超时窗口推进也不应产生第二条记录 / 迟到的超时拒
+    // 从未起计时 ⇒ 推进时限也不产生第二条记录 / 迟到的超时拒
     vi.advanceTimersByTime(30 * 60 * 1000 + 1);
     expect(h.decisions()).toHaveLength(1);
   });
 
-  it('前台托管会话：卡照常推出并起计时，代理代按后收卡 + 决策入时间线', async () => {
-    const h = makeManagedCoordinator(['s-managed']);
+  it('前台带戳轮：不推卡、不收卡，裁决文案与用户亲手批准一致', async () => {
+    const h = makeHostedCoordinator(true);
     const stub = agentStub();
-    h.coordinator.bindSession('s-managed', stub.agent);
-    h.coordinator.setForeground('s-managed');
+    h.coordinator.bindSession('s-hosted', stub.agent);
+    h.coordinator.setForeground('s-hosted');
 
-    const settled = stub.trigger(confirmInfo());
-
-    await expect(settled).resolves.toBe(true);
-    // 推卡 → 代按 → 收卡：与用户手点确认的可见轨迹一致，裁决文案也一致
-    expect(h.requests()).toHaveLength(1);
-    expect(h.closed()).toHaveLength(1);
-    expect(h.shown).toHaveLength(1);
+    await expect(stub.trigger(confirmInfo())).resolves.toBe(true);
+    expect(h.requests()).toHaveLength(0);
+    expect(h.closed()).toHaveLength(0);
+    expect(h.shown).toHaveLength(0);
     const decisions = h.decisions();
     expect(decisions).toHaveLength(1);
     expect(String(decisions[0].message)).toContain('Approved');
     expect(String(decisions[0].message)).not.toContain('managed');
   });
 
-  it('后台托管会话 FIFO：两条按序各代按一次，两条决策记录都在', async () => {
-    const h = makeManagedCoordinator(['s-managed']);
-    const stub = agentStub();
-    h.coordinator.bindSession('s-managed', stub.agent);
+  it('带戳轮多条：各自批准且两条决策记录都在', async () => {
+    const h = makeHostedCoordinator(true);
+    h.coordinator.setForeground('s-hosted');
+    const first = agentStub();
+    const second = agentStub();
+    h.coordinator.bindSession('s-hosted', first.agent);
+    h.coordinator.bindSession('s-hosted', second.agent);
 
-    const first = stub.trigger(confirmInfo());
-    const second = stub.trigger(confirmInfo({ targetPath: '/mock/workspace/notes/bar.md' }));
-
-    await expect(first).resolves.toBe(true);
-    await expect(second).resolves.toBe(true);
-    expect(h.coordinator.pendingCount('s-managed')).toBe(0);
-    h.coordinator.setForeground('s-managed');
+    await expect(first.trigger(confirmInfo())).resolves.toBe(true);
+    await expect(
+      second.trigger(confirmInfo({ targetPath: '/mock/workspace/notes/bar.md' })),
+    ).resolves.toBe(true);
+    expect(h.coordinator.pendingCount('s-hosted')).toBe(0);
     const decisions = h.decisions();
     expect(decisions).toHaveLength(2);
     expect(String(decisions[0].message)).toContain('foo.md');
     expect(String(decisions[1].message)).toContain('bar.md');
   });
 
-  it('自助会话不受影响：仍排队 + 上屏 + 等用户裁决（判据只认代理驱动集合）', async () => {
-    const h = makeManagedCoordinator(['s-managed']);
+  it('带戳轮先于授权分流：零 deferred 且分流器零调用', async () => {
+    const maybeDefer = vi.fn(() => 'deferred' as const);
+    const authFlow: ConfirmAuthFlowPort = {
+      maybeDefer,
+      flushForSeat: vi.fn(),
+      repostForSeat: vi.fn(),
+      disposeSession: vi.fn(),
+    };
+    const h = makeHostedCoordinator(true, authFlow);
+    const stub = agentStub();
+    h.coordinator.bindSession('s-hosted', stub.agent);
+
+    await expect(stub.trigger(confirmInfo())).resolves.toBe(true);
+    expect(maybeDefer).not.toHaveBeenCalled();
+    // 接线断言：roundId 从当前 agent 现取，不是写死的判据
+    expect(h.getRoundOrigin).toHaveBeenCalledWith('round-test');
+  });
+
+  it('自助轮不受影响：仍排队 + 上屏 + 等用户裁决', async () => {
+    const h = makeHostedCoordinator(false);
     const stub = agentStub();
     h.coordinator.bindSession('s-self', stub.agent);
     h.coordinator.setForeground('s-self');
@@ -920,7 +927,6 @@ describe('ConfirmCoordinator · 代理驱动会话由代理代按（isAgentDrive
       return v;
     });
 
-    // 卡照常推出、计数照常亮、未裁决前不 settle
     expect(h.requests()).toHaveLength(1);
     expect(h.coordinator.pendingCount('s-self')).toBe(1);
     expect(h.pendingChanges.at(-1)).toEqual({ sessionId: 's-self', count: 1 });

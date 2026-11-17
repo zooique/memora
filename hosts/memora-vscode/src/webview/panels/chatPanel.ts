@@ -812,10 +812,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     onConfirmShown: (info) => this._attention.onConfirmShown({ requestId: info.requestId }),
     // 待处理确认数变化（含后台会话入队）⇒ 重算列表标识与入口角标
     onPendingChanged: () => this.refreshSessionActivity(),
-    // 代理驱动的会话（托管座位 + 代理开出 / 派发接管）的确认请求照常入队/推送/计时，
-    // 只把「谁来按」换成代理代按批准（后台卡上不了屏，挂着只会等超时被拒）；
-    // 自助会话判据恒 false ⇒ 排队/计时/上屏/超时逐字不变
-    isAgentDrivenSession: (sid) => this.sessionModes.isAgentControlled(sid),
+    // 确认代批判据按轮读 `Round.origin`（HOSTED-CONFIRM-SOFT-1）：只从轮存储提供按 id 读口，
+    // 不新增 `_agent` 方法依赖；会话级驱动权不作判据（同会话用户亲手发的轮不能被代批）。
+    getRoundOrigin: (roundId) => this._eventLogRoundStore?.getById(roundId)?.origin,
     authFlow: this._authFlow, // HOSTED-CONFIRM-AUTH-1：handler 第一步分流 always-ask
   });
 

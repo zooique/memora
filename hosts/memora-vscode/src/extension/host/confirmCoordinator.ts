@@ -82,29 +82,20 @@ export interface ConfirmDeps {
    */
   onPendingChanged?: (sessionId: string, count: number) => void;
   /**
-   * 该会话当前是否由代理驱动（是 ⇒ 请求照常入队，但由代理代替用户按「批准」）
+   * 按 ID 读轮的来源标记（`Round.origin`）——确认代批的**唯一判据原料**
    *
-   * 判据真源 = `SessionModeStore.isAgentControlled`（托管座位 + 代理开出 / 派发接管的会话），
-   * 不再只认「是不是托管座位」：代理开出的子会话、被 `send_to_session` 派活接管的会话
-   * 同样归代理，否则它们撞上必须问的命令时只入队、不上屏、计时也不起——必须人切进去点一下
-   * 才能继续，托管任务就卡死在等点上。
+   * 判据必须按轮读，不得复用会话级驱动权：同一条助手会话里用户亲手发的轮（origin='user'）
+   * 不能被代批，而代理开出的工作会话里由用户中途接手的轮也不能因会话身份被误代批。
+   * 轮 id 由 `bindSession` 拿到的 agent 现取，本依赖只负责按 id 读轮；轮无该字段（历史数据）
+   * 读侧按用户轮解释。装配点从轮存储取，不新增 `_agent` 方法依赖。
    *
-   * 为什么需要：后台会话的卡上不了屏，只能挂到 30 分钟超时被 fail-closed 自动拒。
-   * 托管语义下用户把操作权委派给了代理，确认请求不需要人点击——但**请求本身照常存在**：
-   * 照常入队、按前台规则推送（前台推卡 / 后台不推）、该起计时就起计时，差别只在
-   * 「谁来按」；裁决记录走同一条入口，来源归属由会话级 / 轮级气泡的来源盖章表达，
-   * 不在这条记录上另加标记。
+   * 命中形态（`HOSTED-CONFIRM-SOFT-1` 定案）：不推卡、不起计时、不入异步授权分流、
+   * 零用户点击；留痕仍走 `_logDecision` 唯一发点，不建第二套审计。恒拦黑名单（内核 `deny` 档）
+   * 在内核判据处就不进确认流程，本钩子看不到。
    *
-   * 边界（刻意如此）：
-   *   - **只认代理驱动**：自助会话不注入判据 ⇒ 排队/计时/上屏/超时逐字不变；
-   *   - 恒拦黑名单（内核 `deny` 档，如 `rm -rf /`）在内核判据处就不进确认流程，本钩子看不到、
-   *     也绕不过（`git push` / `npm publish` 属 always-ask，照常进确认流程、可被代批）；
-   *   - 自动批准走既有 `answerFor` 唯一应答入口（决策记录 `_logDecision` 唯一发点），
-   *     不新造第二套审计，也不从旁路直接 `resolve`。
-   *
-   * **可选**：不注入 = 零行为（既有测试与其它装配点无需改动）。
+   * 未命中（自助轮 / 依赖未注入）逐字保持既有链路：入队 / 上屏 / 计时 / fail-closed 超时不变。
    */
-  isAgentDrivenSession?: (sessionId: string) => boolean;
+  getRoundOrigin?: (roundId: string) => 'user' | 'hosted' | undefined;
   /**
    * 异步授权流（`always-ask` 命令的「问一句再执行」· HOSTED-CONFIRM-AUTH-1）
    *
@@ -135,13 +126,6 @@ interface ConfirmEntry {
   presented: boolean;
   /** 超时计时器（**首次推出时**才启动；从未上屏的后台请求不烧超时额度） */
   timer?: ReturnType<typeof setTimeout>;
-  /**
-   * 是否需要代理代替用户按「批准」（该会话当前由代理驱动 = true）
-   *
-   * 刻意放在**条目上**而不是入队前分支：请求照常入队/推送/起计时，只在轮到它时把
-   * 「谁来按」换成代理——与用户点击同一条 `answerFor` 通路，决策记录也同一发点。
-   */
-  autoApprove: boolean;
 }
 
 /** 单会话确认队列（FIFO 串行：同会话同时只推一张卡） */
@@ -217,14 +201,24 @@ export class ConfirmCoordinator {
     const guard = agent?.security;
     if (!guard) return;
     // 注入确认回调（幂等：onWriteConfirmation 内部覆盖赋值，无重复注册风险）。
-    // 分流第一步（HOSTED-CONFIRM-AUTH-1）：always-ask + 代理驱动 + 无授权 ⇒ 授权请求
-    // 已由 authFlow 推托管座位，此处返 'deferred'（内核不挂起等待，该轮正常落定）；
-    // 其余照常入队——deferred 永不进队列（_enqueue 的 resolve 仍是 boolean 空间）。
+    // 判据按轮（`Round.origin`，HOSTED-CONFIRM-SOFT-1）：带戳轮先于授权分流短路，
+    // 保证零 deferred / 零弹卡；自助轮仍走授权分流与既有入队链路，行为逐字不变。
+    const isHosted = (): boolean => {
+      // 可选调用：测试替身 / 装配未完成时不提供该能力 ⇒ 按自助轮解释，零代批。
+      const roundId = agent?.currentRoundId?.();
+      return roundId !== undefined && this._deps.getRoundOrigin?.(roundId) === 'hosted';
+    };
     const handler: WriteConfirmationRequest = (info) => {
+      const hosted = isHosted();
+      if (hosted) {
+        return new Promise<boolean>((resolve) => {
+          this._enqueue(sessionId, info, resolve, hosted);
+        });
+      }
       const deferred = this._deps.authFlow?.maybeDefer(sessionId, info);
       if (deferred === 'deferred') return Promise.resolve('deferred');
       return new Promise<boolean>((resolve) => {
-        this._enqueue(sessionId, info, resolve);
+        this._enqueue(sessionId, info, resolve, hosted);
       });
     };
     guard.onWriteConfirmation(handler);
@@ -370,6 +364,7 @@ export class ConfirmCoordinator {
     sessionId: string,
     info: Parameters<WriteConfirmationRequest>[0],
     resolve: (v: boolean) => void,
+    hostedRound: boolean,
   ): void {
     // 工具中文名走 toolNameMap 单一真源（复用公开入口 getToolDisplayName）：
     // 本地另建映射易产生幽灵键（edit_file / create_file / append_file 内核并不存在——
@@ -389,9 +384,15 @@ export class ConfirmCoordinator {
         info.targetPath.split(/[\\/]/).pop() ?? info.targetPath,
       ),
       presented: false,
-      // 当前由代理驱动的会话：由代理代按批准（不是绕过确认——入队/推送/计时照常，见 _show/_drainAutoApproved）
-      autoApprove: this._deps.isAgentDrivenSession?.(sessionId) === true,
     };
+    // 带戳轮：内联批准——**不进会话队列、不占在途位**，因此不会覆盖同一会话里
+    // 正在等待用户裁决的卡，也不会推卡 / 起计时 / 发离屏提醒 / 推收卡消息。
+    // 留痕仍走 `_logDecision` 唯一发点（后台按会话暂存、切回补上屏），不建第二套审计。
+    if (hostedRound) {
+      entry.resolve(true);
+      this._logDecision(entry, 'approved', sessionId);
+      return;
+    }
     const state = this._stateFor(sessionId);
     state.queue.push(entry);
     this._deps.onPendingChanged?.(sessionId, this.pendingCount(sessionId));
@@ -404,32 +405,6 @@ export class ConfirmCoordinator {
       // 承接面。与 `_show` 共用同一钩子、同一 requestId —— 提醒层按 `confirm:${requestId}` 去重，
       // 切到该会话补推同一张卡时不会再响第二声。
       this._deps.onConfirmShown?.({ requestId: entry.requestId, label: entry.logLabel });
-      // 代理驱动的后台请求：依正常入队后由代理代按（微任务 ⇒ 先让入队/计数/提醒落地，再走应答入口）
-      if (entry.autoApprove) queueMicrotask(() => this._drainAutoApproved(sessionId));
-    }
-  }
-
-  /**
-   * 代理驱动的后台会话：把队首的托管请求按 FIFO 逐条交「代理批准」
-   *
-   * 为什么单独一段：后台请求不推卡（前台规则），`_pump` 不会被调用，也就没有 `_show`
-   * 去触发代按。这里**只做「谁来按」**——入队/计数/提醒已在 `_enqueue` 正常发生过；
-   * 裁决与留痕仍走 `answerFor`（唯一应答入口 + 唯一决策发点），不直接 `resolve`。
-   *
-   * 遇到非代理驱动的条目立即停手（理论上同 sid 不会混档，但守住判据：不自作主张替用户拍板）。
-   *
-   * @param sessionId 会话标识
-   */
-  private _drainAutoApproved(sessionId: string): void {
-    const state = this._sessions.get(sessionId);
-    if (!state) return;
-    // 已可见（侧栏或助手窗）：交给 `_pump` → `_show` 的正常推卡路径去代按（避免同一条被答两次）
-    if (this._isVisible(sessionId)) return;
-    while (state.queue.length > 0 && state.queue[0].autoApprove) {
-      // 与 `_pump` 同序：先出队再置为在途（否则应答后仍留在队列 = 死循环/重复投递）
-      const head = state.queue.shift()!;
-      state.current = head;
-      if (!this.answerFor(sessionId, head.requestId, true)) return;
     }
   }
 
@@ -495,17 +470,6 @@ export class ConfirmCoordinator {
     // 交互提醒钩子（可选）：卡已推出 ⇒ 通知不在面板前的用户。放在 post 之后：
     // 只有卡真的发出去了，提醒才有承接面（先提醒后发卡 = 用户回来找不到卡）。
     this._deps.onConfirmShown?.({ requestId, label: entry.logLabel });
-    // 代理驱动的会话：卡照常推出、计时照常起，随后由代理「代按批准」——微任务让本轮
-    // post / 计时器先落地，再走与用户点击**同一条**应答入口（决策记录同源，来源归属
-    // 由会话级 / 轮级气泡上的来源盖章表达，不在裁决文案上另加标记）。
-    // 用 `_findSession` 反查而非前台会话：微任务执行前若已切走，找不到就不答，
-    // 绝不对着新前台会话的卡误按。
-    if (entry.autoApprove) {
-      queueMicrotask(() => {
-        const sessionId = this._findSession(entry);
-        if (sessionId !== undefined) this.answerFor(sessionId, requestId, true);
-      });
-    }
   }
 
   /**
