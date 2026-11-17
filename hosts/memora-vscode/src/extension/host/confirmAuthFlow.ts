@@ -41,6 +41,7 @@
  * @module confirmAuthFlow
  */
 
+import { logger } from '@zooique/memora';
 import type { WriteConfirmationInfo } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import type { HostedDispatchResult } from './workSessionTools.js';
@@ -180,6 +181,10 @@ export class ConfirmAuthFlow {
     };
     this._requests.set(entry.requestId, entry);
     this._deliverOrQueue(entry);
+    logger.info(
+      { sessionId, tool: entry.tool, requestId: entry.requestId },
+      '宝转异步授权（always-ask）',
+    );
     return 'deferred';
   }
 

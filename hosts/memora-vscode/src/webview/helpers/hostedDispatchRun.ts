@@ -17,6 +17,7 @@
  * 起流 → 收尾」闭环，与 `hostedSessionCreate` 同一拆法——面板只注入窄依赖，不为过闸压平代码。
  */
 import * as vscode from 'vscode';
+import { logger } from '@zooique/memora';
 import type { Agent, AgentChunk } from '@zooique/memora';
 import type { HostedDispatchResult } from '../../extension/host/workSessionTools.js';
 import { acquireDispatchWriteLease, type DispatchWriteLease } from './hostedDispatchLock.js';
@@ -72,8 +73,10 @@ export async function dispatchHostedInputWith(
   text: string,
   senderName: string,
 ): Promise<HostedDispatchResult> {
+  logger.info({ from: callingSessionId, to: targetSessionId }, '宝派发活');
   // ① 调用方身份
   if (!deps.isManaged(callingSessionId)) {
+    logger.warn({ from: callingSessionId, code: 'E_DENIED' }, '派发被拒：调用方非托管');
     return {
       ok: false,
       code: 'E_DENIED',
@@ -87,7 +90,13 @@ export async function dispatchHostedInputWith(
     message: l10n.t('Memora: the target session is running; the input was not sent.'),
   };
   // ② 前置判忙：peek 不建记录，值就是该会话的真实 stream 运行态
-  if (deps.isStreaming(targetSessionId)) return busy;
+  if (deps.isStreaming(targetSessionId)) {
+    logger.warn(
+      { from: callingSessionId, to: targetSessionId, code: 'E_BUSY' },
+      '派发被拒：目标在跑',
+    );
+    return busy;
+  }
   // ③ 目标会话写权（判据与归还时机都在 hostedDispatchLock）：拿不到 = 另一个窗口在用 ⇒ 如实拒收
   const lease = await acquireDispatchWriteLease(
     {
@@ -99,7 +108,13 @@ export async function dispatchHostedInputWith(
     },
     targetSessionId,
   );
-  if (lease.refusal) return lease.refusal;
+  if (lease.refusal) {
+    logger.warn(
+      { from: callingSessionId, to: targetSessionId, code: lease.refusal.code },
+      '派发被拒：写租约不可得',
+    );
+    return lease.refusal;
+  }
   try {
     // ④ 取（或建）目标会话实例：装配可能在途，期间目标会话或已被别的入口开跑 ⇒ 落地前再判一次
     const agent = await deps.getAgent(targetSessionId);
@@ -114,6 +129,10 @@ export async function dispatchHostedInputWith(
     }
     if (deps.isStreaming(targetSessionId)) {
       lease.releaseIfIdle();
+      logger.warn(
+        { from: callingSessionId, to: targetSessionId, code: 'E_BUSY' },
+        '派发被拒：二次判忙',
+      );
       return busy;
     }
     const now = new Date().toISOString();
@@ -144,10 +163,12 @@ export async function dispatchHostedInputWith(
         origin: 'hosted',
       },
     );
+    logger.info({ from: callingSessionId, to: targetSessionId }, '派发受理成功');
     return { ok: true, accepted: true };
   } catch (err) {
     // 起流前就失败（装配 / 切会话抛错）：租约当场归还，不把临时锁漏在本面板
     lease.releaseIfIdle();
+    logger.error({ from: callingSessionId, to: targetSessionId, err }, '派发异常：起流前抛错');
     throw err;
   }
 }

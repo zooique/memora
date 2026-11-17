@@ -13,6 +13,7 @@
  *   - 角色包只做**存在性**判定，权限面与用户可选范围完全一致（不额外授权）。
  */
 import * as vscode from 'vscode';
+import { logger } from '@zooique/memora';
 import type { Agent, AgentChunk, RoundMessage } from '@zooique/memora';
 import type { CreateSessionResult } from '../../extension/host/workSessionTools.js';
 
@@ -83,7 +84,12 @@ export async function createHostedSessionWith(
   declaredPaths: readonly string[],
   mandate?: string,
 ): Promise<CreateSessionResult> {
+  logger.info(
+    { callingSessionId, rolePackName, title, declaredPaths: declaredPaths.length },
+    '宝开工作会话',
+  );
   if (!deps.isManaged(callingSessionId)) {
+    logger.warn({ callingSessionId, code: 'E_DENIED' }, '宝开工作会话被拒：调用方非托管');
     return {
       ok: false,
       code: 'E_DENIED',
@@ -94,6 +100,10 @@ export async function createHostedSessionWith(
     // 编目读口缺失 / 读失败 = 「不可用」，与「包名不存在」同码；**绝不**折算成 E_NOT_FOUND
     const catalog = deps.readRolePackCatalog ? await deps.readRolePackCatalog() : null;
     if (!catalog || !catalog.has(rolePackName)) {
+      logger.warn(
+        { callingSessionId, rolePackName, code: 'E_ROLE_PACK' },
+        '宝开工作会话被拒：角色包不可用',
+      );
       return {
         ok: false,
         code: 'E_ROLE_PACK',
@@ -113,6 +123,7 @@ export async function createHostedSessionWith(
     mandate,
   );
   if (!created) {
+    logger.warn({ callingSessionId, code: 'E_HOST' }, '宝开工作会话被拒：宿主创建失败');
     return {
       ok: false,
       code: 'E_HOST',
@@ -145,5 +156,6 @@ export async function createHostedSessionWith(
       origin: 'hosted',
     },
   );
+  logger.info({ sessionId, callingSessionId, title }, '工作会话创建成功');
   return { ok: true, sid: sessionId, title };
 }
