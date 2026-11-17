@@ -89,10 +89,12 @@ export default [
     // BGTASK-SWITCH-REPUSH-1 撞顶格 ⇒ 历史会话列表投影外置 `helpers/sessionList.ts`
     // （store → DTO 纯映射），基线按闸门自报再降为 4242（只降不升）。
     // P1 托管模式落地（2026-11-17）：新增 4 处 workStatus 更新钩子 → 外置到
-    // helpers/hostedWorkStatus.ts（薄面板 + 逻辑外置），chatPanel 保持一行 helper 调用，
-    // 阈值从 2200 调为 2250（新增功能 + 已外置逻辑，不是遗留代码没外置）。
-    files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法；诊断聚合 + thought 折叠域 + 过程事件合并域 + HTML 骨架 + 会话列表投影 + workStatus 更新均已外置）
-    rules: { 'max-lines': ['error', { max: 2250, skipBlankLines: true, skipComments: true }] },
+    // helpers/hostedWorkStatus.ts（薄面板 + 逻辑外置）；当时为容纳剩余 33 行把阈值抬到 2250。
+    // CHATPANEL-EXTRACT-1（2026-11-18）：按三条判据外置角色能力 / team 投影到
+    // helpers/roleCapabilityProjection.ts、启动会话对齐到 helpers/sessionStartupAlign.ts；
+    // 闸门自报 2233 → 2194，阈值收回 2200（撤销抬闸，只降不升）。
+    files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法；诊断聚合 + thought 折叠域 + 过程事件合并域 + HTML 骨架 + 会话列表投影 + workStatus 更新 + 角色能力投影 + 启动会话对齐均已外置）
+    rules: { 'max-lines': ['error', { max: 2200, skipBlankLines: true, skipComments: true }] },
   },
   {
     // WORK-PROJECTION-MOVE-1（2026-11-09）：接入第 7 页前先外置三条「读配置 → 推消息」与

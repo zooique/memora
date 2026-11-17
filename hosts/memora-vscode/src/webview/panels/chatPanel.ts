@@ -131,10 +131,13 @@ import {
   restoreSessionAction,
   type SessionHistoryDeps,
 } from '../helpers/sessionHistoryActions.js';
-// 能力面三态判定的唯一出口（CAP-TRISTATE-1）：本文件只传「域级标签投影」，不自行判 length
-import { deriveCapabilityState } from '../helpers/capabilityState.js';
-// 输入区徽章的域级短标签（标签投影与三态判定分离，见 capabilityLabels 头注释）
-import { capabilityDomainLabel } from '../helpers/capabilityLabels.js';
+// 角色包 → 能力徽章 / team 的纯投影（含能力三态判定出口），本面板只负责投递
+import {
+  capabilityBadgePayload,
+  activeTeamForProtocol,
+} from '../helpers/roleCapabilityProjection.js';
+// 启动会话对齐（判据与切换外置，错误投递由面板注入）
+import { alignKernelSessionTo } from '../helpers/sessionStartupAlign.js';
 import { toNoticeText } from '../../extension/host/noticeText.js';
 import {
   limitNotice,
@@ -1159,26 +1162,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 失败必须可见（notice）：静默则退回「启动即错位」的原症状。
    */
   private async alignKernelSession(agent: Agent): Promise<void> {
-    const target = this._currentSessionId;
-    const sm = agent.sessionManager;
-    if (!target || !sm) return;
-    let kernelCurrent: string | null = null;
-    try {
-      const info = sm.getCurrentSessionInfo();
-      kernelCurrent = info ? `${info.date}-${info.session}` : null;
-    } catch {
-      kernelCurrent = null;
-    }
-    if (kernelCurrent === null || kernelCurrent === target) return;
-    try {
-      await sm.switchToSession(target);
-    } catch (err) {
-      this.post({
-        type: 'notice',
-        level: 'error',
-        message: l10n.t('Failed to align the startup session: {0}', toNoticeText(err)),
-      });
-    }
+    await alignKernelSessionTo(agent, this._currentSessionId, (message) =>
+      this.post({ type: 'notice', level: 'error', message }),
+    );
   }
 
   /** 推送三源技能清单到 chatView（composer 动态下拉 SSOT：与设置面板共用 listVisibleSkills） */
@@ -1263,60 +1249,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     };
   }
 
-  /**
-   * 获取当前 activePack 的 team 快照（供 chat_role_pack 协议消息携带，可选字段）。
-   * SSOT：从内核 rolePackManager.getActiveTeam() 读，不绕过内核直碰 globalState。
-   * 宿主 UI 消费端据此决定是否渲染"小组会议启动"图标。
-   *
-   * @returns team 对象（组长 + 组员数组，组员已截断超限过滤）；无队伍/非组长时 undefined
-   */
-  private getActiveTeamForProtocol(): { leader: string; members: string[] } | undefined {
-    const team = this._agent?.rolePackManager?.getActiveTeam();
-    if (!team || team.members.length === 0) return undefined;
-    // spread 只读数组为可变引用（protocol.ts team.members 已声明 readonly，post 透传不修改）
-    return { leader: team.leader, members: [...team.members] };
-  }
-
-  /**
-   * 推送工具权限徽章（角色切换后能力面随之变化）
-   *
-   * 从内核 RolePackManager.getActive() 读取当前角色包的 capabilities 与 toolMode，
-   * 映射为可读标签（如 file:read → 只读、web:search → 联网），推送给 webview 渲染徽章。
-   * 能力面标签映射为中文（简单映射，避免前端硬编码）。
-   * 策略指示器（strategyHint）：提供只读模式/审批模式/温度分组等关键策略提示。
-   */
+  /** 推送工具权限徽章（角色切换后能力面随之变化；投影真源在 helper） */
   private postCapabilityBadge(
     agent = this._agent,
     sessionId: string = this._currentSessionId,
   ): void {
-    if (!agent) return;
-    const active = agent.rolePackManager?.getActive();
-    if (!active) return;
-    const toolMode = active.strategy.act?.toolMode ?? 'allow';
-    // 三态判定走 host 唯一出口 `deriveCapabilityState`（未声明 / 显式空 / 白名单各为一支），
-    // 本文件只提供**域级短标签投影**（输入区徽章比角色卡更紧凑），不在此重算 length——
-    // 显示层再判一次就会与内核语义漂移（CAP-TRISTATE-1 的真机缺陷正是这样产生的）。
-    const capabilityState = deriveCapabilityState(active.capabilities, capabilityDomainLabel);
-
-    const strategy = active.strategy;
-    const temp = strategy.act?.temperature ?? 0.7;
-    const tempGroup = temp >= 0.8 ? 'high' : temp <= 0.4 ? 'low' : 'mid';
-    const reasoningMode = strategy.act?.multiStepReasoning;
-
-    const strategyHint = {
-      toolReadonly: strategy.act?.toolReadonly,
-      tempGroup: tempGroup as 'high' | 'mid' | 'low',
-      reasoningMode: reasoningMode as 'auto' | 'manual' | undefined,
-      summaryFocus: strategy.prepare?.summaryFocus,
-      outputLimit: strategy.act?.outputLimit,
-    };
-
-    this.postToSession(sessionId, {
-      type: 'capability_badge',
-      toolMode,
-      capabilityState,
-      strategyHint,
-    });
+    const badge = capabilityBadgePayload(agent);
+    if (badge) this.postToSession(sessionId, badge);
   }
 
   /**
@@ -1339,7 +1278,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       type: 'chat_role_pack',
       rolePack: this.roleDisplayName(name),
       traits: this.getActiveTraits(traitsAgent),
-      team: this.getActiveTeamForProtocol(),
+      team: activeTeamForProtocol(this._agent),
     });
   }
 
