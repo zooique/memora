@@ -1764,6 +1764,13 @@ export const chatStyles = `
   body[data-form='assistant'] .process-flow,
   body[data-form='assistant'] .msg-body[data-status]::after,
   body[data-form='assistant'] .msg-body[data-terminus]::after { display: none !important; }
+  /* ASSISTANT-WECHAT-UX-1：微信气泡不标来源——「由 X 发送」是工作会话的代理语义，
+   * 助手窗里用户只跟助手对话，标签会让「谁说的」产生歧义。仅隐藏、不删 DOM。 */
+  body[data-form='assistant'] .msg-origin-tag { display: none !important; }
+  /* 交互输入行（你的补充 / 你答）在此形态上屏到消息流（见 appendInteractiveInput）——
+   * 基础样式的 user-select:none 是过程行语义，这里恢复可选中：选中文字才能右键
+   * 「引用回复」把内容追加进输入区（复用既有 quoteReply，零新协议）。 */
+  body[data-form='assistant'] .round-block__input { user-select: text; }
   /* AI 回复改左侧气泡：与 .msg.user 的右侧气泡对称，正文排版唯一来源不变。
    * 身份标签已收起（顶部身份条承载「是谁」），气泡内只留正文。 */
   body[data-form='assistant'] .msg.assistant {

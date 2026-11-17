@@ -886,25 +886,31 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     // § 运行时输入（形态甲）：跨重建快照条目 + finalize 合并流条目统一按时间键归位任务项分组
     //   （不搬家不追尾）；去重按身份键（qaDedupKey）——按 ts 单键会丢同批第 2..N 条。
-    const renderedInputTs = new Set<string>();
-    for (const el of existingInputs) {
-      const tsKey = el.dataset.ts ?? '';
-      const key = qaDedupKey(el.dataset.inputId, tsKey);
-      if (!tsKey || renderedInputTs.has(key)) continue;
-      renderedInputTs.add(key);
-      const { host } = cells.planItemContainerFor(details, events, tsKey);
-      insertPlanItemInOrder(host, el, tsKey);
-    }
-    for (const qa of interactiveInputs ?? []) {
-      const tsKey = qa.ts ?? '';
-      const key = qaDedupKey(qa.id, tsKey);
-      if (!tsKey || renderedInputTs.has(key)) continue;
-      renderedInputTs.add(key);
-      const item = qaRowView.renderQaItem(qa.text, qa.kind, qa.question, qa.options);
-      item.dataset.ts = tsKey;
-      if (qa.id) item.dataset.inputId = qa.id;
-      const { host } = cells.planItemContainerFor(details, events, tsKey);
-      insertPlanItemInOrder(host, item, tsKey);
+    // ASSISTANT-WECHAT-UX-1：助手形态下整个 details 被 CSS 收起，交互行的唯一可见终位是
+    // appendInteractiveInput 落在消息流里的那条（上屏）。此处若再从缓存建一份进 details
+    // 就是「同一事实两处登记」（隐藏副本 + 可见副本），且重放回收删除会误删可见那条。
+    // 故助手形态跳过这两段重建；self 形态逐字不变。
+    if (document.body.dataset.form !== 'assistant') {
+      const renderedInputTs = new Set<string>();
+      for (const el of existingInputs) {
+        const tsKey = el.dataset.ts ?? '';
+        const key = qaDedupKey(el.dataset.inputId, tsKey);
+        if (!tsKey || renderedInputTs.has(key)) continue;
+        renderedInputTs.add(key);
+        const { host } = cells.planItemContainerFor(details, events, tsKey);
+        insertPlanItemInOrder(host, el, tsKey);
+      }
+      for (const qa of interactiveInputs ?? []) {
+        const tsKey = qa.ts ?? '';
+        const key = qaDedupKey(qa.id, tsKey);
+        if (!tsKey || renderedInputTs.has(key)) continue;
+        renderedInputTs.add(key);
+        const item = qaRowView.renderQaItem(qa.text, qa.kind, qa.question, qa.options);
+        item.dataset.ts = tsKey;
+        if (qa.id) item.dataset.inputId = qa.id;
+        const { host } = cells.planItemContainerFor(details, events, tsKey);
+        insertPlanItemInOrder(host, item, tsKey);
+      }
     }
     // § 过程轨迹（thinking 阶段：聚合计数，去噪——同一相位 N 条 thinking 事件
     //  压缩为一行「相位 ×N」，避免「调用模型中…」重复 12 次平铺成视觉噪点；保序：按首次出现序）
@@ -2197,10 +2203,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 目标容器：运行时 process-flow > 完成态/重放 round-block 详情区 > 降级消息流（纯问答轮无过程容器）。
       // 中断轮不走特例——收场轮统一收起（rb.open 单点判据），交互行随详情区留档、展开可回查，
       // 不靠换容器：容器一旦分叉，「这条数据属于哪」就变成对 DOM 连接态的运行时嗅探。
-      const flow = flowEl?.isConnected ? flowEl : null;
-      const rbDetails = roundBlockEl?.isConnected
-        ? roundBlockEl.querySelector('.round-block__details')
-        : null;
+      // ASSISTANT-WECHAT-UX-1：助手形态（微信心智）把过程容器整段 CSS 收起，
+      // 交互输入行（你的补充 / 你答）若挂进 .process-flow / .round-block__details
+      // 就被连坐隐藏 = 用户以为「连续输入被吞」。形态是挂载常量，读 body[data-form]
+      // 与 applyForm / getForm 同源；助手形态下挂载根置空 ⇒ 统一走下方消息流兜底
+      // （上屏为可见的用户输入行，恢复 user-select 后可右键「引用回复」到输入区）。
+      const assistantForm = document.body.dataset.form === 'assistant';
+      const flow = !assistantForm && flowEl?.isConnected ? flowEl : null;
+      const rbDetails =
+        !assistantForm && roundBlockEl?.isConnected
+          ? roundBlockEl.querySelector('.round-block__details')
+          : null;
       const root = (flow ?? rbDetails) as HTMLElement | null;
       if (root) {
         const { host } = cells.planItemContainerFor(root, currentEvents, tsKey);
@@ -2221,7 +2234,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 归位即终位，不再进骨架期迁移队列（否则后续轮的容器会把它当「暂存条目」搬走）。
         if (roundId && roundGroupEl?.isConnected && roundGroupEl.dataset.roundId === roundId) {
           ensureRoundGroup(roundId, item);
-        } else if (!flowEl?.isConnected && !roundBlockEl?.isConnected) {
+        } else if (
+          // ASSISTANT-WECHAT-UX-1：助手形态永不暂存——暂存的唯一目的就是「骨架建好后迁回
+          // 过程容器」，而该容器在本形态被 CSS 收起，迁回 = 再次吞输入。条目留在消息流即终位。
+          !assistantForm &&
+          !flowEl?.isConnected &&
+          !roundBlockEl?.isConnected
+        ) {
           // 骨架期暂存：此刻 round-block/flowEl 尚未建立（meta 首 token 未到），
           // 条目只会落消息流尾——「补充选项卡贴输入框下方」的视觉错位即由此来。暂存引用，
           // 待 meta 骨架建立时由 flushSkeletonPendingItems 迁移进过程容器（重放路径容器已建，
@@ -2331,6 +2350,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       group: g,
       pending,
       locked: sessionControlsLocked,
+      // 形态是挂载常量（body[data-form] 由 buildHtml 写死）；ASSISTANT-WECHAT-UX-1：
+      // 助手形态底栏只留复制，与既有 getForm 注入同源读数，不另造形态判据。
+      form: document.body.dataset.form === 'assistant' ? 'assistant' : 'self',
       post: (m) => vscode.postMessage(m),
     });
     roundGroupEl = g;
@@ -2906,7 +2928,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 正文块建立后补挂任务过程折叠区 + 回收同轮 fallback 残留（live 轮统一在第 4 步挂到进行中块）
         append('assistant', item.content, item.ts, r.id);
         if (!r.live) renderRoundBlock(currentEvents, true, runtimeInteractiveInputs, r.evidence);
-        if (r.id && roundBlockEl?.isConnected) {
+        // ASSISTANT-WECHAT-UX-1：助手形态下消息流里的交互行是「上屏终位」（renderRoundBlock
+        // 不再往隐藏 details 建副本），删掉就真丢——故只在 self 形态回收 fallback 残留。
+        if (r.id && roundBlockEl?.isConnected && document.body.dataset.form !== 'assistant') {
           messages
             .querySelectorAll<HTMLElement>(`.round-block__input[data-round-id="${r.id}"]`)
             .forEach((el) => el.remove());
@@ -2973,7 +2997,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           );
         }
         renderRoundBlock(currentEvents, true, runtimeInteractiveInputs, r.evidence);
-        if (r.id && roundBlockEl?.isConnected) {
+        // ASSISTANT-WECHAT-UX-1：同上一处——助手形态上屏行是终位，不回收（删了就丢）。
+        if (r.id && roundBlockEl?.isConnected && document.body.dataset.form !== 'assistant') {
           messages
             .querySelectorAll<HTMLElement>(`.round-block__input[data-round-id="${r.id}"]`)
             .forEach((el) => el.remove());
