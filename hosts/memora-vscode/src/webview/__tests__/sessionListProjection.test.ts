@@ -94,3 +94,65 @@ describe('托管模式文档 · 侧栏列表口径与代码一致', () => {
     expect(doc).toContain('助手会话**不在侧栏列表里**');
   });
 });
+
+/**
+ * 字段口径守卫（HOSTED-SUBSCRIBED-COLUMN-1 · 用户 2026-11-17 拍板撤承诺）：
+ * 定案与白话曾把 `subscribed` 写成「三字段必须同批写入」的承诺，而代码只有
+ * 两个新字段（workOrder/workStatus）+ 既有 origin ⇒ 文档在撒谎。裁决后两文档
+ * 一次对齐为两新字段口径，subscribed 只保留「P3 未启动、本期不设字段」的退役说明。
+ *
+ * 三判据：① 承诺式表述（三个字段/三字段 + 同批写入并列）零命中；
+ * ② 两文档都落正向锚（两新字段 + 既有 origin）；
+ * ③ 每条含 subscribed 的行都带退役标记，防有人绕过①另造「subscribed 必须写入」。
+ * 变异靶标：把任一文档的「两个新字段」改回「三个字段」⇒ ①+② 红；把退役说明
+ * 改成裸承诺句 ⇒ ③ 红。
+ */
+describe('托管文档 · SessionMeta 字段口径两字段化', () => {
+  const DOCS = ['方案-memora宝设计定案-20261117.md', '白话设计文档-托管模式.md'];
+  // subscribed 只许在这些退役语境出现——不含此集的行出现 subscribed 即判承诺复活
+  const RETIRE_MARKERS = ['未启动', '不设', '本期设字段', '撤回'];
+
+  function loadDoc(name: string): string {
+    const here = dirname(fileURLToPath(import.meta.url));
+    return readFileSync(resolve(here, '../../../../../docs', name), 'utf8');
+  }
+
+  it('① 两文档零「三字段必须同批写入」承诺式表述', () => {
+    const banned = ['三个可选字段', '三个字段', '三字段', 'workOrder/workStatus/subscribed', '同批写入三字段'];
+    for (const name of DOCS) {
+      const doc = loadDoc(name);
+      for (const phrase of banned) {
+        expect(doc, `${name} 不应出现 ${phrase}`).not.toContain(phrase);
+      }
+    }
+  });
+
+  it('② 两文档都落正向锚：两新字段 + 既有 origin 来源标记', () => {
+    const plan = loadDoc(DOCS[0]);
+    const plain = loadDoc(DOCS[1]);
+    expect(plan).toContain('两个新字段');
+    expect(plan).toContain('既有 origin');
+    expect(plain).toContain('两个可选字段');
+    expect(plain).toContain('既有');
+  });
+
+  it('③ subscribed 只许出现在标注未启动/不设字段的退役说明里', () => {
+    for (const name of DOCS) {
+      const doc = loadDoc(name);
+      // ③a 裸承诺搭配零命中：不看整行标记（同一行可既有退役说明又有承诺句，
+      // 曾实测变异藏在同一行被掩护）——直接禁 subscribed 与「必须写入」类动词相邻。
+      // 不收「字段存在但」：它只出现在 B10 的撤回引述「此前…承诺已撤回」里，
+      // 收进去会误伤合法退役说明（实测基线红）。
+      expect(
+        doc,
+        `${name} 出现承诺式搭配: ${doc.match(/subscribed[^\n]{0,24}(?:必须在|必须同批|必须创建|必须写入)/g)?.join(' | ')}`,
+      ).not.toMatch(/subscribed[^\n]{0,24}(?:必须在|必须同批|必须创建|必须写入)/);
+      // ③b 无退役标记行出现 subscribed 也判红（防在别处新增裸句）
+      const offending = doc
+        .split('\n')
+        .filter((line) => line.includes('subscribed'))
+        .filter((line) => !RETIRE_MARKERS.some((marker) => line.includes(marker)));
+      expect(offending, `${name} 出现无退役标记的 subscribed 承诺句: ${offending.join(' | ')}`).toEqual([]);
+    }
+  });
+});
