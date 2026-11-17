@@ -622,6 +622,10 @@ export function activate(context: vscode.ExtensionContext): void {
    *
    * 与工作台调用**同一个** `projectSessionStatus`：运行态交给面板的只读端口，轮状态交给
    * 同一对存储单例。这里不复制任何判断，避免「工作台说在跑、工具说空闲」的两套答案。
+   *
+   * ⚠️ `readMeta` 必须与工作台同源（同一 `sessionStore.getSessionMeta`）：托管 Worker 的
+   * 语义状态（workStatus）只经它进入投影。缺了它，托管优先分支静默失效、回落轮次投影——
+   * 真机实证：对 working 活会话 pause/stop 回 `kind:completed` 且操作落空（2026-11-17）。
    */
   const readHostedStatus = (sessionId: string): WorkbenchJobStatus =>
     projectSessionStatus(
@@ -631,6 +635,8 @@ export function activate(context: vscode.ExtensionContext): void {
         readRoundStatus: (roundId) =>
           hasRoundStatusIndex(roundStore) ? roundStore.getStatus(roundId) : undefined,
         readRound: (roundId) => roundStore.getById(roundId) ?? undefined,
+        // 托管状态语义端口：与工作台装配（`readMeta` 同名端口）同一 `getSessionMeta` 读口，不另造真源
+        readMeta: (id) => sessionStore.getSessionMeta(id),
       },
       sessionId,
     );

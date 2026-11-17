@@ -152,6 +152,66 @@ describe('projectSessionStatus — 读不到不等于空闲', () => {
   });
 });
 
+describe('projectSessionStatus — 托管语义状态优先（readMeta 分支）', () => {
+  /**
+   * 造一条托管 Worker 元数据
+   *
+   * @param workStatus 语义状态四态之一
+   * @returns meta（origin=hosted 才进托管分支）
+   */
+  const hostedMeta = (workStatus: 'working' | 'blocked' | 'completed' | 'failed') =>
+    ({ sessionId: 's1', origin: 'hosted', workStatus }) as never;
+
+  it('working → 在跑：即使轮次端口给出相反答案（completed），托管分支仍赢', () => {
+    // 真机缺陷形状：轮已 complete / 未收场，语义层仍说 working——轮次状态不许参与
+    const status = projectSessionStatus(
+      ports({
+        readMeta: () => hostedMeta('working'),
+        readRoundIds: () => ['r1'],
+        readRoundStatus: () => 'complete',
+        readRound: () => round('complete'),
+      }),
+      's1',
+    );
+    expect(status).toEqual({ kind: 'running' });
+  });
+
+  it('四态映射：working→running、blocked→waiting、completed→completed、failed→stopped', () => {
+    const map = (workStatus: Parameters<typeof hostedMeta>[0]) =>
+      projectSessionStatus(ports({ readMeta: () => hostedMeta(workStatus) }), 's1');
+    expect(map('working')).toEqual({ kind: 'running' });
+    expect(map('blocked')).toEqual({ kind: 'waiting' });
+    expect(map('completed')).toEqual({ kind: 'completed' });
+    expect(map('failed')).toEqual({ kind: 'stopped', stop: { kind: 'unavailable' } });
+  });
+
+  it('非托管来源（origin 非 hosted）即使带 workStatus 也不进托管分支', () => {
+    const status = projectSessionStatus(
+      ports({
+        readMeta: () => ({ sessionId: 's1', workStatus: 'working' }) as never,
+        readRoundIds: () => ['r1'],
+        readRoundStatus: () => 'complete',
+        readRound: () => round('complete'),
+      }),
+      's1',
+    );
+    // 走轮次投影：最后一轮成功 → completed（不是 running）
+    expect(status).toEqual({ kind: 'completed' });
+  });
+
+  it('缺 readMeta 端口（旧装配路径）→ 回落轮次投影，存量行为不变', () => {
+    const status = projectSessionStatus(
+      ports({
+        readRoundIds: () => ['r1'],
+        readRoundStatus: () => 'complete',
+        readRound: () => round('complete'),
+      }),
+      's1',
+    );
+    expect(status).toEqual({ kind: 'completed' });
+  });
+});
+
 describe('projectCreatedBy — 归属三档', () => {
   const completeHistory = { coverage: 'complete' as const, children: [] };
   const hostedMeta = { sessionId: 's1', origin: 'hosted' } as never;
