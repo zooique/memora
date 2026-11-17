@@ -46,7 +46,8 @@ function storageKeyOf(owner: string): string {
  *
  * 为什么需要幂等：启动恢复会经 `DraftSessionController.enter()` 再写一次同一个 true
  * （构造期落回空白页），而 `Memento.update` 没有同值去重——不在入口挡一次，激活期就会
- * 产生一次无意义的 `workspaceState` 写，与「恢复链只读」的口径互相矛盾。
+ * 产生一次无意义的 `workspaceState` 写，违反恢复链只读纪律（判据真源 =
+ * `restore-side-effect-free-rules.md`：不写盘 / 不删键 / 不改当前页面）。
  *
  * 写点仍是 `enter` / `exit` 两处（面板转调本函数）；本函数只负责同值不写 + false 删键。
  *
