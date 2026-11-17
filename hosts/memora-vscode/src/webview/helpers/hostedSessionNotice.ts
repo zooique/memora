@@ -25,6 +25,11 @@
  *     不立刻唤醒——把事实压进内存待办，等创建者本轮收场后由 `flushPending` 合并成一轮浮现；
  *   - 事件只带身份 + 结论（+ 失败 / 中断原因），**不带正文**：结论细节由主控按需调
  *     `list_work_sessions` / `read_memory_summary` 读，不在通知里另造一份摘要。
+ *
+ * 第六切片（HOSTED-ASK-ROUTE-1）：除落定外再发一档「等你作答」（`needs-answer`）——
+ * 托管子会话挂上 ask_user 提问时，同样走本投递器叫醒创建者（题面 + 选项随事实带出），
+ * 替代「等 30 分钟超时由子会话自己代选」。与落定**共用**投递 / 去重 / 待办 / 唤醒骨架，
+ * 只换事实正文与去重键前缀；不另造第二通道、不用 `chat()` 伪造用户发言。
  */
 import {
   getSessionDisplayName,
@@ -35,6 +40,7 @@ import {
   type SessionMeta,
 } from '@zooique/memora';
 import { deriveInterruptReason } from '../../shared/interruptReason.js';
+import type { PendingQuestionDto } from '../../shared/protocol.js';
 
 /** 通知器依赖（全部由面板注入闭包；本类不持有面板实例） */
 export interface HostedSessionNoticeDeps {
@@ -72,6 +78,14 @@ export interface FlowEndNoticeInput {
   paused?: boolean;
   /** 宿主这一轮是否真的 abort 过（`controller.signal.aborted`） */
   hostAborted: boolean;
+}
+
+/** 「等你作答」通知入参（HOSTED-ASK-ROUTE-1）：来自 questionPending 事件的现成值 */
+export interface NeedsAnswerNoticeInput {
+  /** 挂起提问的子会话（工作会话） */
+  sessionId: string;
+  /** 在途提问（题面 + 选项真源 = 协议 PendingQuestionDto，宿主不自造摘要） */
+  questions: readonly PendingQuestionDto[];
 }
 
 /**
@@ -141,6 +155,47 @@ function formatNotice(
 ): string {
   const roundSuffix = roundId ? `，round=${roundId}` : '';
   return `[托管会话已落定] 会话《${title}》（sid=${sessionId}${roundSuffix}）：${detail}`;
+}
+
+/**
+ * 把「等你作答」拼成一条 system 事实句（喂给创建者 agent，非用户发言）
+ *
+ * 题面 + 选项真源走协议 `PendingQuestionDto`，宿主不另造摘要、不改题面：
+ * 助手据此才能用回答工具逐题回填。正文自带「立即作答 / 别等超时」强指令——
+ * 唤醒种子文案说的是「落定汇报」，这条事实要把「需要决策」的语义补回来，
+ * 否则助手被叫醒后只汇报不作答（判据①要求拿到题面并触发作答，不是等 30 分钟）。
+ *
+ * @param title 挂起提问的会话标题
+ * @param sessionId 挂起提问的会话 id
+ * @param questions 在途提问（含题面与候选）
+ */
+function formatNeedsAnswer(
+  title: string,
+  sessionId: string,
+  questions: readonly PendingQuestionDto[],
+): string {
+  const lines = questions.map((q, i) => {
+    const options = q.options && q.options.length > 0 ? `（选项：${q.options.join(' / ')}）` : '';
+    const custom = q.allowCustom ? '（可自定义回答）' : '';
+    return `  ${i + 1}. ${q.question}${options}${custom}`;
+  });
+  return (
+    `[托管会话需要你作答] 会话《${title}》（sid=${sessionId}）在等待用户回答，请立即逐题作答（不要等超时让子会话代选）：\n` +
+    lines.join('\n')
+  );
+}
+
+/**
+ * 「等你作答」的去重键（批级）
+ *
+ * 题身份真源 = 内核 `askCallId`，缺失（旧 dist）回退题面文本，口径与
+ * `AskCoordinator.postRow` 的 inputId 一致——同批重复事件同键只叫一次，
+ * 换一批（题不同）能再次唤醒。`needs-answer:` 前缀与落定的 `${sid}:${roundId}` 键空间隔离，
+ * 否则同一轮「先提问、后落定」时落定通知会被提问键吞掉。
+ */
+function needsAnswerKey(sessionId: string, questions: readonly PendingQuestionDto[]): string {
+  const signature = questions.map((q) => q.askCallId ?? q.question).join('|');
+  return `needs-answer:${sessionId}:${signature}`;
 }
 
 /**
@@ -288,6 +343,32 @@ export class HostedSessionNotifier {
       `失败（异常终止：${message}）`,
     );
     return this.deliver(target.creator, text, undefined);
+  }
+
+  /**
+   * 挂起提问 → 叫醒创建者（HOSTED-ASK-ROUTE-1「等你作答」档，非阻塞）
+   *
+   * 子会话进入 `wait_ask` 时由面板 `questionPending` 处理器调用：题面 + 选项随事实
+   * 压进创建者的 system 事件队列，空闲时立刻替它起一轮作答，不等 30 分钟超时
+   * （超时保底 `armAskTimeout` 由 AskCoordinator 保留不动，这条只是主通道）。
+   *
+   * 与落定通知**共用** `resolveTarget` / `deliver` / 去重 / 待办 / 唤醒骨架：
+   *   - 负例天然成立：`resolveTarget` 的 `isAgentDriven` 判据让「无戳的轮 / 用户自助会话」
+   *     直接返回 undefined，不叫代理，仍只有 `_attention.onAskWaiting` 的用户提醒；
+   *   - 创建者忙 / 正在输入 / 实例未装配 → 走 `deliver` 既有纪律压待办、不丢、收场后合并浮现；
+   *   - 同批重复事件 → 去重键拦住不重复叫；换一批题 → 新键可再次唤醒。
+   *
+   * @param input 挂起提问的子会话 + 在途提问（事件现成值）
+   * @returns true = 已投递或已受理压待办；false = 不该通知 / 无题
+   */
+  noteNeedsAnswer(input: NeedsAnswerNoticeInput): boolean {
+    if (input.questions.length === 0) return false;
+    const target = this.resolveTarget(input.sessionId);
+    if (!target) return false;
+    const key = needsAnswerKey(input.sessionId, input.questions);
+    if (this.notified.has(key)) return false;
+    const text = formatNeedsAnswer(target.title, input.sessionId, input.questions);
+    return this.deliver(target.creator, text, key);
   }
 
   /**

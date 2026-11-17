@@ -3429,6 +3429,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // ↓ P1 新增：托管 Worker 会话被 ask_user 挂起 → workStatus='blocked'（helper 抽离）
       noteBlockedOnAsk(sessionId, this.sessionStore);
       this._attention.onAskWaiting({ question: questions[0]?.question ?? '' }); // 交互提醒（事件写入源）
+      // HOSTED-ASK-ROUTE-1：带戳的工作会话提问 → 叫醒创建者代答（不靠 30 分钟超时）。
+      // 无戳轮（用户自助会话）被 notifier 的 isAgentDriven 判据挡住，不叫代理。
+      this._hostedNotifier.noteNeedsAnswer({ sessionId, questions });
     };
     agent.on('questionPending', onPendingQuestion);
     // 监听记忆沉淀事件（memoryAdded，非 chunk 通道）→ 与 chunk 同源进过程事件缓冲（单源，
@@ -3799,6 +3802,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         this.postTurnUpdateFor(sessionId);
         ask.armAskTimeout(); // 兜底渲染同享超时保底
         this._attention.onAskWaiting({ question: clarifyChunkQueue[0]?.question ?? '' }); // 交互提醒（兜底写入源）
+        // HOSTED-ASK-ROUTE-1：与事件路径同构——兜底渲染的提问也叫醒创建者，防监听异常时无人作答
+        this._hostedNotifier.noteNeedsAnswer({ sessionId, questions: clarifyChunkQueue });
       }
       // assistant 消息持久化由内核 appendAssistant 完成（写入当前会话 _currentSessionId），
       // 此处不再 persist，避免与内核双写同一条回复（SSOT 单一真理源）

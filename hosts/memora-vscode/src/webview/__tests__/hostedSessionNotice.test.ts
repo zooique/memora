@@ -8,9 +8,16 @@
  * 创建者忙 / 用户正在输入时不抢（进待办，收场后合并成一轮浮现）；
  * 创建者实例还没装配时同样压待办、不丢，装配后放出；
  * 待办多条只唤醒一轮，且同一轮重复信号不会重复排队。
+ *
+ * 第六切片（HOSTED-ASK-ROUTE-1 · 等你作答）：带戳的工作会话挂起提问 → 秒级叫醒创建者，
+ * 题面 + 选项随 system 事实带出；忙 / 未装配压待办不丢；无戳轮不叫代理；同批去重；
+ * needs-answer 键与落定键隔离（同轮先提问后落定，两条都能投递，落定不被吞）。
  */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type { Agent, ProcessEvent, Round, RoundStatus, SessionMeta } from '@zooique/memora';
+import type { PendingQuestionDto } from '../../shared/protocol.js';
 import { HostedSessionNotifier } from '../helpers/hostedSessionNotice.js';
 import { SessionModeStore } from '../../extension/host/sessionModeStore.js';
 
@@ -456,5 +463,177 @@ describe('HostedSessionNotifier · 助手身份跨重启（HOSTED-IDENTITY-PERSI
     notifier.flushPending(CREATOR);
     expect(creatorQueue).toHaveBeenCalledTimes(1);
     expect(notifier.pendingReportCount(CREATOR)).toBe(0);
+  });
+});
+
+/**
+ * HOSTED-ASK-ROUTE-1「等你作答」档（第六切片）
+ *
+ * 钉四条完成判据里 notifier 能独立锁住的三条：
+ * ① 带戳工作会话提问 → 秒级叫醒创建者、题面 + 选项随 system 事实进队列；
+ * ② 忙 / 未装配 → 不丢、压待办、收场后补投（复用既有纪律，不另造队列）；
+ * ④ 无戳轮（当前不归代理驱动）→ 不叫代理。
+ * 另钉对抗点：needs-answer 去重试与落定键隔离——同轮先提问后落定，两条都能投递。
+ *
+ * 完成判据③（子会话 30 分钟超时自走保底保留不动）属 AskCoordinator 域，
+ * 本切片只加主通道、未触碰 `armAskTimeout` / `handleAskTimeout`，由 chatPanel 集成测试覆盖。
+ */
+describe('HostedSessionNotifier · 等你作答（HOSTED-ASK-ROUTE-1）', () => {
+  /** 造一批在途提问（题面 + 选项 + 题身份） */
+  function questions(...specs: Array<{ id?: string; q: string; options?: string[] }>): PendingQuestionDto[] {
+    return specs.map((s, i) => ({
+      slot: `slot-${i}`,
+      ...(s.id ? { askCallId: s.id } : {}),
+      question: s.q,
+      ...(s.options ? { options: s.options } : {}),
+    }));
+  }
+
+  it('① 带戳工作会话提问 → 秒级叫醒创建者，题面 + 选项随事实进队列（不等超时）', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    h.notifier.remember(CHILD, CREATOR);
+
+    const qs = questions(
+      { id: 'q-a', q: '用哪个方案？', options: ['方案A', '方案B'] },
+      { id: 'q-b', q: '要不要发布？' },
+    );
+    expect(h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: qs })).toBe(true);
+
+    // 直接投递（创建者空闲）：队列进一条、立刻起一轮，不等 30 分钟超时
+    expect(h.creatorQueue).toHaveBeenCalledTimes(1);
+    expect(h.wakeCreator).toHaveBeenCalledTimes(1);
+    // 子会话自己的队列静默；事实只投给创建者
+    expect(h.childQueue).not.toHaveBeenCalled();
+    const text = h.creatorQueue.mock.calls[0][0] as string;
+    expect(text).toContain('[托管会话需要你作答]');
+    expect(text).toContain('抓取任务');
+    expect(text).toContain(CHILD);
+    expect(text).toContain('用哪个方案？');
+    expect(text).toContain('方案A / 方案B');
+    expect(text).toContain('要不要发布？');
+    expect(text).toContain('逐题作答');
+  });
+
+  it('② 创建者忙 → 压待办不丢，也不起轮；收场后合并浮现', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    h.notifier.remember(CHILD, CREATOR);
+    h.setCanWake(false);
+
+    expect(h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: questions({ q: '选哪个？' }) })).toBe(
+      true,
+    );
+    expect(h.creatorQueue).not.toHaveBeenCalled();
+    expect(h.wakeCreator).not.toHaveBeenCalled();
+    expect(h.notifier.pendingReportCount(CREATOR)).toBe(1);
+
+    h.setCanWake(true);
+    h.notifier.flushPending(CREATOR);
+    expect(h.creatorQueue).toHaveBeenCalledTimes(1);
+    expect(h.creatorQueue.mock.calls[0][0] as string).toContain('选哪个？');
+    expect(h.wakeCreator).toHaveBeenCalledTimes(1);
+    expect(h.notifier.pendingReportCount(CREATOR)).toBe(0);
+  });
+
+  it('② 创建者实例未装配 → 压待办不丢（返回 false 如实说没送达），装配后放出', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    h.notifier.remember(CHILD, CREATOR);
+    h.setCreatorAssembled(false);
+
+    expect(h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: questions({ q: '确认？' }) })).toBe(
+      false,
+    );
+    expect(h.creatorQueue).not.toHaveBeenCalled();
+    expect(h.notifier.pendingReportCount(CREATOR)).toBe(1);
+
+    h.setCreatorAssembled(true);
+    h.notifier.flushPending(CREATOR);
+    expect(h.creatorQueue).toHaveBeenCalledTimes(1);
+    expect(h.notifier.pendingReportCount(CREATOR)).toBe(0);
+  });
+
+  it('④ 无戳轮（当前不归代理驱动）→ 不叫代理；出生来源也不能当判据', () => {
+    const h = harness();
+    // 出生托管 + 误登记了创建者，但当前驱动权已归用户 ⇒ 不叫代理
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    h.notifier.remember(CHILD, CREATOR);
+    h.driven.delete(CHILD);
+
+    expect(h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: questions({ q: '选哪个？' }) })).toBe(
+      false,
+    );
+    expect(h.creatorQueue).not.toHaveBeenCalled();
+    expect(h.wakeCreator).not.toHaveBeenCalled();
+  });
+
+  it('④ 没有创建者记录 → 不叫代理（不知道叫谁就不乱发）', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    // 不 remember：无创建者
+    expect(h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: questions({ q: '选哪个？' }) })).toBe(
+      false,
+    );
+    expect(h.creatorQueue).not.toHaveBeenCalled();
+  });
+
+  it('同批重复提问事件 → 只叫一次；换一批题 → 可再次唤醒', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    h.notifier.remember(CHILD, CREATOR);
+    const qs = questions({ id: 'q-1', q: '选哪个？' });
+
+    expect(h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: qs })).toBe(true);
+    // 同批重复（题身份相同）→ 去重键拦住
+    expect(h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: qs })).toBe(false);
+    expect(h.creatorQueue).toHaveBeenCalledTimes(1);
+
+    // 换一批（新题身份）→ 新键，可再次叫醒
+    expect(
+      h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: questions({ id: 'q-2', q: '再选一个？' }) }),
+    ).toBe(true);
+    expect(h.creatorQueue).toHaveBeenCalledTimes(2);
+    expect(h.wakeCreator).toHaveBeenCalledTimes(2);
+  });
+
+  it('空提问不叫代理', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    h.notifier.remember(CHILD, CREATOR);
+    expect(h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: [] })).toBe(false);
+    expect(h.creatorQueue).not.toHaveBeenCalled();
+  });
+
+  it('对抗：题身份与 roundId 撞串 → needs-answer 键前缀隔离，落定通知不被吞', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    h.rounds.set('SAME-ID', round('SAME-ID', 'complete', []));
+    h.notifier.remember(CHILD, CREATOR);
+
+    // 真机可能：题身份 askCallId 恰好 = 轮 id。去掉 needs-answer: 前缀后两键都会是
+    // `CHILD:SAME-ID` ⇒ 落定被提问的去重键吞掉。前缀隔离是唯一防线，必须锁住。
+    expect(
+      h.notifier.noteNeedsAnswer({
+        sessionId: CHILD,
+        questions: questions({ id: 'SAME-ID', q: '选哪个？' }),
+      }),
+    ).toBe(true);
+    expect(h.notifier.noteSettledFlow(CHILD, 'SAME-ID', false, false)).toBe(true);
+    expect(h.creatorQueue).toHaveBeenCalledTimes(2);
+    const texts = h.creatorQueue.mock.calls.map((c) => c[0] as string);
+    expect(texts.some((t) => t.includes('[托管会话需要你作答]'))).toBe(true);
+    expect(texts.some((t) => t.includes('[托管会话已落定]'))).toBe(true);
+  });
+
+  it('源码守卫：提问渲染两条路径都调用了 noteNeedsAnswer；超时保底 armAskTimeout 仍保留', () => {
+    const src = readFileSync(
+      fileURLToPath(new URL('../panels/chatPanel.ts', import.meta.url)),
+      'utf-8',
+    );
+    // 两条提问写入路径（事件驱动 + 流尾兜底）都要叫醒创建者，不能只挂一条
+    expect(src.match(/noteNeedsAnswer\(\{/g)?.length).toBe(2);
+    // 完成判据③：超时保底没被本切片移除
+    expect(src.match(/ask\.armAskTimeout\(\)/g)?.length).toBeGreaterThanOrEqual(2);
   });
 });
