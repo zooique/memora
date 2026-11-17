@@ -11,6 +11,8 @@
  * （`setActivity` 不调 `renderHistoryView`）⇒ 用例① 转红；角标 `hidden` 写反 ⇒ 用例④ 转红。
  */
 // @vitest-environment jsdom
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createHistoryMenuView, type SessionSummaryDto } from '../scripts/historyMenuView.js';
 
@@ -20,6 +22,7 @@ function mount() {
     <div id="historyMenu"></div>
     <button id="historyTabRecent"></button>
     <button id="historyTabArchived"></button>
+    <button id="historyTabHosted"></button>
     <span id="historyArchivedCount"></span>
     <input id="historySearch" />
     <span id="historyPendingBadge" hidden></span>
@@ -29,6 +32,7 @@ function mount() {
     menuEl: document.getElementById('historyMenu') as HTMLElement,
     tabRecent: document.getElementById('historyTabRecent') as HTMLButtonElement,
     tabArchived: document.getElementById('historyTabArchived') as HTMLButtonElement,
+    tabHosted: document.getElementById('historyTabHosted') as HTMLButtonElement,
     archivedCountEl: document.getElementById('historyArchivedCount') as HTMLElement,
     searchInput: document.getElementById('historySearch') as HTMLInputElement,
     entryBadge: document.getElementById('historyPendingBadge') as HTMLElement,
@@ -161,11 +165,119 @@ describe('历史菜单会话来源图标（origin）', () => {
     const originIcon = (id: string): Element | null =>
       document.querySelector(`[data-treedd-id="${id}"] .session-history__item-origin`);
 
+    // 第三区分组后 hosted 不在默认「会话记录」视图里：图标在它自己的分组中验
+    (document.getElementById('historyTabHosted') as HTMLElement).click();
     expect(originIcon('2026-11-06-h')).not.toBeNull();
     // 面向用户只说「助手」；「托管」属内部模式名，不得出现在列表标识里
     expect(originIcon('2026-11-06-h')?.getAttribute('aria-label')).toBe('Assistant session');
+
+    (document.getElementById('historyTabRecent') as HTMLElement).click();
     // 用户会话与旧数据：不造「用户」标记，也不留空 span（空 span 会多占 flex gap）
     expect(originIcon('2026-11-06-u')).toBeNull();
     expect(originIcon('2026-11-06-o')).toBeNull();
+  });
+});
+
+/** 「助手建的」分组三态夹具：一个 hosted（且带留存标记）、一个普通、一个留存 */
+const GROUP_SESSIONS: SessionSummaryDto[] = [
+  {
+    sessionId: '2026-11-17-hosted',
+    title: '助手派的活',
+    updatedAt: '2026-11-17T10:00:00.000Z',
+    origin: 'hosted',
+  },
+  { sessionId: '2026-11-17-recent', title: '自助会话', updatedAt: '2026-11-17T09:00:00.000Z' },
+  {
+    sessionId: '2026-11-17-retained',
+    title: '留存会话',
+    updatedAt: '2026-11-17T08:00:00.000Z',
+  },
+];
+
+/** 当前渲染出的条目 id（日期组头不是 item，天然被排除） */
+function visibleIds(): string[] {
+  return [...document.querySelectorAll('#historyMenu [data-treedd-id]')].map(
+    (el) => (el as HTMLElement).dataset.treeddId ?? '',
+  );
+}
+
+describe('历史菜单「助手建的」分组（HOSTED-LIST-GROUP-1）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('三组互斥：hosted 带留存标记仍归第三区，留存计数按实际归属派生', () => {
+    const { view } = mount();
+    // hosted 同时被打了归档标记，验证归属优先级而不是「两个标记各管各的」
+    view.renderMenu(GROUP_SESSIONS, ['2026-11-17-hosted', '2026-11-17-retained']);
+    const count = document.getElementById('historyArchivedCount') as HTMLElement;
+    expect(visibleIds()).toEqual(['2026-11-17-recent']);
+    expect(count.textContent).toContain('1'); // 不算 hosted 那条虚报「留存区 2」
+
+    (document.getElementById('historyTabArchived') as HTMLElement).click();
+    expect(visibleIds()).toEqual(['2026-11-17-retained']);
+
+    (document.getElementById('historyTabHosted') as HTMLElement).click();
+    expect(visibleIds()).toEqual(['2026-11-17-hosted']);
+    const hostedTab = document.getElementById('historyTabHosted') as HTMLElement;
+    expect(hostedTab.classList.contains('is-active')).toBe(true);
+    expect(hostedTab.getAttribute('aria-selected')).toBe('true');
+    expect(
+      (document.getElementById('historyTabRecent') as HTMLElement).getAttribute('aria-selected'),
+    ).toBe('false');
+  });
+
+  it('第三区不渲染无效的归档按钮，保留打开与删除；搜索只作用于当前组', () => {
+    const { view } = mount();
+    view.renderMenu(GROUP_SESSIONS, []);
+    (document.getElementById('historyTabHosted') as HTMLElement).click();
+    const item = document.querySelector('[data-treedd-id="2026-11-17-hosted"]') as HTMLElement;
+    expect(item.querySelector('.session-history__item-keep')).toBeNull();
+    expect(item.querySelector('.session-history__item-del')).not.toBeNull();
+
+    const search = document.getElementById('historySearch') as HTMLInputElement;
+    search.value = '没有这条';
+    search.dispatchEvent(new Event('input'));
+    expect(visibleIds()).toEqual([]);
+    expect((document.getElementById('historyMenu') as HTMLElement).textContent).toContain(
+      'No assistant-created sessions matching',
+    );
+  });
+
+  it('再次打开历史浮层回到默认分组（第三区不是新默认）', () => {
+    const { view } = mount();
+    view.renderMenu(GROUP_SESSIONS, []);
+    (document.getElementById('historyTabHosted') as HTMLElement).click();
+    expect(visibleIds()).toEqual(['2026-11-17-hosted']);
+    view.openFresh();
+    // 回默认「会话记录」：hosted 退场，普通会话仍在（本夹具未归档，两条都属于近期）
+    expect(visibleIds()).not.toContain('2026-11-17-hosted');
+    expect(visibleIds()).toContain('2026-11-17-recent');
+    expect(
+      (document.getElementById('historyTabRecent') as HTMLElement).classList.contains('is-active'),
+    ).toBe(true);
+  });
+});
+
+/** 源码守卫的根：兼容「cd 宿主跑」与「从仓库根 --root 宿主跑」两种入口 */
+const HOST_ROOT = existsSync(resolve(process.cwd(), 'src/webview/panels'))
+  ? process.cwd()
+  : resolve(process.cwd(), 'hosts/memora-vscode');
+
+/** 生产 HTML 是手写夹具的镜像源：只锁夹具会漏掉「生产没这个节点 ⇒ 域工厂初始化即抛错」 */
+describe('生产模板第三组 tab 源码守卫（HOSTED-LIST-GROUP-1）', () => {
+  it('生产 HTML 真有第三组 tab，且未带 .treedd__item（点击委托会收起浮层）', () => {
+    const src = readFileSync(
+      resolve(HOST_ROOT, 'src/webview/panels/chatPanelHtml.ts'),
+      'utf8',
+    );
+    const tag = src.split('\n').find((line) => line.includes('id="historyTabHosted"')) ?? '';
+    expect(tag).toContain('data-view="hosted"');
+    expect(tag).not.toContain('treedd__item');
+  });
+
+  it('view 侧把生产节点接进域工厂（缺接线时初始化即崩）', () => {
+    const src = readFileSync(resolve(HOST_ROOT, 'src/webview/scripts/chatView.ts'), 'utf8');
+    expect(src).toContain('tabHosted: historyTabHosted');
   });
 });

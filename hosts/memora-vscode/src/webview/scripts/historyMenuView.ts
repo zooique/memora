@@ -8,12 +8,16 @@
  * `initDropdowns`（treedd 组件，`components/dropdown.js`）管理——本域只管
  * 「数据进来怎么渲染」（SSOT 单一职责：treedd 管交互状态、本域管数据）。
  *
- * 四条设计约束（chatView 内联时期已定案，随域迁移，不在两处重述）：
- *   ① **分组形态（留存区）**：列表只有一份数据，分组切换是**前端过滤**——
- *      `sessions` 全量 + `archivedIds` 标记，切 tab 只重渲染当前容器，不回 host 请求。
- *      这样两个分组不可能出现「同一会话两边都有 / 两边都没有」的归属漂移，
- *      也避免把菜单项集合变成两份（dropdown 的键盘导航取全部 `.treedd__item`，
+ * 四条设计约束（chatView 内联时期已定案，随域迁移，不在两处重述；
+ * 2026-11-17 第三组「助手建的」按同一形态生长，不改判据只扩取值）：
+ *   ① **分组形态（留存区 / 助手建的）**：列表只有一份数据，分组切换是**前端过滤**——
+ *      `sessions` 全量 + `archivedIds` 标记 + `origin` 标记，切 tab 只重渲染当前容器，
+ *      不回 host 请求。这样各组不可能出现「同一会话两边都有 / 两边都没有」的归属漂移，
+ *      也避免把菜单项集合变成多份（dropdown 的键盘导航取全部 `.treedd__item`，
  *      多容器显隐会让方向键跳到不可见条目）。
+ *      归属判据只有 `groupOfSession` 一处：hosted > 留存 > 会话记录；
+ *      hosted 优先是有意的——「助手建的」恒定收全部助手派发会话，归档标记不能把它
+ *      搬走（否则第三区的归档按钮点了没反应 = 僵尸交互，故该区不渲染归档按钮）。
  *   ② 分组视图的改变时机**只有两处**：① tab 点击（用户主动）；② 打开浮层
  *      （新一轮浏览回到默认分组，即 `openFresh`）。数据下发（含归档/移回后的
  *      列表刷新）只按**当前视图**渲染——若在下发时机强制重置，留存区里点
@@ -50,8 +54,28 @@ export interface SessionSummaryDto {
    * 终态是盘上投影；正在跑 / 等答时不能拿旧终态盖住当前状态。
    */
   lastOutcome?: 'completed' | 'interrupted' | 'unsettled';
-  /** 会话来源标记（缺省 = 旧数据，按用户会话解释；本片只走数据层，不渲染图标） */
+  /**
+   * 会话来源标记（缺省 = 旧数据，按用户会话解释）
+   *
+   * 两个消费点同源于此字段：归入「助手建的」分组 + 条目来源图标。
+   * `hosted` 指助手派发创建的工作会话；助手窗自己那一条由宿主持久指针排除，不进列表。
+   */
   origin?: 'user' | 'hosted';
+}
+
+/** 三组互斥视图（数据仍是一份；这里只表示当前看哪组） */
+type SessionGroup = 'recent' | 'archived' | 'hosted';
+
+/**
+ * 会话归属判据（**唯一实现**：渲染过滤、计数、tab 高亮都消费它）
+ *
+ * 优先级 hosted > archived > recent 是定案而非随意排序：助手派发的工作会话有独立语义，
+ * 用户给它打留存标记也不改变「它是助手建的」这个事实；反过来若让 archived 优先，
+ * 第三区就会随着用户整理留存区而漏条目，同一会话还会在两组间跳来跳去。
+ */
+function groupOfSession(s: SessionSummaryDto, archivedIds: ReadonlySet<string>): SessionGroup {
+  if (s.origin === 'hosted') return 'hosted';
+  return archivedIds.has(s.sessionId) ? 'archived' : 'recent';
 }
 
 /** 本域经 postMessage 发出的消息型（窄联合：历史菜单的全部出口动作） */
@@ -71,6 +95,8 @@ export interface HistoryMenuViewDeps {
   tabRecent: HTMLButtonElement;
   /** #historyTabArchived：「留存区」分组 tab */
   tabArchived: HTMLButtonElement;
+  /** #historyTabHosted：「助手建的」分组 tab（助手派发创建的工作会话，非助手窗那一条） */
+  tabHosted: HTMLButtonElement;
   /** #historyArchivedCount：留存区计数徽标 */
   archivedCountEl: HTMLElement;
   /** #historySearch：FD-3-A 元数据搜索框（标题 / 主题 / 摘要） */
@@ -120,14 +146,15 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
     menuEl,
     tabRecent,
     tabArchived,
+    tabHosted,
     archivedCountEl,
     searchInput,
     entryBadge,
     postMessage,
   } = deps;
 
-  /** 当前分组视图：recent=会话记录 / archived=留存区 */
-  let sessionListView: 'recent' | 'archived' = 'recent';
+  /** 当前分组视图：recent=会话记录 / archived=留存区 / hosted=助手建的 */
+  let sessionListView: SessionGroup = 'recent';
   /** 当前搜索词（FD-3-A 元数据搜索）：空串 = 不过滤；只作用于当前分组的渲染 */
   let sessionSearchQuery = '';
   /** 最近一次下发的全量会话列表（切 tab 的前端过滤数据源；keyTopics/summary 为搜索匹配域） */
@@ -160,12 +187,16 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
   }
 
   /** 切换分组并同步 tab 高亮（含 aria-selected），随后重渲染条目 */
-  function setSessionListView(view: 'recent' | 'archived'): void {
+  function setSessionListView(view: SessionGroup): void {
     sessionListView = view;
-    tabRecent.classList.toggle('is-active', view === 'recent');
-    tabArchived.classList.toggle('is-active', view === 'archived');
-    tabRecent.setAttribute('aria-selected', String(view === 'recent'));
-    tabArchived.setAttribute('aria-selected', String(view === 'archived'));
+    for (const [tab, active] of [
+      [tabRecent, view === 'recent'],
+      [tabArchived, view === 'archived'],
+      [tabHosted, view === 'hosted'],
+    ] as const) {
+      tab.classList.toggle('is-active', active);
+      tab.setAttribute('aria-selected', String(active));
+    }
     renderHistoryView();
   }
 
@@ -189,13 +220,15 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
   function renderHistoryView(): void {
     const archived = new Set(lastArchivedIds);
     const q = sessionSearchQuery.trim().toLowerCase();
-    const visible = lastSessionList.filter((s) => {
-      const inGroup =
-        sessionListView === 'archived' ? archived.has(s.sessionId) : !archived.has(s.sessionId);
-      return inGroup && matchesSessionSearch(s, q);
-    });
-    // 留存区计数（0 条时不显数字，避免「留存区 0」的噪音）
-    archivedCountEl.textContent = lastArchivedIds.length > 0 ? ` ${lastArchivedIds.length}` : '';
+    const visible = lastSessionList.filter(
+      (s) => groupOfSession(s, archived) === sessionListView && matchesSessionSearch(s, q),
+    );
+    // 留存区计数按**实际归属**派生（不是 archivedIds.length）：列表已排除当前会话与
+    // 助手窗那条，且 hosted 优先，直接数标记会把看不见的会话也算进去。
+    const retainedCount = lastSessionList.filter(
+      (s) => groupOfSession(s, archived) === 'archived',
+    ).length;
+    archivedCountEl.textContent = retainedCount > 0 ? ` ${retainedCount}` : '';
     menuEl.textContent = '';
     if (visible.length === 0) {
       const empty = document.createElement('div');
@@ -204,12 +237,18 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
       empty.textContent = q
         ? sessionListView === 'archived'
           ? l10n.t('No sessions in retained matching "{0}"', sessionSearchQuery.trim())
-          : l10n.t('No sessions matching "{0}"', sessionSearchQuery.trim())
+          : sessionListView === 'hosted'
+            ? l10n.t('No assistant-created sessions matching "{0}"', sessionSearchQuery.trim())
+            : l10n.t('No sessions matching "{0}"', sessionSearchQuery.trim())
         : sessionListView === 'archived'
           ? l10n.t(
               'The retained area is empty — move sessions you no longer need here; nothing is lost',
             )
-          : l10n.t('No session history yet; new sessions will be archived here automatically');
+          : sessionListView === 'hosted'
+            ? l10n.t(
+                'No assistant-created sessions yet; work sessions the assistant creates for you will appear here',
+              )
+            : l10n.t('No session history yet; new sessions will be archived here automatically');
       menuEl.appendChild(empty);
       return;
     }
@@ -345,7 +384,10 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
     item.append(timeEl);
     // 来源图标在时间之后、动作按钮之前：用户/旧数据时该 span 无 className → 不 append
     if (originEl.className) item.append(originEl);
-    item.append(keepBtn, delBtn);
+    // 「助手建的」区恒定收 hosted 会话（归档标记不搬走它）⇒ 归档按钮在该区无效，
+    // 按「不给无效按钮」不渲染；打开（条目本体）与删除仍然可用。
+    if (sessionListView === 'hosted') item.append(delBtn);
+    else item.append(keepBtn, delBtn);
     menuEl.appendChild(item);
   }
 
@@ -370,6 +412,7 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
   // 依赖它会导致切 tab 时浮层关闭。
   tabRecent.addEventListener('click', () => setSessionListView('recent'));
   tabArchived.addEventListener('click', () => setSessionListView('archived'));
+  tabHosted.addEventListener('click', () => setSessionListView('hosted'));
   // FD-3-A 搜索：输入即过滤（纯前端，数据已在内存），作用于当前分组视图；
   // 数据下发（归档/移回后的刷新）不清词——用户常在搜索结果上连续操作
   searchInput.addEventListener('input', () => {

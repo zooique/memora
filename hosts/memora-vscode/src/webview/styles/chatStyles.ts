@@ -382,7 +382,7 @@ export const chatStyles = `
     padding: var(--sp-2, 6px) var(--sp-3, 8px) var(--sp-1, 4px);
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
   }
-  /* 分组切换器（会话记录 / 留存区）：贴在下拉面板顶部，不随条目重建被清空。
+  /* 分组切换器（会话记录 / 留存区 / 助手建的）：贴在下拉面板顶部，不随条目重建被清空。
      注意：用普通按钮样式，**不可**长成 .treedd__item（那会让点击委托收起整个菜单）。 */
   .session-tabs {
     display: flex; gap: var(--sp-1, 4px);

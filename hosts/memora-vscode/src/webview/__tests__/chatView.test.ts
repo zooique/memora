@@ -4714,7 +4714,7 @@ describe('留存区分组标签（SESS-KEEP-1）', () => {
   it('硬约束：tab 按钮不得携带 .treedd__item（点击委托命中即收起浮层）', () => {
     mountChatView();
     const tabs = [...document.querySelectorAll('#historyTabs button')] as HTMLElement[];
-    expect(tabs.length).toBe(2);
+    expect(tabs.length).toBe(3);
     for (const tab of tabs) {
       expect(tab.classList.contains('treedd__item')).toBe(false);
     }

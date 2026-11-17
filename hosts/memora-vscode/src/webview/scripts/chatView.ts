@@ -198,9 +198,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 菜单容器为渲染目标，开合/外部关闭/Escape 由 initDropdowns 管理（无遮罩、轻量）
   const historyBtn = document.getElementById('historyBtn') as HTMLButtonElement;
   const historyMenu = document.getElementById('historyMenu') as HTMLElement;
-  // 历史浮层分组切换器（会话记录 / 留存区）：与条目容器同级，不受条目重建影响
+  // 历史浮层分组切换器（会话记录 / 留存区 / 助手建的）：与条目容器同级，不受条目重建影响
   const historyTabRecent = document.getElementById('historyTabRecent') as HTMLButtonElement;
   const historyTabArchived = document.getElementById('historyTabArchived') as HTMLButtonElement;
+  const historyTabHosted = document.getElementById('historyTabHosted') as HTMLButtonElement;
   const historyArchivedCount = document.getElementById('historyArchivedCount') as HTMLElement;
   // FD-3-A 元数据搜索框（标题 / 主题 / 摘要）：独立于 #historyMenu，重建条目不影响本框
   const historySearch = document.getElementById('historySearch') as HTMLInputElement;
@@ -3983,6 +3984,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     menuEl: historyMenu,
     tabRecent: historyTabRecent,
     tabArchived: historyTabArchived,
+    tabHosted: historyTabHosted,
     archivedCountEl: historyArchivedCount,
     searchInput: historySearch,
     entryBadge: document.getElementById('historyPendingBadge') as HTMLElement,

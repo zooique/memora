@@ -9,6 +9,10 @@
  *   - **助手会话不进工作会话列表**（2026-11-17 用户定案）：助手窗有自己那一条会话与
  *     独立记录，但它不是「工作会话」；混进列表会被误读成「助手拿工作会话回话」。
  *     真源仍是会话存储，这里只是列表投影的排除项，不删数据；
+ *   - **`origin='hosted'` 的工作会话进列表**（同一日后续定案）：它是助手派发创建、
+ *     由用户实际操作的工作会话，不是助手窗那一条。列表按 `origin` 原样下发，
+ *     webview 侧归到独立分组；宿主不在这里按来源过滤，否则「是不是工作会话」
+ *     就成了两处口径（DTO 注释与实现各写一份）；
  *   - 按 updatedAt 降序；无历史时 sessions 为空数组（webview 显示空态）；
  *   - sessions 是**全量**，archivedIds 只是留存区分组标签（单数据源 + 前端过滤，
  *     不拆两份列表——两份真相源必然出现「两边都有 / 两边都没有」）；
@@ -50,15 +54,13 @@ export function buildSessionListMessage(
   readLastRoundStatus?: (roundId: string) => RoundStatus | undefined,
   assistantSessionId?: string,
 ): SessionListMessage {
-  // 非当前会话，按更新时间降序（当前会话不进历史记录是设计收敛，不是过滤失误）
-  // origin='hosted' 是代理开的工作会话（主控调度用），不属于用户的自助历史记录 → 一并排除
+  // 非当前会话，按更新时间降序（当前会话不进历史记录是设计收敛，不是过滤失误）。
+  // 排除项只有助手窗那一条（由持久指针认定）；助手派发的 work 会话原样下发，
+  // 分组交给 webview 按 origin 过滤（与 archivedIds 同型：单数据源 + 前端过滤）。
   const metas = store
     .listSessionMetas()
     .filter(
-      (m) =>
-        m.sessionId !== currentSessionId &&
-        m.sessionId !== assistantSessionId &&
-        m.origin !== 'hosted',
+      (m) => m.sessionId !== currentSessionId && m.sessionId !== assistantSessionId,
     )
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return {
@@ -166,7 +168,8 @@ function toSessionSummary(
     // 角色包名同样走单点判据（缺字段 / 已卸载未知）→ undefined，旧会话保持零差异；
     // 这里只给名字快照，不判断包是否仍装着（可用性判断会造第二份状态源）
     activeRolePackName: readSessionRolePackName(store, meta.sessionId),
-    // 会话来源标记（缺省 = 旧会话，按用户会话解释；本片只走数据层，不渲染图标）
+    // 会话来源标记（缺省 = 旧会话，按用户会话解释）。原样下发：
+    // webview 用它做「助手建的」分组与来源图标，宿主不另立第二份归属真源
     origin: meta.origin,
     // 终态同样是「有则投影、无则缺省」：索引查不到该轮 / 未注入读取口 ⇒ undefined
     lastOutcome: lastStatus ? toLastOutcome(lastStatus) : undefined,

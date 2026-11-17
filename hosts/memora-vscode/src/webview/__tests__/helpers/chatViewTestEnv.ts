@@ -36,6 +36,7 @@ const HTML = `
       <div id="historyTabs" class="session-tabs" role="tablist">
         <button id="historyTabRecent" class="session-tab is-active" type="button" role="tab" aria-selected="true" data-view="recent">会话记录</button>
         <button id="historyTabArchived" class="session-tab" type="button" role="tab" aria-selected="false" data-view="archived">留存区<span id="historyArchivedCount" class="session-tab__count"></span></button>
+        <button id="historyTabHosted" class="session-tab" type="button" role="tab" aria-selected="false" data-view="hosted">助手建的</button>
       </div>
       <input id="historySearch" class="session-search" type="text" placeholder="搜索会话（标题 / 主题 / 摘要）" autocomplete="off" />
       <div id="historyMenu"></div>
