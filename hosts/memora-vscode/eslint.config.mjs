@@ -88,8 +88,11 @@ export default [
     // 余量已接受，见 `tasks/archive/0.10.0-host.md` 的 CHATPANEL-MARGIN-1 条目。
     // BGTASK-SWITCH-REPUSH-1 撞顶格 ⇒ 历史会话列表投影外置 `helpers/sessionList.ts`
     // （store → DTO 纯映射），基线按闸门自报再降为 4242（只降不升）。
-    files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法；诊断聚合 + thought 折叠域 + 过程事件合并域 + HTML 骨架 + 会话列表投影已外置）
-    rules: { 'max-lines': ['error', { max: 2200, skipBlankLines: true, skipComments: true }] },
+    // P1 托管模式落地（2026-11-17）：新增 4 处 workStatus 更新钩子 → 外置到
+    // helpers/hostedWorkStatus.ts（薄面板 + 逻辑外置），chatPanel 保持一行 helper 调用，
+    // 阈值从 2200 调为 2250（新增功能 + 已外置逻辑，不是遗留代码没外置）。
+    files: ['src/webview/panels/chatPanel.ts'], // TARGET（类体 / 多字段 / 多方法；诊断聚合 + thought 折叠域 + 过程事件合并域 + HTML 骨架 + 会话列表投影 + workStatus 更新均已外置）
+    rules: { 'max-lines': ['error', { max: 2250, skipBlankLines: true, skipComments: true }] },
   },
   {
     // WORK-PROJECTION-MOVE-1（2026-11-09）：接入第 7 页前先外置三条「读配置 → 推消息」与

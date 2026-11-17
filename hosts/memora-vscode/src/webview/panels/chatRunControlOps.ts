@@ -42,10 +42,10 @@ export interface RunControlAsk {
 
 /** 运行控制域的注入面（唯一构造点 = 面板字段初始化处） */
 export interface ChatRunControlOpsDeps {
-  /** 向 webview 投递协议消息（面板 `post` 单点） */
-  post: (msg: ExtensionToWebviewMessage) => void;
+  /** 向 webview 投递协议消息（面板 `post` 单点；带 `sessionId` 时按该会话路由到绑定它的视图） */
+  post: (msg: ExtensionToWebviewMessage, sessionId?: string) => void;
   /** 推送 turn_update（骨架真源 = `turn_update.state`，暂停申请在途变化必须同步补推） */
-  postTurnUpdate: () => void;
+  postTurnUpdate: (sessionId?: string) => void;
   /** 取**指定会话**的运行态（缺省由调用方传当前显示会话） */
   runtimeFor: (sessionId: string) => RunControlRuntime;
   /** 取**指定会话**的提问协调器 */
@@ -69,8 +69,8 @@ export interface ChatRunControlOpsDeps {
   ) => Promise<void>;
   /** 重投影待发送队列（`force` = 绕长度守卫，停止路径必须无条件推相位） */
   syncPendingQueue: (force?: boolean) => void;
-  /** 丢弃排队插话的可见信号（先读后丢，由面板提供） */
-  postPendingDiscarded: (items: readonly string[]) => void;
+  /** 丢弃排队插话的可见信号（先读后丢，由面板提供；带 `sessionId` 时投给该会话的视图） */
+  postPendingDiscarded: (items: readonly string[], sessionId?: string) => void;
   /**
    * paused 态停止已收场后的回调（本切片：托管子会话中断通知）
    *
@@ -86,8 +86,8 @@ export interface ChatRunControlOpsDeps {
 export interface ChatRunControlOps {
   /** 停止指定会话（缺省 = 当前显示会话）；返回是否真的停到了活 */
   handleStop(sessionId?: string): Promise<boolean>;
-  handlePause(): void;
-  resumeInput(): Promise<void>;
+  handlePause(sessionId?: string): void;
+  resumeInput(sessionId?: string): Promise<void>;
   /** 主控停止入口（工具 `stop_work_session`）：与用户点停止同一条路径，只多一层调用方门禁 */
   stopHostedSession: (
     callingSessionId: string,
@@ -151,8 +151,8 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
      * 留下 pending 僵尸轮，且宿主 pending 未清 ⇒ 相位恒 waiting/ask ⇒ 用户下一条输入被路由成
      * 「回答一个已死的提问」（内核内存消费、不落盘）。
      *
-     * ⚠️ 后台会话（sessionId ≠ 当前显示）只执行停止本身：状态 / 提示 / 队列重投影**一律不投递**，
-     * 否则会把 A 的停止画到 B 的界面上（跨会话串台）。
+     * ⚠️ 后台会话（sessionId ≠ 当前显示）的界面副作用**按目标会话投递**（有视图绑它才到屏），
+     * 单份长度缓存（syncPendingQueue）仍只服务当前显示会话——绝不把 A 的停止画到 B 的界面上。
      *
      * @param sessionId 目标会话（缺省 = 当前显示会话）
      * @returns 是否真的停到了活（false = 目标已收场 / 无流）
@@ -162,7 +162,7 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
       // 停止按钮只作用于目标会话：运行态与 ask 协调器都按会话取
       const runtime = deps.runtimeFor(targetId);
       const ask = deps.askFor(targetId);
-      // 界面副作用只对当前显示会话发生（后台停止不重绘用户正在看的页面）
+      // 界面副作用按目标会话投递；单份长度缓存只对当前显示会话刷新（见下）
       const visible = targetId === deps.currentSessionId();
       // thinking 态：已有路径
       if (runtime.streaming && runtime.abortController) {
@@ -181,25 +181,30 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
         const roundId = agent.currentRoundId();
         // ask 域先清宿主镜像 + 逐条透出「未回答」行（与盘面同文案、同题身份），再走内核收场
         const checkpointDiscarded = await ask.abandonOnStop();
-        if (visible) deps.post({ type: 'status', state: 'done' });
-        if (checkpointDiscarded && visible) {
+        if (visible) deps.post({ type: 'status', state: 'done' }, targetId);
+        if (checkpointDiscarded) {
           // 有提问时已由 ask 域给出「N 个提问未回答」，此处只补纯暂停态的旧提示
           if (!hadAsk) {
-            deps.post({
-              type: 'notice',
-              level: 'info',
-              message: vscode.l10n.t('Stopped; the pause checkpoint has been cleared'),
-            });
+            deps.post(
+              {
+                type: 'notice',
+                level: 'info',
+                message: vscode.l10n.t('Stopped; the pause checkpoint has been cleared'),
+              },
+              targetId,
+            );
           }
           if (before.length > 0) {
-            deps.postPendingDiscarded([...before]);
+            deps.postPendingDiscarded([...before], targetId);
           }
         }
         // 相位无条件重投影（force 绕长度守卫）：① 排在丢弃信号**之后**——FIFO 契约要求
         // 「信号先于新快照」；② 无条件——队列本就为空或未弃检查点时长度不变，守卫会吞掉这一帧，
         // 而 `_turnState` 是快照、不重算就停在 waiting/ask ⇒ 下一条输入被当成「回答死提问」
         // 由内核内存消费、不落盘（用户输入凭空蒸发）。
+        // 宿主长度缓存只有侧栏一份：显示会话走 syncPendingQueue，后台（助手窗）走按会话投影。
         if (visible) deps.syncPendingQueue(true);
+        else deps.postTurnUpdate(targetId);
         // 收场完成后再通知（失败/异常由调用方自己兜，本域不吞）：此时盘上是 interrupted；
         // 通知对象是**被停的那个会话**（创建者通知按会话归属，不能读当前显示会话）
         deps.onUserStopped?.(agent, roundId, targetId);
@@ -220,21 +225,25 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
      *      返回 false（空闲守卫作废 / 幂等 / paused、error）→ 告知「任务已结束，申请未生效」
      * 不再对 requestPause 返回值保持沉默——「有按钮就有反馈」。
      */
-    handlePause(): void {
-      // 暂停 / 恢复只作用于当前显示会话（与用户点击的按钮一致）
-      const agent = deps.getAgent(deps.currentSessionId());
+    handlePause(sessionId?: string): void {
+      // 暂停 / 恢复作用于目标会话（缺省 = 当前显示会话；助手窗显式传助手会话）
+      const targetId = sessionId ?? deps.currentSessionId();
+      const agent = deps.getAgent(targetId);
       if (!agent) return;
       if (agent.isPausePending()) {
         agent.cancelPauseRequest();
         // 骨架真源 = turn_update.state——申请在途变化处同步补推
         //（deriveTurnState：pausePending=false → running），否则申请/取消无按钮反馈
-        deps.postTurnUpdate();
+        deps.postTurnUpdate(targetId);
         // 点击即反馈：取消申请也要明确告知（「有按钮就有反馈」）
-        deps.post({
-          type: 'notice',
-          level: 'info',
-          message: vscode.l10n.t('Pause request canceled; the run continues'),
-        });
+        deps.post(
+          {
+            type: 'notice',
+            level: 'info',
+            message: vscode.l10n.t('Pause request canceled; the run continues'),
+          },
+          targetId,
+        );
         return;
       }
       const ok = agent.requestPause('user-pause', 'user');
@@ -242,22 +251,28 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
         // 申请在途同步补推 turn_update（deriveTurnState → waiting{pausePending}，
         // 发送按钮随之切「停止生成」保持、暂停按钮切可反悔「继续 ▶」）
         // 点击即反馈：申请已入队，step 边界生效（用户知情，不「点了没反应」）
-        deps.postTurnUpdate();
-        deps.post({
-          type: 'notice',
-          level: 'info',
-          message: vscode.l10n.t('Pause requested; it takes effect after the current step'),
-        });
+        deps.postTurnUpdate(targetId);
+        deps.post(
+          {
+            type: 'notice',
+            level: 'info',
+            message: vscode.l10n.t('Pause requested; it takes effect after the current step'),
+          },
+          targetId,
+        );
       } else {
         // 作废路径：空闲守卫（任务已结束）/ 幂等 / paused、error 态——统一明确告知
         // （空闲不翻状态机，任务结束的暂停申请直接作废）
         // 作废同样补推 turn_update（骨架保持运行中，按钮不动）
-        deps.postTurnUpdate();
-        deps.post({
-          type: 'notice',
-          level: 'info',
-          message: vscode.l10n.t('The current task has ended; the pause request had no effect'),
-        });
+        deps.postTurnUpdate(targetId);
+        deps.post(
+          {
+            type: 'notice',
+            level: 'info',
+            message: vscode.l10n.t('The current task has ended; the pause request had no effect'),
+          },
+          targetId,
+        );
       }
     },
 
@@ -269,17 +284,21 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
      * 守卫（Agent 就绪 / 会话存在）与错位拦截收归 `handleInput` 相位路由，
      * 此处仅保证相位为 waiting/pause（路由层已校验）。
      */
-    async resumeInput(): Promise<void> {
-      // 恢复只作用于当前显示会话（handleInput 守卫保证非空）
-      const agent = deps.getAgent(deps.currentSessionId());
+    async resumeInput(sessionId?: string): Promise<void> {
+      // 恢复作用于目标会话（缺省 = 当前显示会话；handleInput 守卫保证非空）
+      const targetId = sessionId ?? deps.currentSessionId();
+      const agent = deps.getAgent(targetId);
       try {
-        await deps.runFlow((signal) => agent!.resumeExecution(undefined, signal));
+        await deps.runFlow((signal) => agent!.resumeExecution(undefined, signal), targetId);
       } catch (err) {
-        deps.post({
-          type: 'notice',
-          level: 'error',
-          message: toNoticeText(err),
-        });
+        deps.post(
+          {
+            type: 'notice',
+            level: 'error',
+            message: toNoticeText(err),
+          },
+          targetId,
+        );
       }
     },
 

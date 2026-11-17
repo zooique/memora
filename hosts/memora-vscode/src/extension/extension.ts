@@ -243,7 +243,7 @@ interface AssemblyDeps {
   readProjectDirs: () => ProjectAssetDirs;
   /** 记忆存储单例（懒建；所有会话 Agent 共用此同一对象，所有权归宿主） */
   storage: () => IMemoryStorage;
-  sessionModes: SessionModeStore; // 会话模式容器（§14.21.4）：Map 不落盘；「上次模式」只作新建默认值
+  sessionModes: SessionModeStore; // 助手会话身份容器：身份读工作区指针（跨重启有效），驱动权仅进程内
   /** 托管输入的发送者名（装配期注入；v0 无用户配置，集中在此一处，工具 handler 不自带字面量） */
   orchestratorSenderName: string;
   /** 托管派发回调（工具 handler → 面板；装配层不反向依赖面板实例） */
@@ -594,7 +594,9 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   // 装配期稳定依赖：单实例路径与按会话路径共用同一份（选项唯一构建点 = buildAssembleOptions）
-  const sessionModes = new SessionModeStore(context.globalState); // 会话运行模式容器（Map 不落盘）
+  // 助手会话身份容器：身份指针落**工作区级**（A 项目的助手不带到 B 项目），驱动权仅进程内。
+  // 重启后侧栏先打开助手会话也按助手装配——装配判据读同一份指针，不读内存表。
+  const sessionModes = new SessionModeStore(context.workspaceState);
 
   /**
    * 从代理会话历史重建「它开过哪些会话」
@@ -909,7 +911,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.open', () => openChatCommand(getAgent, chatProvider)),
   );
-  registerNewSessionCommand(context, getAgent, chatProvider, sessionModes); // 新建会话（选择模式）
+  registerNewSessionCommand(context, getAgent, chatProvider); // 新建会话（恒为普通会话）
   // 收回本会话：撤销助手代理（mode → self，强制按自助重装；历史标记不动）
   registerRevokeManagedSessionCommand(context, chatProvider);
   // 命令：添加图片到对话（IMG-2 Q3）：拾取编排（开框/读盘/落盘/回执）全归 chatPanel.pickAndAttachImages 单点

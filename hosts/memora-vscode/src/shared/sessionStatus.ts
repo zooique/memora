@@ -49,6 +49,16 @@ export interface SessionStatusReadPorts {
   readRoundStatus: (roundId: string) => RoundStatus | undefined;
   /** 按轮 id 读整轮（只在需要原因时调用；读不到返回 undefined） */
   readRound: (roundId: string) => Round | undefined;
+  /**
+   * 会话元数据读口（可选）
+   *
+   * 用于托管 Worker 会话优先读 `SessionMeta.workStatus`（语义层状态，比轮次状态更可靠）。
+   * 缺省 undefined = 不查 workStatus，全走既有轮次状态投影逻辑。
+   *
+   * 为什么可选：主控工具（list_work_sessions）和工作台（workbenchModel）的调用面不同——
+   * 两者都能给，但主控工具在旧装配路径里可能没有，保持可选不强制改全量调用点。
+   */
+  readMeta?: (sessionId: string) => SessionMeta | undefined;
 }
 
 /**
@@ -68,6 +78,20 @@ export function projectSessionStatus(
   ports: SessionStatusReadPorts,
   sessionId: string,
 ): WorkbenchJobStatus {
+  // ↓ 新增：托管 Worker 会话优先读 SessionMeta.workStatus（语义层状态，比轮次状态更可靠）
+  // 为什么：Worker 会话的轮次状态是"最后一轮的 RoundStatus"，但"最后一轮成功" ≠ "这条活完成"
+  // （比如三分之二完成了某功能，轮次仍然 pending）。workStatus 是宿主事件钩子消费后写入的
+  // 语义状态，更准确。自助会话的 SessionMeta.workStatus 永远 undefined，本分支自然跳过。
+  //
+  // 判定守卫：只对 origin='hosted' 的会话查 workStatus（防止误读旧数据的托管标记为 null）。
+  // readMeta 端口可选（旧装配路径可能没有），没有就跳过，全走既有逻辑。
+  if (ports.readMeta) {
+    const meta = ports.readMeta(sessionId);
+    if (meta?.origin === 'hosted' && meta.workStatus) {
+      return mapWorkStatusToJobStatus(meta.workStatus);
+    }
+  }
+
   const activity = ports.peekActivity(sessionId);
   if (activity.waiting) return { kind: 'waiting' };
   if (activity.running) return { kind: 'running' };
@@ -88,6 +112,28 @@ export function projectSessionStatus(
   const round = ports.readRound(lastRoundId);
   const derived = deriveInterruptReason(round?.processEvents ?? []);
   return { kind: 'stopped', stop: toStopReason(derived) };
+}
+
+/**
+ * SessionMeta.workStatus → WorkbenchJobStatus 映射
+ *
+ * 语义层 → 展示层的映射，独立成函数方便测试覆盖。
+ * 工作会话被用户手动打断时 workOrder 暂停（宿主判定），但 workStatus 保持 'working'——
+ * 工作台会同时展示轮次状态（可能是 waiting/running），这是正确的。
+ */
+function mapWorkStatusToJobStatus(
+  workStatus: NonNullable<SessionMeta['workStatus']>,
+): WorkbenchJobStatus {
+  switch (workStatus) {
+    case 'working':
+      return { kind: 'running' }; // Worker 在跑
+    case 'blocked':
+      return { kind: 'waiting' }; // 等用户回答（ask_user）
+    case 'completed':
+      return { kind: 'completed' };
+    case 'failed':
+      return { kind: 'stopped', stop: { kind: 'unavailable' } }; // 语义层只标失败，中断原因走 stop.kind
+  }
 }
 
 /**

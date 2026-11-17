@@ -196,7 +196,7 @@ interface PanelHandle {
     /** 显示会话输入框是否有未发送文本（宿主侧布尔，webview 重建时必须复位） */
     _composerHasText: boolean;
     /** 草稿会话控制器（「＋」后的空白页态；测试断言「重启是否回到空白页」） */
-    _draft: { isDraft: boolean; enter(mode?: 'self' | 'hosted' | 'managed'): void };
+    _draft: { isDraft: boolean; enter(): void };
     runtimeFor(sessionId?: string): {
       streaming: boolean;
       abortController?: AbortController;
@@ -341,31 +341,34 @@ function setupPanel(
   };
 }
 
-describe('会话来源标记 · createSession 按 mode 派生 origin', () => {
-  it('managed ⇒ hosted 且登记进模式容器；self ⇒ user', async () => {
+describe('会话来源标记 · createSession 按出生事实派生 origin', () => {
+  it('助手会话 ⇒ 出生来源仍是 user（但写身份指针）；普通会话 ⇒ user 且不写指针', async () => {
     const modes = createEphemeralSessionModeStore();
     const { provider, store } = setupPanel({}, [], modes);
     // 装配走面板注入的工厂：本用例只关心 createSession 的落盘与容器登记
     provider.setAgentFactory(async (_projectPath, sessionId) => sessionAgent(sessionId));
 
-    /** 生产私有面：直接驱动唯一建会话路径（等价草稿首次发送 flush） */
+    /** 生产私有面：直接驱动唯一建会话路径（等价草稿首次发送 flush / 助手窗首次发送） */
     const createSession = (
       provider as unknown as {
         createSession(
           id: string,
           rolePackName?: string,
-          mode?: 'self' | 'managed',
+          opts?: { assistant?: boolean },
         ): Promise<boolean>;
       }
     ).createSession.bind(provider);
 
-    expect(await createSession('2026-11-06-m', undefined, 'managed')).toBe(true);
-    expect(store.getSessionMeta('2026-11-06-m')?.origin).toBe('hosted');
+    // 助手会话是用户在助手窗首次发送建出来的 ⇒ 出生来源 = user（不是代理开的工作会话）
+    expect(await createSession('2026-11-06-m', undefined, { assistant: true })).toBe(true);
+    expect(store.getSessionMeta('2026-11-06-m')?.origin).toBe('user');
     expect(modes.isManaged('2026-11-06-m')).toBe(true);
 
-    expect(await createSession('2026-11-06-s', undefined, 'self')).toBe(true);
+    expect(await createSession('2026-11-06-s')).toBe(true);
     expect(store.getSessionMeta('2026-11-06-s')?.origin).toBe('user');
     expect(modes.isManaged('2026-11-06-s')).toBe(false);
+    // 助手唯一：普通会话登记不覆盖指针
+    expect(modes.listManagedSessionIds()).toEqual(['2026-11-06-m']);
   });
 });
 
@@ -504,7 +507,6 @@ describe('撤销并交还 · revokeManagedSession', () => {
       ),
     ).toBe(true);
   });
-
 });
 
 describe('代理能开会话 · createHostedSession', () => {
@@ -553,9 +555,9 @@ describe('代理能开会话 · createHostedSession', () => {
     expect(modes.listManagedSessionIds()).toEqual([callerId]);
     // ② 会话清单可见（用户能在列表里看到它）
     expect(store.listSessionMetas().map((item) => item.sessionId)).toContain(result.sid);
-    // ③ 代理开会话不是用户导航：显示源仍在调用方，用户的新建默认仍是 self
+    // ③ 代理开会话不是用户导航：显示源仍在调用方，助手身份指针不变
     expect(provider.getCurrentSessionId()).toBe(callerId);
-    expect(modes.getLastMode()).toBe('self');
+    expect(modes.listManagedSessionIds()).toEqual([callerId]);
     // ④ 首轮：origin hosted + 装配期注入的发送者名（不是硬编码）
     //    + 派发归属（via=create：助手开会话，与「派发接管」在盘上可分辨）
     const chat = agents[result.sid].chat as unknown as ReturnType<typeof vi.fn>;
@@ -2675,27 +2677,181 @@ describe('多视图广播 · 托管页与侧栏共享同一状态机（HOSTED-UI
     expect(h.provider.mountedViewCount).toBe(0);
   });
 
-  it('注册托管页后附加数为 1；宿主广播同时到达侧栏（主）与托管页（附加）', () => {
+  it('注册托管页后附加数为 1；绑定同一会话时宿主广播同时到达两页（同一状态机、两种取景）', () => {
     const h = setupPanel({}, ['2026-11-16-seat']);
+    const current = h.provider.getCurrentSessionId();
     const extra = makeExtraView();
-    const unregister = h.provider.registerAdditionalView(extra.webview);
+    const unregister = h.provider.registerAdditionalView(extra.webview, {
+      sessionId: () => current,
+    });
     expect(h.provider.mountedViewCount).toBe(1);
 
-    // 同步探针：借类型断言直达私有 post（生产唯一广播口），注入一条探针消息，
-    // 断言侧栏（setupPanel 的 posted）与托管页（extra.posted）**都**收到——这才是
-    // 「同一状态机扇出到两个取景」的判据，而非只看视图计数。
+    // 同步探针：借类型断言直达私有 post（生产唯一广播口），注入一条会话级探针消息，
+    // 断言侧栏（setupPanel 的 posted）与托管页（extra.posted）**都**收到——两页同绑一条会话
+    // 才是「同屏两种取景」，而非只看视图计数。
     h.posted.length = 0;
     (h.provider as unknown as { post: (msg: { type: string; message: string }) => void }).post({
       type: 'notice',
       message: 'broadcast-probe',
     });
-    expect(h.posted.some((m) => (m as { message?: string }).message === 'broadcast-probe')).toBe(true);
-    expect(extra.posted.some((m) => (m as { message?: string }).message === 'broadcast-probe')).toBe(
+    expect(h.posted.some((m) => (m as { message?: string }).message === 'broadcast-probe')).toBe(
       true,
     );
+    expect(
+      extra.posted.some((m) => (m as { message?: string }).message === 'broadcast-probe'),
+    ).toBe(true);
 
     unregister.dispose();
     expect(h.provider.mountedViewCount).toBe(0);
+  });
+
+  it('托管页绑定别的会话 ⇒ 侧栏的会话级消息不串台（反向绑定同理）', () => {
+    const h = setupPanel({}, ['2026-11-16-seat']);
+    const extra = makeExtraView();
+    const unregister = h.provider.registerAdditionalView(extra.webview, {
+      sessionId: () => 'other-session',
+    });
+    h.posted.length = 0;
+    (h.provider as unknown as { post: (msg: { type: string; message: string }) => void }).post({
+      type: 'notice',
+      message: 'current-only',
+    });
+    // 侧栏（当前会话）照常收；托管页绑的不是这条会话 ⇒ 不收
+    expect(h.posted.some((m) => (m as { message?: string }).message === 'current-only')).toBe(true);
+    expect(extra.posted.some((m) => (m as { message?: string }).message === 'current-only')).toBe(
+      false,
+    );
+    unregister.dispose();
+  });
+
+  it('助手窗空态走 postToExtras：只到附加视图，不打扰侧栏', () => {
+    const h = setupPanel({}, ['2026-11-16-seat']);
+    const extra = makeExtraView();
+    const unregister = h.provider.registerAdditionalView(extra.webview, {
+      sessionId: () => undefined,
+    });
+    h.posted.length = 0;
+    (
+      h.provider as unknown as { routeHostedMessage: (msg: { type: string }) => void }
+    ).routeHostedMessage({ type: 'ready' });
+    // ready 异步回落空态：等一轮微任务后断言标题只进了附加视图
+    return Promise.resolve().then(() => {
+      expect(extra.posted.some((m) => m.type === 'clear_ok')).toBe(true);
+      expect(extra.posted.some((m) => m.type === 'session_title')).toBe(true);
+      expect(h.posted.some((m) => m.type === 'clear_ok')).toBe(false);
+      unregister.dispose();
+    });
+  });
+
+  it('助手窗输入进助手会话（origin=user），侧栏当前会话不被顶掉、也不收到这条', async () => {
+    const modes = createEphemeralSessionModeStore();
+    /** 记录每轮 chat 的 origin（判据②：助手窗文案必须标用户发起） */
+    const origins: (string | undefined)[] = [];
+    const assistant = sessionAgent('2026-11-06-a');
+    (assistant as unknown as { chat: unknown }).chat = (
+      _input: string,
+      _signal: AbortSignal,
+      _att: unknown,
+      opts: { origin?: string },
+    ) => {
+      origins.push(opts.origin);
+      return (async function* () {})();
+    };
+    const h = setupPanel({ '2026-11-06-a': assistant }, ['2026-11-06-a'], modes);
+    h.store.createSession({
+      sessionId: '2026-11-06-w',
+      displayName: 'w',
+      updatedAt: '2026-11-06T10:00:00.000Z',
+      messageCount: 0,
+    });
+    // 指针 = 助手会话；侧栏正看另一条工作会话
+    modes.set('2026-11-06-a', 'managed');
+    h.cast._currentSessionId = '2026-11-06-w';
+    h.posted.length = 0;
+
+    h.provider.routeHostedMessage({ type: 'input', kind: 'send', text: '嗨' });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(origins).toEqual(['user']);
+    expect(h.cast._currentSessionId).toBe('2026-11-06-w');
+    // 侧栏（绑当前工作会话）不收助手会话的 user 回显
+    expect(h.posted.some((m) => m.type === 'user' && m.text === '嗨')).toBe(false);
+  });
+
+  it('助手窗首次发送：无指针 ⇒ 后台建会话 + 写指针，侧栏显示会话不变', async () => {
+    const modes = createEphemeralSessionModeStore();
+    const h = setupPanel({}, ['2026-11-06-seat'], modes);
+    h.provider.setAgentFactory(async (_p, sessionId) => sessionAgent(sessionId));
+
+    h.provider.routeHostedMessage({ type: 'input', kind: 'send', text: '你好' });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const managed = modes.listManagedSessionIds();
+    expect(managed).toHaveLength(1);
+    expect(h.store.getSessionMeta(managed[0]!)?.origin).toBe('user');
+    // 后台建 = 不抢侧栏显示源
+    expect(h.cast._currentSessionId).toBe('2026-11-06-seat');
+  });
+
+  it('指针指向已被删除的会话 ⇒ 助手窗 ready 清指针并回空态', async () => {
+    const modes = createEphemeralSessionModeStore();
+    modes.set('2026-11-06-gone', 'managed');
+    const h = setupPanel({}, ['2026-11-06-seat'], modes);
+    const extra = makeExtraView();
+    const unregister = h.provider.registerAdditionalView(extra.webview, {
+      sessionId: () => h.provider.getAssistantSessionId(),
+      bubbleOnly: true,
+    });
+    h.posted.length = 0;
+
+    h.provider.routeHostedMessage({ type: 'ready' });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(h.provider.getAssistantSessionId()).toBeUndefined();
+    expect(extra.posted.some((m) => m.type === 'clear_ok')).toBe(true);
+    // 空态只进助手窗：侧栏不被清屏
+    expect(h.posted.some((m) => m.type === 'clear_ok')).toBe(false);
+    unregister.dispose();
+  });
+
+  it('助手会话在后台跑：正文与轮投影仍投到绑定它的助手窗，过程事件按视图过滤', async () => {
+    // 判据③：流态 / 轮次按会话分片——侧栏当前是工作会话，助手会话照跑照投；
+    // 判据⑤：过程事件（step_boundary）在投递层就不进气泡窗。
+    const roundId = 'round-assistant';
+    const assistant = sessionAgent('2026-11-06-a');
+    const h = setupPanel({ '2026-11-06-a': assistant }, ['2026-11-06-w']);
+    const extra = makeExtraView();
+    const unregister = h.provider.registerAdditionalView(extra.webview, {
+      sessionId: () => '2026-11-06-a',
+      bubbleOnly: true,
+    });
+    // 侧栏当前会话确认是工作会话（不是助手会话），避免用例前提被 setup 顺序改变
+    expect(h.provider.getCurrentSessionId()).toBe('2026-11-06-w');
+    extra.posted.length = 0;
+    h.posted.length = 0;
+
+    await h.cast.runFlow(
+      () =>
+        (async function* () {
+          yield { type: 'text', content: '助手窗正文', roundId };
+          yield { type: 'step_boundary', roundId };
+        })(),
+      undefined,
+      '2026-11-06-a',
+    );
+
+    // 正文与轮投影到了助手窗（按会话路由，不因侧栏在看别的会话而丢）
+    expect(extra.posted.some((m) => m.type === 'chunk')).toBe(true);
+    expect(extra.posted.some((m) => m.type === 'turn_update')).toBe(true);
+    // 过程事件在宿主侧就不投气泡窗
+    expect(extra.posted.some((m) => m.type === 'step_boundary')).toBe(false);
+    // 侧栏（绑定工作会话）零串台
+    expect(h.posted.some((m) => m.type === 'chunk')).toBe(false);
+    expect(h.posted.some((m) => m.type === 'turn_update')).toBe(false);
+    unregister.dispose();
   });
 
   it('托管页的上行消息经 routeHostedMessage 汇入同一消息链（composer_state 置打字态）', () => {
@@ -2717,5 +2873,107 @@ describe('多视图广播 · 托管页与侧栏共享同一状态机（HOSTED-UI
     unregister.dispose();
     unregister.dispose();
     expect(h.provider.mountedViewCount).toBe(0);
+  });
+});
+
+/**
+ * 助手会话与工作会话分家（2026-11-17 真机订正）
+ *
+ * 真机实锤：助手窗里助手自称「小说创作助手」——助手会话建会话时走了「用户级默认角色包」，
+ * 被工作会话的默认包（共鸣小说家）顶替；同时助手会话出现在侧栏工作会话列表里，
+ * 被用户读成「助手拿一条工作会话来回答我」。
+ *
+ * 判据（三条独立机器判据）：
+ *   ① 助手会话角色包固定 = 内置助手包（不读用户级默认）；
+ *   ② 工作会话列表不含助手会话；
+ *   ③ 重启时侧栏不停在助手会话（退回最近工作会话）；
+ *   ④ 助手会话的「等你 / 在跑」不进列表标识与入口角标（否则角标亮着却找不到行）。
+ */
+describe('助手会话与工作会话分家（HOSTED-SEAT-SESSION-1 真机订正）', () => {
+  /** 取最后一条 session_list_data 的会话 id 集合 */
+  function lastListIds(posted: PanelHandle['posted']): string[] {
+    const list = posted.filter((m) => m.type === 'session_list_data').at(-1) as unknown as
+      { sessions: { sessionId: string }[] } | undefined;
+    return list?.sessions.map((s) => s.sessionId) ?? [];
+  }
+
+  it('助手会话角色包固定为内置助手包（不被「新建会话默认角色包」顶替），且不进工作会话列表', async () => {
+    // 用户级默认 = 工作包（真机里就是「共鸣小说家」）；助手人格不得被它接走
+    vi.mocked(mockedWorkspace.getConfiguration).mockImplementation(
+      () =>
+        ({
+          get: vi.fn((key: string) => (key === 'defaultRolePack' ? '共鸣小说家' : false)),
+          update: vi.fn(async () => {}),
+        }) as never,
+    );
+    const modes = createEphemeralSessionModeStore();
+    // 两条工作会话：一条为当前显示（列表排除当前），一条留在列表里做对照
+    const h = setupPanel({}, ['2026-11-06-w1', '2026-11-06-w2'], modes);
+    h.provider.setAgentFactory(async (_p, sessionId) => sessionAgent(sessionId));
+    h.posted.length = 0;
+
+    h.provider.routeHostedMessage({ type: 'input', kind: 'send', text: '你好' });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const assistantId = modes.listManagedSessionIds()[0];
+    expect(assistantId).toBeDefined();
+    // ① 助手身份不被默认包接走
+    expect(h.store.getSessionMeta(assistantId!)?.activeRolePackName).toBe(BUILTIN_FALLBACK_PACK);
+    // ② 列表含别的工作会话、不含助手会话
+    const ids = lastListIds(h.posted);
+    expect(ids).toContain('2026-11-06-w2');
+    expect(ids).not.toContain(assistantId);
+  });
+
+  it('重启时指针落在助手会话 ⇒ 侧栏退回最近工作会话，不停在助手会话', () => {
+    const modes = createEphemeralSessionModeStore();
+    modes.set('2026-11-06-a', 'managed');
+    // 播种顺序：助手会话被写成「上次停留」（真机旧版会这样）；工作会话在列表里
+    const h = setupPanel({}, ['2026-11-06-a', '2026-11-06-w'], modes);
+    expect(h.provider.getCurrentSessionId()).toBe('2026-11-06-w');
+  });
+
+  it('旧版助手会话落着工作角色包 ⇒ 装配时矫正回内置助手包', async () => {
+    const modes = createEphemeralSessionModeStore();
+    modes.set('2026-11-06-a', 'managed');
+    const h = setupPanel({}, ['2026-11-06-w'], modes);
+    // 旧数据形态：助手会话 meta 里是用户默认的工作包（真机 2026-11-17）
+    h.store.updateSessionMeta('2026-11-06-a', { activeRolePackName: '共鸣小说家' });
+
+    const delivered: Array<{ type: string }> = [];
+    const webview = {
+      postMessage: (msg: { type: string }) => {
+        delivered.push(msg);
+        return Promise.resolve(true);
+      },
+    } as unknown as vscode.Webview;
+    const unregister = h.provider.registerAdditionalView(webview, {
+      sessionId: () => '2026-11-06-a',
+      bubbleOnly: true,
+    });
+    h.provider.setAgentFactory(async (_p, sid) => sessionAgent(sid));
+
+    // ready ⇒ 装配助手会话（装配前矫正 meta）
+    h.provider.routeHostedMessage({ type: 'ready' });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(h.store.getSessionMeta('2026-11-06-a')?.activeRolePackName).toBe(BUILTIN_FALLBACK_PACK);
+    unregister.dispose();
+  });
+
+  it('助手会话的待处理不进列表标识与入口角标', () => {
+    const modes = createEphemeralSessionModeStore();
+    modes.set('2026-11-06-a', 'managed');
+    const h = setupPanel({ '2026-11-06-a': sessionAgent('2026-11-06-a') }, ['2026-11-06-w'], modes);
+    h.posted.length = 0;
+
+    // 生产由助手会话流内 questionPending 写入；setPending 会触发活跃度重算
+    h.cast.askFor('2026-11-06-a').setPending([{ slot: 'q1', question: '要继续吗？' }]);
+
+    const snap = lastActivity(h.posted);
+    expect(snap.pendingIds).not.toContain('2026-11-06-a');
+    expect(snap.badgeCount).toBe(0);
   });
 });

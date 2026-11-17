@@ -3528,8 +3528,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         roleBadgeView.hideCapabilityBadge();
         occupancyView.renderLimit(currentProviders, currentActive, true);
       }
-      // 草稿默认模式提示：只认 draft + managed；真实会话 / self 清除，空态页不残留
-      emptyStateView.setDefaultMode(msg.draft === true ? msg.defaultMode : undefined);
     } else if (msg.type === 'session_list_data') {
       // 历史会话列表：渲染到 treedd 历史下拉（全量 + 留存区标记，前端过滤分两组）
       historyMenuApi.renderMenu(msg.sessions, msg.archivedIds ?? []);
@@ -3749,11 +3747,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 助手形态里的会话由助手安排：用户侧「＋」不出现（宿主侧另有同一判据的拒收，见
     // chatPanel 的 `new_session` 分支）。切回自助形态即恢复。
     newSessionBtn.hidden = assistant;
-    // 空态口径随形态重裁决（emptyStateView 域内单点判形态）：切到助手隐藏自助角色
-    // 空态/草稿提示；切回自助恢复角色化空态（updateRole 域内已判形态，此处无分支）
-    if (assistant) {
-      emptyStateView.setDefaultMode(undefined);
-    }
+    // 空态口径随形态重裁决（emptyStateView 域内单点判形态）：切到助手隐藏自助角色空态，
+    // 切回自助恢复角色化空态（updateRole 域内已判形态，此处无分支）
     emptyStateView.updateRole(currentRoleName, currentRolePacks);
     emptyStateView.update();
     // 按钮语义随形态重算：切到助手去掉停止态（微信心智，发送了就脱手）；

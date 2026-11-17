@@ -948,6 +948,10 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'createdAt',
       // 2026-11-14 新增（定性见下方 ⑱）：托管开活范围声明，可选字段、非破坏
       'declaredPaths',
+      // 2026-11-17 新增（定性见下方 ㉑）：托管开活语义边界，可选字段、非破坏
+      'workOrder',
+      // 2026-11-17 新增（定性见下方 ㉒）：托管活工作状态，可选字段、非破坏
+      'workStatus',
       'displayName',
       'keyTopics',
       'messageCount',
@@ -1542,6 +1546,23 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    （创建时与标题同批），\`forkSession\` 不复制（分叉是另一条活，范围须重声明）。\n` +
       `    语义 = **记录不是权限**：不表达父子关系，不当门禁授权依据。\n` +
       `    代价 = 零（可选字段：老会话读不到 ⇒ 按「没有声明」如实降级，不猜范围）。` +
+      `\n  ㉑ SessionMeta.workOrder 新增（2026-11-17 · 托管开活语义边界，非 Breaking）：\n` +
+      `    定性 = **真能力**（非 no-op 谎报）：这段话描述「要解决什么问题、不解决什么问题」，\n` +
+      `    是 SessionMeta.declaredPaths（技术范围：动哪些路径）的**补充**而非替代——两者不同维度，\n` +
+      `    不可互替（Worker 拿到 declaredPaths=['src/agent'] 知道不能动 ui/，但不知道能不能重构 src/agent）。\n` +
+      `    真消费者 = Worker loop（消费前检查字段存在）+ 宿主事件钩子更新 workStatus 时对比边界；\n` +
+      `    写入方 = 宿主 \`createSession\`（主控 create_session 工具的 mandate 参数，创建时与 title/paths 同批）；\n` +
+      `    **不从父会话继承**（分叉是另一条活，边界须重声明）。\n` +
+      `    语义 = **记录不是权限**：不表达父子关系，不当门禁授权依据。\n` +
+      `    代价 = 零（可选字段：老会话 / 自助会话读不到 ⇒ 如实降级，不猜边界）。` +
+      `\n  ㉒ SessionMeta.workStatus 新增（2026-11-17 · 托管活工作状态，非 Breaking）：\n` +
+      `    定性 = **真能力**（非 no-op 谎报）：枚举字符串 'working'/'blocked'/'completed'/'failed'，\n` +
+      `    追踪这条活当前状态。AgentLoop 在 src/agent/loop.ts 与 SessionMeta 零耦合（grep 确认），\n` +
+      `    所有更新必须经宿主事件钩子：createSession 直接写 'working'（Worker 会话创建后立即执行，\n` +
+      `    无 queued 中间态）+ questionPending 钩子写 'blocked' + 终态通知写 'completed'/'failed'。\n` +
+      `    真消费者 = 宿主工作台状态投影（优先读本字段，字段为空时 fallback 到轮次状态投影）。\n` +
+      `    写入方 = 宿主事件钩子回调（origin='hosted' 判定守卫自助会话零影响）。\n` +
+      `    代价 = 零（可选字段：老会话 / 自助会话读不到 ⇒ 工作台用既有投影逻辑，无 deprecation）。` +
       `\n  ⑲ Round.dispatchedBy 新增（2026-11-15 · 派发归属，非 Breaking）：\n` +
       `    定性 = **真能力**（非 no-op 谎报）：\`{ from, via }\`，\`from\` 是创建者会话 id、\`via\` 是\n` +
       `    \`'delegate'\`（派发到已有会话）/ \`'create'\`（助手开会话的首轮）——盘上两种来源可分辨，\n` +

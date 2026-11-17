@@ -104,7 +104,9 @@ interface AskProjectionCast {
   /** E4 批 1：原 _streaming 单份字段已按会话命名空间化 */
   runtimeFor(sessionId?: string): { streaming: boolean };
   _agent: Agent;
-  _turnState: { phase: string; reason?: string; questions?: unknown[] };
+  /** HOSTED-SEAT-SESSION-1：turn 状态按会话分片（读经 `turnStateOf`） */
+  _currentSessionId: string;
+  _turnStates: Map<string, { phase: string; reason?: string; questions?: unknown[] }>;
   /** E4 批 1：原 _ask 单份字段已按会话命名空间化 */
   askFor(sessionId?: string): {
     clearAskTimeout(): void;
@@ -112,6 +114,15 @@ interface AskProjectionCast {
     pendingQuestions(): unknown[];
   };
   handleStop(): Promise<void>;
+}
+
+/** 读当前会话的 turn 状态（HOSTED-SEAT-SESSION-1：状态已按会话分片，缺省 idle） */
+function turnStateOf(cast: AskProjectionCast): {
+  phase: string;
+  reason?: string;
+  questions?: unknown[];
+} {
+  return cast._turnStates.get(cast._currentSessionId ?? '') ?? { phase: 'idle' };
 }
 
 /** 构造 provider + 抓取 post 消息（复刻 chatPanelPauseProjection.test 的 harness） */
@@ -212,7 +223,7 @@ describe('ask 端到端：questionPending 事件 → setPending → postTurnUpda
     // 在起始相位本就是 idle 时恒真 = 空断言（首轮变异实测：删掉重投影仍绿）
     const { cast, posted, finish } = driveSuspendedFlow([QUESTION]);
     try {
-      expect(cast._turnState.phase).toBe('waiting'); // 前置：确实停在 ask 等待
+      expect(turnStateOf(cast).phase).toBe('waiting'); // 前置：确实停在 ask 等待
       // 提问挂起后流已结束（会话级 streaming=false）、会话处 paused：
       // 旧实现正是在这一格只弃检查点 ⇒ 轮永久 pending + 宿主镜像不清 ⇒ 下一条输入被吞
       cast.runtimeFor().streaming = false;
@@ -223,7 +234,7 @@ describe('ask 端到端：questionPending 事件 → setPending → postTurnUpda
       // ① 宿主镜像已清 + 相位重投影（不重算 ⇒ `_turnState` 停在 waiting/ask，
       //    handleInput 会把用户的下一句话路由成「回答一个已死的提问」，内核内存消费、不落盘）
       expect(cast.askFor().pendingQuestions()).toEqual([]);
-      expect(cast._turnState.phase).not.toBe('waiting');
+      expect(turnStateOf(cast).phase).not.toBe('waiting');
       // ② 未答提问带题面上屏（文案与内核 appendInterrupted 落盘的 unanswered 行同源）
       const rows = posted.filter((m) => (m as { type?: string }).type === 'user') as Array<{
         kind?: string;
@@ -243,10 +254,10 @@ describe('ask 端到端：questionPending 事件 → setPending → postTurnUpda
       // 链路⑤：写回是 handleInput 的 ask 相位路由判据（webview 问答卡同源）——写回断了，
       // 用户的回答会被当成普通输入另起一轮。
       // 断言必须在流中：流尾收尾投影同样会写回，放行后断言会掩盖事件写回的缺失。
-      expect(cast._turnState.phase).toBe('waiting');
-      expect(cast._turnState.reason).toBe('ask');
-      expect(cast._turnState.questions).toHaveLength(1);
-      expect((cast._turnState.questions![0] as { question: string }).question).toBe(
+      expect(turnStateOf(cast).phase).toBe('waiting');
+      expect(turnStateOf(cast).reason).toBe('ask');
+      expect(turnStateOf(cast).questions).toHaveLength(1);
+      expect((turnStateOf(cast).questions![0] as { question: string }).question).toBe(
         QUESTION.question,
       );
     } finally {

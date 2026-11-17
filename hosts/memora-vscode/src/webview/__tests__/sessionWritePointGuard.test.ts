@@ -13,8 +13,10 @@
  *   ① `this._currentSessionId = <右值>;` 的右值**只允许三类**：
  *      - `sessionId`：收口写，**恰好 1 处**，位于 `setCurrentSessionId()` 内、紧跟
  *        `setLastActiveSession(sessionId)`；
- *      - `this.sessionStore.getInitialSessionId()`：**只读**导航指针灌入（构造期 + 面板销毁后
- *        重开，B1 重开自愈），不写状态、不落盘；
+ *      - 只读灌入：`this.sessionStore.getInitialSessionId()`（面板销毁后重开，B1 重开自愈），
+ *        或 `resolveStartupSessionId(...)`（构造期初始会话选择——内部同样只读
+ *        `getInitialSessionId` + 会话列表，**不写状态、不落盘**；2026-11-17 起用它排除
+ *        助手会话）；
  *      - `''`：面板销毁归还跨进程锁时的**清空**（B1），**恰好 1 处**，位于
  *        `releaseHeldSessionLock()` 内且**不得**落盘。
  *   ② 收口方法内必须成对写「内存字段 + 上次停留指针」；
@@ -34,8 +36,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 /** 被守卫的宿主文件（会话导航的唯一所在） */
 const CHAT_PANEL_PATH = join(HERE, '..', 'panels', 'chatPanel.ts');
 
-/** 匹配「this._currentSessionId = <右值>;」，捕获右值用于区分「成对写」与「只读灌入」 */
-const ASSIGN_RE = /this\._currentSessionId\s*=\s*(.+?);/g;
+/** 匹配「this._currentSessionId = <右值>;」（右值可跨行；`(?!=)` 防把 `==` 比较吞成赋值） */
+const ASSIGN_RE = /this\._currentSessionId\s*=(?!=)\s*([\s\S]+?);/g;
 
 /** 收口方法名（两件事必须在此成对） */
 const SETTER_NAME = 'private setCurrentSessionId(';
@@ -45,6 +47,9 @@ const PERSIST_CALL = 'this.sessionStore.setLastActiveSession(sessionId);';
 
 /** 构造期 / 面板重开灌入的合法右值（只读导航指针，不改状态） */
 const INIT_VALUE = 'this.sessionStore.getInitialSessionId()';
+
+/** 构造期初始会话选择（内部只读 getInitialSessionId + 会话列表；排除助手会话后仍只读） */
+const INIT_RESOLVED_PREFIX = 'resolveStartupSessionId(';
 
 /** 清空点的**唯一**合法右值（不落盘：不得改写「上次停留」指针） */
 const CLEAR_VALUE = "''";
@@ -86,8 +91,10 @@ describe('SESSION-RESUME-1 · 会话导航写点守卫', () => {
   });
 
   it('赋值点只允许三类右值（收口写 / 只读灌入 / 销毁清空）', () => {
-    const allowed = ['sessionId', INIT_VALUE, CLEAR_VALUE];
-    expect(assignValues.every((v) => allowed.includes(v))).toBe(true);
+    const isInitRead = (v: string) => v === INIT_VALUE || v.startsWith(INIT_RESOLVED_PREFIX);
+    expect(assignValues.every((v) => v === 'sessionId' || v === CLEAR_VALUE || isInitRead(v))).toBe(
+      true,
+    );
     // 收口写只能 1 处：多于 1 处 = 有导航路径绕过了收口方法
     expect(assignValues.filter((v) => v === 'sessionId')).toHaveLength(1);
   });
@@ -100,9 +107,11 @@ describe('SESSION-RESUME-1 · 会话导航写点守卫', () => {
   });
 
   it('非收口 / 非清空的赋值只能是只读灌入（构造期 + 面板重开）', () => {
-    // 排除收口写与销毁清空后，剩下的必须全部是 getInitialSessionId（只读，不改状态）
+    // 排除收口写与销毁清空后，剩下的必须全部是只读灌入，且恰好 2 处
+    const isInitRead = (v: string) => v === INIT_VALUE || v.startsWith(INIT_RESOLVED_PREFIX);
     const nonSetter = assignValues.filter((v) => v !== 'sessionId' && v !== CLEAR_VALUE);
-    expect(nonSetter).toEqual([INIT_VALUE, INIT_VALUE]);
+    expect(nonSetter).toHaveLength(2);
+    expect(nonSetter.filter((v) => !isInitRead(v))).toEqual([]);
   });
 
   it('清空点恰好 1 处，位于 finalizer 的 clearSessionId 回调且不落盘', () => {

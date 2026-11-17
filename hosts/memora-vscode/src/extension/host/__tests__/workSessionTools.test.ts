@@ -1069,7 +1069,7 @@ describe('托管 v0 · create_session（工具层）', () => {
       });
       expect((accepted as { scopeCheck: { note?: string } }).scopeCheck.note).toBeUndefined();
       // 发送者名必须是装配期注入值：工具内写死字面量会让本断言转红。
-      // 第六参 = 已规范化的范围声明（随创建写进会话元数据）
+      // 第六参 = 已规范化的范围声明（随创建写进会话元数据）；第七参 = mandate（语义边界，可选，不传时 undefined）
       expect(createSession).toHaveBeenCalledWith(
         SESSION_ID,
         '资料员',
@@ -1077,6 +1077,7 @@ describe('托管 v0 · create_session（工具层）', () => {
         '先读 README',
         SENDER_NAME,
         ['docs'],
+        undefined, // mandate 可选，本次调用不传
       );
     } finally {
       await disposeProbe(probe);

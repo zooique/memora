@@ -107,13 +107,6 @@ export function createEmptyStateView(deps: EmptyStateViewDeps): {
   onboarding(): void;
   /** onboarding 按钮移除（配置就绪恢复普通空态，幂等） */
   clearOnboardBtn(): void;
-  /**
-   * 草稿默认模式提示（仅 `'managed'` 时出现）
-   *
-   * 位置 = 空态描述下方的普通文本行，不新增浮层 / 弹窗 / 页面；
-   * `'self'` / undefined ⇒ 移除元素（默认自助时不打扰），重复投影幂等。
-   */
-  setDefaultMode(mode?: 'self' | 'managed'): void;
 } {
   const { document, emptyState, emptyTitle, emptyHint, emptySuggestions, messages } = deps;
 
@@ -200,35 +193,6 @@ export function createEmptyStateView(deps: EmptyStateViewDeps): {
   }
 
   /**
-   * 草稿默认模式提示：只在「本次草稿会以托管身份运行」时出现
-   *
-   * 复用现有空态结构（描述下方一行文本），不新增浮层。
-   * ⚠ 只说「怎么切回自助」：模式是什么、消息由谁发，由输入区上方那条状态签唯一承担，
-   *   同屏不再出现第二种说法（真机验收：一句身份 + 两句解释 = 三种说法讲三件事）。
-   * 必须在调用时经 `l10n.t` 取译文（模块加载早于语言包就绪）。
-   */
-  function setDefaultMode(mode?: 'self' | 'managed'): void {
-    const existing = emptyState.querySelector<HTMLElement>('.empty-mode-hint');
-    // 助手座位没有「托管草稿」语义：草稿提示是自助会话发起托管用的，助手座位一律清除
-    if (deps.getForm() === 'assistant') {
-      existing?.remove();
-      return;
-    }
-    if (mode !== 'managed') {
-      existing?.remove(); // self / 真实会话：清掉上一次草稿的提示，防残留
-      return;
-    }
-    if (existing) return; // 重复投影（进入 / 重建 / 建会话失败回滚）不叠加
-    const hint = document.createElement('div');
-    hint.className = 'empty-mode-hint';
-    /** 切回路径：textContent 赋值防注入 */
-    hint.textContent = l10n.t(
-      'To chat on your own again, use "Back to Chatting Myself" in the view title bar.',
-    );
-    emptyHint.insertAdjacentElement('afterend', hint);
-  }
-
-  /**
    * 空状态示例提问 Chips：随激活角色动态渲染（SSOT，事件委托兼容动态元素）。
    *
    * 命中 ROLE_SUGGESTION_SETS 的角色展示专属示例（showcase，如白话方案设计师的"种子收敛"
@@ -250,5 +214,5 @@ export function createEmptyStateView(deps: EmptyStateViewDeps): {
     });
   }
 
-  return { update, updateRole, onboarding, clearOnboardBtn, setDefaultMode };
+  return { update, updateRole, onboarding, clearOnboardBtn };
 }

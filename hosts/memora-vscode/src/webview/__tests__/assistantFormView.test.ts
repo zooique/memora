@@ -97,28 +97,27 @@ describe('助手形态输入区（ASSISTANT-FORM）', () => {
     expect(document.getElementById('emptyTitle')?.textContent).toContain('共鸣小说家');
   });
 
-  it('助手形态下托管草稿提示不投影（草稿提示是自助会话语义）', () => {
-    mountChatView('assistant');
-    // 助手座位收到「draft + managed」标题推送：不得出现「回到我自己」提示行
-    dispatch({ type: 'session_title', title: '新会话', draft: true, defaultMode: 'managed' });
-    expect(document.querySelector('.empty-mode-hint')).toBeNull();
-  });
-
   it('输入区减法口径（2026-11-16 拍板）：只去暂停键与徽章群，模型/skill/图片/占用圆环保留', () => {
     // jsdom 不算样式 ⇒ 源码级守卫钉住减法边界，防回退到「一个不留」旧口径
     const css = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf8');
     /** 助手形态作用域的 display:none 规则（选择器串 + 规则体） */
-    const hiddenRules = [...css.matchAll(/body\[data-form='assistant'\][^{}]*\{[^}]*display:\s*none/g)].map(
-      (m) => m[0] as string,
-    );
+    const hiddenRules = [
+      ...css.matchAll(/body\[data-form='assistant'\][^{}]*\{[^}]*display:\s*none/g),
+    ].map((m) => m[0] as string);
     // 恢复面：功能群（skill/模型/润色/图片）与状态行整行不得在助手作用域隐藏
-    const restored = hiddenRules.filter((r) => r.includes('.composer-left') || r.includes('.composer-row--status'));
+    const restored = hiddenRules.filter(
+      (r) => r.includes('.composer-left') || r.includes('.composer-row--status'),
+    );
     expect(restored).toEqual([]);
     // 减法面：暂停键（运行控制）与徽章群（角色/能力）必须隐藏（同一规则的选择器组）
-    const keptRule = hiddenRules.find((r) => r.includes('#pauseBtn') && r.includes('.composer-status'));
+    const keptRule = hiddenRules.find(
+      (r) => r.includes('#pauseBtn') && r.includes('.composer-status'),
+    );
     expect(keptRule).toBeDefined();
     // 右对齐补偿已退役：左块恢复 ⇒ composer-row--main 回两端分布（不得再有 flex-end 覆盖）
-    expect(css).not.toMatch(/body\[data-form='assistant'\][^{}]*\.composer-row--main[^{}]*flex-end/);
+    expect(css).not.toMatch(
+      /body\[data-form='assistant'\][^{}]*\.composer-row--main[^{}]*flex-end/,
+    );
   });
 
   it('助手形态生成中发送键恒为发送态（脱手模型，无停止■）', () => {
@@ -205,18 +204,25 @@ describe('助手形态样式作用域守卫（漏前缀 = 漏到自助形态）'
     expect(html).toContain('id="assistantState"');
     expect(html.indexOf('id="assistantState"')).toBeLessThan(html.indexOf('id="sessionTitleBar"'));
 
-    const hiddenRules = [...css.matchAll(/body\[data-form='assistant'\][^{}]*\{[^}]*display:\s*none/g)].map(
-      (m) => m[0] as string,
-    );
+    const hiddenRules = [
+      ...css.matchAll(/body\[data-form='assistant'\][^{}]*\{[^}]*display:\s*none/g),
+    ].map((m) => m[0] as string);
     // 过程隐藏面：身份标签 / 运行块 / 过程流三类同条规则收起
     const processRule = hiddenRules.find(
-      (r) => r.includes('.msg-ai-label') && r.includes('.round-block') && r.includes('.process-flow'),
+      (r) =>
+        r.includes('.msg-ai-label') && r.includes('.round-block') && r.includes('.process-flow'),
     );
     expect(processRule).toBeDefined();
     // 交互卡不是「运行过程」：提问卡不得被助手作用域隐藏（确认/授权在 dock 层另管）
-    expect(css).not.toMatch(/body\[data-form='assistant'\][^{}]*\.ask-inline[^{}]*\{[^}]*display:\s*none/);
+    expect(css).not.toMatch(
+      /body\[data-form='assistant'\][^{}]*\.ask-inline[^{}]*\{[^}]*display:\s*none/,
+    );
     // 气泡面：AI 回复在助手作用域内改左侧气泡并给背景
-    expect(css).toMatch(/body\[data-form='assistant'\] \.msg\.assistant\s*\{[^}]*align-self:\s*flex-start/);
-    expect(css).toMatch(/body\[data-form='assistant'\] \.msg\.assistant\s*\{[^}]*background:\s*var\(--surface-card\)/);
+    expect(css).toMatch(
+      /body\[data-form='assistant'\] \.msg\.assistant\s*\{[^}]*align-self:\s*flex-start/,
+    );
+    expect(css).toMatch(
+      /body\[data-form='assistant'\] \.msg\.assistant\s*\{[^}]*background:\s*var\(--surface-card\)/,
+    );
   });
 });

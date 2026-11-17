@@ -2936,7 +2936,7 @@ describe('ready 握手重放并入本流 live 轮（切界面不显示修复）'
       [ev(1, 'meta'), ev(2, 'thinking')],
       '半截正文',
     );
-    (provider as unknown as { replayHistory(): void }).replayHistory();
+    (provider as unknown as { replaySession(): void }).replaySession();
     const last = lastTurnUpdate(posted);
     expect(last.replay).toBe(true);
     const live = last.rounds.find((r) => r.id === 'round-9');
@@ -2966,7 +2966,7 @@ describe('ready 握手重放并入本流 live 轮（切界面不显示修复）'
     expect(
       (provider as unknown as { runtimeFor(): { liveBuffer?: unknown } }).runtimeFor().liveBuffer,
     ).toBeUndefined();
-    (provider as unknown as { replayHistory(): void }).replayHistory();
+    (provider as unknown as { replaySession(): void }).replaySession();
     const last = lastTurnUpdate(posted);
     expect(last.rounds.find((r) => r.id === 'round-9')?.live).toBeUndefined();
   });
@@ -2990,7 +2990,7 @@ describe('ready 握手重放并入本流 live 轮（切界面不显示修复）'
     expect(
       (provider as unknown as { runtimeFor(): { liveBuffer?: unknown } }).runtimeFor().liveBuffer,
     ).toBeDefined();
-    (provider as unknown as { replayHistory(): void }).replayHistory();
+    (provider as unknown as { replaySession(): void }).replaySession();
     const last = lastTurnUpdate(posted);
     const live = last.rounds.find((r) => r.id === 'round-9');
     expect(live?.live).toBe(true);
@@ -3000,7 +3000,7 @@ describe('ready 握手重放并入本流 live 轮（切界面不显示修复）'
   it('会话护栏：缓冲归属 ≠ 当前会话 → 不投影（防切走切回跨会话污染）', () => {
     const { provider, posted } = setupWithHistory();
     attachBuffer(provider, '2026-08-14-s2', 'round-9', [ev(1, 'meta')], '别会话正文');
-    (provider as unknown as { replayHistory(): void }).replayHistory();
+    (provider as unknown as { replaySession(): void }).replaySession();
     const last = lastTurnUpdate(posted);
     expect(last.rounds.find((r) => r.id === 'round-9')).toBeUndefined();
     // 历史重放链路本身走完（防「链路挂掉 → 断言空转」假绿）
@@ -3019,7 +3019,7 @@ describe('ready 握手重放并入本流 live 轮（切界面不显示修复）'
     } as never);
     // 模拟 resume 续跑缓冲：只有续跑段事件（seq 更大），无暂停前事件
     attachBuffer(provider, '2026-08-15-s1', 'round-9', [ev(3, 'tool_result')], '续跑正文');
-    (provider as unknown as { replayHistory(): void }).replayHistory();
+    (provider as unknown as { replaySession(): void }).replaySession();
     const last = lastTurnUpdate(posted);
     const live = last.rounds.find((r) => r.id === 'round-9');
     // 暂停前 checkpoint 事件（seq1/2）与续跑段（seq3）全在，seq 幂等保序

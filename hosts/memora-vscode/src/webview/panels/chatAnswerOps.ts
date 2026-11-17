@@ -48,12 +48,13 @@ export interface ChatAnswerOps {
    *     逐条 post 透出「你答」交互行 + `answerQuestion(answers)` 数组回填 +
    *     `resumeExecution` 以 join 全文注入（内核 `answerQuestion` 原生支持数组）；
    *   - 守卫（Agent 就绪 / 会话存在）与错位拦截收归面板 `handleInput` 相位路由
-   *     （单一判据），提问原文读 `turn_update` 投影（`_turnState.waiting.questions`
-   *     单点真源，ask 域的在途提问仅事件写入源，非消费式 splice）。
+   *     （单一判据），提问原文读 `turn_update` 投影（按会话分片的 turn 状态单点真源，
+   *     ask 域的在途提问仅事件写入源，非消费式 splice）。
    *
    * @param answers 归一后的回答数组（单问 = 单元素，answer 意图恒数组）
+   * @param sessionId 目标会话（缺省 = 当前显示会话；助手窗显式传助手会话）
    */
-  answerInput: (answers: string[]) => Promise<void>;
+  answerInput: (answers: string[], sessionId?: string) => Promise<void>;
   /** 主控代答（工具 `answer_session_question` 的宿主回调） */
   answerHostedQuestions: HostedQuestionAnswerer;
 }
@@ -69,11 +70,14 @@ export function createChatAnswerOps(deps: ChatAnswerOpsDeps): ChatAnswerOps {
   const answerForSession = (sessionId: string, agent: Agent, answers: string[]) =>
     runSessionAnswerFlow({ askFor: deps.askFor, runFlow: deps.runFlow }, sessionId, agent, answers);
   return {
-    answerInput: async (answers) => {
-      const { sessionId, agent } = deps.currentSession();
+    answerInput: async (answers, sessionId) => {
+      // 目标会话显式给出时用它（助手窗）：实例取已装配的那台，不读侧栏的当前实例
+      const current = deps.currentSession();
+      const targetId = sessionId ?? current.sessionId;
+      const agent = sessionId ? deps.getAgent(sessionId) : current.agent;
       // 路由层已保证有实例；共享入口放宽为可空，防御装配中途被回收
       if (!agent) return;
-      await answerForSession(sessionId, agent, answers);
+      await answerForSession(targetId, agent, answers);
     },
     answerHostedQuestions: (calling, target, answers) =>
       answerHostedQuestionsWith(

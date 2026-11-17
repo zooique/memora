@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 输入收口验收测试
  *
  * 验证 `handleInput` 单一入口按 turn 相位路由（单一判据）：
@@ -154,7 +154,8 @@ interface InputCast {
     clearPending(): void;
     pendingQuestions(): PendingQuestionDto[];
   };
-  _turnState: TurnState;
+  /** HOSTED-SEAT-SESSION-1：turn 状态按会话分片（房主读 `turnStateFor`，缺省 idle） */
+  _turnStates: Map<string, TurnState>;
   _currentSessionId: string;
   _agent: Agent;
   /** IMG-8 兜底取窗口用；个别用例覆写 getActive 返回值（默认 undefined = 未配置） */
@@ -190,7 +191,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     // 相位：running（流在跑 + 非挂起）
     h.cast.runtimeFor().streaming = true;
     h.cast.runtimeFor().abortController = new AbortController();
-    h.cast._turnState = { phase: 'running' };
+    h.cast._turnStates.set(h.cast._currentSessionId, { phase: 'running' });
 
     await h.cast.handleInput({ kind: 'send', text: '补充要求' });
 
@@ -218,7 +219,11 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     h.cast.runtimeFor().streaming = false;
     h.cast.runtimeFor().abortController = undefined;
     h.cast.askFor().setPending([question]);
-    h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: [question] };
+    h.cast._turnStates.set(h.cast._currentSessionId, {
+      phase: 'waiting',
+      reason: 'ask',
+      questions: [question],
+    });
 
     await h.cast.handleInput({ kind: 'send', text: '继续' });
 
@@ -250,7 +255,11 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     h.cast.runtimeFor().streaming = false;
     h.cast.runtimeFor().abortController = undefined;
     h.cast.askFor().setPending([question]);
-    h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: [question] };
+    h.cast._turnStates.set(h.cast._currentSessionId, {
+      phase: 'waiting',
+      reason: 'ask',
+      questions: [question],
+    });
 
     await h.cast.handleInput({ kind: 'answer', answers: ['继续'] });
 
@@ -285,7 +294,11 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     h.cast.runtimeFor().streaming = false;
     h.cast.runtimeFor().abortController = undefined;
     h.cast.askFor().setPending(qs);
-    h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: qs };
+    h.cast._turnStates.set(h.cast._currentSessionId, {
+      phase: 'waiting',
+      reason: 'ask',
+      questions: qs,
+    });
 
     await h.cast.handleInput({ kind: 'answer', answers: ['中文', '长篇'] });
 
@@ -312,7 +325,11 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     h.cast.runtimeFor().streaming = false;
     h.cast.runtimeFor().abortController = undefined;
     h.cast.askFor().setPending(qs);
-    h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: qs };
+    h.cast._turnStates.set(h.cast._currentSessionId, {
+      phase: 'waiting',
+      reason: 'ask',
+      questions: qs,
+    });
 
     // 等长同序：第 1 题空串（未答）、第 2 题有答案。压缩位次会让「长篇」前移贴到「语言？」头上。
     await h.cast.handleInput({ kind: 'answer', answers: ['', '长篇'] });
@@ -349,7 +366,11 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     h.cast.runtimeFor().streaming = false;
     h.cast.runtimeFor().abortController = undefined;
     h.cast.askFor().setPending(qs);
-    h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: qs };
+    h.cast._turnStates.set(h.cast._currentSessionId, {
+      phase: 'waiting',
+      reason: 'ask',
+      questions: qs,
+    });
 
     // 2 道题只给 1 条答案：位次已无从推断 ⇒ 宁可拒收，不按位瞎配
     await h.cast.handleInput({ kind: 'answer', answers: ['中文'] });
@@ -374,7 +395,11 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     h.cast.runtimeFor().streaming = false;
     h.cast.runtimeFor().abortController = undefined;
     h.cast.askFor().setPending(qs);
-    h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: qs };
+    h.cast._turnStates.set(h.cast._currentSessionId, {
+      phase: 'waiting',
+      reason: 'ask',
+      questions: qs,
+    });
 
     await h.cast.handleInput({ kind: 'answer', answers: ['中文', '长篇'] });
 
@@ -395,7 +420,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     h.cast.runtimeFor().streaming = false;
     h.cast.runtimeFor().abortController = undefined;
     h.cast.askFor().clearPending(); // 无在途提问
-    h.cast._turnState = { phase: 'waiting', reason: 'pause' };
+    h.cast._turnStates.set(h.cast._currentSessionId, { phase: 'waiting', reason: 'pause' });
 
     await h.cast.handleInput({ kind: 'answer', answers: ['迟到回答'] });
 
@@ -422,7 +447,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     const warnSpy = vi.spyOn(console, 'warn');
     // 相位：idle（无流、无挂起——resume 无意义）
     h.cast.runtimeFor().streaming = false;
-    h.cast._turnState = { phase: 'idle' };
+    h.cast._turnStates.set(h.cast._currentSessionId, { phase: 'idle' });
 
     await h.cast.handleInput({ kind: 'resume' });
 
@@ -443,7 +468,11 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     h.cast.runtimeFor().streaming = false;
     h.cast.runtimeFor().abortController = undefined;
     h.cast.askFor().clearPending();
-    h.cast._turnState = { phase: 'waiting', reason: 'pause', pausePending: false };
+    h.cast._turnStates.set(h.cast._currentSessionId, {
+      phase: 'waiting',
+      reason: 'pause',
+      pausePending: false,
+    });
 
     await h.cast.handleInput({ kind: 'resume' });
 
@@ -457,7 +486,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     const { interject, answerQuestion, resumeExecution, chat } = mount(h);
     h.cast.runtimeFor().streaming = true;
     h.cast.runtimeFor().abortController = new AbortController();
-    h.cast._turnState = { phase: 'running' };
+    h.cast._turnStates.set(h.cast._currentSessionId, { phase: 'running' });
 
     await h.cast.handleInput({ kind: 'send', text: '   ' });
     await h.cast.handleInput({ kind: 'answer', answers: [] });
@@ -477,7 +506,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     interject.mockResolvedValue('rejected-limit');
     h.cast.runtimeFor().streaming = true;
     h.cast.runtimeFor().abortController = new AbortController();
-    h.cast._turnState = { phase: 'running' };
+    h.cast._turnStates.set(h.cast._currentSessionId, { phase: 'running' });
 
     await h.cast.handleInput({ kind: 'send', text: '第 6 条' });
 
@@ -498,7 +527,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     interject.mockResolvedValue('queued');
     h.cast.runtimeFor().streaming = true;
     h.cast.runtimeFor().abortController = new AbortController();
-    h.cast._turnState = { phase: 'running' };
+    h.cast._turnStates.set(h.cast._currentSessionId, { phase: 'running' });
 
     await h.cast.handleInput({ kind: 'send', text: '第 5 条' });
 
@@ -513,7 +542,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     interject.mockResolvedValue('queued-unpersisted');
     h.cast.runtimeFor().streaming = true;
     h.cast.runtimeFor().abortController = new AbortController();
-    h.cast._turnState = { phase: 'running' };
+    h.cast._turnStates.set(h.cast._currentSessionId, { phase: 'running' });
 
     await h.cast.handleInput({ kind: 'send', text: '补充要求' });
 
@@ -878,7 +907,7 @@ describe('0.9.0 会话级钉住 · 落盘语义', () => {
   it('pin 即时落盘：锁/解锁是动作、动作即写会话元数据（不建轮、不发 chat）', async () => {
     const h = setupInput();
     const { chat } = mount(h);
-    h.cast._turnState = { phase: 'idle' };
+    h.cast._turnStates.set(h.cast._currentSessionId, { phase: 'idle' });
 
     await h.cast.handleInput({
       kind: 'pin',
@@ -914,7 +943,7 @@ describe('0.9.0 会话级钉住 · 落盘语义', () => {
     const { interject } = mount(h);
     h.cast.runtimeFor().streaming = true;
     h.cast.runtimeFor().abortController = new AbortController();
-    h.cast._turnState = { phase: 'running' };
+    h.cast._turnStates.set(h.cast._currentSessionId, { phase: 'running' });
 
     await h.cast.handleInput({
       kind: 'pin',

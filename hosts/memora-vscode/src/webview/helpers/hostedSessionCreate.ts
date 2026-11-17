@@ -36,6 +36,7 @@ export interface HostedSessionCreateDeps {
     rolePackName: string | undefined,
     title: string,
     declaredPaths: readonly string[],
+    mandate?: string,
   ) => Promise<boolean>;
   /** 取已装配实例（建会话链路内已装配；只取不建） */
   getAgent: (sessionId: string) => Promise<Agent>;
@@ -80,6 +81,7 @@ export async function createHostedSessionWith(
   text: string,
   senderName: string,
   declaredPaths: readonly string[],
+  mandate?: string,
 ): Promise<CreateSessionResult> {
   if (!deps.isManaged(callingSessionId)) {
     return {
@@ -100,7 +102,16 @@ export async function createHostedSessionWith(
     }
   }
   const sessionId = deps.nextSessionId();
-  const created = await deps.createBackgroundSession(sessionId, rolePackName, title, declaredPaths);
+  // mandate 是语义边界，declaredPaths 是技术范围；两者随创建同批写入 SessionMeta，
+  // 分别由 workOrder 和 declaredPaths 承载——Worker 会话创建后立即进入 working 态，
+  // 没有 queued 中间态（身份时序边界：三字段同批写入）
+  const created = await deps.createBackgroundSession(
+    sessionId,
+    rolePackName,
+    title,
+    declaredPaths,
+    mandate,
+  );
   if (!created) {
     return {
       ok: false,

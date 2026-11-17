@@ -161,6 +161,50 @@ export interface SessionMeta {
    */
   declaredPaths?: string[];
 
+  // ── 托管开活的状态追踪（2026-11-17 新增 · P1 分层落地） ──
+  /**
+   * 这条活的语义边界（Mandate）：一段话，「要解决什么问题、不解决什么问题」
+   *
+   * 与 declaredPaths 的边界（极易混淆，必须同时钉死）：
+   *   - declaredPaths = 技术范围（动哪些仓库相对路径）
+   *   - workOrder = 语义边界（解决什么问题、不解决什么问题）
+   *   两者不同维度，不可互相替代。Worker 拿到 declaredPaths=['src/agent'] 知道不能动 ui/，
+   *   但不知道「能不能重构 src/agent 的结构」——这是 workOrder 回答的。
+   *
+   * 语义边界：记录不是权限。workOrder 只供 Worker 理解任务 + 未来 Hand back 做边界比对，
+   *      不表达父子关系、不当门禁授权依据。
+   *
+   * 写入方 = 宿主 createSession 时由主控 create_session 工具的 mandate 参数一次性写入，
+   *       **不从父会话继承**（分叉是另一条活，边界要重新声明）。
+   * 读取方 = Worker loop（消费前检查字段存在）+ 宿主事件钩子更新 workStatus 时对比边界。
+   * 缺省 undefined = 旧数据 / 用户自助开的会话（自助会话**永远不写本字段**，读侧如实降级）。
+   */
+  workOrder?: string;
+
+  /**
+   * 托管活的工作状态（枚举字符串，不可自由值）
+   *
+   * 状态值与含义（必须按此枚举，不许发明新值）：
+   *   - 'working'：活正在执行（会话创建后立即进入此态，无 queued 中间态——Worker 会话
+   *                 创建后马上执行，没有「排队中」的实际语义）
+   *   - 'blocked'：活被 ask_user 挂起（Worker 发出决策层提问，等待用户回答）
+   *   - 'completed'：活正常完成（Worker 正常收场）
+   *   - 'failed'：活异常终止（Worker error / aborted）
+   *
+   * 谁写、什么时候写：
+   *   - 'working'  → 宿主 createSession 时**直接写入**（Worker 会话创建后立即执行，
+   *                  没有 queued 中间态）
+   *   - 'blocked'  → 宿主收到 Worker 发射的 questionPending 事件时写入
+   *   - 'completed'/'failed' → 宿主收到 Worker 终态通知时写入
+   *
+   * ⚠️ Worker loop 不直接写本字段：AgentLoop 在 src/agent/loop.ts 与 SessionMeta 零耦合
+   *  （grep 确认），所有更新必须经宿主事件钩子 → 宿主调用 updateSessionMeta。
+   *
+   * 缺省 undefined = 旧数据 / 用户自助开的会话（自助会话**永远不写本字段**，
+   *  工作台消费时判断字段存在才用，否则 fallback 到轮次状态投影）。
+   */
+  workStatus?: 'working' | 'blocked' | 'completed' | 'failed';
+
   // ── 会话级钉住清单 ──
   /**
    * 本会话钉住的引用/技能（钉住 = 加锁后不再「发完即清」，留到本会话结束）

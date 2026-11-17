@@ -28,6 +28,31 @@ export interface StartupSessionClaimResult {
 }
 
 /**
+ * 启动初始会话选择（只读判据，不含取锁）
+ *
+ * 口径：
+ *   1. 首选 = 上次停留会话，可用即采用；
+ *   2. 首选若是**助手会话** ⇒ 不采信，退回会话清单里最近一条工作会话；
+ *   3. 没有工作会话 ⇒ 空串（面板据此进空白页）。
+ *
+ * 为什么助手会话不能当侧栏初始会话：它是助手窗的专属记录，不是工作会话导航目标
+ * （2026-11-17 用户定案；真机上表现为「重启后侧栏停在助手会话」）。
+ *
+ * @param initial 上次停留会话（`getInitialSessionId()` 结果）
+ * @param metas   会话清单（按最近写入序；取首条非助手会话作退路）
+ * @param assistantSessionId 助手会话 id（undefined = 尚无助手会话）
+ * @returns 侧栏启动应停留的会话 id（空串 = 无工作会话）
+ */
+export function resolveStartupSessionId(
+  initial: string,
+  metas: readonly { sessionId: string }[],
+  assistantSessionId: string | undefined,
+): string {
+  if (initial && initial !== assistantSessionId) return initial;
+  return metas.find((m) => m.sessionId !== assistantSessionId)?.sessionId ?? '';
+}
+
+/**
  * 裁决启动会话归属
  *
  * @param preferred 首选会话（`getInitialSessionId()` 的结果；空串 = 从未有过会话）

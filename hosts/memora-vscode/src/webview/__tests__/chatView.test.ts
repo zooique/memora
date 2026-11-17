@@ -2399,7 +2399,9 @@ describe('UI-TOAST-1 瞬态提示浮层化（活动条出流 · 不挤占消息�
     // 显隐走 CSS 不走 hidden 属性（首帧即正确形态不闪）；助手形态下会话标题条
     //（会话名称/改名笔/新建/历史）整条隐藏。两条规则缺一即回退。
     expect(css).toMatch(/\.assistant-mode-bar \{\s*display:\s*none;/);
-    expect(css).toMatch(/body\[data-form='assistant'\] \.session-title-bar \{\s*display:\s*none;\s*\}/);
+    expect(css).toMatch(
+      /body\[data-form='assistant'\] \.session-title-bar \{\s*display:\s*none;\s*\}/,
+    );
   });
 
   it('CSS 源码守卫：托管卡底色走卡片主题面 + 左缘强调条，聚焦换三边描边色', () => {
@@ -14010,26 +14012,6 @@ describe('草稿页 = 角色显示内核兜底包，其余四项会话级投影�
     expect(el.planBar.hidden).toBe(true);
     // 占用环复位而非被隐藏：草稿页仍有「当前模型容量」可展示，空环才是空态（隐藏会丢容量事实）
     expect((document.getElementById('contextOccupancy') as HTMLElement).hidden).toBe(false);
-  });
-
-  it('草稿默认托管：空态页出现切回提示；self / 真实会话一律清除', () => {
-    mountChatView();
-    dispatch({ type: 'clear_ok' });
-    dispatch({ type: 'session_title', title: '新会话', draft: true, defaultMode: 'managed' });
-
-    const hint = document.querySelector('.empty-mode-hint');
-    expect(hint).not.toBeNull();
-    // 单点陈述：空态只说切回路径（模式是什么由输入区上方的状态签承担）
-    expect(hint?.textContent).toContain('chat on your own again');
-    expect(hint?.textContent).not.toContain('assistant work for you');
-
-    // 自助草稿：不打扰
-    dispatch({ type: 'session_title', title: '新会话', draft: true });
-    expect(document.querySelector('.empty-mode-hint')).toBeNull();
-
-    // 真实会话即使误带 defaultMode 也不显示（只认 draft）
-    dispatch({ type: 'session_title', title: '旧会话', draft: false, defaultMode: 'managed' });
-    expect(document.querySelector('.empty-mode-hint')).toBeNull();
   });
 });
 

@@ -1,10 +1,9 @@
 /**
- * 「打开托管页」命令（侧栏标题栏按钮 + 命令面板共用一条入口）
+ * 「打开助手窗」命令（侧栏标题栏按钮 + 命令面板共用一条入口）
  *
- * 托管页是**当前会话的 assistant 取景**（HOSTED-UI-SEAT-DECOUPLE-1）：微信式气泡对话前端，
- * 输入汇入侧栏同一台状态机。因此本命令不需要选座、不新建会话——它只是把「当前这条会话」
- * 在编辑器区再开一个取景视图。若当前在草稿态（无会话），打开后首次发送会按既有建会话链
- * 落会话，两视图一起回放，无需本命令介入。
+ * 助手唯一、入口唯一（HOSTED-SEAT-SESSION-1）：本命令只开窗，不看侧栏当前会话、不选座、
+ * 不新建会话。窗口固定绑定**助手会话**（工作区指针）；首次打开无助手会话时是空态，
+ * 用户第一次发送才建会话并写指针（见 chatPanel `handleHostedInput`）。
  */
 import * as vscode from 'vscode';
 import type { MemoraHostedPanel } from '../../webview/panels/hostedPanel.js';

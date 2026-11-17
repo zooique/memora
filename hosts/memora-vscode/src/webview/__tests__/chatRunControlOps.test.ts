@@ -107,7 +107,7 @@ describe('handleStop — 指定会话', () => {
   it('后台会话已暂停：走 abandon 收场，并通知**被停的**会话创建者', async () => {
     const abandon = vi.fn(async () => true);
     const { ops, calls } = makeOps({
-      askFor: () => ({ pendingQuestions: () => [{ id: 'q1' }], abandonOnStop: abandon }),
+      askFor: () => ({ pendingQuestions: () => [], abandonOnStop: abandon }),
       getAgent: (sessionId) =>
         sessionId === BACKGROUND ? fakeAgent('paused', 'round-9', ['排队的话']) : undefined,
     });
@@ -116,10 +116,14 @@ describe('handleStop — 指定会话', () => {
     expect(abandon).toHaveBeenCalledTimes(1);
     // 通知必须带后台会话 id（不是 CURRENT）
     expect(calls.stopped).toHaveBeenCalledWith(expect.anything(), 'round-9', BACKGROUND);
-    // 后台停止仍不产生界面副作用
-    expect(calls.post).not.toHaveBeenCalled();
+    // 后台停止的界面副作用按**目标会话**投递（有视图绑它才到屏；单份长度缓存仍不动）
+    expect(calls.post).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'notice' }),
+      BACKGROUND,
+    );
     expect(calls.sync).not.toHaveBeenCalled();
-    expect(calls.discarded).not.toHaveBeenCalled();
+    expect(calls.discarded).toHaveBeenCalledWith(['排队的话'], BACKGROUND);
+    expect(calls.turnUpdate).toHaveBeenCalledWith(BACKGROUND);
   });
 
   it('当前显示会话暂停：界面副作用照旧发生（状态 / 队列 / 丢弃信号）', async () => {
@@ -129,9 +133,9 @@ describe('handleStop — 指定会话', () => {
     });
     const stopped = await ops.handleStop();
     expect(stopped).toBe(true);
-    expect(calls.post).toHaveBeenCalledWith({ type: 'status', state: 'done' });
+    expect(calls.post).toHaveBeenCalledWith({ type: 'status', state: 'done' }, CURRENT);
     expect(calls.sync).toHaveBeenCalledWith(true);
-    expect(calls.discarded).toHaveBeenCalledWith(['排队的话']);
+    expect(calls.discarded).toHaveBeenCalledWith(['排队的话'], CURRENT);
     expect(calls.stopped).toHaveBeenCalledWith(expect.anything(), 'round-2', CURRENT);
   });
 

@@ -5,14 +5,14 @@
  * 有输入框、能发图、显示气泡回答、顶部状态签。它对应**助手自己那条会话**（你和助手的对话
  * 线），与侧栏正在看的工作会话是两条；助手据此派活到那些工作会话。
  *
- * ⚠️ 现行实现与上述形态不符（台账 HOSTED-SEAT-SESSION-1，勿当设计读）：本页注册进广播器
- * 后收到的仍是 chatPanel 按 `_currentSessionId` 产生的消息，因此在侧栏切工作会话时，本页会
- * 跟着显示那条会话。要修好须拆出「每视图绑定会话 + 会话级消息按目标投递 + 流态按会话分片」。
+ * ⚠️ 绑定纪律（HOSTED-SEAT-SESSION-1）：本页注册时绑定**助手会话**（工作区指针）且声明
+ * `bubbleOnly`——宿主按目标会话路由，本页只收该会话的气泡级消息。侧栏切工作会话不影响本页；
+ * 在侧栏打开助手会话时，两页同屏（侧栏完整过程、本页气泡取景）。
  *
  * 为什么不是「另一套 UI」：本页与侧栏挂**同一个** `chatView.js` + 同一份 `buildHtml` 骨架，
  * 唯一差异是挂载常量 `body[data-form='assistant']`（样式层已就位）。上行消息经
  * `chatProvider.routeHostedMessage` 汇入**同一个**会话状态机；宿主广播经注册进同一广播器
- * 同时投给两页。因此没有第二份渲染核心、第二份会话状态、第二份授权/确认真源。
+ * 按会话投给两页。因此没有第二份渲染核心、第二份会话状态、第二份授权/确认真源。
  *
  * 生命周期照 `workbenchPanel`：单例容器，重复 open 只 reveal；不设 retainContextWhenHidden
  * （隐藏即销毁 webview 上下文，reveal 后脚本重发 ready，由 chatProvider 回放整份会话）。
@@ -63,8 +63,11 @@ export class MemoraHostedPanel {
     );
     this._panel = panel;
 
-    // 挂到对话广播器：宿主消息从此扇出到本页（与侧栏同一状态机）
-    this._unregister = this._chatProvider.registerAdditionalView(panel.webview);
+    // 挂到对话广播器：绑定助手会话（指针，现场读取）+ 只收气泡级消息
+    this._unregister = this._chatProvider.registerAdditionalView(panel.webview, {
+      sessionId: () => this._chatProvider.getAssistantSessionId(),
+      bubbleOnly: true,
+    });
 
     const scriptUri = panel.webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview', 'scripts', 'chatView.js'),

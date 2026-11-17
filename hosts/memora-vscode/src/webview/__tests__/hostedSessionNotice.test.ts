@@ -12,6 +12,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Agent, ProcessEvent, Round, RoundStatus, SessionMeta } from '@zooique/memora';
 import { HostedSessionNotifier } from '../helpers/hostedSessionNotice.js';
+import { SessionModeStore } from '../../extension/host/sessionModeStore.js';
 
 const TS = '2026-11-14T10:00:00.000Z';
 /** 创建者会话 id */
@@ -404,5 +405,56 @@ describe('HostedSessionNotifier', () => {
     expect(h.creatorQueue.mock.calls[0][0] as string).toContain('抓取任务');
     expect(h.wakeCreator).toHaveBeenCalledTimes(1);
     expect(h.notifier.pendingReportCount(CREATOR)).toBe(0);
+  });
+});
+
+describe('HostedSessionNotifier · 助手身份跨重启（HOSTED-IDENTITY-PERSIST-1）', () => {
+  /** 最小 Memento：update 同步生效，供「同一持久层换容器实例」模拟重启 */
+  function makeMemento() {
+    const data = new Map<string, unknown>();
+    return {
+      get: <T>(key: string): T | undefined => data.get(key) as T | undefined,
+      update: async (key: string, value: unknown): Promise<void> => {
+        data.set(key, value);
+      },
+    };
+  }
+
+  it('重启后创建者身份读持久指针 ⇒ 子会话落定通知不丢弃（入待办并放出）', () => {
+    const memento = makeMemento();
+    // 上一个进程：把 CREATOR 设成助手会话（写工作区指针）
+    new SessionModeStore(memento as never).set(CREATOR, 'managed');
+
+    // 「重启」：新容器实例读同一份持久层；通知器的 isManaged 只读它（不读模式标签表）
+    const modes = new SessionModeStore(memento as never);
+    const metas = new Map<string, SessionMeta>([[CHILD, meta(CHILD, 'hosted', '抓取任务')]]);
+    const rounds = new Map<string, Round>([['r-restart', round('r-restart', 'complete', [])]]);
+    const creatorQueue = vi.fn();
+    // 创建者忙（用户正在输入）⇒ 压待办；空闲后 flushPending 放出
+    let canWake = false;
+    const notifier = new HostedSessionNotifier({
+      readSessionMeta: (sid) => metas.get(sid),
+      isManaged: (sid) => modes.isManaged(sid),
+      isAgentDriven: (sid) => sid === CHILD,
+      getAgent: (sid) =>
+        sid === CREATOR
+          ? ({ agentLoop: { enqueueCommandResult: creatorQueue } } as unknown as Agent)
+          : undefined,
+      readRound: (roundId) => rounds.get(roundId),
+      canWakeCreator: () => canWake,
+      wakeCreator: () => true,
+    });
+    notifier.remember(CHILD, CREATOR);
+
+    // 身份为真 ⇒ 受理（去重键记下、事实进待办）；不是「resolveTarget 返回 undefined ⇒ 直接丢」
+    expect(notifier.noteSettledFlow(CHILD, 'r-restart', false, false)).toBe(true);
+    expect(creatorQueue).not.toHaveBeenCalled();
+    expect(notifier.pendingReportCount(CREATOR)).toBe(1);
+
+    // 实例空闲后放出：事实没丢
+    canWake = true;
+    notifier.flushPending(CREATOR);
+    expect(creatorQueue).toHaveBeenCalledTimes(1);
+    expect(notifier.pendingReportCount(CREATOR)).toBe(0);
   });
 });

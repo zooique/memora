@@ -6,6 +6,9 @@
  *
  * 口径（与 `shared/protocol.ts` 的 `session_list_data` 注释同源）：
  *   - 只返回非当前会话（当前会话不进历史记录 ⇒ 天然规避「删除当前会话」边界）；
+ *   - **助手会话不进工作会话列表**（2026-11-17 用户定案）：助手窗有自己那一条会话与
+ *     独立记录，但它不是「工作会话」；混进列表会被误读成「助手拿工作会话回话」。
+ *     真源仍是会话存储，这里只是列表投影的排除项，不删数据；
  *   - 按 updatedAt 降序；无历史时 sessions 为空数组（webview 显示空态）；
  *   - sessions 是**全量**，archivedIds 只是留存区分组标签（单数据源 + 前端过滤，
  *     不拆两份列表——两份真相源必然出现「两边都有 / 两边都没有」）；
@@ -17,8 +20,10 @@ import {
   isRoundSuccessful,
   type SessionMeta,
   type RoundStatus,
+  type IRoundStore,
 } from '@zooique/memora';
 import { sessionDisplayTitle, type SessionTitleL10n } from '../../extension/host/sessionTitle.js';
+import { hasRoundStatusIndex } from '../../extension/host/workspaceRoundStore.js';
 import type { HostSessionStore } from '../../extension/host/sessionStore.js';
 import { readSessionRolePackName } from '../../extension/host/sessionRolePack.js';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
@@ -34,6 +39,8 @@ type SessionListMessage = Extract<ExtensionToWebviewMessage, { type: 'session_li
  * @param l10n 本地化注入面（占位标题词形；SSOT-OWNERSHIP-1：归宿主，不取内核表）
  * @param readLastRoundStatus 轮状态读取口（可选；缺省 = 不投影 `lastOutcome`）。
  *   由调用方做结构化能力探测后注入——本模块不直接依赖 RoundStore 实现。
+ * @param assistantSessionId 助手会话 id（可选；给了就从列表排除——助手窗自己的那条
+ *   属于助手专属记录，不进工作会话列表）
  * @returns 可直接 postMessage 的 `session_list_data` 载荷
  */
 export function buildSessionListMessage(
@@ -41,17 +48,61 @@ export function buildSessionListMessage(
   currentSessionId: string,
   l10n: SessionTitleL10n,
   readLastRoundStatus?: (roundId: string) => RoundStatus | undefined,
+  assistantSessionId?: string,
 ): SessionListMessage {
   // 非当前会话，按更新时间降序（当前会话不进历史记录是设计收敛，不是过滤失误）
   const metas = store
     .listSessionMetas()
-    .filter((m) => m.sessionId !== currentSessionId)
+    .filter((m) => m.sessionId !== currentSessionId && m.sessionId !== assistantSessionId)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return {
     type: 'session_list_data',
     sessions: metas.map((meta) => toSessionSummary(store, meta, l10n, readLastRoundStatus)),
     archivedIds: store.listArchivedIds(),
   };
+}
+
+/**
+ * 列表推送的注入面（面板只给读口与投递口，不在此持有导航状态）
+ */
+export interface SessionListPushDeps {
+  /** 会话存储 */
+  store: HostSessionStore;
+  /** 当前显示会话（从列表中排除） */
+  currentSessionId: string;
+  /** 本地化注入面 */
+  l10n: SessionTitleL10n;
+  /** 轮存储（可选）：支持状态索引时投影 `lastOutcome` */
+  roundStore?: IRoundStore;
+  /** 助手会话 id（可选；给了就从列表排除） */
+  assistantSessionId?: string;
+  /** 投递口（面板的 post 单点） */
+  post: (msg: SessionListMessage) => void;
+}
+
+/**
+ * 构建并推送历史会话列表（对 `session_list` 的应答）
+ *
+ * 终态投影只需要「末位轮什么状态」⇒ 用 RoundStore 索引直读，不加载整轮正文；
+ * 能力探测失败就退化为不投影 `lastOutcome`（列表本身不受影响）。
+ *
+ * @param deps 读口 + 投递口
+ */
+export function postSessionList(deps: SessionListPushDeps): void {
+  const { roundStore } = deps;
+  const readLastRoundStatus =
+    roundStore && hasRoundStatusIndex(roundStore)
+      ? (roundId: string) => roundStore.getStatus(roundId)
+      : undefined;
+  deps.post(
+    buildSessionListMessage(
+      deps.store,
+      deps.currentSessionId,
+      deps.l10n,
+      readLastRoundStatus,
+      deps.assistantSessionId,
+    ),
+  );
 }
 
 /**

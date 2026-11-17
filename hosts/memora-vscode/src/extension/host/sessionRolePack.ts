@@ -24,6 +24,37 @@ export interface SessionMetaReader {
   getSessionMeta(sessionId: string): SessionMeta | undefined;
 }
 
+/** 会话元数据写入的最小面（仅元数据矫正用，不把整只 store 拖进判据模块） */
+export interface SessionMetaWriter extends SessionMetaReader {
+  updateSessionMeta(sessionId: string, meta: Partial<SessionMeta>): void;
+}
+
+/**
+ * 矫正助手会话的角色包（旧数据迁移；幂等）
+ *
+ * 助手会话的身份由「它是不是助手会话」决定，**不由**用户级「新建会话默认角色包」决定：
+ * 旧版建出来的助手会话会落着工作包（真机 2026-11-17 助手自称「小说创作助手」）。
+ * 装配前把名字改回内置助手包，避免「身份判据」在装配链与建档链各存一份。
+ *
+ * @param store 会话存储（读 / 写 meta）
+ * @param sessionId 目标会话
+ * @param assistantSessionId 助手会话 id（undefined / 不相等 ⇒ 不是助手会话，不动）
+ * @param packName 助手固定包名（= 内置助手包）
+ * @returns 是否发生了矫正（调用方据此决定是否刷新显示）
+ */
+export function ensureAssistantRolePack(
+  store: SessionMetaWriter,
+  sessionId: string,
+  assistantSessionId: string | undefined,
+  packName: string,
+): boolean {
+  if (!assistantSessionId || sessionId !== assistantSessionId) return false;
+  const meta = store.getSessionMeta(sessionId);
+  if (!meta || normalizeRolePackName(meta.activeRolePackName) === packName) return false;
+  store.updateSessionMeta(sessionId, { activeRolePackName: packName });
+  return true;
+}
+
 /**
  * 读回某会话记录的角色包名
  *

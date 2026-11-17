@@ -1,15 +1,12 @@
 /**
- * emptyStateView · 草稿默认模式提示 + 助手形态空态口径
+ * emptyStateView · 助手形态空态口径
  *
- * 钉三条边界（草稿提示），而不是「元素能创建」：
- * ① 仅 `'managed'` 渲染，文案必须说明「可切回自助」；
- * ② `'self'` / undefined 移除元素（普通用户不受打扰，且切会话不残留）；
- * ③ 重复投影幂等（进入 / 重建 / 建会话失败回滚共用同一次 setDefaultMode）。
- *
- * 另钉助手形态三条（ASSISTANT-FORM，2026-11-16 泄漏修复）：
+ * 钉三条边界（ASSISTANT-FORM，2026-11-16 泄漏修复）：
  * ④ 角色化空态（「开始与 XX 对话」+ 角色 chips）是自助会话语义，助手座位不渲染；
  * ⑤ 未配置模型的 onboarding 引导是功能引导，助手座位保留（唯一例外）；
- * ⑥ 托管草稿提示在助手座位一律清除（助手座位没有「托管草稿」语义）。
+ * ⑥ 自助形态不受影响（回归对照）。
+ *
+ * 注：草稿默认模式提示随「新建会话不再选运行模式」（2026-11-17 入口收口）一并退役。
  */
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -38,48 +35,6 @@ function setup(form: UiForm | (() => UiForm) = 'self'): ReturnType<typeof create
     getForm: typeof form === 'function' ? form : () => form,
   });
 }
-
-describe('emptyStateView · 草稿默认模式提示', () => {
-  beforeEach(() => {
-    document.body.innerHTML = '';
-  });
-
-  it('托管：只给「怎么切回自助」一行，不再复述模式是什么', () => {
-    const view = setup();
-    view.setDefaultMode('managed');
-
-    const hints = document.querySelectorAll('.empty-mode-hint');
-    expect(hints).toHaveLength(1);
-    // 单点陈述：空态只说切回路径（模式是什么由输入区上方的状态签承担）
-    expect(hints[0]?.textContent).toContain('chat on your own again');
-    expect(hints[0]?.textContent).toContain('Back to Chatting Myself');
-    expect(hints[0]?.textContent).not.toContain('assistant work for you');
-    expect(hints[0]?.textContent).not.toContain('sent by the assistant');
-    // 位置：紧跟在 emptyHint 之后（复用现有空态结构，不新增浮层）
-    const hintEl = document.getElementById('emptyHint');
-    expect(hintEl?.nextElementSibling?.classList.contains('empty-mode-hint')).toBe(true);
-  });
-
-  it('self / undefined：不渲染并清掉已有提示', () => {
-    const view = setup();
-    view.setDefaultMode('managed');
-    expect(document.querySelector('.empty-mode-hint')).not.toBeNull();
-
-    view.setDefaultMode('self');
-    expect(document.querySelector('.empty-mode-hint')).toBeNull();
-
-    view.setDefaultMode('managed');
-    view.setDefaultMode(undefined);
-    expect(document.querySelector('.empty-mode-hint')).toBeNull();
-  });
-
-  it('重复投影幂等：连续两次 managed 不叠加', () => {
-    const view = setup();
-    view.setDefaultMode('managed');
-    view.setDefaultMode('managed');
-    expect(document.querySelectorAll('.empty-mode-hint')).toHaveLength(1);
-  });
-});
 
 describe('emptyStateView · 助手形态空态口径（ASSISTANT-FORM）', () => {
   beforeEach(() => {
@@ -113,20 +68,6 @@ describe('emptyStateView · 助手形态空态口径（ASSISTANT-FORM）', () =>
     expect(document.getElementById('emptyState')?.hidden).toBe(false);
   });
 
-  it('⑥ 托管草稿提示在助手座位一律清除（含自助投影后切助手）', () => {
-    const view = setup('assistant');
-    view.setDefaultMode('managed');
-    expect(document.querySelector('.empty-mode-hint')).toBeNull();
-    // 同一次 mount 内跨形态：自助投影出提示 → 切助手 → 再投影调用即清除（动态裁决）
-    let form: UiForm = 'self';
-    const switchable = setup(() => form);
-    switchable.setDefaultMode('managed');
-    expect(document.querySelector('.empty-mode-hint')).not.toBeNull();
-    form = 'assistant';
-    switchable.setDefaultMode(undefined);
-    expect(document.querySelector('.empty-mode-hint')).toBeNull();
-  });
-
   it('自助形态不受影响：角色化空态照常渲染（回归对照）', () => {
     const view = setup('self');
     view.updateRole('共鸣小说家', [{ displayName: '共鸣小说家' }]);
@@ -135,8 +76,5 @@ describe('emptyStateView · 助手形态空态口径（ASSISTANT-FORM）', () =>
     // 显隐只归 update() 管（updateRole 是纯文案域，历史语义不变）
     view.update();
     expect(document.getElementById('emptyState')?.hidden).toBe(false);
-    // 自助形态下托管草稿提示照常投影（助手形态的限制不外溢）
-    view.setDefaultMode('managed');
-    expect(document.querySelector('.empty-mode-hint')).not.toBeNull();
   });
 });

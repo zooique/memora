@@ -378,6 +378,7 @@ export type HostedSessionCreator = (
   text: string,
   senderName: string,
   declaredPaths: readonly string[],
+  mandate?: string,
 ) => Promise<CreateSessionResult>;
 
 /**
@@ -683,6 +684,8 @@ const CREATE_SESSION_DEFINITION: ToolDefinition = {
     'paths **必填**：声明这条活打算动的文件或目录（相对工作区根；传 ["."] 表示整个工作区，' +
     '等于自愿独占）。与当前在跑的活的声明范围有交集时返回 E_SCOPE_CONFLICT，' +
     '并告诉你撞上哪条活、撞在哪，你可决定等它收场或缩小 paths。' +
+    'mandate（可选）= 这条活的语义边界（要解决什么问题、不解决什么问题，≤200字），用于约束 Worker 的工作范围。' +
+    '与 text 的区别：text 是交给 Worker 的第一轮具体指令，mandate 是更高层的整体边界。' +
     '返回新会话的 sid 与 title；角色包不存在或不可用时返回 E_ROLE_PACK。',
   parameters: {
     type: 'object',
@@ -700,6 +703,14 @@ const CREATE_SESSION_DEFINITION: ToolDefinition = {
         description:
           '这条活打算动的文件或目录（相对工作区根，如 ["src/agent", "docs/a.md"]）；' +
           '传 ["."] 表示整个工作区（自愿独占）。必填，不能为空。',
+      },
+      mandate: {
+        type: 'string',
+        description:
+          '这条活的语义边界（要解决什么问题、不解决什么问题），≤200字。可选。' +
+          '与 text 的区别：text 是交给 Worker 的第一轮具体指令（如"写一个 PermissionManager 类"），' +
+          'mandate 是这条活的整体边界（如"解决用户权限校验绕过问题，不做权限系统重构"）。' +
+          'Worker 会同时拿到两者，mandate 约束它的工作范围，text 给它起步方向。',
       },
     },
     required: ['rolePack', 'title', 'text', 'paths'],
@@ -893,12 +904,13 @@ function parseSidOnlyArgs(args: Record<string, unknown>): { sid: string } | unde
  */
 function parseCreateArgs(
   args: Record<string, unknown>,
-): { rolePack: string; title: string; text: string; paths: string[] } | undefined {
+):
+  { rolePack: string; title: string; text: string; paths: string[]; mandate?: string } | undefined {
   const keys = Object.keys(args);
-  // 键集只允许这四键；多一个未知键就拒（不忽略、不透传）
-  const allowed = new Set(['rolePack', 'title', 'text', 'paths']);
+  // 键集只允许这五键；多一个未知键就拒（不忽略、不透传）
+  const allowed = new Set(['rolePack', 'title', 'text', 'paths', 'mandate']);
   if (keys.some((key) => !allowed.has(key))) return undefined;
-  const { rolePack, title, text, paths } = args;
+  const { rolePack, title, text, paths, mandate } = args;
   if (typeof title !== 'string' || typeof text !== 'string') return undefined;
   if (title.trim() === '' || text.trim() === '') return undefined;
   // rolePack 必填：代理侧没有「切换角色包」能力，开活前必须定包；省了/空串一律拒。
@@ -908,7 +920,20 @@ function parseCreateArgs(
   if (!Array.isArray(paths) || paths.length === 0) return undefined;
   if (paths.some((item) => typeof item !== 'string' || item.trim() === '')) return undefined;
   const normalizedPaths = paths as string[];
-  return { rolePack, title, text, paths: normalizedPaths };
+  // mandate 可选：语义边界，不强制；有值时校验是字符串且 ≤200 字
+  const normalizedMandate =
+    mandate !== undefined && mandate !== null
+      ? typeof mandate === 'string' && mandate.trim() !== '' && mandate.length <= 200
+        ? mandate.trim()
+        : undefined
+      : undefined;
+  return {
+    rolePack,
+    title,
+    text,
+    paths: normalizedPaths,
+    ...(normalizedMandate ? { mandate: normalizedMandate } : {}),
+  };
 }
 
 /**
@@ -1193,6 +1218,8 @@ export function registerWorkSessionTools(
             deps.senderName,
             // 范围随创建写进会话元数据（标题同一批）：后续同轮 / 重启后都直接读，不再反推历史
             requested,
+            // 语义边界（可选）：mandate 约束 Worker 的工作范围，不写技术方向
+            parsed.mandate,
           );
           if (result.ok) {
             // 回执必带「这次核清了多少」：核不清时这句随结果给模型看，

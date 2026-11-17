@@ -80,3 +80,37 @@ export function runSessionActivityPush(input: SessionActivityPushInput): string 
   if (input.force || serialized !== input.lastSerialized) input.post(snapshot);
   return serialized;
 }
+
+/** 面板侧活跃度推送的注入面（遍历面来源 + 排除项；判据与去重仍归 runSessionActivityPush） */
+export interface PanelSessionActivityDeps extends Omit<SessionActivityPushInput, 'sessionIds'> {
+  /** 已装配实例的会话（遍历面来源之一） */
+  agentSessionIds: Iterable<string>;
+  /** 已建 ask 协调器的会话（遍历面来源之一） */
+  askSessionIds: Iterable<string>;
+  /** 不参与活跃度的会话（助手会话：它不在工作会话列表里，角标不能指向不存在的行） */
+  excludeSessionIds?: Iterable<string | undefined>;
+}
+
+/**
+ * 面板活跃度推送：把「当前会话 + 已装配实例 + 已建 ask 协调器」并成遍历面后交给唯一判据
+ *
+ * 排除项在这里统一剔除（含 undefined 的助手会话 id），面板不再各写一份 filter——
+ * 遍历面的拼装口径与判据同处一模块，避免「加了来源忘了排除」的漂移。
+ *
+ * @param deps 遍历面来源 + 排除项 + 判据闭包 + 投递口
+ * @returns 本次的序列化快照（调用方存回去下次比较）
+ */
+export function pushPanelSessionActivity(deps: PanelSessionActivityDeps): string {
+  const excludes = new Set(Array.from(deps.excludeSessionIds ?? []).filter(Boolean));
+  return runSessionActivityPush({
+    sessionIds: [deps.currentSessionId, ...deps.agentSessionIds, ...deps.askSessionIds].filter(
+      (id) => Boolean(id) && !excludes.has(id),
+    ),
+    currentSessionId: deps.currentSessionId,
+    isStreaming: deps.isStreaming,
+    isWaiting: deps.isWaiting,
+    lastSerialized: deps.lastSerialized,
+    force: deps.force,
+    post: deps.post,
+  });
+}

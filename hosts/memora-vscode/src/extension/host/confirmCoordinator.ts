@@ -58,8 +58,8 @@ export interface ConfirmDeps {
    * 快照会让重新绑定时绑到**旧** agent 的 security 守卫上 ⇒ 确认回调失活（静默）。
    */
   getAgent: () => Agent | undefined;
-  /** 消息投递单点（chatPanel 既有 `this.post`） */
-  post: (msg: ExtensionToWebviewMessage) => void;
+  /** 消息投递单点（chatPanel 既有 `this.post`；带 `sessionId` 时按该会话路由到绑定它的视图） */
+  post: (msg: ExtensionToWebviewMessage, sessionId?: string) => void;
   /**
    * 确认请求进入「等待用户处理」之后的钩子（交互提醒，HOST-ATTN-1）
    *
@@ -183,8 +183,16 @@ interface SessionConfirmState {
 export class ConfirmCoordinator {
   /** 会话 → 该会话的确认队列（懒建；键 = 会话 id） */
   private readonly _sessions = new Map<string, SessionConfirmState>();
-  /** 当前显示会话（唯一允许上屏的会话；初值 '' 服务直接驱动协调器的测试） */
+  /** 侧栏当前显示会话（上屏许可之一；另一可见会话见 `_additionalForeground`；初值 '' 服务直接驱动协调器的测试） */
   private _foreground = '';
+  /**
+   * 第二个「可见会话」（HOSTED-SEAT-SESSION-1）：助手窗绑定的助手会话
+   *
+   * 单一真源不变——卡仍由本协调器排队、仍只有一个 `answerFor` 应答入口；本字段只扩
+   * 「另一个视图正在看它」的可见性判据：该会话的卡也能上屏、也能被点（不重复推送，
+   * 上屏点仍只有 `_show` 一处）。
+   */
+  private _additionalForeground = '';
 
   constructor(private readonly _deps: ConfirmDeps) {}
 
@@ -241,16 +249,17 @@ export class ConfirmCoordinator {
     if (this._foreground === sessionId) return;
     const previous = this._foreground;
     this._foreground = sessionId;
-    // 离开旧会话：先收卡（不终结请求——回来还能答；计时器继续走，属已上屏请求的既定语义）
+    // 离开旧会话：先收卡（不终结请求——回来还能答；计时器继续走，属已上屏请求的既定语义）。
+    // 但旧会话若仍被另一个视图绑定（助手窗），卡不能收——它还在用户眼前。
     const old = this._sessions.get(previous);
-    if (old?.current?.presented) {
+    if (old?.current?.presented && !this._isVisible(previous)) {
       old.current.presented = false;
-      this._deps.post({ type: 'write_confirm_closed', requestId: old.current.requestId });
+      this._deps.post({ type: 'write_confirm_closed', requestId: old.current.requestId }, previous);
     }
     // 进入新会话：有在途未上屏卡 ⇒ 补推；否则泵队首
     const next = this._sessions.get(sessionId);
     if (next?.current && !next.current.presented) {
-      this._show(next.current);
+      this._show(sessionId, next.current);
     } else if (!next?.current) {
       this._pump(sessionId);
     }
@@ -260,6 +269,43 @@ export class ConfirmCoordinator {
     // 授权流补推（HOSTED-CONFIRM-AUTH-1）：切入的是托管座位且无在途卡 ⇒ 推暂存队首。
     // 授权卡与确认卡共此时机但条目独立（authFlow 自判座位归属）。
     this._deps.authFlow?.flushForSeat(sessionId);
+  }
+
+  /**
+   * 第二个可见会话的绑定（助手窗开 / 关时由面板调，HOSTED-SEAT-SESSION-1）
+   *
+   * 语义只有一条：**这条会话的卡也能上屏、也能被点**。排队 / 上屏点 / 应答入口都不新增第二份。
+   *
+   * @param sessionId 助手窗绑定的会话；undefined = 助手窗已关（收回可见性）
+   */
+  setAdditionalForeground(sessionId: string | undefined): void {
+    const next = sessionId ?? '';
+    if (this._additionalForeground === next) return;
+    const previous = this._additionalForeground;
+    this._additionalForeground = next;
+    // 助手窗关闭：它上面那张卡随视图消失 ⇒ 标未上屏（下次 ready 由 repostFor 补推）。
+    // 不收 write_confirm_closed：视图已销毁，投递无人接收，且侧栏仍需保留它自己的卡。
+    if (previous && previous !== this._foreground) {
+      const old = this._sessions.get(previous);
+      if (old?.current?.presented) old.current.presented = false;
+    }
+    if (!next || next === this._foreground) return;
+    // 助手会话可见：在途未上屏卡补推；否则泵队首；后台期决策记录补进它自己的时间线
+    const state = this._sessions.get(next);
+    if (state?.current && !state.current.presented) {
+      this._show(next, state.current);
+    } else if (!state?.current) {
+      this._pump(next);
+    }
+    this._flushPendingDecisions(next);
+  }
+
+  /** 某会话此刻是否有视图在显示（侧栏当前会话，或助手窗绑定的会话） */
+  private _isVisible(sessionId: string): boolean {
+    return (
+      sessionId === this._foreground ||
+      (this._additionalForeground !== '' && sessionId === this._additionalForeground)
+    );
   }
 
   /**
@@ -275,7 +321,8 @@ export class ConfirmCoordinator {
     if (!state || state.pendingDecisions.length === 0) return;
     const notices = state.pendingDecisions;
     state.pendingDecisions = [];
-    for (const notice of notices) this._deps.post(notice);
+    // 决策记录按会话投递：侧栏看这条会话时进侧栏，助手窗绑它时进助手窗
+    for (const notice of notices) this._deps.post(notice, sessionId);
   }
 
   /**
@@ -284,10 +331,21 @@ export class ConfirmCoordinator {
    * 视图重建不会终结请求，但新 webview 里没有旧卡 ⇒ 不重推就会「卡凭空消失、用户无从作答」。
    */
   repostForeground(): void {
-    const state = this._sessions.get(this._foreground);
-    if (state?.current) this._show(state.current);
+    this.repostFor(this._foreground);
+  }
+
+  /**
+   * 重推**指定会话**的在途审批卡（助手窗 ready / 助手会话建立后调用）
+   *
+   * 与 `repostForeground` 同一上屏点（`_show`），只是会话可寻址——不新增第二份推卡实现。
+   *
+   * @param sessionId 目标会话
+   */
+  repostFor(sessionId: string): void {
+    const state = this._sessions.get(sessionId);
+    if (state?.current) this._show(sessionId, state.current);
     // 授权卡补推（HOSTED-CONFIRM-AUTH-1）：有在途请求重推、无在途且暂存非空 ⇒ 推队首
-    this._deps.authFlow?.repostForSeat(this._foreground);
+    this._deps.authFlow?.repostForSeat(sessionId);
   }
 
   /**
@@ -304,8 +362,9 @@ export class ConfirmCoordinator {
   /**
    * 入队（同一会话 FIFO 串行）
    *
-   * 只有**当前显示会话**才立即尝试送审；后台会话只入队（标识由 `pendingCount` 亮起），
-   * 等 `setForeground` 切过去再上屏——这是「卡不跨会话串台」的唯一实现点。
+   * 只有**有视图在显示的会话**才立即尝试送审（侧栏当前会话，或助手窗绑定的会话）；
+   * 两个视图都没显示的会话只入队（标识由 `pendingCount` 亮起），等 `setForeground` /
+   * `setAdditionalForeground` 让它可见再上屏——这是「卡不跨会话串台」的唯一实现点。
    */
   private _enqueue(
     sessionId: string,
@@ -336,7 +395,7 @@ export class ConfirmCoordinator {
     const state = this._stateFor(sessionId);
     state.queue.push(entry);
     this._deps.onPendingChanged?.(sessionId, this.pendingCount(sessionId));
-    if (sessionId === this._foreground) {
+    if (this._isVisible(sessionId)) {
       this._pump(sessionId);
     } else {
       // 后台会话：卡不上屏（防跨会话串台），但**离屏提醒照发**——提醒的判据是「有确认在等你」，
@@ -364,8 +423,8 @@ export class ConfirmCoordinator {
   private _drainAutoApproved(sessionId: string): void {
     const state = this._sessions.get(sessionId);
     if (!state) return;
-    // 已切到前台：交给 `_pump` → `_show` 的正常推卡路径去代按（避免同一条被答两次）
-    if (sessionId === this._foreground) return;
+    // 已可见（侧栏或助手窗）：交给 `_pump` → `_show` 的正常推卡路径去代按（避免同一条被答两次）
+    if (this._isVisible(sessionId)) return;
     while (state.queue.length > 0 && state.queue[0].autoApprove) {
       // 与 `_pump` 同序：先出队再置为在途（否则应答后仍留在队列 = 死循环/重复投递）
       const head = state.queue.shift()!;
@@ -397,34 +456,38 @@ export class ConfirmCoordinator {
     const next = state.queue.shift();
     if (!next) return;
     state.current = next;
-    this._show(next);
+    this._show(sessionId, next);
   }
 
   /**
    * 把一条请求推出 webview（首推 / 切回重推共用）
    *
    * 同一 requestId 可以推多次（webview 按 id 覆盖渲染）：请求身份不因上屏次数而变。
+   * `sessionId` 决定投递目标（侧栏当前会话或助手窗绑定的会话）。
    */
-  private _show(entry: ConfirmEntry): void {
+  private _show(sessionId: string, entry: ConfirmEntry): void {
     entry.presented = true;
     const { info, requestId } = entry;
-    this._deps.post({
-      type: 'write_confirm_request',
-      requestId,
-      targetPath: info.targetPath,
-      tool: info.tool,
-      description:
-        info.description ||
-        vscode.l10n.t('{0}: {1}', vscode.l10n.t(getToolDisplayName(info.tool)), info.targetPath),
-      permission: info.permission,
-      beforeContent: info.beforeContent ?? null,
-      afterContent: info.afterContent,
-      // diff 域判据透传内核单点判定结果（hasDiff），webview 据此决定是否渲染对比区
-      hasDiff: info.hasDiff,
-      // 超时时长透传（A5 SSOT）：真源是本模块的 CONFIRM_TIMEOUT_MS，webview 只投影、
-      // 不自算，末段倒计时因此不可能与宿主计时漂移。
-      timeoutMs: CONFIRM_TIMEOUT_MS,
-    });
+    this._deps.post(
+      {
+        type: 'write_confirm_request',
+        requestId,
+        targetPath: info.targetPath,
+        tool: info.tool,
+        description:
+          info.description ||
+          vscode.l10n.t('{0}: {1}', vscode.l10n.t(getToolDisplayName(info.tool)), info.targetPath),
+        permission: info.permission,
+        beforeContent: info.beforeContent ?? null,
+        afterContent: info.afterContent,
+        // diff 域判据透传内核单点判定结果（hasDiff），webview 据此决定是否渲染对比区
+        hasDiff: info.hasDiff,
+        // 超时时长透传（A5 SSOT）：真源是本模块的 CONFIRM_TIMEOUT_MS，webview 只投影、
+        // 不自算，末段倒计时因此不可能与宿主计时漂移。
+        timeoutMs: CONFIRM_TIMEOUT_MS,
+      },
+      sessionId,
+    );
     // 首次上屏才起计时：从未上屏的排队请求不得白烧超时额度
     if (!entry.timer && CONFIRM_TIMEOUT_MS > 0) {
       entry.timer = setTimeout(() => this._timeout(entry), CONFIRM_TIMEOUT_MS);
@@ -500,12 +563,12 @@ export class ConfirmCoordinator {
           : `${word} ${entry.logLabel}`,
       kind: 'decision',
     };
-    // 后台会话：暂存待补发（切过去时由 _flushPendingDecisions 按序入它的时间线）
-    if (sessionId !== this._foreground) {
+    // 后台会话（两个视图都没在显示它）：暂存待补发（切过去时由 _flushPendingDecisions 按序入它的时间线）
+    if (!this._isVisible(sessionId)) {
       this._stateFor(sessionId).pendingDecisions.push(notice);
       return;
     }
-    this._deps.post(notice);
+    this._deps.post(notice, sessionId);
   }
 
   /**
@@ -524,12 +587,12 @@ export class ConfirmCoordinator {
     if (entry.timer) clearTimeout(entry.timer);
     state.current = null;
     this._deps.onPendingChanged?.(sessionId, this.pendingCount(sessionId));
-    if (sessionId !== this._foreground) return; // 后台会话裁决后不驱动屏幕
+    if (!this._isVisible(sessionId)) return; // 后台会话裁决后不驱动屏幕
     if (state.queue.length > 0) {
       this._pump(sessionId);
       return;
     }
-    this._deps.post({ type: 'write_confirm_closed', requestId: entry.requestId });
+    this._deps.post({ type: 'write_confirm_closed', requestId: entry.requestId }, sessionId);
   }
 
   /** 按 requestId 反查所属会话（裁决/超时终结用） */
@@ -555,9 +618,12 @@ export class ConfirmCoordinator {
   disposeSession(sessionId: string): void {
     const state = this._sessions.get(sessionId);
     if (!state) return;
-    // ① 该会话正在前台且卡已上屏 ⇒ 收卡（否则 webview 残留一张点了无响应的僵尸卡）
-    if (sessionId === this._foreground && state.current?.presented) {
-      this._deps.post({ type: 'write_confirm_closed', requestId: state.current.requestId });
+    // ① 该会话此刻有视图在显示且卡已上屏 ⇒ 收卡（否则 webview 残留一张点了无响应的僵尸卡）
+    if (this._isVisible(sessionId) && state.current?.presented) {
+      this._deps.post(
+        { type: 'write_confirm_closed', requestId: state.current.requestId },
+        sessionId,
+      );
     }
     // ② 清计时器 + fail-closed 终结全部未裁决请求（在途 + 排队，一个不留）
     const entries = [state.current, ...state.queue].filter(
@@ -578,9 +644,10 @@ export class ConfirmCoordinator {
   /**
    * 按会话应答入口（远程/桥用）：对**指定会话**的在途确认裁决
    *
-   * 与 `answer` 的唯一差别是会话可寻址——`answer` 只服务「屏幕上那张卡」，
-   * 远程控制需要「任意 sid 的待决审批也能答」，故把寻址拆出来，`answer` 退化为
-   * 「对前台会话调用本方法」的 sugar（对外行为逐字不变）。
+   * 与 `answer` 的分工（HOSTED-SEAT-SESSION-1 起）：`answer` 收的是「屏幕上的卡」，
+   * 但自助手窗起屏幕上可能有**两个**会话（侧栏当前会话 + 助手窗绑定的会话），
+   * 故它改为按 requestId 反查所属会话后再调本方法；远程 / 桥则本来就带着 sid，直接调本方法。
+   * 两者共用同一裁决实现，不新增第二份应答逻辑。
    *
    * 受理判据与 `answer` 完全一致：只认该会话的**在途**请求（`current`），
    * 排队中（未上屏）的请求与未知 requestId 一律丢弃——排队请求尚未进入用户视野，
@@ -609,8 +676,11 @@ export class ConfirmCoordinator {
   /**
    * 应答入口（webview 回传 `write_confirm_answer` 的唯一处理点）
    *
-   * 只接受**当前显示会话**的在途请求：切走后收卡，迟到回执（或别的会话的 id）一律丢弃，
-   * 杜绝「B 的界面点了 A 的确认」这类跨会话串台。
+   * 受理范围：**任一可见会话**（侧栏当前会话，或助手窗绑定的会话）的在途请求——
+   * 自 HOSTED-SEAT-SESSION-1 起屏幕可能同时显示两个会话，靠「前台会话」判归属会误伤
+   * 另一页上的卡，故按 requestId 反查所属会话（寻址实现仍只有 `answerFor` 一份）。
+   * 未上屏的排队请求与未知 / 迟到 requestId 一律丢弃，杜绝「卡还没出现就被答了」与
+   * 「B 的界面点了 A 的确认」这类跨会话串台。
    *
    * 顺序**原样保留**（不可调换）：
    *   ① resolve 挂起的 Promise → 内核 confirmationHandler 得裁决
@@ -619,7 +689,13 @@ export class ConfirmCoordinator {
    *      webview 侧不再自行假设「点了就算关」）
    */
   answer(requestId: string, approved: boolean): void {
-    // 委托 answerFor：寻址规则只有一份（前台会话），此处不再重写判据
-    this.answerFor(this._foreground, requestId, approved);
+    // 按 requestId 反查所属会话：两页都能裁决、不重复（会话寻址规则仍只有 answerFor 一份）。
+    // 查无此条 = 迟到/陌生回执，静默丢弃（与旧行为一致）。
+    for (const [sessionId, state] of this._sessions) {
+      if (state.current?.requestId === requestId) {
+        this.answerFor(sessionId, requestId, approved);
+        return;
+      }
+    }
   }
 }

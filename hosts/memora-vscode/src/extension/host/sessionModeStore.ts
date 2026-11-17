@@ -1,90 +1,83 @@
 /**
- * 会话运行模式运行时容器（托管模式 v0 · 路线 §14.21.4「甲案」）
+ * 助手会话身份容器（唯一身份真源 = 工作区指针）
  *
  * 职责边界：
- * - **装配身份真源 = 本容器里的 `Map<sid, mode>`**：只回答「本会话这一次装配按什么身份」，
- *   不落盘、不进 `SessionMeta`。
+ * - **身份真源 = `assistantSession.ts` 的工作区指针**：`isManaged(sid)` 只回答「这条是不是助手
+ *   会话」。指针持久（workspaceState），故重启后侧栏先打开助手会话、助手窗没开，它照样按助手装配。
  * - **当前驱动权真源 = `agentDriven` 集合**：只回答「这条会话现在是否由代理驱动」，
- *   与装配身份分开——代理开出的子会话没有调度权（mode = self），但当前仍由代理驱动；
- *   用户收回后从集合移除。停止 / 暂停 / 恢复、工作台清单、中断通知都只认这一个判断。
- *   确认代批问的不是「开了谁」而是「这一轮谁在支配」⇒ 用组合判据 `isAgentControlled`
- *   （托管座位 ∪ 本集合），边界见该方法注释；两套判据刻意分开，不互相顶替。
- * - 未知 sid 一律回落 `'self'`；重启 / 重开窗口后容器为空 ⇒ 存量会话按自助装配。
- * - `globalState` 里的「上次模式」只作**新建会话的默认值输入**，不描述任何存量会话。
+ *   与身份分开——代理开出的工作会话不是助手，但当前仍归代理驱动；用户收回后从集合移除。
+ *   确认代批判据不是这里（按轮读 `origin`，见 `HOSTED-CONFIRM-SOFT-1`）。
+ * - `labels` 只作**事件来源标签**（工作台要说「这条被收回过 / 本进程登记过」），不承担身份判定；
+ *   未知 sid 一律回落 `'self'`。
  *
  * ⚠️ 设计允许的张力（不要当 bug 修）：
- * `mode` / `agentDriven` **不落盘**，重启回落 `'self'` / 空集；而 `SessionMeta.origin` /
- * `Round.origin` 是**持久事实**。托管会话重启后不再以主控身份运行，但历史会话 / 历史轮
- * 仍然标记为 `'hosted'`。两者刻意不同步：装配期状态与出生归属是两回事。
+ * `agentDriven` 不落盘，重启回落空集；而 `SessionMeta.origin` / `Round.origin` 是**持久事实**。
+ * 装配期身份（指针）与出生归属（origin）是两回事，刻意不同步。
  */
 
 import type { Memento } from 'vscode';
+import {
+  clearAssistantSessionId,
+  readAssistantSessionId,
+  writeAssistantSessionId,
+} from './assistantSession.js';
 
 /**
- * 会话运行模式：`self` = 用户自助；`managed` = **用户亲自选择的**托管装配
+ * 会话运行模式：`self` = 普通会话；`managed` = **助手会话**
  *
- * ⚠️ `managed` 只代表「这一条会话有调度权（主控工具面）」，不代表「它是代理开的」。
- * 代理开出的子会话按 `self` 装配（拿不到主控工具集，不能再层层开会话），
+ * ⚠️ `managed` 只代表「这条是唯一的助手会话（有调度权）」，不代表「它是代理开的」。
+ * 代理开出的工作会话按 `self` 装配（拿不到主控工具集，不能再层层开会话），
  * 「代理开的」只记在持久来源 `SessionMeta.origin = 'hosted'`（出生事实，不当权限用）。
  */
 export type SessionMode = 'self' | 'managed';
 
 /**
- * mode → 持久来源（`Round.origin` / `SessionMeta.origin`）
+ * 会话身份容器
  *
- * 只有 `managed` 产生的会话 / 输入才标记 `'hosted'`；`self` 与缺省一律 `'user'`。
- * 这是 mode → origin 的**唯一映射点**：调用方不得各写一份三元表达式（防两处判据漂移）。
- *
- * ⚠️ 唯一例外是「代理开出的子会话」：它按 `self` 装配（没有调度权），但出生来源仍是
- * `'hosted'`。该来源由建会话参数显式传入（见 `createSession` 的 `agentCreated`），
- * 不走本函数——这不是第二个映射点，而是「调度权」与「出生事实」分家的落点。
- */
-export function originForMode(mode: SessionMode): 'user' | 'hosted' {
-  return mode === 'managed' ? 'hosted' : 'user';
-}
-
-/** 用户级「上次使用的模式」在 globalState 里的键（只作新建会话默认值） */
-export const LAST_SESSION_MODE_KEY = 'memora.lastSessionMode';
-
-/**
- * 会话级 mode 容器 + 用户级「上次模式」
- *
- * 进程内单例（activate 内创建一次），按会话 id 寻址；不做落盘、不做跨窗口同步。
+ * 进程内单例（activate 内创建一次），身份读同一份工作区指针；不做跨窗口同步。
  */
 export class SessionModeStore {
-  /** 会话 id → mode（运行期唯一真源；缺失 = `'self'`） */
-  private readonly modes = new Map<string, SessionMode>();
+  /**
+   * 身份的事件来源标签（**不承担身份判定**，身份只看指针）
+   *
+   * 用途：工作台区分「本进程登记过 / 用户收回过」与「本进程第一次见」的文案分档。
+   * 身份判据一律 `isManaged`（读指针），不从本表反推。
+   */
+  private readonly labels = new Map<string, SessionMode>();
 
   /**
-   * 当前由代理驱动的会话 id（代理开出的子会话；收回即移除）
+   * 当前由代理驱动的会话 id（代理开出的工作会话；收回即移除）
    *
-   * 与 `modes` 分开：`managed` 回答「有调度权吗」，本集合回答「现在归谁驱动」。
    * 出生来源（`SessionMeta.origin` / 创建者账本）只做出生记录，不当权限用。
    */
   private readonly agentDriven = new Set<string>();
 
   /**
-   * 本进程**从持久化状态恢复**出来的座位（形态 + 座位成对恢复，2026-11-15）
+   * 本进程**启动时**从工作区指针恢复的助手会话（事件来源标签，不是权限来源）
    *
-   * 只做**事件来源标签**，不是权限来源：权限仍由 `modes` 回答（恢复时会写 `modes`）。
-   * 存在理由：恢复的座位满足「登记过但不归代理」，与「用户刚收回」在存储层长得一模一样；
-   * 工作台若只按 `has()` 判，就会把恢复说成「已从助手收回」——恢复完界面先自相矛盾。
-   *
-   * 生命周期：用户再次显式 `set()` 任何模式即清除（那一刻起它不再是「恢复来的」）；
-   * `delete()` 会话时一并清除。
+   * 用途：工作台区分「指针恢复来的助手会话」与「用户本次刚设的」。
+   * 生命周期：`set()` 任何显式登记即清除（那一刻起它不再是「恢复来的」）；删除会话一并清除。
    */
   private readonly restored = new Set<string>();
 
-  constructor(private readonly globalState: Memento) {}
-
-  /** 读取某会话的装配模式；未知会话一律 `'self'`（不猜、不从「上次模式」回填） */
-  get(sessionId: string): SessionMode {
-    return this.modes.get(sessionId) ?? 'self';
+  constructor(private readonly workspaceState: Memento) {
+    // 启动即读一次指针，仅用于「恢复」事件标签；身份判定本身每次都现读指针（单一真源）
+    const persisted = readAssistantSessionId(workspaceState);
+    if (persisted) this.restored.add(persisted);
   }
 
-  /** 该会话本轮装配是否为主控（装配链唯一消费口） */
+  /** 读取某会话的装配模式；非助手会话一律 `'self'` */
+  get(sessionId: string): SessionMode {
+    return this.isManaged(sessionId) ? 'managed' : 'self';
+  }
+
+  /**
+   * 该会话是否是助手会话（装配链唯一消费口）
+   *
+   * 判据 = 工作区指针（唯一身份真源）。指针为空 / 别的 id ⇒ false，不猜、不从标签表回填。
+   */
   isManaged(sessionId: string): boolean {
-    return this.get(sessionId) === 'managed';
+    return sessionId.length > 0 && readAssistantSessionId(this.workspaceState) === sessionId;
   }
 
   /**
@@ -98,135 +91,84 @@ export class SessionModeStore {
   }
 
   /**
-   * 该会话当前是否归代理（= 托管装配（有调度权）或由代理驱动）
+   * 该会话当前是否归代理（= 助手会话（有调度权）或由代理驱动）
    *
-   * 为什么单独一个方法：确认请求的代批判据问的是「这一轮是谁在支配」——用户亲自选的托管座位
-   * 由代理代写提示词、代批确认；代理开出 / 派发接管的会话同样归代理。两个集合各自回答
-   * 不同问题（`isManaged` = 有调度权，`isAgentDriven` = 代理开出 / 接管），组合判据只此一处，
-   * 避免各消费点手写 `||` 后漂移。
-   *
-   * 边界：停止 / 暂停 / 恢复的目标判据仍是 `isAgentDriven`——托管座位是用户自己开的，
+   * 组合判据只此一处，避免各消费点手写 `||` 后漂移。
+   * 边界：停止 / 暂停 / 恢复的目标判据仍是 `isAgentDriven`——助手会话是用户自己开的，
    * 不因为「归代理」就允许别的代理去停它。
-   *
-   * @param sessionId 目标会话
-   * @returns true = 当前由代理支配（含托管座位）
    */
   isAgentControlled(sessionId: string): boolean {
     return this.isManaged(sessionId) || this.isAgentDriven(sessionId);
   }
 
   /**
-   * 登记「代理创建了这条会话 ⇒ 当前由代理驱动」
+   * 登记「代理创建了这条工作会话 ⇒ 当前由代理驱动」
    *
-   * 与 `set(sessionId, 'self')` 同批发生：子会话没有调度权，但仍由代理驱动。
    * 必须在首轮流启动之前调用（首轮可能立即失败 / 被停，晚登记会漏掉中断通知）。
    *
-   * @param sessionId 代理开的子会话
+   * @param sessionId 代理开的工作会话
    */
   markAgentDriven(sessionId: string): void {
     this.agentDriven.add(sessionId);
   }
 
-  /**
-   * 收回驱动权（用户点「收回托管」后当前归用户）
-   *
-   * 只清运行期事实，不动 `SessionMeta.origin` / 历史轮：出生记录永久保留。
-   *
-   * @param sessionId 被收回的会话
-   */
+  /** 收回驱动权（用户点「收回托管」后当前归用户；出生来源不变） */
   clearAgentDriven(sessionId: string): void {
     this.agentDriven.delete(sessionId);
   }
 
   /**
-   * 列出本进程内**有调度权**的会话 id（= 用户亲自选择的托管会话）
+   * 列出助手会话 id（只读同一份指针，不新增状态）
    *
-   * 只读同一条 `Map`（不新增状态、不落盘）：工作台的命令入口用它决定「打开哪一条座位」。
-   * 代理开出的子会话按 `self` 装配（见类型注释），因此不会出现在这里——
-   * 嵌套开会话被工具面缺席挡住，不需要深度闸 / 父字段 / 层级树。
-   *
-   * @returns 托管会话 id 列表（按登记顺序；无托管会话时为空数组）
+   * @returns 助手会话 id 列表（无助手会话时为空数组）
    */
   listManagedSessionIds(): string[] {
-    const ids: string[] = [];
-    for (const [sessionId, mode] of this.modes) {
-      if (mode === 'managed') ids.push(sessionId);
-    }
-    return ids;
+    const assistantId = readAssistantSessionId(this.workspaceState);
+    return assistantId ? [assistantId] : [];
   }
 
   /**
-   * 本进程是否**登记过**这条会话的装配模式（只读 `modes`，不新增状态）
+   * 本进程是否**登记过**这条会话的身份标签（只读 `labels`，不新增状态）
    *
    * 与 `get()` 的差别：`get()` 对未知会话回落 `'self'`，无法区分「用户收回成 self」与
-   * 「本进程从没见过它」。工作台据此按**事件来源**分档说话：
-   * - 登记过 + 当前不归代理 ⇒ 座位被**收回**（不能写成「重启后重建」）；
-   * - 从没登记过 ⇒ 典型 = 重开窗口后按历史重建。
-   *
-   * @param sessionId 目标会话
-   * @returns true = 本进程写过它的 mode（无论写的是 self 还是 managed）
+   * 「本进程从没见过它」。工作台据此按**事件来源**分档说话。
    */
   has(sessionId: string): boolean {
-    return this.modes.has(sessionId);
+    return this.labels.has(sessionId);
   }
 
-  /** 登记会话模式（新建会话 / 切换时写；仅进程内有效） */
+  /**
+   * 登记会话身份（新建会话时写）
+   *
+   * `managed` ⇒ 写助手会话指针（同一时刻只有一个，覆盖即换助手会话）；
+   * `self` ⇒ 若它当前正是指针指向的助手会话则清指针。
+   */
   set(sessionId: string, mode: SessionMode): void {
-    this.modes.set(sessionId, mode);
-    // 用户显式登记 ⇒ 它不再是「重启恢复来的」；恢复路径在 set 之后调 markRestored 重打标签
+    this.labels.set(sessionId, mode);
+    // 用户显式登记 ⇒ 它不再是「启动恢复来的」
     this.restored.delete(sessionId);
+    if (mode === 'managed') {
+      writeAssistantSessionId(this.workspaceState, sessionId);
+    } else if (this.isManaged(sessionId)) {
+      clearAssistantSessionId(this.workspaceState);
+    }
   }
 
-  /**
-   * 标记该座位是「从持久化状态恢复的」（事件来源标签，不改变权限）
-   *
-   * 必须紧跟 `set(sessionId, 'managed')` 调用：`set` 会清标签，顺序反了标签就丢。
-   */
-  markRestored(sessionId: string): void {
-    this.restored.add(sessionId);
-  }
-
-  /**
-   * 从持久化状态恢复托管座位（**唯一**正确顺序：先写权限，再打来源标签）
-   *
-   * 顺序反了标签会丢：`set()` 内部会清掉「恢复」标签（用户显式重设即不再算恢复）。
-   * 恢复的座位有调度权、没有驱动方——工作台据此说「恢复了座位」而不是「已收回」。
-   */
-  restoreManaged(sessionId: string): void {
-    this.set(sessionId, 'managed');
-    this.restored.add(sessionId);
-  }
-
-  /** 该座位是否由本进程从持久化状态恢复（工作台文案的第四档判据） */
+  /** 该会话是否由本进程启动时从指针恢复（工作台文案的事件来源档） */
   isRestored(sessionId: string): boolean {
     return this.restored.has(sessionId);
   }
 
-  /** 会话删除时清理，避免容器随已删会话累积 */
+  /** 会话删除时清理：标签 / 驱动权 / 恢复标记，以及指向它的助手指针 */
   delete(sessionId: string): void {
-    this.modes.delete(sessionId);
+    this.labels.delete(sessionId);
     this.agentDriven.delete(sessionId);
     this.restored.delete(sessionId);
-  }
-
-  /**
-   * 读取用户级「上次使用的模式」——**只**给新建会话取默认值
-   *
-   * 非法 / 缺失值一律回落 `'self'`（不把脏数据当托管指令）。
-   */
-  getLastMode(): SessionMode {
-    return this.globalState.get<SessionMode>(LAST_SESSION_MODE_KEY) === 'managed'
-      ? 'managed'
-      : 'self';
-  }
-
-  /** 记录用户最近一次新建会话时选择的模式（下一次新建的默认值来源） */
-  async setLastMode(mode: SessionMode): Promise<void> {
-    await this.globalState.update(LAST_SESSION_MODE_KEY, mode);
+    if (this.isManaged(sessionId)) clearAssistantSessionId(this.workspaceState);
   }
 }
 
-/** 进程内 Memento：未注入 globalState 时（测试 / 嵌入宿主）的默认持久层，不跨重启 */
+/** 进程内 Memento：未注入工作区持久层时（测试 / 嵌入宿主）的默认持久层，不跨重启 */
 class EphemeralMemento implements Memento {
   private readonly data = new Map<string, unknown>();
 
@@ -244,10 +186,9 @@ class EphemeralMemento implements Memento {
 }
 
 /**
- * 进程内默认容器（仅用于未注入 globalState 的宿主 / 测试）
+ * 进程内默认容器（仅用于未注入 workspaceState 的宿主 / 测试）
  *
- * 语义与生产一致（Map 不落盘），差别只有「上次模式」不跨重启——mode 本来就不持久；
- * 生产 activate 必须注入基于 `context.globalState` 的实例。
+ * 生产 activate 必须注入 `context.workspaceState`（指针跨重启有效）。
  */
 export function createEphemeralSessionModeStore(): SessionModeStore {
   return new SessionModeStore(new EphemeralMemento());

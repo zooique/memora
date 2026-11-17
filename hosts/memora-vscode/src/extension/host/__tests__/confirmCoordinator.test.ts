@@ -561,13 +561,13 @@ describe('ConfirmCoordinator · 按会话绑定（E4 批 4）', () => {
     expect(String(decisions.at(-1)?.message)).toContain('declined automatically');
   });
 
-  it('后台会话的迟到回执被拒：只认当前显示会话在途请求', async () => {
+  it('未知 requestId 的回执被丢：不得替后台队列里尚未上屏的请求提前裁决', async () => {
     const h = makeSessionCoordinator();
     const stub = agentStub();
     h.coordinator.bindSession('2026-11-06-a', stub.agent);
 
-    stub.trigger(confirmInfo()); // 后台入队（前台 ''）
-    // 前台上没卡 ⇒ 用队列里的 id 也无法替后台裁决（answer 只查前台会话的在途）
+    stub.trigger(confirmInfo()); // 后台入队（两个视图都没显示它）
+    // 队列里的请求没有「屏幕上的卡」⇒ 陌生 id 无法命中，也不得提前裁决
     h.coordinator.answer('wc_any', true);
     expect(h.coordinator.pendingCount('2026-11-06-a')).toBe(1);
     expect(h.requests()).toHaveLength(0);
@@ -584,6 +584,115 @@ describe('ConfirmCoordinator · 按会话绑定（E4 批 4）', () => {
     h.coordinator.repostForeground();
     expect(h.requests()).toHaveLength(2);
     expect(h.requests()[1].requestId).toBe(h.requests()[0].requestId);
+  });
+});
+
+/**
+ * 第二可见会话（HOSTED-SEAT-SESSION-1）· 助手窗绑定的会话也能上屏、也能裁决
+ *
+ * 判据（对应台账 HOSTED-SEAT-SESSION-1 完成判据④）：
+ *   ① 助手会话不是侧栏当前会话时，绑定为第二可见会话后它的卡照样上屏，且投递带该会话 id；
+ *   ② 两页共用同一应答入口：`answer(requestId)` 按 id 反查会话，裁决一次即终结，
+ *      另一页的迟到回执零副作用（不重复留痕、不收第二次卡）；
+ *   ③ 助手窗关闭只把卡标回「未上屏」，不推 `write_confirm_closed`（侧栏仍需保留它自己的卡）；
+ *   ④ 绑定 / 解绑助手窗不改变侧栏当前会话的卡。
+ */
+describe('ConfirmCoordinator · 第二可见会话（助手窗）', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** 记录「消息 + 目标会话」的协调器（判据①必须断言卡进的是助手会话，不是侧栏会话） */
+  function makeTwoViewCoordinator() {
+    const posted: Array<{ msg: Posted; sessionId?: string }> = [];
+    const coordinator = new ConfirmCoordinator({
+      getAgent: () => undefined,
+      post: (msg, sessionId) => {
+        posted.push({ msg: msg as unknown as Posted, sessionId });
+      },
+    });
+    /** 按消息类型取投递（保留 sessionId 便于断言路由） */
+    const ofType = (type: string) => posted.filter((p) => p.msg.type === type);
+    return {
+      coordinator,
+      posted,
+      requests: () => ofType('write_confirm_request') as Array<{ msg: Posted; sessionId?: string }>,
+      closed: () => ofType('write_confirm_closed'),
+      decisions: () => posted.filter((p) => p.msg.kind === 'decision'),
+    };
+  }
+
+  it('助手会话可见后才上屏，且卡只投给它自己（不投侧栏当前会话）', async () => {
+    const h = makeTwoViewCoordinator();
+    h.coordinator.setForeground('2026-11-17-work');
+    const stub = agentStub();
+    h.coordinator.bindSession('2026-11-17-assistant', stub.agent);
+
+    const settled = stub.trigger(confirmInfo());
+    // 只有侧栏可见时：助手会话的卡不上屏（后台只入队 + 亮计数）
+    expect(h.requests()).toHaveLength(0);
+    expect(h.coordinator.pendingCount('2026-11-17-assistant')).toBe(1);
+
+    h.coordinator.setAdditionalForeground('2026-11-17-assistant');
+    const reqs = h.requests();
+    expect(reqs).toHaveLength(1);
+    expect(reqs[0].sessionId).toBe('2026-11-17-assistant');
+
+    h.coordinator.answer(String(reqs[0].msg.requestId), true);
+    await expect(settled).resolves.toBe(true);
+    expect(h.coordinator.pendingCount('2026-11-17-assistant')).toBe(0);
+  });
+
+  it('两页都能裁决：裁决一次即终结，第二页的迟到回执不重复留痕、不收第二次卡', async () => {
+    const h = makeTwoViewCoordinator();
+    h.coordinator.setForeground('2026-11-17-work');
+    h.coordinator.setAdditionalForeground('2026-11-17-assistant');
+    const stub = agentStub();
+    h.coordinator.bindSession('2026-11-17-assistant', stub.agent);
+
+    let settleCount = 0;
+    const promise = stub.trigger(confirmInfo()).then((v) => {
+      settleCount += 1;
+      return v;
+    });
+    const requestId = String(h.requests()[0].msg.requestId);
+
+    h.coordinator.answer(requestId, true);
+    await expect(promise).resolves.toBe(true);
+    const decisionsAfter = h.decisions().length;
+    const closedAfter = h.closed().length;
+
+    // 另一页（同一张卡的另一份渲染）回传同一 requestId：未知在途 ⇒ 静默丢弃
+    h.coordinator.answer(requestId, true);
+    await Promise.resolve();
+    expect(settleCount).toBe(1);
+    expect(h.decisions()).toHaveLength(decisionsAfter);
+    expect(h.closed()).toHaveLength(closedAfter);
+  });
+
+  it('助手窗关闭（解绑第二可见会话）只标未上屏、不推收卡；侧栏自己的卡不受影响', () => {
+    const h = makeTwoViewCoordinator();
+    h.coordinator.setForeground('2026-11-17-work');
+    h.coordinator.setAdditionalForeground('2026-11-17-assistant');
+    const sideStub = agentStub();
+    const assistantStub = agentStub();
+    h.coordinator.bindSession('2026-11-17-work', sideStub.agent);
+    h.coordinator.bindSession('2026-11-17-assistant', assistantStub.agent);
+
+    // 侧栏会话的卡先上屏
+    sideStub.trigger(confirmInfo());
+    // 助手会话的卡也上屏（第二可见会话）
+    assistantStub.trigger(confirmInfo());
+    expect(h.requests()).toHaveLength(2);
+    const closedBefore = h.closed().length;
+
+    // 关闭助手窗：视图已销毁，不推收卡（没人接收，且侧栏要保留它自己那张）
+    h.coordinator.setAdditionalForeground(undefined);
+    expect(h.closed()).toHaveLength(closedBefore);
+    // 助手会话的请求仍在途（下次 ready 由 repostFor 补推）
+    expect(h.coordinator.pendingCount('2026-11-17-assistant')).toBe(1);
+    // 侧栏会话的请求照旧在途
+    expect(h.coordinator.pendingCount('2026-11-17-work')).toBe(1);
   });
 });
 
@@ -1024,12 +1133,9 @@ describe('ConfirmCoordinator · 异步授权分流（authFlow）', () => {
     coordinator.setForeground('work-1');
 
     const settled = stub.trigger(confirmInfo());
-    expect(
-      posted.filter((m) => m.type === 'write_confirm_request'),
-    ).toHaveLength(1);
+    expect(posted.filter((m) => m.type === 'write_confirm_request')).toHaveLength(1);
     coordinator.answer(
-      (posted.find((m) => m.type === 'write_confirm_request') as { requestId: string })
-        .requestId,
+      (posted.find((m) => m.type === 'write_confirm_request') as { requestId: string }).requestId,
       true,
     );
     await expect(settled).resolves.toBe(true);
@@ -1048,8 +1154,7 @@ describe('ConfirmCoordinator · 异步授权分流（authFlow）', () => {
     const settled = stub.trigger(confirmInfo());
     expect(posted.filter((m) => m.type === 'write_confirm_request')).toHaveLength(1);
     coordinator.answer(
-      (posted.find((m) => m.type === 'write_confirm_request') as { requestId: string })
-        .requestId,
+      (posted.find((m) => m.type === 'write_confirm_request') as { requestId: string }).requestId,
       false,
     );
     await expect(settled).resolves.toBe(false);
