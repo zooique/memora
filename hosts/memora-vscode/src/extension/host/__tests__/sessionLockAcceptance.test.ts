@@ -1,11 +1,11 @@
 /**
  * 6.0.0 步 3 验收：每会话跨进程写锁（命名管道 / Unix domain socket）
  *
- * 五条机判（前四条 = 施工方案原定，第五条 = 启动双窗口让位）：
+ * 六条机判（前四条 = 施工方案原定，第五条 = 启动双窗口让位，第六条 = 归档补写交错）：
  *   ① 两进程开同一会话：第二者被拒（false），第一者不受影响仍能写完收尾
  *   ② 强杀持锁进程（`taskkill /F`）：新进程拿锁耗时 ≤2s（OS 关句柄即释放，零僵尸锁）
  *   ③ 两进程开不同会话（含不同工作区**同名**会话）互不阻塞，各 20 轮零丢失
- *   ④ 释放后同会话可重开并写入，且「拿锁后重读」读到对方刚写的轮（不是装饰）
+ *   ④ 追加**不需要锁**且不覆盖对方轮；重开拿锁后重读读到对方刚写的轮；整写仍 fail-closed
  *   ⑤ 两窗口同时恢复到最后活跃会话：第二窗口**不被挡死**，按真实判据让位到
  *      最近的可用会话，且首选会话数据完好
  *   ⑥ 归档异步 meta 回写（短锁已释放）与另一窗口「持锁追加轮次」交错：补写要么放弃、
@@ -13,7 +13,8 @@
  *
  * 判据口径：
  *   - 锁 = 每会话一把，锁名含数据目录哈希（跨工作区同名会话不得互挡）
- *   - 写断言 = fail-closed（已存在会话文件必须持锁；首次创建才允许无锁）
+ *   - **追加（appendRoundId）= journal 行追加，无锁合法**；**整写（截断 / 属性 / 完整替换）
+ *     = fail-closed**（已存在会话必须持锁；首次创建才允许无锁）
  *   - 启动让位判据单源 = src/webview/helpers/sessionStartupClaim.ts（生产同款）
  *   - 生产方式由 extension.ts 的 `enableCrossProcessLock()` 开启（静态守卫在下）
  *
@@ -46,12 +47,20 @@ function sessionFile(ws: string, sessionId: string): string {
   return join(memoraDir(ws), 'sessions', `${encodeURIComponent(sessionId)}.json`);
 }
 
-/** 读会话文件的 roundIds（数据完好性判据） */
+/** 单会话 journal 路径（roundIds 真相：与 JSON 同名，后缀 .rounds） */
+function roundsFile(ws: string, sessionId: string): string {
+  return join(memoraDir(ws), 'sessions', `${encodeURIComponent(sessionId)}.rounds`);
+}
+
+/** 读会话的 roundIds（数据完好性判据；真相 = journal，每行一个） */
 function readRoundIds(ws: string, sessionId: string): string[] {
-  const data = JSON.parse(readFileSync(sessionFile(ws, sessionId), 'utf8')) as {
-    roundIds?: string[];
-  };
-  return Array.isArray(data.roundIds) ? data.roundIds : [];
+  let raw: string;
+  try {
+    raw = readFileSync(roundsFile(ws, sessionId), 'utf8');
+  } catch {
+    return []; // 文件不存在 = 该会话从未追加过轮（不是读取失败）
+  }
+  return raw.split('\n').filter((line) => line.length > 0);
 }
 
 /** 子进程句柄：保留 stdout 累积与「等某行出现」能力 */
@@ -201,7 +210,7 @@ describe('6.0.0 步 3 验收：每会话跨进程写锁', () => {
     expect(readRoundIds(wsOther, 's-a')).toHaveLength(20);
   }, 30_000);
 
-  it('④ 释放后重开可写，且「拿锁后重读」读到对方刚写的轮', async () => {
+  it('④ 追加不需要锁且不覆盖对方轮；整写仍 fail-closed；拿锁后重读读到对方刚写的轮', async () => {
     // 两个实例模拟两个进程：s2 先 load（内存里没有 s1 后来写的轮）
     const roundA = new WorkspaceSessionStore(ws);
     const roundB = new WorkspaceSessionStore(ws);
@@ -212,16 +221,24 @@ describe('6.0.0 步 3 验收：每会话跨进程写锁', () => {
 
     expect(await roundA.acquireSessionLock('s-share')).toBe(true);
     roundA.appendRoundId('s-share', 's-share-a');
-    // 未持锁的 s2 覆盖已存在会话文件 ⇒ fail-closed（不静默覆盖）
-    expect(() => roundB.appendRoundId('s-share', 's-share-x')).toThrow(/跨进程锁/);
+    // 未持锁的 s2 追加自己的轮：**合法且不覆盖**——journal 追加只写自己的行，
+    // 不存在「读旧写新」即可安全；A 的轮必须原样在盘上（这是本形态的核心安全属性）
+    roundB.appendRoundId('s-share', 's-share-x');
+    expect(readRoundIds(ws, 's-share')).toEqual(['s-share-a', 's-share-x']);
+
+    // 整写（会「删」的操作）仍是 fail-closed：未持锁不得覆盖已存在会话
+    const roundC = new WorkspaceSessionStore(ws);
+    roundC.load();
+    roundC.enableCrossProcessLock();
+    expect(() => roundC.truncateFrom('s', 'share', 's-share-a')).toThrow(/跨进程锁/);
     roundA.releaseSessionLock('s-share');
 
     expect(await roundB.acquireSessionLock('s-share')).toBe(true);
-    // 拿锁后重读：被 s1 写过的轮必须已在内存里
-    expect(roundB.getRoundIds('s-share')).toEqual(['s-share-a']);
+    // 拿锁后重读：被 s1 写过的轮必须已在内存里（与追加时自己的 x 合并，顺序按盘面）
+    expect(roundB.getRoundIds('s-share')).toEqual(['s-share-a', 's-share-x']);
     roundB.appendRoundId('s-share', 's-share-b');
     roundB.releaseSessionLock('s-share');
-    expect(readRoundIds(ws, 's-share')).toEqual(['s-share-a', 's-share-b']);
+    expect(readRoundIds(ws, 's-share')).toEqual(['s-share-a', 's-share-x', 's-share-b']);
   }, 15_000);
 
   it('⑤ 两窗口同时恢复到最后活跃会话：第二窗口让位而不是被挡死', async () => {
@@ -281,7 +298,9 @@ describe('6.0.0 步 3 验收：每会话跨进程写锁', () => {
       roundIds?: string[];
       meta?: { summary?: string };
     };
-    expect(during.roundIds).toHaveLength(3); // 新轮没被旧快照缩短
+    // 形态变更后 JSON 不再承载 roundIds（真相在 journal；仍留在 JSON 就是第二真相源）
+    expect(during.roundIds).toBeUndefined();
+    expect(readRoundIds(ws, sessionId)).toHaveLength(3); // 新轮没被旧快照缩短
     expect(during.meta?.summary).toBeUndefined(); // 也没抢写（内容归持锁方）
 
     // B 释放后重试：拿到短锁 ⇒ 重读 3 轮 + 合并 meta ⇒ 持锁整写，轮次与摘要都在
@@ -292,7 +311,11 @@ describe('6.0.0 步 3 验收：每会话跨进程写锁', () => {
       roundIds?: string[];
       meta?: { summary?: string };
     };
-    expect(after.roundIds).toEqual([`${sessionId}-p0`, `${sessionId}-p1`, `${sessionId}-w0`]);
+    expect(readRoundIds(ws, sessionId)).toEqual([
+      `${sessionId}-p0`,
+      `${sessionId}-p1`,
+      `${sessionId}-w0`,
+    ]);
     expect(after.meta?.summary).toBe('归档摘要');
   }, 20_000);
 

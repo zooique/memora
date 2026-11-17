@@ -174,10 +174,13 @@ function sessionFilePath(projectPath: string, sessionId: string): string {
  * @param sessionId 会话标识
  */
 function readRoundIds(projectPath: string, sessionId: string): string[] {
-  const data = JSON.parse(readFileSync(sessionFilePath(projectPath, sessionId), 'utf8')) as {
-    roundIds?: string[];
-  };
-  return Array.isArray(data.roundIds) ? data.roundIds : [];
+  // roundIds 真相 = journal（每行一个；JSON 只装属性）
+  try {
+    const raw = readFileSync(sessionFilePath(projectPath, sessionId).replace(/\.json$/, '.rounds'), 'utf8');
+    return raw.split('\n').filter((line) => line.length > 0);
+  } catch {
+    return []; // 文件不存在 = 从未追加过轮，不是读取失败
+  }
 }
 
 /**

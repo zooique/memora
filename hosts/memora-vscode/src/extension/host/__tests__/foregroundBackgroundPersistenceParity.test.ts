@@ -334,13 +334,15 @@ async function runOnce(mode: 'foreground' | 'background'): Promise<RunResult> {
   } catch {
     fileBytes = null; // 缺失即 null，比对面直接暴露「后台没落盘」
   }
-  const sessionFile = join(
+  // roundIds 的真相 = journal（每行一个；JSON 只装属性，不再承载轮引用）
+  const roundsFile = join(
     resolveProjectDataDir(projectPath),
     'sessions',
-    `${encodeURIComponent(TARGET_SESSION)}.json`,
+    `${encodeURIComponent(TARGET_SESSION)}.rounds`,
   );
-  const sessionData = JSON.parse(readFileSync(sessionFile, 'utf8')) as { roundIds?: string[] };
-  const roundIds = sessionData.roundIds ?? [];
+  const roundIds = readFileSync(roundsFile, 'utf8')
+    .split('\n')
+    .filter((line) => line.length > 0);
   const firstRoundId = roundIds[0] ?? '';
   let round: unknown = null;
   if (firstRoundId) {

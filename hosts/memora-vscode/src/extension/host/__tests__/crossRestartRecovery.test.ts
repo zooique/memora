@@ -188,16 +188,14 @@ describe('跨重启恢复：真杀进程 → 重启打捞 → 升级为正常 st
     // ADR-044：建轮即登记会话 ⇒ 崩溃瞬间会话侧**已经**认它（可见、可删、可续跑）。
     // 打捞的意义随之从「让它可见」变为「把 pending 收场为 interrupted」。
     // 旧契约下这里断言的是「会话不认它」——那是本条要消灭的形态，不再作为判据。
-    // 会话落盘形态 = 每会话一文件（`sessions/<encodeURIComponent(sessionId)>.json`）：
-    // 扫目录时排除 `_global.json` 与 `.tmp`，并以文件内内容（含 roundIds）为准判定。
+    // 会话落盘形态 = 属性 `.json` + 轮引用 `.rounds`（每行一个）：引用真相在后者。
+    // 扫 `.rounds` 判定「会话侧已认它」——JSON 只装 meta/属性，不再承载 roundIds。
     const sessionsDir = join(dataDir, 'sessions');
     expect(existsSync(sessionsDir)).toBe(true);
-    const sessionFiles = readdirSync(sessionsDir).filter(
-      (n) => n.endsWith('.json') && !n.endsWith('.tmp') && n !== '_global.json',
-    );
-    expect(sessionFiles.length).toBeGreaterThan(0);
+    const roundsFiles = readdirSync(sessionsDir).filter((n) => n.endsWith('.rounds'));
+    expect(roundsFiles.length).toBeGreaterThan(0);
     expect(
-      sessionFiles.some((n) => readFileSync(join(sessionsDir, n), 'utf8').includes(crashedRoundId)),
+      roundsFiles.some((n) => readFileSync(join(sessionsDir, n), 'utf8').includes(crashedRoundId)),
     ).toBe(true);
   });
 

@@ -47,6 +47,11 @@ function sessionFile(ws: string, sessionId: string): string {
   return join(memoraDir(ws), 'sessions', `${encodeURIComponent(sessionId)}.json`);
 }
 
+/** 单会话 roundIds journal 路径（roundIds 真相：与 JSON 同名换后缀） */
+function roundsFile(ws: string, sessionId: string): string {
+  return sessionFile(ws, sessionId).replace(/\.json$/, '.rounds');
+}
+
 /** 旧单文件路径（迁移源） */
 function legacyFile(ws: string): string {
   return join(memoraDir(ws), 'sessions.json');
@@ -167,8 +172,8 @@ describe('6.0.0 步 2 验收：会话清单拆文件', () => {
     expect(reloaded.getRoundIds(parentSession)).toEqual(expected.map((i) => `p-${i}`));
     expect(reloaded.getRoundIds(childSession)).toEqual(expected.map((i) => `c-${i}`));
 
-    // 单文件内只有自己的 roundId（跨会话零污染的最小证据）
-    const childRaw = readFileSync(sessionFile(ws, childSession), 'utf8');
+    // 每个会话的 journal 里只有自己的 roundId（跨会话零污染的最小证据）
+    const childRaw = readFileSync(roundsFile(ws, childSession), 'utf8');
     expect(childRaw).toContain('c-0');
     expect(childRaw).not.toContain('p-0');
   }, 120_000);
@@ -294,5 +299,79 @@ describe('6.0.0 步 2 验收：会话清单拆文件', () => {
     // 全部补齐后才落幕：旧档改名保留
     expect(existsSync(legacyFile(ws))).toBe(false);
     expect(existsSync(migratedFile(ws))).toBe(true);
+  });
+
+  it('⑤ 会话 JSON 里的内联 roundIds ⇒ 摊进 journal 并摘字段（断点续摊幂等）', () => {
+    const sessionId = '2026-11-17-inline';
+    mkdirSync(join(memoraDir(ws), 'sessions'), { recursive: true });
+    const meta = {
+      sessionId,
+      updatedAt: '2026-11-17T00:00:00.000Z',
+      messageCount: 4,
+    };
+    writeFileSync(
+      sessionFile(ws, sessionId),
+      JSON.stringify({ sessionId, meta, roundIds: ['r1', 'r2'] }, null, 2),
+      'utf8',
+    );
+
+    const store = reopen(ws);
+    expect(store.getRoundIds(sessionId)).toEqual(['r1', 'r2']);
+    // 摊平后 JSON 只装属性：内联字段被摘除（留着就是第二真相源）
+    const raw = JSON.parse(readFileSync(sessionFile(ws, sessionId), 'utf8')) as {
+      roundIds?: string[];
+      meta?: { messageCount?: number };
+    };
+    expect(raw.roundIds).toBeUndefined();
+    expect(raw.meta?.messageCount).toBe(4); // 属性一个不少
+    expect(readFileSync(roundsFile(ws, sessionId), 'utf8')).toBe('r1\nr2\n');
+
+    // 断点续摊（模拟上次已写 journal、未重写 JSON）：再跑一次同档不重复追加
+    writeFileSync(
+      sessionFile(ws, sessionId),
+      JSON.stringify({ sessionId, meta, roundIds: ['r1', 'r2'] }, null, 2),
+      'utf8',
+    );
+    const again = reopen(ws);
+    expect(again.getRoundIds(sessionId)).toEqual(['r1', 'r2']);
+    expect(readFileSync(roundsFile(ws, sessionId), 'utf8')).toBe('r1\nr2\n');
+  });
+
+  it('⑥ journal 末行半截 id ⇒ 读侧丢弃、静置后追加前裁掉（一次撕裂不污染后续登记）', async () => {
+    const sessionId = '2026-11-17-torn';
+    mkdirSync(join(memoraDir(ws), 'sessions'), { recursive: true });
+    writeFileSync(
+      sessionFile(ws, sessionId),
+      JSON.stringify({ sessionId, meta: { sessionId, updatedAt: '2026-11-17T00:00:00.000Z' } }),
+      'utf8',
+    );
+    // 模拟崩溃：末行「r3-hal」没有换行（id 只写了一半）
+    writeFileSync(roundsFile(ws, sessionId), 'r1\nr2\nr3-hal', 'utf8');
+
+    const store = reopen(ws);
+    expect(store.getRoundIds(sessionId)).toEqual(['r1', 'r2']); // 半截 id 不进引用集合
+
+    // 静置判据：文件太新（可能另一进程正在写）不裁；崩溃残留要 2s 后下一次追加才裁掉
+    await sleep(2_100);
+    store.appendRoundId(sessionId, 'r4');
+    // 半行被物理裁掉：新 id 不会与半截 id 粘成一行（否则两个一起报废）
+    expect(readFileSync(roundsFile(ws, sessionId), 'utf8')).toBe('r1\nr2\nr4\n');
+    expect(store.getRoundIds(sessionId)).toEqual(['r1', 'r2', 'r4']);
+  }, 20_000);
+
+  it('⑦ 只有 journal 没有 JSON ⇒ 追加时补出会话实体，否则这些轮在扫描面永不出现', () => {
+    const sessionId = '2026-11-17-journal-only';
+    mkdirSync(join(memoraDir(ws), 'sessions'), { recursive: true });
+    writeFileSync(roundsFile(ws, sessionId), 'r1\n', 'utf8');
+
+    const store = reopen(ws);
+    // 扫描面只认 .json ⇒ 此前该会话不可见（这正是「有 journal 必须有实体」的理由）
+    expect(store.listSessions()).not.toContain(sessionId);
+
+    store.appendRoundId(sessionId, 'r2');
+    expect(existsSync(sessionFile(ws, sessionId))).toBe(true);
+    // 盘上已有轮并回内存：本进程视图立刻完整（不等下次启动）
+    expect(store.getRoundIds(sessionId)).toEqual(['r1', 'r2']);
+    expect(reopen(ws).getRoundIds(sessionId)).toEqual(['r1', 'r2']);
   });
 });

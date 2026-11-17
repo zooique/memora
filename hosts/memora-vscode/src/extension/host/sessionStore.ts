@@ -14,8 +14,9 @@
  *
  * 落盘布局（拆文件的目的：原来整文件读改写 ⇒ 跨进程各写一个会话也会整份互相覆盖）：
  *   - `sessions/<encodeURIComponent(sessionId)>.json`：
- *     `{ sessionId, meta, roundIds, archived?, lastActiveAt? }`
- *     （roundIds 随会话文件走，会话内容仍只存在于 RoundStore）
+ *     `{ sessionId, meta, archived?, lastActiveAt? }` —— **只装会话属性**
+ *   - `sessions/<encodeURIComponent(sessionId)>.rounds`：roundIds，每行一个、只追加
+ *     （追加不需要锁；截断 / 分叉这类「删」才需要持锁整写）
  *   - **没有全局共享文件**：归档标记与停留时刻都写进会话自己的文件，写一个会话只触碰该文件
  *   - 旧 `sessions.json` 全量摊平后改名 `sessions.json.migrated` 保留（作回退副本）
  *   - 旧 `_global.json`（step 2 过渡形态）的归档标记 / 停留会话摊进会话文件后改名
@@ -40,9 +41,16 @@ import { CrossProcessSessionLock } from './sessionLock.js';
 import { DEFAULT_SWEEP_MIN_AGE_MS, WorkspaceRoundStore } from './workspaceRoundStore.js';
 import {
   LEGACY_GLOBAL_FILE_NAME,
+  appendFreshRoundIds,
+  appendRoundIdsFile,
+  migrateInlineRoundIds,
   migrateLegacyGlobalState,
   migrateLegacySessionFile,
+  mergeRoundIds,
+  readRoundIdsFile,
   readSessionFiles,
+  roundIdsPath,
+  writeRoundIdsFile,
   collectContinuableRoundIds,
   collectReferencedIds,
   type SessionFileShape,
@@ -174,12 +182,21 @@ export class WorkspaceSessionStore implements ISessionStore {
     }
   }
 
-  /** 所有「在所有引用会话中都是末位」的 Round ID（写入闸真源；扫描逻辑见 collectContinuableRoundIds） */
+  /**
+   * 所有「在所有引用会话中都是末位」的 Round ID（写入闸真源；扫描逻辑见 collectContinuableRoundIds）
+   *
+   * 纯扫盘：journal 是同步追加的（`appendRoundIdsFile` 返回即盘面可见），
+   * 因此不需要把内存态 overlay 进来——盘面就是真相。
+   */
   continuableRoundIds(): string[] {
     return collectContinuableRoundIds(this.sessionsDir);
   }
 
-  /** 当前被任意会话引用的 Round ID 全集（引用真源；扫描逻辑见 collectReferencedIds） */
+  /**
+   * 当前被任意会话引用的 Round ID 全集（引用真源；扫描逻辑见 collectReferencedIds）
+   *
+   * 纯扫盘：同上，扫到的就是最新（含本进程刚追加的轮与另一窗口写入的会话）。
+   */
   referencedIds(): string[] {
     return collectReferencedIds(this.sessionsDir);
   }
@@ -211,6 +228,9 @@ export class WorkspaceSessionStore implements ISessionStore {
       sessionFilePath: (sessionId) => this.sessionFilePath(sessionId),
     };
     migrateLegacySessionFile(migrationPaths);
+    // 旧档把 roundIds 内联在会话 JSON 里；本形态下 JSON 只装属性 ⇒ 摊进 journal 后摘字段。
+    // 必须排在 global 迁移之前：后者会重建 JSON，若此时内联数组还在，重建会把它丢掉。
+    migrateInlineRoundIds(this.sessionsDir);
     migrateLegacyGlobalState(migrationPaths);
     for (const file of readSessionFiles(this.sessionsDir)) {
       if (file.meta) this.metas.set(file.sessionId, file.meta);
@@ -346,8 +366,10 @@ export class WorkspaceSessionStore implements ISessionStore {
    * 补写主体：短锁 → 重读盘面 → 叠加待补字段 → 持锁整写
    *
    * 三态拿锁（不能直接用 `acquireSessionLock`）：必须区分「本进程早已持有长锁」与
-   * 「本次临时拿到的短锁」——前者若在收尾 `release`，会把用户正在使用的当前会话
-   * 长锁误放掉（随后 `appendRoundId` 会被断言拦成静默漏轮）。
+   * 「本次临时拿到的短锁」——前者若在收尾 `release`，会把用户正在使用的当前会话长锁误放掉
+   * （此后该会话的**属性整写**会一律 fail-closed，直到面板重新拿锁）。
+   *
+   * 轮引用不再受影响：`appendRoundId` 已改为无锁追加 journal（见该方法）。
    */
   private async flushMetaUnderLock(sessionId: string): Promise<void> {
     let acquiredByUs = false;
@@ -428,9 +450,11 @@ export class WorkspaceSessionStore implements ISessionStore {
     const meta = data.meta && typeof data.meta === 'object' ? data.meta : null;
     if (meta) this.metas.set(sessionId, meta);
     else this.metas.delete(sessionId);
-    const roundIds = Array.isArray(data.roundIds)
+    // roundIds 真相 = journal；JSON 内联数组是迁移期遗留，用同一合并点（SSOT）接入
+    const inline = Array.isArray(data.roundIds)
       ? data.roundIds.filter((id): id is string => typeof id === 'string')
       : [];
+    const roundIds = mergeRoundIds(inline, readRoundIdsFile(path));
     if (roundIds.length > 0) this.roundIdsStore.set(sessionId, roundIds);
     else this.roundIdsStore.delete(sessionId);
     if (data.archived === true) this.archivedIdsSet.add(sessionId);
@@ -442,7 +466,13 @@ export class WorkspaceSessionStore implements ISessionStore {
     }
   }
 
-  /** 原子写单个会话文件（只触碰该会话，不重写其他会话） */
+  /**
+   * 整写会话属性文件（只触碰该会话，不重写其他会话）
+   *
+   * **不写 roundIds**：轮的真相在同名 `.rounds`（追加由 `appendRoundId` 直落）。
+   * 因此本方法的读写竞态面只剩 meta / archived / lastActiveAt 三项属性，
+   * 与轮引用彻底解耦——「meta 补写缩短 roundIds」这一整类事故不再可能发生。
+   */
   private writeSessionFile(sessionId: string): void {
     this.assertSessionWriteAllowed(sessionId);
     const meta = this.metas.get(sessionId) ?? null;
@@ -457,20 +487,22 @@ export class WorkspaceSessionStore implements ISessionStore {
     const body: SessionFileShape = {
       sessionId,
       meta,
-      roundIds,
       ...(archived ? { archived: true } : {}),
       ...(lastActiveAt ? { lastActiveAt } : {}),
     };
     atomicWriteFileSync(this.sessionFilePath(sessionId), JSON.stringify(body, null, 2));
   }
 
-  /** 删除单个会话文件（不存在则忽略） */
+  /** 删除单个会话的两份文件（JSON 属性 + rounds journal；不存在则忽略） */
   private removeSessionFile(sessionId: string): void {
     // 删除也是写：未持锁且文件存在 ⇒ 拒绝（防止删掉另一个窗口正在用的会话）
     this.assertSessionWriteAllowed(sessionId);
     try {
       const path = this.sessionFilePath(sessionId);
       if (existsSync(path)) unlinkSync(path);
+      // journal 与 JSON 同生共死：只删 JSON 会让下次同 id 会话「复活」旧轮
+      const roundsPath = roundIdsPath(path);
+      if (existsSync(roundsPath)) unlinkSync(roundsPath);
     } catch (err) {
       console.warn(`Memora 会话文件删除失败：${sessionId}`, err);
     }
@@ -643,7 +675,11 @@ export class WorkspaceSessionStore implements ISessionStore {
     if (existing) {
       this.metas.set(sessionId, { ...existing, messageCount: this.deriveMessageCount(sessionId) });
     }
-    // 只重写本会话文件（先收缩 roundIds 真源再落盘）
+    // 只重写本会话（先收缩 roundIds 真相再落属性）：journal 整写表达「删」，故仍需持锁。
+    // ⚠️ 鉴权必须在写 journal **之前**：写在 writeSessionFile 内会晚一步——journal 已被清空
+    // 才抛错，另一窗口刚追加的轮就被冲掉了（fail-closed 变成「先破坏再报错」）。
+    this.assertSessionWriteAllowed(sessionId);
+    writeRoundIdsFile(this.sessionFilePath(sessionId), kept);
     this.writeSessionFile(sessionId);
 
     const removed = roundIds.slice(idx);
@@ -806,34 +842,74 @@ export class WorkspaceSessionStore implements ISessionStore {
   /**
    * 追加 Round ID 到会话（round-based 模式）
    *
+   * **同步追加 journal，不整写、不需要锁**：这是「建轮即入会话」（ADR-044）的落盘面。
+   * 追加只写自己的行、不读旧内容 ⇒ 另一窗口同时写同一会话也不会互相覆盖；返回即盘面可见
+   * ⇒ 视图销毁 / 进程被杀 / 重启都不丢已产生的轮引用。
+   *
+   * 旧实现整写会话 JSON 并由 `assertSessionWriteAllowed` 把关，代价是「不持锁即拒写」：
+   * 面板释放长锁（视图折叠 / 派发租约归还）后，活实例的新轮被判成非法而静默丢失。
+   * 轮引用是单调追加，本来就不需要互斥——互斥留给真正会「删」的整写。
+   *
    * @param sessionId - 会话 ID
    * @param roundId - 要追加的 Round ID
    */
-  appendRoundId(sessionId: string, roundId: string): void {
-    const roundIds = this.roundIdsStore.get(sessionId) ?? [];
-    roundIds.push(roundId);
-    this.roundIdsStore.set(sessionId, roundIds);
-
-    // 更新元数据（roundIds 真源为 roundIdsStore，读时派生）
+  /**
+   * 登记新轮：去重口径唯一（appendFreshRoundIds），内存态与 journal 同一步更新
+   *
+   * `fresh` 为空时必须早退——否则 `updateRoundBasedMessageCount` 会做无意义的计数写、
+   * `persistAppendedRoundIds` 会为重复 id 白写一行。
+   */
+  private commitFreshRoundIds(sessionId: string, incoming: readonly string[]): void {
+    const { merged, fresh } = appendFreshRoundIds(
+      this.roundIdsStore.get(sessionId) ?? [],
+      incoming,
+    );
+    if (fresh.length === 0) return;
+    this.roundIdsStore.set(sessionId, merged);
+    // 更新元数据（roundIds 真源为 roundIdsStore，读时派生；计数随下一次属性写落盘）
     this.updateRoundBasedMessageCount(sessionId);
-    // 只写本会话文件：跨进程写不同会话互不覆盖（本步的核心收益）
+    // 同步追加 journal：不整写、不需要锁（追加只写自己的行，多窗口并发不互相覆盖）
+    this.persistAppendedRoundIds(sessionId, fresh);
+  }
+
+  appendRoundId(sessionId: string, roundId: string): void {
+    this.commitFreshRoundIds(sessionId, [roundId]);
+  }
+
+  /**
+   * 追加 journal + 保证会话实体（`.json`）存在
+   *
+   * 两份文件必须同生：`readSessionFiles` 只按 `.json` 枚举会话，**只有 journal 没有 JSON
+   * 的会话在扫描面根本不存在** ⇒ 它的轮永远不显示、还会被启动清扫当无引用轮回收。
+   * 生产时序里 `createSession` / `setRoundIds` 先于 append，此处是防御（异常时序 / 手工恢复）。
+   *
+   * 写实体走 `writeSessionFile`（文件不存在 ⇒ 首次创建豁免，不需要持锁）。
+   */
+  private persistAppendedRoundIds(sessionId: string, ids: readonly string[]): void {
+    const jsonPath = this.sessionFilePath(sessionId);
+    const needsEntity = !existsSync(jsonPath);
+    appendRoundIdsFile(jsonPath, ids);
+    if (!needsEntity) return;
+    // 实体缺失 ⇒ 本进程从未 load 到这个会话（journal 先于 JSON 的异常形态）：
+    // 盘上已有的轮要先并回内存，否则本进程视图缺轮（要等下次启动才看见）
+    const onDisk = readRoundIdsFile(jsonPath);
+    this.roundIdsStore.set(
+      sessionId,
+      mergeRoundIds(onDisk, this.roundIdsStore.get(sessionId) ?? []),
+    );
     this.writeSessionFile(sessionId);
   }
 
   /**
    * 批量追加 Round ID 到会话（round-based 模式）
    *
+   * 与 appendRoundId 同型：同步追加 journal，一批行一次写入。
+   *
    * @param sessionId - 会话 ID
    * @param roundIds - 要追加的 Round ID 数组
    */
   appendRoundIds(sessionId: string, roundIds: string[]): void {
-    const existing = this.roundIdsStore.get(sessionId) ?? [];
-    const merged = [...existing, ...roundIds];
-    this.roundIdsStore.set(sessionId, merged);
-
-    // 更新元数据（roundIds 真源为 roundIdsStore，读时派生）
-    this.updateRoundBasedMessageCount(sessionId);
-    this.writeSessionFile(sessionId);
+    this.commitFreshRoundIds(sessionId, roundIds);
   }
 
   /**
@@ -859,6 +935,10 @@ export class WorkspaceSessionStore implements ISessionStore {
 
     // 更新元数据（roundIds 真源为 roundIdsStore，读时派生）
     this.updateRoundBasedMessageCount(sessionId);
+    // 完整替换表达「删」（分叉裁剪 / 新建），与此前追加语义相反 ⇒ 仍走整写 + 持锁鉴权。
+    // 顺序：先鉴权（首次创建在此登记 create 豁免）→ 写 journal → 写属性（建立会话实体）。
+    this.assertSessionWriteAllowed(sessionId);
+    writeRoundIdsFile(this.sessionFilePath(sessionId), roundIds);
     this.writeSessionFile(sessionId);
   }
 
@@ -983,12 +1063,18 @@ export class WorkspaceSessionStore implements ISessionStore {
    *
    * 同步写（非异步排队）：这是「关掉插件前排最后发生的事」，异步写会在进程退出瞬间丢。
    * 本字段**非数据路径**：丢了只退回「最近写入」会话，不影响任何会话 / 轮次可见性。
+   * 因此写盘失败（典型：该会话正被另一窗口持有，本进程无写权）只降级为内存态，**不上抛**——
+   * 非数据字段不该把「切会话」变成一条错误提示。
    */
   setLastActiveSession(sessionId: string): void {
     if (!sessionId || this.lastActiveSessionId === sessionId) return;
     this.lastActiveSessionId = sessionId;
     this.lastActiveAtStore.set(sessionId, new Date().toISOString());
-    this.writeSessionFile(sessionId);
+    try {
+      this.writeSessionFile(sessionId);
+    } catch (err) {
+      console.warn(`Memora 停留时刻未落盘（仅内存生效）：${sessionId}`, err);
+    }
   }
 }
 
