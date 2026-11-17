@@ -212,6 +212,81 @@ describe('projectSessionStatus — 托管语义状态优先（readMeta 分支）
   });
 });
 
+describe('projectSessionStatus — 用户手动打断 hosted Worker（B4）', () => {
+  /** 带语义状态的托管 Worker 元数据 */
+  const hostedMeta = (workStatus: 'working' | 'blocked') =>
+    ({ sessionId: 's1', origin: 'hosted', workStatus, workOrder: '加权限管理' }) as never;
+  /** 按轮级来源戳造轮（判据是 Round.origin，不是会话身份） */
+  const roundFrom = (status: RoundStatus, origin: 'user' | 'hosted'): Round =>
+    ({ ...round(status), origin }) as Round;
+
+  it('用户轮仍在执行 → workOrder 暂停生效，workStatus 不再冒充在跑', () => {
+    const status = projectSessionStatus(
+      ports({
+        readMeta: () => hostedMeta('working'),
+        readRoundIds: () => ['r1'],
+        readRoundStatus: () => 'pending',
+        readRound: () => roundFrom('pending', 'user'),
+      }),
+      's1',
+    );
+    expect(status).toEqual({ kind: 'unsettled' });
+  });
+
+  it('用户轮仍在跑且等答复 → 投影为等你，不是 workStatus 的 running', () => {
+    const status = projectSessionStatus(
+      ports({
+        readMeta: () => hostedMeta('working'),
+        peekActivity: () => ({ running: true, waiting: true }),
+        readRoundIds: () => ['r1'],
+        readRoundStatus: () => 'pending',
+        readRound: () => roundFrom('pending', 'user'),
+      }),
+      's1',
+    );
+    expect(status).toEqual({ kind: 'waiting' });
+  });
+
+  it('用户轮已收场 → 自动恢复 workStatus 优先，无需复位动作', () => {
+    const status = projectSessionStatus(
+      ports({
+        readMeta: () => hostedMeta('working'),
+        readRoundIds: () => ['r1'],
+        readRoundStatus: () => 'complete',
+        readRound: () => roundFrom('complete', 'user'),
+      }),
+      's1',
+    );
+    expect(status).toEqual({ kind: 'running' });
+  });
+
+  it('最近一轮带 hosted 戳（代理派发）→ 不触发暂停，workStatus 照常优先', () => {
+    const status = projectSessionStatus(
+      ports({
+        readMeta: () => hostedMeta('working'),
+        readRoundIds: () => ['r1'],
+        readRoundStatus: () => 'pending',
+        readRound: () => roundFrom('pending', 'hosted'),
+      }),
+      's1',
+    );
+    expect(status).toEqual({ kind: 'running' });
+  });
+
+  it('读不到最近轮 → 不冒充身份失效，workStatus 照常优先', () => {
+    const status = projectSessionStatus(
+      ports({
+        readMeta: () => hostedMeta('working'),
+        readRoundIds: () => ['r1'],
+        readRoundStatus: () => undefined,
+        readRound: () => undefined,
+      }),
+      's1',
+    );
+    expect(status).toEqual({ kind: 'running' });
+  });
+});
+
 describe('projectCreatedBy — 归属三档', () => {
   const completeHistory = { coverage: 'complete' as const, children: [] };
   const hostedMeta = { sessionId: 's1', origin: 'hosted' } as never;
