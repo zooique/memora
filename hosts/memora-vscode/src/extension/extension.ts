@@ -40,6 +40,7 @@ import { broadcastRolePackTeams } from './host/rolePackTeams.js';
 import { attachRolePackCatalog, createRolePackLoader } from './host/rolePackCatalog.js';
 // 草稿页配置面（无 Agent 的技能清单聚合）：来源在 host 侧组装，面板只持 push 回调
 import { DraftConfigSurface } from '../webview/helpers/draftConfigSurface.js';
+import { registerDisposeOnRestore } from '../webview/helpers/panelRestore.js';
 // 「新建会话默认角色包」单点读口（草稿页无显式选择时用它取「即将生效的角色包」）
 import { resolveDraftRolePackName } from './host/rolePackDefault.js';
 import { MemoryGcScheduler } from './host/memoryGcScheduler.js';
@@ -464,6 +465,19 @@ export function activate(context: vscode.ExtensionContext): void {
   // 创建日志输出通道 —— 内核日志将导向此通道，用户可在 VS Code 输出面板查看
   const memoraOutput = vscode.window.createOutputChannel('Memora');
   context.subscriptions.push(memoraOutput);
+
+  // ─── 拦截 VS Code 重启时的面板自动恢复（空壳占位处理） ───
+  // createWebviewPanel 的独立 tab 会被 VS Code 在重启时自动恢复，但恢复的只是
+  // 空壳（webview 上下文已丢、html 未设），用户看到空白 tab 要手动关。
+  // 用 WebviewPanelSerializer deserializer：收到恢复请求时立刻 dispose——VS Code
+  // 收到空面板就丢弃，不留占位。比在 activate 开头清理更稳（恢复是异步的，activate
+  // 时可能还没完成；deserializer 在恢复瞬间被调，时机准确）。
+  // 注：没用 allWebviewPanels——那是 1.93 才加的公开只读数组，宿主锁定 ~1.90.0。
+  context.subscriptions.push(
+    registerDisposeOnRestore(MemoraHostedPanel.viewType),
+    registerDisposeOnRestore(MemoraWorkbenchPanel.viewType),
+    registerDisposeOnRestore(MemoraSettingsPanel.viewType),
+  );
 
   // 大模型配置存储（providerStore 供配置面板 + Agent 装配共用）
   const providerStore = new ProviderStore(context.secrets);
