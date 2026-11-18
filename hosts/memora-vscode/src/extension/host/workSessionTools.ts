@@ -46,6 +46,20 @@ import {
 } from './answerSessionQuestionTool.js';
 
 /**
+ * 主控工具的岗位纪律（HOSTED-CONFIRM-SOFT-1 判据 ④ · 「岗位三层」第②层：工具契约不可换）
+ *
+ * 三条沿用 SOFT-1 定案原文，不在此另造判据：不推送、不发布；遇到先提醒；用户明确要求 = 授权。
+ * 真相链：设计 = 定案 §4.2 P1 / B7；待办 = `HOSTED-CONFIRM-SOFT-1` ④。
+ * 唯一消费面 = `create_session` / `send_to_session` 的 description——模型每次调用前读到。
+ * 刻意不进 `Agent.chat()` 的 input：input 会原样落盘成轮的用户消息，注入纪律会让
+ * live 投影（原文）与重启后的落盘历史（带纪律）显示漂移；Worker 侧送达需内核提示词注入位，
+ * 不在宿主批内夹带（见台账补记）。
+ */
+const WORK_SESSION_TOOL_DISCIPLINE =
+  '岗位纪律（不可违反）：不推送、不发布；遇到先提醒；用户明确要求 = 授权。' +
+  '开活 / 派活时把边界写进 mandate；不把推送 / 发布 / 发版这类不可逆操作交给 Worker。';
+
+/**
  * 会话清单工具名（装配点、单测、后续切片共用的唯一字面量）
  *
  * 与设计文档 §13.11.1 的四个路由工具之一同名；本片只落地这一个。
@@ -560,7 +574,8 @@ const SEND_TO_SESSION_DEFINITION: ToolDefinition = {
   name: SEND_TO_SESSION_TOOL_NAME,
   description:
     '向指定会话发送一条输入，由该会话继续处理。sid 必须来自 list_work_sessions。' +
-    '目标会话正在运行时返回 E_BUSY（不排队）；被另一个窗口占用时返回 E_LOCKED（不排队）。',
+    '目标会话正在运行时返回 E_BUSY（不排队）；被另一个窗口占用时返回 E_LOCKED（不排队）。' +
+    WORK_SESSION_TOOL_DISCIPLINE,
   parameters: {
     type: 'object',
     properties: {
@@ -686,7 +701,8 @@ const CREATE_SESSION_DEFINITION: ToolDefinition = {
     '并告诉你撞上哪条活、撞在哪，你可决定等它收场或缩小 paths。' +
     'mandate（可选）= 这条活的语义边界（要解决什么问题、不解决什么问题，≤200字），用于约束 Worker 的工作范围。' +
     '与 text 的区别：text 是交给 Worker 的第一轮具体指令，mandate 是更高层的整体边界。' +
-    '返回新会话的 sid 与 title；角色包不存在或不可用时返回 E_ROLE_PACK。',
+    '返回新会话的 sid 与 title；角色包不存在或不可用时返回 E_ROLE_PACK。' +
+    WORK_SESSION_TOOL_DISCIPLINE,
   parameters: {
     type: 'object',
     properties: {
@@ -710,7 +726,8 @@ const CREATE_SESSION_DEFINITION: ToolDefinition = {
           '这条活的语义边界（要解决什么问题、不解决什么问题），≤200字。可选。' +
           '与 text 的区别：text 是交给 Worker 的第一轮具体指令（如"写一个 PermissionManager 类"），' +
           'mandate 是这条活的整体边界（如"解决用户权限校验绕过问题，不做权限系统重构"）。' +
-          'Worker 会同时拿到两者，mandate 约束它的工作范围，text 给它起步方向。',
+          'mandate 落盘为该会话的 workOrder（会话清单 / 审计可读），首轮只把 text 交给 Worker；' +
+          '不要把要 Worker 立刻执行的指令塞进 mandate。',
       },
     },
     required: ['rolePack', 'title', 'text', 'paths'],

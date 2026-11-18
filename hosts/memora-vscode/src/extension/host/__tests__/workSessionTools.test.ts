@@ -1026,6 +1026,34 @@ describe('托管 v0 · create_session（工具层）', () => {
     }
   }, 120_000);
 
+  it('岗位纪律进工具契约：create / send 三条齐全且尾段同源；mandate 不再假称送达 Worker', async () => {
+    const probe = await assembleProbe(true, {});
+    try {
+      // 从运行时定义面读（与模型看到的是同一份），不在测试里抄一份契约文案
+      const definitions = probe.agent.tools!.allToolDefinitions;
+      const create = definitions.find((entry) => entry.name === CREATE_SESSION_TOOL_NAME);
+      const send = definitions.find((entry) => entry.name === SEND_TO_SESSION_TOOL_NAME);
+      expect(create?.description).toBeDefined();
+      expect(send?.description).toBeDefined();
+      // 三条锚点来自 SOFT-1 定案；每个委派动作都必须带上，缺一处即纪律出现盲区
+      for (const anchor of ['不推送、不发布', '遇到先提醒', '用户明确要求 = 授权']) {
+        expect(create?.description).toContain(anchor);
+        expect(send?.description).toContain(anchor);
+      }
+      // 同一常量拼接 ⇒ 两处尾段逐字相同（防其中一处被单独删 / 改写后悄悄漂移）
+      const disciplineTail = (text: string): string => text.slice(text.indexOf('岗位纪律'));
+      expect(disciplineTail(create!.description)).toBe(disciplineTail(send!.description));
+      // 假承诺撤回：首轮只发 text，mandate 落 workOrder；描述不得再称 Worker 同时拿到两者
+      const mandate = (
+        create?.parameters.properties as Record<string, { description?: string }> | undefined
+      )?.mandate;
+      expect(mandate?.description).not.toContain('同时拿到');
+      expect(mandate?.description).toContain('首轮只把 text 交给 Worker');
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
   it('角色包缺失 ⇒ E_ROLE_PACK，绝不复用 E_NOT_FOUND', async () => {
     const createSession = vi.fn(async (): Promise<CreateSessionResult> => ({
       ok: false,
