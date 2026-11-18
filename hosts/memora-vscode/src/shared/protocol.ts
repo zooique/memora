@@ -1380,8 +1380,9 @@ export type ExtensionToWebviewMessage =
   /**
    * 历史会话列表（对 session_list 的应答）
    *
-   * host 返回非当前会话的历史列表（按 updatedAt 降序），webview 据此渲染历史模态浮层。
-   * 当前会话不进历史记录，故 sessions 不含当前会话——天然规避「删除当前会话」边界。
+   * host 返回非当前会话的历史列表（按 updatedAt 降序 = 该会话最后 turn 时间），webview
+   * 据此渲染历史模态浮层；日期分组、组间顺序与条目相对时间同用该字段，不按 sessionId
+   * 创建日期。当前会话不进历史记录，故 sessions 不含当前会话——天然规避「删除当前会话」边界。
    *
    * **分组（三组）**：会话记录 / 留存区 / 助手建的，数据只有一份——
    * `sessions` 是**全量**，`archivedIds` 标出留存区成员，`origin` 标出助手派发的
@@ -1397,6 +1398,7 @@ export type ExtensionToWebviewMessage =
       sessions: {
         sessionId: string;
         title: string;
+        /** 最后 turn 时间（宿主登记新轮时刷新）；宿主排序与 webview 分组 / 显示唯一同源 */
         updatedAt: string;
         /** 会话消息数（User+AI 各计一条；宿主读时从 Round 真源现场派生）。历史菜单条目展示「N 条」 */
         messageCount?: number;

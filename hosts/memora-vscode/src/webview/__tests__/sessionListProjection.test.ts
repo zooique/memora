@@ -6,7 +6,8 @@
  * 宿主如果在这里按来源过滤，就会把「哪条会话可见」写成两份口径（DTO 注释 vs 实现）。
  *
  * 变异靶标：把 filter 加回 `m.origin !== 'hosted'` ⇒ 第一条用例红；
- * 把 assistantSessionId 排除删掉 ⇒ 同一条用例红（排除项少一个）。
+ * 把 assistantSessionId 排除删掉 ⇒ 同一条用例红（排除项少一个）；
+ * 把 updatedAt 排序反向 / 改成 sessionId 排序 ⇒ 新增排序用例红。
  */
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -21,11 +22,15 @@ import { buildSessionListMessage } from '../helpers/sessionList.js';
 const L10N = { t: (message: string) => message } as never;
 
 /** 只填投影会读的字段（不做假元数据工厂，避免替身比被测面还大） */
-function meta(sessionId: string, origin?: SessionMeta['origin']): SessionMeta {
+function meta(
+  sessionId: string,
+  origin?: SessionMeta['origin'],
+  updatedAt = '2026-11-17T10:00:00.000Z',
+): SessionMeta {
   return {
     sessionId,
     origin,
-    updatedAt: '2026-11-17T10:00:00.000Z',
+    updatedAt,
     messageCount: 0,
   } as SessionMeta;
 }
@@ -63,6 +68,20 @@ describe('session_list_data 来源投影（HOSTED-LIST-GROUP-1）', () => {
     const msg = buildSessionListMessage(fakeStore([meta('2026-11-17-old')]), '', L10N);
     expect(msg.sessions).toHaveLength(1);
     expect(msg.sessions[0].origin).toBeUndefined(); // 不补写成 'user'（真源是 meta）
+  });
+
+  it('按最后 turn 时间 updatedAt 降序下发，不被 sessionId 创建日期带偏', () => {
+    const metas = [
+      meta('2026-11-18-created', undefined, '2026-11-16T10:00:00.000Z'),
+      meta('2026-08-01-created', undefined, '2026-11-18T10:00:00.000Z'),
+      meta('2026-11-17-created', undefined, '2026-11-17T10:00:00.000Z'),
+    ];
+    const msg = buildSessionListMessage(fakeStore(metas), '', L10N);
+    expect(msg.sessions.map((s) => s.sessionId)).toEqual([
+      '2026-08-01-created',
+      '2026-11-17-created',
+      '2026-11-18-created',
+    ]);
   });
 });
 

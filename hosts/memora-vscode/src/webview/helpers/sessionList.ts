@@ -13,7 +13,8 @@
  *     由用户实际操作的工作会话，不是助手窗那一条。列表按 `origin` 原样下发，
  *     webview 侧归到独立分组；宿主不在这里按来源过滤，否则「是不是工作会话」
  *     就成了两处口径（DTO 注释与实现各写一份）；
- *   - 按 updatedAt 降序；无历史时 sessions 为空数组（webview 显示空态）；
+ *   - 按 `updatedAt` 降序（宿主登记新轮时刷新 = 该会话最后 turn 时间，webview 日期分组
+ *     同消费此字段，不按 sessionId 创建日期）；无历史时 sessions 为空数组（webview 显示空态）；
  *   - sessions 是**全量**，archivedIds 只是留存区分组标签（单数据源 + 前端过滤，
  *     不拆两份列表——两份真相源必然出现「两边都有 / 两边都没有」）；
  *   - `lastOutcome` 是**读侧投影**：真源 = 该会话最后一轮的 `RoundStatus`（RoundStore 索引），
@@ -54,9 +55,9 @@ export function buildSessionListMessage(
   readLastRoundStatus?: (roundId: string) => RoundStatus | undefined,
   assistantSessionId?: string,
 ): SessionListMessage {
-  // 非当前会话，按更新时间降序（当前会话不进历史记录是设计收敛，不是过滤失误）。
-  // 排除项只有助手窗那一条（由持久指针认定）；助手派发的 work 会话原样下发，
-  // 分组交给 webview 按 origin 过滤（与 archivedIds 同型：单数据源 + 前端过滤）。
+  // 非当前会话，按 updatedAt 降序（最后 turn 时间；当前会话不进历史记录是设计收敛，
+  // 不是过滤失误）。排除项只有助手窗那一条（由持久指针认定）；助手派发的 work 会话
+  // 原样下发，分组交给 webview 按 origin 过滤（与 archivedIds 同型：单数据源 + 前端过滤）。
   const metas = store
     .listSessionMetas()
     .filter((m) => m.sessionId !== currentSessionId && m.sessionId !== assistantSessionId)
@@ -158,6 +159,7 @@ function toSessionSummary(
     sessionId: meta.sessionId,
     // 标题兜底在读点补（占位串不进 meta）：displayName/autoName 都空 = 尚未命名，显示创建时刻
     title: sessionDisplayTitle(meta.sessionId, meta, l10n),
+    // 最后 turn 时间的唯一投影：宿主登记新轮时刷新；webview 排序 / 分组 / 相对时间同源
     updatedAt: meta.updatedAt,
     messageCount: meta.messageCount,
     // FD-3-A 元数据搜索匹配域：undefined 经 postMessage JSON 序列化自然剔除

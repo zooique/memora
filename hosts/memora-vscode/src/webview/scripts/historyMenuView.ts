@@ -22,8 +22,9 @@
  *      （新一轮浏览回到默认分组，即 `openFresh`）。数据下发（含归档/移回后的
  *      列表刷新）只按**当前视图**渲染——若在下发时机强制重置，留存区里点
  *      「移回」会把用户踢回会话记录，连续管理被打断。
- *   ③ 日期真源 = sessionId 前缀（「YYYY-MM-DD-name」，契约锚定内核
- *      `buildSessionId`/`splitSessionId`，不新加协议字段——加了就是第二真相源）。
+ *   ③ 时间真源 = `updatedAt`（宿主登记新轮时刷新 = 该会话最后 turn 时间）：
+ *      日期分组、组间顺序、条目相对时间同消费这一字段；不按 sessionId 创建日期前缀
+ *      （旧会话被重新活跃后必须进新日期组并置顶），也不新加协议字段。
  *   ④ 空态两分：搜索无匹配 ≠ 分组为空，文案必须区分（否则搜不到会被误读成「分组是空的」）。
  *
  * 状态（`sessionListView` / `sessionSearchQuery` / `lastSessionList` /
@@ -41,6 +42,7 @@ import { getIconSvg } from './icons.js';
 export interface SessionSummaryDto {
   sessionId: string;
   title: string;
+  /** 最后 turn 时间（宿主登记新轮时刷新）；排序 / 日期分组 / 相对时间唯一同源 */
   updatedAt: string;
   keyTopics?: string[];
   summary?: string;
@@ -209,14 +211,12 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
 
   /** 渲染当前分组的条目（单容器，一次只渲染一组；搜索词在组内二次过滤）。
    *
-   * **按日期分组（2026-10-17）**：条目在日期组头下按 sessionId 前缀归组——
-   * 日期真源 = sessionId 前缀（契约锚定内核 `buildSessionId`/`splitSessionId`
-   * 「YYYY-MM-DD-name」格式，与 `fmtRelativeTime` 末尾 `slice(0, 10)` 同款派生，
-   * **不新加协议字段**——加了就是第二真相源，格式调整时必漂移）。
+   * **按最后 turn 时间分组（2026-11-18 订正）**：条目在日期组头下按 `updatedAt`
+   * 日期前缀归组——真源与组间顺序、条目相对时间、`fmtRelativeTime` 末尾
+   * `slice(0, 10)` 全部同源，不按 sessionId 创建日期（老会话重新活跃须进新日期组）。
    * 组头是**非 `.treedd__item` 的纯展示元素**：dropdown 键盘导航取全部
    * `.treedd__item`，组头若长成 item 会让方向键跳到不可选中的组头。
-   * 组间按 ISO 日期降序（字符串可比，与 updatedAt 降序同向：最新活跃的日期组在前），
-   * 组内保持 updatedAt 降序（沿用下发顺序）。 */
+   * 组间按 ISO 日期降序（字符串可比），组内保持下发顺序（宿主已按 updatedAt 降序）。 */
   function renderHistoryView(): void {
     const archived = new Set(lastArchivedIds);
     const q = sessionSearchQuery.trim().toLowerCase();
@@ -252,10 +252,10 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
       menuEl.appendChild(empty);
       return;
     }
-    // 按日期前缀分组（Map 保插入序，再按日期降序排组——ISO 日期字符串可直接比较）
+    // 按最后 turn 时间分组（Map 保插入序，再按日期降序排组——ISO 日期字符串可直接比较）
     const byDay = new Map<string, typeof visible>();
     for (const s of visible) {
-      const day = s.sessionId.slice(0, 10);
+      const day = s.updatedAt.slice(0, 10);
       const arr = byDay.get(day);
       if (arr) arr.push(s);
       else byDay.set(day, [s]);

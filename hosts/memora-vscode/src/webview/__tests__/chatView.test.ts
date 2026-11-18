@@ -4529,32 +4529,44 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     expect(document.querySelectorAll('#historyMenu .treedd__item').length).toBe(0);
   });
 
-  it('session_list_data 按日期前缀分组渲染组头；组间 ISO 日期降序、组头带条数', () => {
+  it('session_list_data 按最后 turn 时间（updatedAt）分组；旧会话新活跃也置顶，不按创建日期', () => {
     mountChatView();
     dispatch({
       type: 'session_list_data',
       sessions: [
-        // 下发顺序刻意「旧日期在前」：Map 插入序 ≠ 降序 ⇒ 组间排序不是空转
-        // （变异实证：去掉 sort 后本测试红——若数据碰巧降序下发则 sort 空转、断言失真）
-        { sessionId: '2026-08-14-s1', title: '会话B', updatedAt: new Date().toISOString() },
-        { sessionId: '2026-08-15-s1', title: '会话A', updatedAt: new Date().toISOString() },
-        { sessionId: '2026-08-14-s2', title: '会话C', updatedAt: new Date().toISOString() },
+        // 下发顺序刻意「旧时间在前」+ sessionId 与活跃日冲突：Map 插入序、创建日期前缀
+        // 都不是判据。变异实证：分组键改回 sessionId.slice(0,10) 后本测试红。
+        {
+          sessionId: '2026-11-16-newly-created',
+          title: '新建但久未活跃',
+          updatedAt: '2026-11-16T09:00:00.000Z',
+        },
+        {
+          sessionId: '2026-08-01-old-created',
+          title: '老会话刚活跃',
+          updatedAt: '2026-11-18T09:00:00.000Z',
+        },
+        {
+          sessionId: '2026-08-02-old-created',
+          title: '老会话次新活跃',
+          updatedAt: '2026-11-18T08:00:00.000Z',
+        },
       ],
       archivedIds: [],
     });
     const heads = [...document.querySelectorAll('#historyMenu .session-history__date-group')];
-    // 两个日期 → 两个组头；组间降序（ISO 日期字符串可直接比较，与 updatedAt 降序同向）
+    // 组头取 updatedAt 日期：两个 11-18 条目聚合在前，11-16 在后；
     // 量词口径（2026-10-18 真机订正）：会话 = 多 turn 集合，日期头只计数不量词（「条」留给消息数）
     expect(heads.map((h) => h.textContent)).toEqual([
-      '2026-08-15 · 1 sessions',
-      '2026-08-14 · 2 sessions',
+      '2026-11-18 · 2 sessions',
+      '2026-11-16 · 1 sessions',
     ]);
-    // 组内保留下发顺序：新日期组的条目在前，旧日期组内两条按原序
+    // 组内沿用宿主下发的 updatedAt 降序：老会话按最后 turn 时间占前两位，创建日期不参与排序
     const items = [...document.querySelectorAll('#historyMenu .treedd__item')];
     expect(items.map((i) => (i as HTMLElement).dataset.treeddId)).toEqual([
-      '2026-08-15-s1',
-      '2026-08-14-s1',
-      '2026-08-14-s2',
+      '2026-08-01-old-created',
+      '2026-08-02-old-created',
+      '2026-11-16-newly-created',
     ]);
   });
 
