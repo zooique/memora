@@ -9,8 +9,9 @@
  * 创建者实例还没装配时同样压待办、不丢，装配后放出；
  * 待办多条只唤醒一轮，且同一轮重复信号不会重复排队。
  *
- * 第六切片（HOSTED-ASK-ROUTE-1 · 等你作答）：带戳的工作会话挂起提问 → 秒级叫醒创建者，
- * 题面 + 选项随 system 事实带出；忙 / 未装配压待办不丢；无戳轮不叫代理；同批去重；
+ * 第六切片（HOSTED-ASK-ROUTE-1 · 等你拍板）：带戳的工作会话挂起提问 → 秒级叫醒创建者，
+ * 题面 + 选项随 system 事实带出；正文按 2026-11-18 拍板为「按判断拍板继续、不阻塞」；
+ * 忙 / 未装配压待办不丢；无戳轮不叫代理；同批去重；
  * needs-answer 键与落定键隔离（同轮先提问后落定，两条都能投递，落定不被吞）。
  */
 import { readFileSync } from 'node:fs';
@@ -508,13 +509,17 @@ describe('HostedSessionNotifier · 等你作答（HOSTED-ASK-ROUTE-1）', () => 
     // 子会话自己的队列静默；事实只投给创建者
     expect(h.childQueue).not.toHaveBeenCalled();
     const text = h.creatorQueue.mock.calls[0][0] as string;
-    expect(text).toContain('[托管会话需要你作答]');
+    expect(text).toContain('[托管会话需要你拍板]');
     expect(text).toContain('抓取任务');
     expect(text).toContain(CHILD);
     expect(text).toContain('用哪个方案？');
     expect(text).toContain('方案A / 方案B');
     expect(text).toContain('要不要发布？');
-    expect(text).toContain('逐题作答');
+    // 2026-11-18 用户拍板：助手按判断拍板继续、不阻塞，不再强制「逐题作答」这一种形态
+    expect(text).toContain('按判断拍板继续');
+    expect(text).toContain('不要阻塞任务');
+    expect(text).toContain('别拖到超时让子会话自己代选');
+    expect(text).not.toContain('请立即逐题作答');
   });
 
   it('② 创建者忙 → 压待办不丢，也不起轮；收场后合并浮现', () => {
@@ -627,7 +632,7 @@ describe('HostedSessionNotifier · 等你作答（HOSTED-ASK-ROUTE-1）', () => 
     expect(h.notifier.noteSettledFlow(CHILD, 'SAME-ID', false, false)).toBe(true);
     expect(h.creatorQueue).toHaveBeenCalledTimes(2);
     const texts = h.creatorQueue.mock.calls.map((c) => c[0] as string);
-    expect(texts.some((t) => t.includes('[托管会话需要你作答]'))).toBe(true);
+    expect(texts.some((t) => t.includes('[托管会话需要你拍板]'))).toBe(true);
     expect(texts.some((t) => t.includes('[托管会话已落定]'))).toBe(true);
   });
 
