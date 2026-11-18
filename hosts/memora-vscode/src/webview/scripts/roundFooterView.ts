@@ -81,6 +81,11 @@ export interface RoundFooterOptions {
   /** 发消息（chatView 注入 vscode.postMessage） */
   post: (msg: WebviewToExtensionMessage) => void;
   /**
+   * 引用文本 → 输入区（chatView 注入 applyQuote，与右键引用选区同一出口）。
+   * 仅 assistant 形态的「引用此回答」按钮消费；self 不注入也能建栏（缺省无按钮）。
+   */
+  quote?: (text: string) => void;
+  /**
    * 挂载形态（ASSISTANT-WECHAT-UX-1）：缺省 `'self'` = 全量底栏（复制 + 三个轮级动作）；
    * `'assistant'` = 微信心智，只留「复制整链」——重新生成 / 分叉 / 删除是工程操作，
    * 不在脱手对话窗露面。判据只在呈现层取值；真源 `ROUND_ACTIONS` 与右键菜单逐字不动
@@ -95,7 +100,7 @@ export interface RoundFooterOptions {
  * @param opts 见 {@link RoundFooterOptions}
  */
 export function buildRoundGroupFooter(opts: RoundFooterOptions): void {
-  const { group, pending, locked, post, form = 'self' } = opts;
+  const { group, pending, locked, post, quote, form = 'self' } = opts;
   // 幂等：同容器重复建栏会叠出两份操作行
   if (group.querySelector('.round-group__footer')) return;
   const footer = document.createElement('div');
@@ -111,6 +116,22 @@ export function buildRoundGroupFooter(opts: RoundFooterOptions): void {
   );
   copyBtn.addEventListener('click', () => copyText(roundChainText(group)));
   actions.appendChild(copyBtn);
+  // 引用此回答（BUBBLE-QUOTE-1）：助手形态专属。整条正文 = 本轮所有 assistant 段的原始
+  // Markdown（不含用户提问——「引用此类气泡正文」的拍板口径），复用聊天窗注入的 applyQuote
+  // 出口，与右键引用选区同一胶囊链。self 形态不建此按钮，逐字不变。
+  // 按钮恒建、点击时才读 rawText：建栏时流式正文尚未回填（写点在 chatView 的流式追加处），
+  // 建栏期取值会恒空 ⇒ 与 roundActionCtx 同范式，运行时读 DOM 才是唯一可信时点。
+  if (form === 'assistant' && quote) {
+    const quoteBtn = createIcon('quote', l10n.t('Quote this answer'), 'msg-quote-icon');
+    quoteBtn.addEventListener('click', () => {
+      const answerText = [...group.querySelectorAll<HTMLElement>('.msg.assistant')]
+        .map((seg) => (seg.dataset.rawText ?? '').trim())
+        .filter(Boolean)
+        .join('\n\n');
+      if (answerText) quote(answerText);
+    });
+    actions.appendChild(quoteBtn);
+  }
   // 轮级动作：文案 / 图标 / 判据 / 执行全部取自真源，本面只负责图标按钮形态。
   // 助手形态只留复制整链（微信心智：脱手对话窗不露工程操作）；self 形态逐字走全集。
   // 真源表 ROUND_ACTIONS 本身不改——右键菜单与 self 底栏仍消费全集，避免改判据带伤。

@@ -2025,11 +2025,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (att) renderAttachmentStrip(div, att);
       wrapper.appendChild(div);
       // 用户消息 hover 操作区：复制图标 + 时间戳
+      // （引用此气泡按钮见下方 assistant 形态差异段；整条正文 = text，复用 applyQuote 出口）
       const actions = document.createElement('div');
       actions.className = 'msg-user-actions';
       const copyBtn = createIcon('copy', l10n.t('Copy message'), 'msg-copy-icon');
       copyBtn.addEventListener('click', () => copyText(text));
       actions.appendChild(copyBtn);
+      // 微信心智（BUBBLE-QUOTE-1）：助手窗的用户气泡 hover 栏加「引用此气泡」整条按钮。
+      // 仅 assistant 形态加，self 逐字不变；落点同右键引用出口 applyQuote，不另造引用逻辑。
+      if (document.body.dataset.form === 'assistant') {
+        const quoteBtn = createIcon('quote', l10n.t('Quote this message'), 'msg-quote-icon');
+        quoteBtn.addEventListener('click', () => applyQuote(text));
+        actions.appendChild(quoteBtn);
+      }
       const t = fmtTime(ts);
       if (t) {
         const timeEl = document.createElement('span');
@@ -2338,6 +2346,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 助手形态底栏只留复制，与既有 getForm 注入同源读数，不另造形态判据。
       form: document.body.dataset.form === 'assistant' ? 'assistant' : 'self',
       post: (m) => vscode.postMessage(m),
+      // BUBBLE-QUOTE-1：底栏「引用此回答」与用户气泡「引用此气泡」共用 applyQuote 出口
+      quote: applyQuote,
     });
     roundGroupEl = g;
     return g;
@@ -4073,6 +4083,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     __skillPickerOnSelect: (id) => skillPickerView.select(id),
   });
 
+  /**
+   * 引用文本 → 输入区胶囊（COPY-2 出口单点）：右键引用选区 / hover「引用此气泡」整条
+   * 三入口共用同一出口，避免「谁引用、怎么落胶囊」散在多处漂移。
+   * 语义边界仍以 quoteDraft 为真源——文本快照，不进协议、不跨切换残留。
+   */
+  function applyQuote(text: string): void {
+    quoteDraft.set(text);
+    renderAttachmentRow();
+    input.focus();
+  }
+
   // ─── 右键语义菜单（COPY-2 · Layer B）───
   // 项表外置 `components/contextMenuItems`：表是数据（8 条 when/run），长在视图函数体里会与
   // prettier / max-lines 互相顶牛。此处只注入依赖；场合命中判据仍在 resolveContextMenuCtx 单点。
@@ -4081,11 +4102,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     document,
     createContextMenuItems({
       copy: copyText,
-      quoteReply: (t) => {
-        quoteDraft.set(t);
-        renderAttachmentRow();
-        input.focus();
-      },
+      quoteReply: applyQuote,
       post: (m) => vscode.postMessage(m),
       isLocked: () => sessionControlsLocked,
     }),

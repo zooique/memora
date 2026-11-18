@@ -1488,5 +1488,7 @@
   "Round {0} of {1} · {2}": "第 {0} 轮 / 共 {1} 轮 · {2}",
   "For live step-by-step output, open the session": "如需实时逐步输出，请打开会话",
   "Advancing…": "正在推进…",
-  "Awaiting your answer": "等待你的回答"
+  "Awaiting your answer": "等待你的回答",
+  "Quote this message": "引用此条消息",
+  "Quote this answer": "引用此条回答"
 }

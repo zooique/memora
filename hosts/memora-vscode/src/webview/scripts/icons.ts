@@ -22,6 +22,8 @@
 /** 图标名称类型 */
 export type IconName =
   | 'copy' // 复制
+  // 引用整条消息（hover 栏「引用此气泡」）：对话框 + 内部引号，与「复制」双矩形轮廓区分
+  | 'quote'
   | 'delete' // 删除/垃圾桶
   | 'folder' // 打开目录/文件夹
   | 'file' // 文件
@@ -69,6 +71,9 @@ export type IconName =
 const ICON_PATHS: Record<IconName, string> = {
   // 复制：两个重叠矩形轮廓
   copy: '<rect x="4" y="5" width="7" height="7" rx="1.5"/><rect x="7" y="3" width="7" height="7" rx="1.5"/>',
+  // 引用整条消息：左向对话框（尖角在左下）+ 内部两道引号短线，语义=把这条内容引到输入区
+  quote:
+    '<path d="M13.5 3.5h-11a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1H6l3 2.5v-2.5h4.5a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1z"/><path d="M5.5 6.5h.01"/><path d="M8.5 6.5h.01"/><path d="M5.5 9.5h3"/>',
   // 删除：垃圾桶轮廓
   delete:
     '<path d="M5.5 3.5h5"/><path d="M4 3.5h8l-.5 9a1 1 0 0 1-1 .95H5.5a1 1 0 0 1-1-.95L4 3.5z"/><path d="M6 6.5v5"/><path d="M8 6.5v5"/><path d="M10 6.5v5"/>',

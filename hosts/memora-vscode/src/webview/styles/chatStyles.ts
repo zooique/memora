@@ -1731,8 +1731,12 @@ export const chatStyles = `
    * 那边 hover 气泡容器，这边 hover 整轮容器，都是「碰到这条消息才露操作」。
    * 注：助手形态状态由顶部状态条承载，底栏终态标签随底栏一起 hover 才显，属微信心智
    * 取舍；自助形态的终态恒显（TERMINUS-SSOT-1）不在本作用域，逐字不动。 */
+  /* BUBBLE-QUOTE-1（2026-11-18 用户拍板覆盖 11-17「单边靠右」）：助手气泡在左，底栏操作
+   * 与用户右侧操作栏成镜像 ⇒ 改单边靠左；同时取消底栏顶部分隔虚线（只在此作用域写
+   * border-top:none，self 基础规则逐字不动，虚线令牌的基础引用保留、计数不变）。 */
   body[data-form='assistant'] .round-group__footer:not(.is-pending) {
-    justify-content: flex-end;
+    justify-content: flex-start;
+    border-top: none;
     opacity: 0;
     transform: translateY(-2px);
     transition: opacity var(--dur-base) ease, transform var(--dur-base) ease;

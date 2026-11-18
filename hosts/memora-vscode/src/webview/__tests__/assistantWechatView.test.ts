@@ -195,8 +195,11 @@ describe('助手窗微信心智对齐（ASSISTANT-WECHAT-UX-1）', () => {
   it('⑥ 底栏 hover 显现 + 单边靠右：助手形态与用户操作栏同构，self 两端分布逐字不变', () => {
     const css = readFileSync(CSS_SRC, 'utf8');
     // 助手形态：底栏默认隐去（is-pending 除外，恒不显示）
+    // BUBBLE-QUOTE-1（2026-11-18 订正锚）：用户新拍板「左对齐 + 取消虚线」，覆盖 11-17
+    // ASSISTANT-FOOTER-HOVER-1 的「单边靠右」——此处 flex-end→flex-start 是订正非造伤，
+    // 台账 ASSISTANT-WECHAT-UX-1 已记变更来源；hover 显隐 / focus-within / 零 margin 其余判据不变。
     expect(css).toMatch(
-      /body\[data-form='assistant'\] \.round-group__footer:not\(\.is-pending\) \{\s*justify-content: flex-end;\s*opacity: 0;/,
+      /body\[data-form='assistant'\] \.round-group__footer:not\(\.is-pending\) \{\s*justify-content: flex-start;\s*border-top: none;\s*opacity: 0;/,
     );
     // hover 整轮 / focus-within 两路显形，复刻用户操作栏的交互范式
     expect(css).toMatch(
@@ -211,6 +214,58 @@ describe('助手窗微信心智对齐（ASSISTANT-WECHAT-UX-1）', () => {
     expect(css).toMatch(
       /\.round-group__footer \{\s*display: flex; align-items: center; justify-content: space-between;/,
     );
+  });
+
+  it('⑧ BUBBLE-QUOTE-1：助手形态用户气泡 hover 栏有引用按钮，点击整条落到引用胶囊（复用 applyQuote）', () => {
+    mountChatView('assistant');
+    dispatch({ type: 'user', text: '请帮我做一件事', ts: '2026-11-18T10:00:00.000Z' });
+    const actions = document.querySelector<HTMLElement>('.msg-user-actions');
+    expect(actions).not.toBeNull();
+    const copy = actions!.querySelector('.msg-copy-icon');
+    const quote = actions!.querySelector<HTMLButtonElement>('.msg-quote-icon');
+    expect(copy).not.toBeNull();
+    expect(quote).not.toBeNull();
+    expect(quote!.getAttribute('aria-label')).toBe('Quote this message');
+    // 点击 → 整条正文进 quoteDraft → 引用胶囊上屏（与右键引用同一出口）
+    quote!.click();
+    const chipRow = document.getElementById('refChips') as HTMLElement;
+    expect(chipRow.textContent).toContain('Quote: 请帮我做一件事');
+    expect(document.getElementById('input') === document.activeElement).toBe(true);
+  });
+
+  it('⑨ BUBBLE-QUOTE-1：助手形态回答底栏有引用按钮，点击落引用胶囊；self 形态两处都不加（不带伤）', () => {
+    mountChatView('assistant');
+    dispatch({ type: 'user', text: '问题', ts: '2026-11-18T11:00:00.000Z' });
+    dispatch({
+      type: 'chunk',
+      content: '回答正文第二行',
+      ts: '2026-11-18T11:00:05.000Z',
+      roundId: 'rq1',
+    });
+    dispatch({ type: 'done', roundId: 'rq1' });
+    const aFooter = document.querySelector<HTMLElement>(
+      '.round-group[data-round-id="rq1"] .round-group__footer',
+    );
+    expect(aFooter).not.toBeNull();
+    const aQuote = aFooter!.querySelector<HTMLButtonElement>('.msg-quote-icon');
+    expect(aQuote).not.toBeNull();
+    expect(aQuote!.getAttribute('aria-label')).toBe('Quote this answer');
+    aQuote!.click();
+    const chipRow = document.getElementById('refChips') as HTMLElement;
+    expect(chipRow.textContent).toContain('Quote: 回答正文第二行');
+
+    // self 形态逐字不变：用户气泡栏与底栏均无引用按钮
+    mountChatView('self');
+    dispatch({ type: 'user', text: '自助提问', ts: '2026-11-18T12:00:00.000Z' });
+    dispatch({
+      type: 'chunk',
+      content: '自助回答',
+      ts: '2026-11-18T12:00:05.000Z',
+      roundId: 'rs1',
+    });
+    dispatch({ type: 'done', roundId: 'rs1' });
+    expect(document.querySelector('.msg-user-actions .msg-quote-icon')).toBeNull();
+    expect(document.querySelector('.round-group__footer .msg-quote-icon')).toBeNull();
   });
 
   it('⑦ 代码块复制条：助手形态源码守卫隐藏、DOM 保留，self 基础规则逐字不变', () => {
