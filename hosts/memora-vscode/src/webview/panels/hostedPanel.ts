@@ -22,7 +22,7 @@ import { buildHtml } from './chatPanelHtml.js';
 import type { MemoraChatViewProvider } from './chatPanel.js';
 import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
 import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
-import type { WorkbenchSnapshot } from '../../shared/workbenchDto.js';
+import type { WorkbenchSeatSource, WorkbenchSnapshot } from '../../shared/workbenchDto.js';
 
 /** 托管页依赖 */
 export interface HostedPanelDeps {
@@ -33,7 +33,12 @@ export interface HostedPanelDeps {
   /** 工作区根（派生 attachments 资源根，与侧栏 chatPanel 同一真源） */
   workspacePath: string;
   /** 现场构建工作台快照（INLINE-WORKBENCH-1）：真源 = workbenchPanel.buildSnapshot，零第二套投影 */
-  buildWorkbenchSnapshot: (orchestratorId: string) => WorkbenchSnapshot;
+  buildWorkbenchSnapshot: (
+    orchestratorId: string,
+    seatSource: WorkbenchSeatSource,
+  ) => WorkbenchSnapshot;
+  /** 座位来源档（与「打开工作台」命令同一 resolver 注入，抽屉不另判 live/恢复） */
+  seatSourceFor: (sessionId: string) => WorkbenchSeatSource;
 }
 
 /** 托管编辑器页（单例容器） */
@@ -47,13 +52,18 @@ export class MemoraHostedPanel {
   private readonly _extensionUri: vscode.Uri;
   private readonly _chatProvider: MemoraChatViewProvider;
   private readonly _workspacePath: string;
-  private readonly _buildWorkbenchSnapshot: (orchestratorId: string) => WorkbenchSnapshot;
+  private readonly _buildWorkbenchSnapshot: (
+    orchestratorId: string,
+    seatSource: WorkbenchSeatSource,
+  ) => WorkbenchSnapshot;
+  private readonly _seatSourceFor: (sessionId: string) => WorkbenchSeatSource;
 
   constructor(deps: HostedPanelDeps) {
     this._extensionUri = deps.extensionUri;
     this._chatProvider = deps.chatProvider;
     this._workspacePath = deps.workspacePath;
     this._buildWorkbenchSnapshot = deps.buildWorkbenchSnapshot;
+    this._seatSourceFor = deps.seatSourceFor;
   }
 
   /** 打开（或聚焦）托管页；标题随当前会话展示，切会话后由 open 时重取 */
@@ -100,7 +110,8 @@ export class MemoraHostedPanel {
         const sid = this._chatProvider.getAssistantSessionId() ?? '';
         void panel.webview.postMessage({
           type: 'workbench_snapshot',
-          snapshot: this._buildWorkbenchSnapshot(sid),
+          // 与独立工作台同一座位档：恢复/历史档不再被 live 过滤器清空（抽屉同档）
+          snapshot: this._buildWorkbenchSnapshot(sid, this._seatSourceFor(sid)),
         });
         return;
       }

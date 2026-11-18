@@ -64,7 +64,7 @@ import {
 import { projectSessionStatus } from '../shared/sessionStatus.js';
 import type { WorkbenchJobStatus } from '../shared/workbenchDto.js';
 // 「打开工作台」命令（命令面板 + 助手形态输入区按钮共用；标题栏不再提供按钮，自助形态无此入口）
-import { registerOpenWorkbenchCommand } from './commands/openWorkbench.js';
+import { registerOpenWorkbenchCommand, seatSourceForSession } from './commands/openWorkbench.js';
 // 设置面板 tab 标识的类型真源（`shared/settingsTabs.ts`）：命令参数与 protocol 共用同一联合，
 // 本文件不手写字面量清单（加一页不必回来补签名）
 import type { SettingsTab } from '../shared/settingsTabs.js';
@@ -900,7 +900,10 @@ export function activate(context: vscode.ExtensionContext): void {
     chatProvider,
     workspacePath,
     // 助手页内嵌工作台抽屉：现场构建与独立面板共用同一投影真源（INLINE-WORKBENCH-1）
-    buildWorkbenchSnapshot: (orchestratorId) => workbenchPanel.buildSnapshot(orchestratorId),
+    buildWorkbenchSnapshot: (orchestratorId, seatSource) =>
+      workbenchPanel.buildSnapshot(orchestratorId, seatSource),
+    // 座位档与「打开工作台」命令同一 resolver（恢复/历史档不在抽屉里被 live 过滤清空）
+    seatSourceFor: (sessionId) => seatSourceForSession(sessionModes, sessionId),
   });
   registerOpenHostedCommand(context, hostedPanel);
 

@@ -53,6 +53,11 @@ import type { MemoryHitsBlock } from './memoryHitsBlock.js';
 export interface DispatchCardBuilder {
   /** 造卡片骨架（sid 来自工具行 args）；返回 null 表示本环境不渲染派活卡 */
   build(doc: Document, sid: string): HTMLElement | null;
+  /**
+   * 可选挂载点（DISPATCH-SESSION-CARD-1 形态订正）：缺省 = summary 常显区；
+   * 助手形态由 chatView 注入跨容器挂载，避免卡片被隐藏的 `.round-block` 连坐。
+   */
+  mount?(doc: Document, card: HTMLElement, summary: HTMLElement): void;
 }
 
 /** 过程流单元格依赖：文档对象 + 记忆命中块（工具行内命中明细的唯一实现） */
@@ -837,13 +842,17 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
     // 前导空格：span 间空白不折叠，显式补「叙述 (状态)」间距；delegate 用定稿的角括号徽标
     statusSpan.textContent = delegateUi ? delegateBadgeText(status) : ` (${status})`;
     summary.append(iconSpan, labelSpan, statusSpan);
-    // 派活会话卡（DISPATCH-SESSION-CARD-1）：放 summary 常显区而非折叠 body，
-    // 折叠后仍可见「派给谁」；sid 来自本行 args，与这次派活一一绑定。
+    // 派活会话卡（DISPATCH-SESSION-CARD-1）：sid 来自本行 args，与这次派活一一绑定。
+    // 挂载点交给注入方决定（self = summary 常显区；助手形态 = 轮级可见容器）——
+    // 助手窗把 .round-block 整段 CSS 收起，卡片挂在工具行里会被连坐隐藏。
     if (dispatchCard && start.payload.name === SEND_TO_SESSION_TOOL_NAME) {
       const sid = argStr(parseToolArgs(start.payload.args), 'sid');
       if (sid) {
         const card = dispatchCard.build(document, sid);
-        if (card) summary.appendChild(card);
+        if (card) {
+          if (dispatchCard.mount) dispatchCard.mount(document, card, summary);
+          else summary.appendChild(card);
+        }
       }
     }
     row.appendChild(summary);

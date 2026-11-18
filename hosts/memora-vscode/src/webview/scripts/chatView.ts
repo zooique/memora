@@ -112,6 +112,7 @@ import {
 import { createMemoryHitsBlock } from './memoryHitsBlock.js';
 import {
   buildDispatchSessionCard,
+  createDispatchCardMounter,
   DISPATCH_SESSION_ATTR,
   refreshDispatchSessionCards,
 } from '../helpers/dispatchSessionCard.js';
@@ -413,6 +414,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     memoryHits: memoryHitsBlock,
     dispatchCard: {
       build: (doc, sid) => buildDispatchSessionCard(doc, sid),
+      // 助手形态把卡片挂到当前轮可见容器（.round-block 在助手窗被 CSS 收起，
+      // 挂工具行里会被连坐隐藏）；读口由 chatView 持有，helper 不碰视图状态。
+      mount: createDispatchCardMounter(() => roundGroupEl),
     },
   });
   // 助手页内嵌工作台抽屉：点击出口复用既有 switch_session（与派活会话卡同款，零新 type）

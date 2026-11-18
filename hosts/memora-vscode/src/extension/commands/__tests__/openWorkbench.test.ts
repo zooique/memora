@@ -28,7 +28,7 @@ vi.mock('vscode', () => ({
   commands: { registerCommand: vi.fn(() => ({ dispose: vi.fn() })) },
 }));
 
-import { openWorkbench, type OpenWorkbenchDeps } from '../openWorkbench.js';
+import { openWorkbench, seatSourceForSession, type OpenWorkbenchDeps } from '../openWorkbench.js';
 
 /** 构造会话元数据（只填座位解析会读的字段） */
 function meta(
@@ -85,6 +85,20 @@ function makeDeps(options: DepsOptions = {}): {
     },
   };
 }
+
+describe('seatSourceForSession — 抽屉与工作台命令共用的座位档真源', () => {
+  it('四档判据：驱动中 live / 恢复 restored / 收回 revoked / 重建 history', () => {
+    const modes = {
+      isAgentDriven: (id: string) => id === 'a',
+      isRestored: (id: string) => id === 'b',
+      has: (id: string) => id === 'a' || id === 'b' || id === 'c',
+    };
+    expect(seatSourceForSession(modes, 'a')).toBe('live');
+    expect(seatSourceForSession(modes, 'b')).toBe('restored');
+    expect(seatSourceForSession(modes, 'c')).toBe('revoked');
+    expect(seatSourceForSession(modes, 'd')).toBe('history');
+  });
+});
 
 describe('openWorkbench — 座位解析', () => {
   beforeEach(() => {

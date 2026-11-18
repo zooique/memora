@@ -54,6 +54,46 @@ export function buildDispatchSessionCard(doc: Document, sid: string): HTMLButton
  * @param titleById sid → 展示名（来自 session_activity.titleById）
  * @param runningIds 正在跑流的会话 id（来自 session_activity.runningIds）
  */
+/**
+ * 按形态决定卡片挂载点（DISPATCH-SESSION-CARD-1 形态订正）
+ *
+ * 助手窗把 `.round-block` 整段 CSS 收起（微信心智），而派活工具行就住在里面——
+ * 卡片若仍挂在工具行 `summary`，会被隐藏的祖先连坐，用户根本看不到「派给谁」。
+ * 这与交互输入行被吞（ASSISTANT-WECHAT-UX-1 A2）是同一根因，修法同款：
+ * 助手形态把挂载根换成轮级容器（可见终位），self 形态仍挂 summary 常显区。
+ *
+ * 形态判据仍只读 `body[data-form]`（与 applyForm 同源，零第二份）；轮容器由
+ * chatView 以闭包注入，本模块不持有视图状态。
+ */
+export type DispatchCardMounter = (doc: Document, card: HTMLElement, summary: HTMLElement) => void;
+
+/**
+ * @param getRoundGroup 当前轮可见容器读口（chatView 持有 roundGroupEl，闭包注入）
+ */
+export function createDispatchCardMounter(
+  getRoundGroup: () => HTMLElement | null,
+): DispatchCardMounter {
+  return (doc, card, summary) => {
+    if (doc.body.dataset.form !== 'assistant') {
+      summary.appendChild(card);
+      return;
+    }
+    const group = getRoundGroup();
+    if (group?.isConnected) {
+      // 段必须插在 footer 之前（footer 恒居轮底，appendChild 会让卡片掉到时间栏之后）
+      const foot = group.querySelector('.round-group__footer');
+      if (foot && foot.parentNode === group) group.insertBefore(card, foot);
+      else group.appendChild(card);
+      return;
+    }
+    // 容器尚未建立（工具行渲染早于轮容器是常见时序）⇒ 落消息流可见终位，
+    // 即助手回答下方，正是用户要看「派给谁」的位置。不暂存——暂存的唯一目的本是
+    // 迁回过程容器，而该容器在本形态被 CSS 收起。零 roundId 归属标记也不影响刷新：
+    // 卡片靠 data-dispatch-session 锚点与快照全域刷新，不依赖轮容器身份。
+    (doc.getElementById('messages') ?? summary).appendChild(card);
+  };
+}
+
 export function refreshDispatchSessionCards(
   root: ParentNode,
   titleById: Record<string, string>,

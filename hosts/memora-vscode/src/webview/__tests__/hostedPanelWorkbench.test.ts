@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   onDidReceiveMessage: vi.fn(),
   routeHostedMessage: vi.fn(),
   buildWorkbenchSnapshot: vi.fn(),
+  seatSourceFor: vi.fn(),
   getAssistantSessionId: vi.fn(),
 }));
 
@@ -38,6 +39,7 @@ function mount() {
   mocks.onDidReceiveMessage.mockReset();
   mocks.routeHostedMessage.mockReset();
   mocks.buildWorkbenchSnapshot.mockReset();
+  mocks.seatSourceFor.mockReset();
   mocks.getAssistantSessionId.mockReset();
   mocks.createWebviewPanel.mockImplementation(() => ({
     reveal: () => {},
@@ -54,6 +56,7 @@ function mount() {
     onDidDispose: () => ({ dispose: () => {} }),
   }));
   mocks.getAssistantSessionId.mockReturnValue('assistant-1');
+  mocks.seatSourceFor.mockReturnValue('live');
   const snapshot = { jobs: [], coverage: 'complete' };
   mocks.buildWorkbenchSnapshot.mockReturnValue(snapshot);
   const panel = new MemoraHostedPanel({
@@ -65,6 +68,7 @@ function mount() {
     } as never,
     workspacePath: '/proj',
     buildWorkbenchSnapshot: mocks.buildWorkbenchSnapshot,
+    seatSourceFor: mocks.seatSourceFor,
   });
   panel.open();
   return { handler: handler!, snapshot };
@@ -75,12 +79,20 @@ describe('INLINE-WORKBENCH-1 · 助手页工作台按钮就地展开', () => {
     const { handler, snapshot } = mount();
     handler({ type: 'assistant_open_workbench' });
     expect(mocks.getAssistantSessionId).toHaveBeenCalledOnce();
-    expect(mocks.buildWorkbenchSnapshot).toHaveBeenCalledWith('assistant-1');
+    expect(mocks.seatSourceFor).toHaveBeenCalledWith('assistant-1');
+    expect(mocks.buildWorkbenchSnapshot).toHaveBeenCalledWith('assistant-1', 'live');
     expect(mocks.postMessage).toHaveBeenCalledWith({
       type: 'workbench_snapshot',
       snapshot,
     });
     expect(mocks.routeHostedMessage).not.toHaveBeenCalled();
+  });
+
+  it('座位恢复档原样透传给快照构建（不固定 live，避免历史清单被 live 过滤器清空）', () => {
+    const { handler } = mount();
+    mocks.seatSourceFor.mockReturnValue('restored');
+    handler({ type: 'assistant_open_workbench' });
+    expect(mocks.buildWorkbenchSnapshot).toHaveBeenCalledWith('assistant-1', 'restored');
   });
 
   it('其它上行消息仍原样转发（拦截是窄分支，不吞常态消息）', () => {

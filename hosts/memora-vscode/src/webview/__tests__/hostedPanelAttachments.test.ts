@@ -62,6 +62,7 @@ function openAndGetOptions(workspacePath: string): {
     chatProvider: chatProviderStub() as never,
     workspacePath,
     buildWorkbenchSnapshot: () => ({}) as never,
+    seatSourceFor: () => 'live',
   });
   panel.open();
   return { options: mocks.createWebviewPanel.mock.calls[0][3] as Record<string, unknown> };

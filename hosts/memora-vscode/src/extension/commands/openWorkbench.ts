@@ -151,10 +151,30 @@ function liveSeatSource(deps: OpenWorkbenchDeps, sessionId: string): WorkbenchSe
  * @returns 座位来源档（`live` / `restored` / `revoked` / `history`）
  */
 function historicalSeatSource(deps: OpenWorkbenchDeps, sessionId: string): WorkbenchSeatSource {
-  if (deps.sessionModes.isAgentDriven(sessionId)) return 'live';
-  // 恢复的座位**有**调度权、只是没有驱动方：必须排在 has() 之前，否则被说成「已收回」
-  if (deps.sessionModes.isRestored(sessionId)) return 'restored';
-  if (deps.sessionModes.has(sessionId)) return 'revoked';
+  return seatSourceForSession(deps.sessionModes, sessionId);
+}
+
+/**
+ * 座位来源档 resolver（工作台命令与助手页内嵌抽屉共用的唯一判据）
+ *
+ * 判据全部读既有容器，不新增状态：
+ *   - `isAgentDriven(sid)` = 现在仍有代理在驱动它（有实时事实 ⇒ live）；
+ *   - `isRestored(sid)` = 本进程从持久化状态恢复了这条座位（有调度权、无驱动方，
+ *     必须排在 has() 之前，否则被说成「已收回」）；
+ *   - `has(sid)` = 本进程写过 mode（用户刚收回 ⇒ revoked）；
+ *   - 都没命中 = 本进程第一次见到 ⇒ 重开窗口后按历史重建（history）。
+ *
+ * 抽屉曾固定传 `live`（INLINE-WORKBENCH-1），`filtersByLiveDriver('live')` 会滤掉
+ * 没有实时驱动方的 jobs ⇒ 重启恢复场景独立工作台有清单、抽屉却空。抽成单点后
+ * 两条入口同档，杜绝第二套座位判据。
+ */
+export function seatSourceForSession(
+  sessionModes: Pick<SessionModeStore, 'isAgentDriven' | 'isRestored' | 'has'>,
+  sessionId: string,
+): WorkbenchSeatSource {
+  if (sessionModes.isAgentDriven(sessionId)) return 'live';
+  if (sessionModes.isRestored(sessionId)) return 'restored';
+  if (sessionModes.has(sessionId)) return 'revoked';
   return 'history';
 }
 

@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildDispatchSessionCard,
+  createDispatchCardMounter,
   DISPATCH_SESSION_ATTR,
   refreshDispatchSessionCards,
 } from '../dispatchSessionCard.js';
@@ -24,6 +25,57 @@ describe('buildDispatchSessionCard 卡片骨架', () => {
     expect(card.tagName).toBe('BUTTON');
     expect(card.getAttribute(DISPATCH_SESSION_ATTR)).toBe('2026-11-18-abc');
     expect(card.querySelector('.dispatch-session-card__name')?.textContent).toBe('2026-11-18-abc');
+  });
+});
+
+describe('createDispatchCardMounter 形态挂载（助手窗过程块被 CSS 收起）', () => {
+  it('self 形态仍挂工具行 summary 常显区（不带伤）', () => {
+    document.body.dataset.form = 'self';
+    const summary = document.createElement('summary');
+    const card = buildDispatchSessionCard(document, 's1');
+    const group = document.createElement('div');
+    group.className = 'round-group';
+
+    createDispatchCardMounter(() => group)(document, card, summary);
+
+    expect(card.parentElement).toBe(summary);
+    expect(group.contains(card)).toBe(false);
+  });
+
+  it('助手形态挂当前轮可见容器，且插在底栏之前（不被隐藏的 round-block 连坐）', () => {
+    document.body.dataset.form = 'assistant';
+    const summary = document.createElement('summary');
+    const hiddenBlock = document.createElement('div');
+    hiddenBlock.className = 'round-block';
+    hiddenBlock.appendChild(summary);
+    const group = document.createElement('div');
+    group.className = 'round-group';
+    const foot = document.createElement('div');
+    foot.className = 'round-group__footer';
+    group.appendChild(foot);
+    document.body.appendChild(group);
+    const card = buildDispatchSessionCard(document, 's2');
+
+    createDispatchCardMounter(() => group)(document, card, summary);
+
+    expect(card.parentElement).toBe(group);
+    expect(card.nextElementSibling).toBe(foot);
+    expect(hiddenBlock.contains(card)).toBe(false);
+    group.remove();
+  });
+
+  it('助手形态轮容器尚未建立时落消息流可见终位（不暂存、不丢卡）', () => {
+    document.body.dataset.form = 'assistant';
+    const messages = document.createElement('div');
+    messages.id = 'messages';
+    document.body.appendChild(messages);
+    const summary = document.createElement('summary');
+    const card = buildDispatchSessionCard(document, 's3');
+
+    createDispatchCardMounter(() => null)(document, card, summary);
+
+    expect(card.parentElement).toBe(messages);
+    messages.remove();
   });
 });
 

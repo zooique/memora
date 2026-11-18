@@ -12395,6 +12395,32 @@ describe('块类型标与折叠箭头（批次三）', () => {
     expect((row() as HTMLElement).dataset.userToggled).toBeUndefined();
   });
 
+  it('助手形态派活卡挂在轮级可见容器，不被收起的 .round-block 连坐', () => {
+    mountChatView('assistant');
+    dispatch({ type: 'chunk', content: '已派活' });
+    dispatchEv({
+      type: 'tool_start',
+      seq: 2,
+      ts: 'T1',
+      payload: {
+        toolCallId: 'send-2',
+        name: 'send_to_session',
+        args: JSON.stringify({ sid: '2026-11-18-visible' }),
+        stepIndex: 1,
+      },
+    });
+    const row = document.querySelector('.round-block__tool[data-tool-call-id="send-2"]')!;
+    const card = document.querySelector<HTMLElement>('.dispatch-session-card')!;
+    const parent = card.parentElement;
+
+    expect(card).not.toBeNull();
+    // 真判据：卡片脱离被 CSS 收起的 .round-block（否则助手窗整块不可见）。
+    // 工具行渲染早于轮容器建立是常见时序 ⇒ 可见终位为消息流或轮容器底栏前，二者皆可。
+    expect(row.querySelector('.dispatch-session-card')).toBeNull();
+    expect(card.closest('.round-block')).toBeNull();
+    expect(parent?.id === 'messages' || parent?.classList.contains('round-group')).toBe(true);
+  });
+
   it('assistant 页收到 workbench_snapshot → 内嵌抽屉渲染并就地展开；点会话复用 switch_session', () => {
     const { postMessage } = mountChatView('assistant');
     const drawer = () => document.getElementById('assistantWorkbenchDrawer') as HTMLElement;
