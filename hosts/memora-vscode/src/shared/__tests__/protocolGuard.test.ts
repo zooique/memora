@@ -81,8 +81,12 @@ import { join } from 'node:path';
  *  2026-11-16 侧栏形态退役（`HOSTED-UI-SEAT-DECOUPLE-1`）−1：删 `ui_form`（E→W 形态下行）——
  *  形态从「侧栏运行时切换」降为「视图挂载常量」，换形态 = 换一个 webview 挂载，不再有运行时消息。
  *  实测 147，阈值同口径重算 148。
+ *  2026-11-18 异步授权流退役（`HOSTED-CONFIRM-SOFT-1`）−3：删 `auth_request` / `auth_answer` /
+ *  `auth_closed`——带戳轮改内联代批后宿主不再产生 `deferred`，三协议零生产消费；
+ *  授权卡 / `ConfirmAuthFlow` 同批删除（`HOSTED-CLEANUP-1` ①），不留并行的第二套确认判据。
+ *  实测 144，阈值同口径重算 145。
  */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 148;
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 145;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {

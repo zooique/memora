@@ -8,7 +8,7 @@
  * write-decline）跟随内核审计类型面，本域只按名单累加，不新增第二判据。
  *
  * 为什么外置：`chatPanel.ts` 贴 `max-lines` 基线（只降不升），本域是自足的「订阅 →
- * 累计 → 快照 → 退订」闭环（与 confirmAuthFlowWiring 同一拆法）——面板留薄壳。
+ * 累计 → 快照 → 退订」闭环（与 `activeFileTracker` 同一拆法）——面板留薄壳。
  *
  * @module securityAuditCollector
  */

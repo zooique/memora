@@ -30,7 +30,7 @@ vi.mock('vscode', () => ({
 }));
 
 import type { Agent, WriteConfirmationRequest } from '@zooique/memora';
-import { ConfirmCoordinator, type ConfirmAuthFlowPort } from '../confirmCoordinator.js';
+import { ConfirmCoordinator } from '../confirmCoordinator.js';
 import { createAttentionNotifier } from '../attentionNotice.js';
 
 /** 载荷特征串：反向守卫用它确认 description（diff 全文）从未进决策记录 */
@@ -69,9 +69,9 @@ function agentStub() {
   } as unknown as Agent;
   return {
     agent,
-    // 返回类型随内核 WriteConfirmationRequest 推导（三态后 = boolean | 'deferred'）：
-    // 桩不窄化返回值——授权流分流（HOSTED-CONFIRM-AUTH-1）会让 handler 返 'deferred'，
-    // 测试按需对返回值断言，桩不替调用方收敛类型
+    // 返回类型随内核 WriteConfirmationRequest 推导（内核三态仍含 `'deferred'`）：
+    // 宿主已不产生 deferred（异步授权流退役，HOSTED-CONFIRM-SOFT-1），但桩不窄化返回值
+    // ——签名真源在内核，测试按需对返回值断言，桩不替调用方收敛类型
     trigger: (info: ConfirmInfo): ReturnType<WriteConfirmationRequest> => {
       if (!handler) throw new Error('onWriteConfirmation 未注入');
       return handler(info);
@@ -805,12 +805,18 @@ describe('ConfirmCoordinator · 带戳轮统一代按（HOSTED-CONFIRM-SOFT-1）
     vi.useRealTimers();
   });
 
-  /** 按「当前轮是否带戳」注入判据的协调器；可选授权流替身用于反证零 deferred */
-  function makeHostedCoordinator(hosted: boolean, authFlow?: ConfirmAuthFlowPort) {
+  /**
+   * 按「当前轮 origin」注入判据的协调器
+   *
+   * 三态而非布尔：`'user'` 与 `undefined` 在 `isHosted()` 里同走自助链路，但语义不同——
+   * 前者是「代理会话里的用户轮」（曾经被会话级判据误代批的那条），后者是「读不到轮」。
+   * 用布尔表达不了前者，负例就测不到真形态。
+   */
+  function makeHostedCoordinator(roundOrigin: 'hosted' | 'user' | undefined) {
     const posted: Posted[] = [];
     const pendingChanges: Array<{ sessionId: string; count: number }> = [];
     const shown: Array<{ requestId: string; label: string }> = [];
-    const getRoundOrigin = vi.fn(() => (hosted ? ('hosted' as const) : undefined));
+    const getRoundOrigin = vi.fn(() => roundOrigin);
     const coordinator = new ConfirmCoordinator({
       getAgent: () => undefined,
       post: (msg) => {
@@ -819,7 +825,6 @@ describe('ConfirmCoordinator · 带戳轮统一代按（HOSTED-CONFIRM-SOFT-1）
       onPendingChanged: (sessionId, count) => pendingChanges.push({ sessionId, count }),
       onConfirmShown: (info) => shown.push(info),
       getRoundOrigin,
-      authFlow,
     });
     return {
       coordinator,
@@ -838,7 +843,7 @@ describe('ConfirmCoordinator · 带戳轮统一代按（HOSTED-CONFIRM-SOFT-1）
 
   it('后台带戳轮：直接批准，零卡 / 零计时 / 零提醒，决策记录仍落该会话', async () => {
     vi.useFakeTimers();
-    const h = makeHostedCoordinator(true);
+    const h = makeHostedCoordinator('hosted');
     const stub = agentStub();
     h.coordinator.bindSession('s-hosted', stub.agent); // 前台仍是默认 ''（后台）
 
@@ -863,7 +868,7 @@ describe('ConfirmCoordinator · 带戳轮统一代按（HOSTED-CONFIRM-SOFT-1）
   });
 
   it('前台带戳轮：不推卡、不收卡，裁决文案与用户亲手批准一致', async () => {
-    const h = makeHostedCoordinator(true);
+    const h = makeHostedCoordinator('hosted');
     const stub = agentStub();
     h.coordinator.bindSession('s-hosted', stub.agent);
     h.coordinator.setForeground('s-hosted');
@@ -879,7 +884,7 @@ describe('ConfirmCoordinator · 带戳轮统一代按（HOSTED-CONFIRM-SOFT-1）
   });
 
   it('带戳轮多条：各自批准且两条决策记录都在', async () => {
-    const h = makeHostedCoordinator(true);
+    const h = makeHostedCoordinator('hosted');
     h.coordinator.setForeground('s-hosted');
     const first = agentStub();
     const second = agentStub();
@@ -897,26 +902,20 @@ describe('ConfirmCoordinator · 带戳轮统一代按（HOSTED-CONFIRM-SOFT-1）
     expect(String(decisions[1].message)).toContain('bar.md');
   });
 
-  it('带戳轮先于授权分流：零 deferred 且分流器零调用', async () => {
-    const maybeDefer = vi.fn(() => 'deferred' as const);
-    const authFlow: ConfirmAuthFlowPort = {
-      maybeDefer,
-      flushForSeat: vi.fn(),
-      repostForSeat: vi.fn(),
-      disposeSession: vi.fn(),
-    };
-    const h = makeHostedCoordinator(true, authFlow);
+  it('带戳轮不弹卡、不起计时：判据取自当前 agent 的 roundId', async () => {
+    const h = makeHostedCoordinator('hosted');
     const stub = agentStub();
     h.coordinator.bindSession('s-hosted', stub.agent);
 
     await expect(stub.trigger(confirmInfo())).resolves.toBe(true);
-    expect(maybeDefer).not.toHaveBeenCalled();
+    // 零上屏：带戳轮走内联批准，承诺不推卡
+    expect(h.shown).toHaveLength(0);
     // 接线断言：roundId 从当前 agent 现取，不是写死的判据
     expect(h.getRoundOrigin).toHaveBeenCalledWith('round-test');
   });
 
   it('自助轮不受影响：仍排队 + 上屏 + 等用户裁决', async () => {
-    const h = makeHostedCoordinator(false);
+    const h = makeHostedCoordinator(undefined);
     const stub = agentStub();
     h.coordinator.bindSession('s-self', stub.agent);
     h.coordinator.setForeground('s-self');
@@ -935,6 +934,25 @@ describe('ConfirmCoordinator · 带戳轮统一代按（HOSTED-CONFIRM-SOFT-1）
 
     h.coordinator.answer(h.requests()[0].requestId, true);
     await expect(promise).resolves.toBe(true);
+  });
+
+  it('代理会话里的用户轮（origin=user）：不代批，仍排队 + 上屏等用户自己裁决', async () => {
+    // 真形态回归（HOSTED-CONFIRM-SOFT-1 判据③）：旧 maybeDefer 按**会话级**驱动权判，
+    // 代理开出的工作会话里用户亲手发的轮撞上 always-ask 会被 deferred 到助手窗、
+    // 自己的命令静默不执行。判据改成逐轮读 origin 后，这类轮必须走自助链路。
+    const h = makeHostedCoordinator('user');
+    const stub = agentStub();
+    h.coordinator.bindSession('s-agent-made', stub.agent);
+    h.coordinator.setForeground('s-agent-made');
+
+    const promise = stub.trigger(confirmInfo());
+    // 上屏 + 占在途位：等着用户拍板，不是悄悄批准
+    expect(h.requests()).toHaveLength(1);
+    expect(h.shown).toHaveLength(1);
+    expect(h.coordinator.pendingCount('s-agent-made')).toBe(1);
+    // 用户拒绝 ⇒ 裁决必须来自用户（若被误当带戳轮，这里会直接 resolve(true) 且零卡）
+    h.coordinator.answer(h.requests()[0].requestId, false);
+    await expect(promise).resolves.toBe(false);
   });
 });
 
@@ -1084,85 +1102,5 @@ describe('ConfirmCoordinator · answerFor 按会话应答（R0-c）', () => {
     await Promise.resolve();
     expect(settled).toBe(true);
     expect(coordinator.answerFor('s-a', requestId, true)).toBe(false);
-  });
-});
-
-// ─── 异步授权分流（HOSTED-CONFIRM-AUTH-1）─────────────────────────
-// handler 第一步问 authFlow.maybeDefer：命中 ⇒ 授权流自己受理（授权请求推托管座位），
-// 协调器不入队、内核收 deferred；未命中 ⇒ 既有链路逐字不变。
-describe('ConfirmCoordinator · 异步授权分流（authFlow）', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  /** 可编程 authFlow 桩（只实现协调器消费的窄面 = ConfirmAuthFlowPort 四方法） */
-  function authFlowStub(mode: 'defer' | 'pass'): ConfirmAuthFlowPort {
-    return {
-      maybeDefer: vi.fn(() => (mode === 'defer' ? ('deferred' as const) : null)),
-      flushForSeat: vi.fn(),
-      repostForSeat: vi.fn(),
-      disposeSession: vi.fn(),
-    };
-  }
-
-  it('authFlow 命中 ⇒ handler 返 deferred 且不入队（无审批卡、无决策记录）', async () => {
-    const posted: Posted[] = [];
-    const stub = agentStub();
-    const authFlow = authFlowStub('defer');
-    const coordinator = new ConfirmCoordinator({
-      getAgent: () => stub.agent,
-      post: (msg) => posted.push(msg as unknown as Posted),
-      authFlow,
-    });
-    stub.agent && coordinator.bindSession('work-1', stub.agent);
-
-    const settled = stub.trigger(confirmInfo());
-    await expect(settled).resolves.toBe('deferred');
-    expect(posted.find((m) => m.type === 'write_confirm_request')).toBeUndefined();
-    expect(posted.find((m) => m.kind === 'decision')).toBeUndefined();
-    expect(coordinator.pendingCount('work-1')).toBe(0);
-    // 分流判据只问一次（handler 第一步），载荷原样透传
-    expect(authFlow.maybeDefer).toHaveBeenCalledTimes(1);
-  });
-
-  it('authFlow 放行 ⇒ 既有入队链路逐字不变（兼容性）', async () => {
-    const posted: Posted[] = [];
-    const stub = agentStub();
-    const authFlow = authFlowStub('pass');
-    const coordinator = new ConfirmCoordinator({
-      getAgent: () => stub.agent,
-      post: (msg) => posted.push(msg as unknown as Posted),
-      authFlow,
-    });
-    stub.agent && coordinator.bindSession('work-1', stub.agent);
-    // 卡只推前台会话：显式切前台（真实链路 = 座位前台时撞卡）
-    coordinator.setForeground('work-1');
-
-    const settled = stub.trigger(confirmInfo());
-    expect(posted.filter((m) => m.type === 'write_confirm_request')).toHaveLength(1);
-    coordinator.answer(
-      (posted.find((m) => m.type === 'write_confirm_request') as { requestId: string }).requestId,
-      true,
-    );
-    await expect(settled).resolves.toBe(true);
-  });
-
-  it('不注入 authFlow ⇒ 行为与改造前逐字一致（既有装配零改动）', async () => {
-    const posted: Posted[] = [];
-    const stub = agentStub();
-    const coordinator = new ConfirmCoordinator({
-      getAgent: () => stub.agent,
-      post: (msg) => posted.push(msg as unknown as Posted),
-    });
-    stub.agent && coordinator.bindSession('work-1', stub.agent);
-    coordinator.setForeground('work-1');
-
-    const settled = stub.trigger(confirmInfo());
-    expect(posted.filter((m) => m.type === 'write_confirm_request')).toHaveLength(1);
-    coordinator.answer(
-      (posted.find((m) => m.type === 'write_confirm_request') as { requestId: string }).requestId,
-      false,
-    );
-    await expect(settled).resolves.toBe(false);
   });
 });

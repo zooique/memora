@@ -278,9 +278,8 @@ interface AssemblyDeps {
 /**
  * 托管输入的发送者名（v0 唯一注入点）
  *
- * 已下沉到 `host/hostedSenderName.ts`（HOSTED-CONFIRM-AUTH-1）：授权流叫醒代理
- * （chatPanel 侧 confirmAuthFlow）共用同一个名字，而 chatPanel 不得反向 import 本文件
- * （循环依赖）⇒ 常量移到 host 层无依赖文件，本处只 import。
+ * 已下沉到 `host/hostedSenderName.ts`：装配侧与托管派发共用同一个名字，
+ * 而 chatPanel 不得反向 import 本文件（循环依赖）⇒ 常量移到 host 层无依赖文件，本处只 import。
  */
 
 /**

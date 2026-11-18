@@ -1,26 +1,7 @@
 import * as vscode from 'vscode';
-import type { Agent, WriteConfirmationRequest, WriteConfirmationInfo } from '@zooique/memora';
+import type { Agent, WriteConfirmationRequest } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { getToolDisplayName } from '../../webview/helpers/toolNameMap.js';
-
-/**
- * 授权流消费面（依赖面 = 消费面 · SSOT）
- *
- * 协调器只调用这四个方法；`ConfirmAuthFlow` 的授权条目、暂存队列等私有态**不进依赖契约**
- * ——若用具体类当依赖类型，测试替身就得伪造私有成员才能通过类型检查。
- * `ConfirmAuthFlow` 结构满足本接口（方法签名同源），生产注入与测试替身共用同一契约；
- * 分流语义与生命周期转发约定见 `confirmAuthFlow.ts` 域注释。
- */
-export interface ConfirmAuthFlowPort {
-  /** handler 第一步分流：命中（always-ask + 代理驱动 + 无授权）⇒ 返 'deferred' 且授权请求已推托管座位 */
-  maybeDefer(sessionId: string, info: WriteConfirmationInfo): 'deferred' | null;
-  /** 座位切回前台：补推暂存的授权请求 */
-  flushForSeat(sessionId: string): void;
-  /** webview 视图重建：重推该座位的活跃授权卡 */
-  repostForSeat(sessionId: string): void;
-  /** 会话删除：清空该会话全部授权条目与请求 */
-  disposeSession(sessionId: string): void;
-}
 
 /**
  * confirm 确认等待超时（ms）：无响应 → **自动拒绝**（fail-closed）。0/负值 = 禁用超时。
@@ -96,15 +77,6 @@ export interface ConfirmDeps {
    * 未命中（自助轮 / 依赖未注入）逐字保持既有链路：入队 / 上屏 / 计时 / fail-closed 超时不变。
    */
   getRoundOrigin?: (roundId: string) => 'user' | 'hosted' | undefined;
-  /**
-   * 异步授权流（`always-ask` 命令的「问一句再执行」· HOSTED-CONFIRM-AUTH-1）
-   *
-   * handler 第一步先问它：命中（always-ask + 代理驱动 + 无授权）⇒ 授权请求已推托管座位，
-   * 本协调器**不入队**（内核收 `deferred`，该轮正常落定）；其余照常走既有链路，行为逐字不变。
-   * 生命周期三钩子（前台切换 / 视图重建 / 会话删除）由本协调器转发——授权卡与确认卡共用
-   * 「防跨会话串台」的时机体系，但条目/队列/裁决各自独立（两条判据流，见 confirmAuthFlow）。
-   */
-  authFlow?: ConfirmAuthFlowPort;
 }
 
 /**
@@ -201,8 +173,9 @@ export class ConfirmCoordinator {
     const guard = agent?.security;
     if (!guard) return;
     // 注入确认回调（幂等：onWriteConfirmation 内部覆盖赋值，无重复注册风险）。
-    // 判据按轮（`Round.origin`，HOSTED-CONFIRM-SOFT-1）：带戳轮先于授权分流短路，
-    // 保证零 deferred / 零弹卡；自助轮仍走授权分流与既有入队链路，行为逐字不变。
+    // 判据按轮（`Round.origin`，HOSTED-CONFIRM-SOFT-1）：带戳轮与本轮自写 `hosted` 标记
+    // 一起交给入队口——命中即内联批准（零弹卡 / 零计时 / 零 deferred），未命中逐字走既有链路。
+    // 不再有异步授权分流：那条分支按会话级驱动权判定，会把用户亲手发的轮也 deferred 掉。
     const isHosted = (): boolean => {
       // 可选调用：测试替身 / 装配未完成时不提供该能力 ⇒ 按自助轮解释，零代批。
       const roundId = agent?.currentRoundId?.();
@@ -210,13 +183,6 @@ export class ConfirmCoordinator {
     };
     const handler: WriteConfirmationRequest = (info) => {
       const hosted = isHosted();
-      if (hosted) {
-        return new Promise<boolean>((resolve) => {
-          this._enqueue(sessionId, info, resolve, hosted);
-        });
-      }
-      const deferred = this._deps.authFlow?.maybeDefer(sessionId, info);
-      if (deferred === 'deferred') return Promise.resolve('deferred');
       return new Promise<boolean>((resolve) => {
         this._enqueue(sessionId, info, resolve, hosted);
       });
@@ -260,9 +226,6 @@ export class ConfirmCoordinator {
     // 该会话在后台期间产生的决策记录（如超时自动拒）此刻补进**它自己的**时间线：
     // 用户在后台期间不会看到这些行，切回来必须能看到「它替你拒了什么」。
     this._flushPendingDecisions(sessionId);
-    // 授权流补推（HOSTED-CONFIRM-AUTH-1）：切入的是托管座位且无在途卡 ⇒ 推暂存队首。
-    // 授权卡与确认卡共此时机但条目独立（authFlow 自判座位归属）。
-    this._deps.authFlow?.flushForSeat(sessionId);
   }
 
   /**
@@ -338,8 +301,6 @@ export class ConfirmCoordinator {
   repostFor(sessionId: string): void {
     const state = this._sessions.get(sessionId);
     if (state?.current) this._show(sessionId, state.current);
-    // 授权卡补推（HOSTED-CONFIRM-AUTH-1）：有在途请求重推、无在途且暂存非空 ⇒ 推队首
-    this._deps.authFlow?.repostForSeat(sessionId);
   }
 
   /**
@@ -600,9 +561,6 @@ export class ConfirmCoordinator {
     // ③ 整会话条目摘除：此后 pendingCount 恒 0，迟到回执经 `answer` 查无此会话 ⇒ 零副作用
     this._sessions.delete(sessionId);
     this._deps.onPendingChanged?.(sessionId, 0);
-    // 授权流同步清理（HOSTED-CONFIRM-AUTH-1）：该会话的授权条目与请求一并摘除，
-    // 在途授权卡（若是它的）推 closed 兜底——不收卡 = 僵尸交互（与 ① 同一纪律）。
-    this._deps.authFlow?.disposeSession(sessionId);
   }
 
   /**

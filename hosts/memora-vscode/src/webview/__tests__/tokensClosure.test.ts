@@ -629,7 +629,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // 21：授权请求卡（HOSTED-CONFIRM-AUTH-1）等待态卡体 + 按钮 disabled 两处
     // opacity: var(--op-5) +2（2026-11-16；与确认卡等待态同款语义位——已裁决的卡降透明度，
     // 不造新档；实数经 scripts/count-token-refs.mjs 实锤同步）。
-    'op-': 21, // 输入区控件去边框（2026-11-02）：.ctl[aria-disabled] 承接上传按钮置灰 opacity +1，
+    // 2026-11-18 授权请求卡随异步授权流退役（HOSTED-CONFIRM-SOFT-1）⇒ 21-2=19
+    //（等待态卡体 + 按钮 disabled 两处 var(--op-5) 同批删除；机械实测同步）。
+    'op-': 19, // 输入区控件去边框（2026-11-02）：.ctl[aria-disabled] 承接上传按钮置灰 opacity +1，
     //            .image-attach-btn.is-vision-off 自写 opacity 退役 -1 ⇒ 净不变（19，机械实测同步）。
     'icon-': 17,
     // 24：助手形态状态签（chatStyles）左侧 accent 圆点宽/高各引 var(--dot-sm) +2
@@ -649,7 +651,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // 91：授权请求卡（HOSTED-CONFIRM-AUTH-1）卡体 border 与命令原文块 border 各引
     // var(--line-input) +2（2026-11-16；与确认卡同族既有令牌，未新造颜色；实数经
     // scripts/count-token-refs.mjs 实锤同步）。
-    'line-': 91, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
+    // 2026-11-18 授权请求卡随异步授权流退役（HOSTED-CONFIRM-SOFT-1）⇒ 91-2=89
+    //（卡体 border 与命令原文块 border 各一处 var(--line-input) 同批删除；机械实测同步）。
+    'line-': 89, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
     //             var(--line-solid) +1 ⇒ 79→80（UI-STATUS-DIVIDE-1，与
     //             `.context-ring__injection` 同一既有令牌，未新造颜色）；
     //             实数经 scripts/count-token-refs.mjs 实锤同步。
@@ -690,7 +694,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //             （与确认卡「半屏上限」同一既有语义位）+1、命令原文块 max-height 引
     //             var(--dim-lg)（同确认卡 diff 块限高档）+1 ⇒ 28→30（2026-11-16，
     //             实数经 scripts/count-token-refs.mjs 实锤同步）。
-    'dim-': 30,
+    //             2026-11-18 授权请求卡随异步授权流退役（HOSTED-CONFIRM-SOFT-1）⇒ 30-2=28
+    //             （卡体 var(--dim-2xl) + 命令原文块 var(--dim-lg) 两处同批删除；机械实测同步）。
+    'dim-': 28,
   } as const;
 
   for (const family of Object.keys(EXPECTED) as (keyof typeof EXPECTED)[]) {

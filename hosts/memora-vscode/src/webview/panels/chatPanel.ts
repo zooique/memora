@@ -261,12 +261,6 @@ import type { FileChangeSink } from '../../extension/host/fileChangeTracker.js';
 import { ActiveFileTracker } from '../../extension/host/activeFileTracker.js';
 // HOST-SPLIT-1 第 2 刀：确认队列域（自本文件迁出；注入 getAgent / post 两个依赖）
 import { ConfirmCoordinator } from '../../extension/host/confirmCoordinator.js';
-// HOSTED-CONFIRM-AUTH-1：异步授权流（always-ask 命令「问一句再执行」；分流判据经
-// ConfirmDeps.authFlow 进协调器 handler 第一步，生命周期三钩子由协调器转发）
-// 授权流装配工厂（域逻辑与装配闭包分离的过闸拆法，见 confirmAuthFlowWiring.ts）
-import { createChatPanelAuthFlow } from '../../extension/host/confirmAuthFlowWiring.js';
-// 托管发送者名单一真源（授权叫醒与 send_to_session 装配共用，见 hostedSenderName.ts）
-import { HOSTED_SENDER_NAME } from '../../extension/host/hostedSenderName.js';
 // 安全审计收集器（订阅/累计/快照/退订收口，自本文件外置的行数闸门拆法）
 import { createSecurityAuditCollector } from '../../extension/host/securityAuditCollector.js';
 // HOST-SPLIT-1 第 4 刀：ask 提问域（自本文件迁出；注入 5 个依赖：getAgent / isAskWaiting /
@@ -775,27 +769,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private readonly _attention = createVscodeAttention();
 
   /**
-   * 异步授权流（HOSTED-CONFIRM-AUTH-1）：`always-ask` 命令「问一句再执行」——
-   * 分流经 ConfirmDeps.authFlow 进协调器 handler 第一步（always-ask + 代理驱动 + 无授权
-   * ⇒ 授权请求推托管座位 + 内核收 deferred）。装配闭包外置于 confirmAuthFlowWiring.ts
-   * （过闸拆法，与 hostedDispatchRun 同案）；声明必须先于 `_confirm`（初始化顺序）。
-   */
-  private readonly _authFlow = createChatPanelAuthFlow(
-    {
-      // 判据真源与 _confirm.isAgentDrivenSession 同一闭包；座位设计上唯一（见 sessionModeStore）
-      isAgentDrivenSession: (sid) => this.sessionModes.isAgentControlled(sid),
-      getManagedSeatId: () => this.sessionModes.listManagedSessionIds()[0],
-      currentForeground: () => this._currentSessionId,
-      getMeta: (sessionId) => this.sessionStore.getSessionMeta(sessionId),
-      post: (msg) => this.post(msg),
-      onAttention: (info) => this._attention.onConfirmShown({ requestId: info.requestId }),
-      dispatch: (seatId, targetSessionId, text, senderName) =>
-        this.dispatchHostedInput(seatId, targetSessionId, text, senderName),
-    },
-    HOSTED_SENDER_NAME,
-  );
-
-  /**
    * 确认请求协调器（HOST-SPLIT-1 第 2 刀迁出域，真源见 `extension/host/confirmCoordinator.ts`）
    *
    * **注入而非继承**：协调器要往 webview 推 write_confirm_request 审批卡，且需读**最新** agent
@@ -815,7 +788,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 确认代批判据按轮读 `Round.origin`（HOSTED-CONFIRM-SOFT-1）：只从轮存储提供按 id 读口，
     // 不新增 `_agent` 方法依赖；会话级驱动权不作判据（同会话用户亲手发的轮不能被代批）。
     getRoundOrigin: (roundId) => this._eventLogRoundStore?.getById(roundId)?.origin,
-    authFlow: this._authFlow, // HOSTED-CONFIRM-AUTH-1：handler 第一步分流 always-ask
   });
 
   /**
@@ -1476,9 +1448,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // （HOST-SPLIT-1 第 2 刀：应答处理整体迁至协调器 `answer`——顺序保持
       //   resolve → 决策留痕 → 终结+泵下一条，见 confirmCoordinator.ts 的 JSDoc）
       this._confirm.answer(msg.requestId, msg.approved);
-    } else if (msg.type === 'auth_answer') {
-      // 授权卡回传（HOSTED-CONFIRM-AUTH-1）：整体迁至授权流 `answer`（查无此条静默丢弃）
-      this._authFlow.answer(msg.requestId, msg.approved);
     } else if (msg.type === 'confirm_all_file_changes') {
       // 对话区常驻条「全部确认」：复用已注册命令（纯内存清理，零风险，无需二次确认）
       void vscode.commands.executeCommand(CONFIRM_ALL_FILE_CHANGES_COMMAND);

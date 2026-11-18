@@ -193,28 +193,6 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string, form: UiForm
       </div>
     </div>
   </div>
-  <!-- 授权请求卡（A 类决策面板 · HOSTED-CONFIRM-AUTH-1）：托管会话撞上 always-ask 档
-       命令（git push / npm publish 等）且无授权时，代理转述的「要不要允许这条命令」。
-       宿主推 auth_request（命令原文 + 来源工作会话），webview 渲染此卡；允许/拒绝回传
-       auth_answer。与 writeConfirmCard 同位（输入区上方）、同 Dock 收纳体系，但**条目独立**
-       ——两条判据流：授权卡无超时（内核 deferred 不挂起，用户何时答都行）、按命令原文
-       授权、归属托管座位时间线；确认卡有超时 fail-closed、归属请求会话。 -->
-  <div id="authRequestCard" class="auth-request-card" hidden>
-    <div class="auth-request-card__body">
-      <div class="auth-request-card__head">
-        <span class="auth-request-card__title">${vscode.l10n.t('Assistant requests authorization')}</span>
-        <span class="auth-request-card__session" id="authRequestSession"></span>
-      </div>
-      <pre class="auth-request-card__command" id="authRequestCommand"></pre>
-      <!-- 等待态提示（与确认卡同纪律）：点击裁决后不收卡，等宿主推 auth_closed 或
-           下一条 auth_request 覆盖渲染；按钮 disabled 防重复提交。 -->
-      <div class="auth-request-card__hint" id="authRequestHint" hidden></div>
-      <div class="auth-request-card__actions">
-        <button id="authRequestReject" class="auth-request-card__btn auth-request-card__btn--reject">${vscode.l10n.t('Deny')}</button>
-        <button id="authRequestOk" class="auth-request-card__btn auth-request-card__btn--ok">${vscode.l10n.t('Allow')}</button>
-      </div>
-    </div>
-  </div>
   <!-- 状态抽屉（C1 · ADR-037 形态宪法的结构落点）：
        唯一常驻状态面 = 入口 #dockChip——被收纳的活跃条 >0 时显「+N」，
        仅有时间段内容时显「活动」；未读挂 is-unread 徽章。从不自动弹（宪法④）。
