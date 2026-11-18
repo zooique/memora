@@ -28,6 +28,7 @@ import type { ProcessEvent } from '@zooique/memora';
 // 错误文案映射单一真理源（与 Node 侧 chatPanel 实时提示条共用，防文案双源漂移）
 // 输入长度上限（INPUT-LIMIT-1）：值真源 = shared/constants.ts，两侧输入口同源消费
 import {
+  INTERNAL_SEED_SENDER,
   MAX_ASK_ANSWER_CHARS,
   MAX_INPUT_CHARS,
   MAX_PENDING_INTERJECTIONS,
@@ -2865,17 +2866,25 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function renderReplayRound(r: RoundView): void {
     // 1) 主用户输入：先落气泡，再复位新闭环锚点
     if (r.userMessage?.content) {
-      try {
-        const att = { attachments: r.userMessage.attachments, attachmentUris: r.attachmentUris };
-        append('user', r.userMessage.content, r.userMessage.timestamp, r.id, att, {
-          // 重放路径：origin 来自 Round，senderName 复用 RoundMessage.name（历史标签不能只在实时出现）
-          origin: r.origin,
-          senderName: r.userMessage.name,
-        });
-        if (r.userMessage.timestamp) lastUserTs = r.userMessage.timestamp;
-      } catch (err) {
-        ensureUserInputVisible(r.userMessage.content, err);
+      // HOSTED-INTERNAL-SEED-1：内部汇报种子（落定→唤醒助手汇报的触发指令）不画 user 气泡。
+      // 它按 Claude Code 主流做法只进模型上下文、不进用户 timeline——否则重启后重放会把
+      // "请读通知并汇报"这条系统内部指令伪装成用户输入（真机实锤）。文本/落盘/上下文全不动，
+      // 只跳渲染；轮锚点复位与 ts 回填照旧，避免轮结构断裂。真正用户托管输入 name=HOSTED_SENDER_NAME，
+      // 不撞本标记。
+      const isInternalSeed = r.userMessage.name === INTERNAL_SEED_SENDER;
+      if (!isInternalSeed) {
+        try {
+          const att = { attachments: r.userMessage.attachments, attachmentUris: r.attachmentUris };
+          append('user', r.userMessage.content, r.userMessage.timestamp, r.id, att, {
+            // 重放路径：origin 来自 Round，senderName 复用 RoundMessage.name（历史标签不能只在实时出现）
+            origin: r.origin,
+            senderName: r.userMessage.name,
+          });
+        } catch (err) {
+          ensureUserInputVisible(r.userMessage.content, err);
+        }
       }
+      if (r.userMessage.timestamp) lastUserTs = r.userMessage.timestamp;
       resetForNewClosedLoop();
     }
     // 2) 过程事件整批：按轮复位本轮状态 + 中断/普通分流

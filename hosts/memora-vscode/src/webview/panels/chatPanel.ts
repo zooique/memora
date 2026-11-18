@@ -328,6 +328,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     assembleAgent: async (sessionId) => void (await this.agentForSession(sessionId)),
     replaySession: (sessionId) => this.replaySessionFor(sessionId),
     handleInput: (msg, sessionId) => this.handleInput(msg, sessionId),
+    attachImagesFrom: (msg, sessionId) => this.attachImagesFrom(msg, sessionId),
     forward: (msg) => this.handleWebviewMessage(msg),
     isCurrentSession: (sessionId) => sessionId === this._currentSessionId,
     noteComposerState: (hasText) => {
@@ -2405,11 +2406,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 粘贴（image_ingest）/ 拾取对话框（Q3）/ 右键真图（IMG-12）三入口共用——
    * 三闭包各写一份 = 断点A 预热或预览口径改一处漏两处的漂移温床。
    */
-  private imagePanelDeps() {
+  private imagePanelDeps(targetSessionId?: string) {
     return {
       hasPanel: this._view !== undefined,
       projectPath: this.workspacePath,
-      post: (m: ExtensionToWebviewMessage) => this.post(m),
+      // 回执定向（IMAGE-TARGET-1）：缺省仍投侧栏当前会话（三路既有入口逐字不变）；
+      // 助手窗加图显式传助手会话 id——否则 `post()` 硬投 _currentSessionId，图串进侧栏。
+      post: (m: ExtensionToWebviewMessage) =>
+        targetSessionId ? this.postToSession(targetSessionId, m) : this.post(m),
       toWebviewUri: (f: string) => this.toWebviewUri(f),
       warmCache: (ref: ImageRef) => this.imageCache?.preload(ref, this.workspacePath),
       notifyPanelUnavailable: () =>
@@ -2421,13 +2425,33 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /** 图片添加入口：无参 = 开拾取对话框（Q3 按钮与命令面板）；有参 = 右键真图直入共享摄取面（IMG-12）。面板未解析不开框不落盘（G9 同族孤儿），编排归 host/imagePick.ts */
-  public pickAndAttachImages(paths?: readonly string[]): void {
+  public pickAndAttachImages(paths?: readonly string[], targetSessionId?: string): void {
     void (paths
-      ? ingestImageFiles(this.imagePanelDeps(), paths)
+      ? ingestImageFiles(this.imagePanelDeps(targetSessionId), paths)
       : pickAndIngestImages({
-          ...this.imagePanelDeps(),
+          ...this.imagePanelDeps(targetSessionId),
           picker: async (opts) => (await vscode.window.showOpenDialog(opts))?.map((u) => u.fsPath),
         }));
+  }
+
+  /**
+   * 助手窗图片上行（IMAGE-TARGET-1）：两类图片消息按**来源会话**定向回执。
+   *
+   * 宿主消息到达时已无 form 字段，唯一可靠来源 = 助手窗这一播放的会话 id；
+   * 经 `imagePanelDeps(targetSessionId)` 让 `image_picked` / `image_ingest_result`
+   * 投回助手窗，绝不落 `_currentSessionId`（侧栏）——那是真机串窗的根因。
+   * 采集 / 落盘 / 缓存全复用既有单点，本方法只多传一个目标会话。
+   */
+  private attachImagesFrom(msg: WebviewToExtensionMessage, sessionId: string): void {
+    if (msg.type === 'image_pick_request') {
+      this.pickAndAttachImages(
+        msg.paths?.map((u) => vscode.Uri.parse(u).fsPath),
+        sessionId,
+      );
+    } else if (msg.type === 'image_ingest') {
+      const img = this.imagePanelDeps(sessionId);
+      void ingestImage(this.workspacePath, msg, img.post, img.toWebviewUri, img.warmCache, img.t);
+    }
   }
 
   /** 推送 Provider 列表到 webview（render / 切换 Provider 后调用，异步读取配置） */

@@ -94,3 +94,19 @@ export const MAX_PENDING_INTERJECTIONS = 5;
  *  启动时 config）共用的跨侧契约键——两侧禁各写字面量：第二份即漂移，且漂移后
  *  读端拿到 null 静默不配置，译文全线回落原文、无任何测试会红。 */
 export const L10N_BUNDLE_ELEMENT_ID = 'memora-l10n-bundle';
+
+/**
+ * 内部汇报种子轮的发送者名标记（HOSTED-INTERNAL-SEED-1 · 2026-11-18 真机缺陷）
+ *
+ * `wakeSettlementReport`（工作会话落定 → 唤醒助手主动汇报）用 `agent.chat(seedText)` 造的
+ * 轮以 `role:'user'` 落盘，重启重放时 `renderReplayRound` 把它当用户输入画成气泡——
+ * 用户真机看到"输入区多了一条不是我输入的内容"。按 Claude Code 主流做法，内部注入的
+ * 触发指令只进模型上下文、不进用户 timeline，故用本标记让重放跳过该 user 气泡。
+ *
+ * 落点 = `RoundMessage.name`（既有字段，`RoundView.userMessage.name` 原样透出，实时 / 重放
+ * 同一份），零协议 type / 零内核 / 零存储迁移。真正的用户托管输入 senderName =
+ * `HOSTED_SENDER_NAME`（'Memora'），与本值不同，故不误伤。
+ *
+ * 真源唯一：宿主写端（chatRunControlOps 的 seed）与 webview 读端（chatView 重放）均 import 本常量。
+ */
+export const INTERNAL_SEED_SENDER = '__internal_settlement_seed__';

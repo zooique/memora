@@ -37,6 +37,13 @@ export interface HostedSeatDeps {
     msg: Extract<WebviewToExtensionMessage, { type: 'input' }>,
     sessionId: string,
   ) => Promise<void>;
+  /**
+   * 助手窗图片上行（IMAGE-TARGET-1）：按**助手会话**定向回执，不转 forward。
+   *
+   * forward 会把 `image_picked` 投给侧栏 `_currentSessionId` = 真机串窗根因。
+   * 图片采集 / 落盘仍复用面板同一执行面，本依赖只多传一个目标会话 id。
+   */
+  attachImagesFrom: (msg: WebviewToExtensionMessage, sessionId: string) => void;
   /** 其余上行消息（当前会话的导航 / 全局动作） */
   forward: (msg: WebviewToExtensionMessage) => void;
   /** 该会话是否就是侧栏此刻显示的会话 */
@@ -158,6 +165,13 @@ export function createHostedSeat(deps: HostedSeatDeps): HostedSeat {
       // 助手窗是气泡级取景，不渲染待发送插话区 ⇒ 这两类上行无承载对象，显式忽略
       // （若将来渲染，须按助手会话投递，不能转给 forward——那会作用到侧栏会话）
       return;
+    }
+    if (msg.type === 'image_pick_request' || msg.type === 'image_ingest') {
+      // IMAGE-TARGET-1：图片回执必须投回助手会话。转 forward 会走侧栏的 _currentSessionId，
+      // 缩略图串进工作会话输入区（真机实锤）。无会话 id 时不吞——按既有 forward 兜底给可见反馈。
+      const sid = resolveSessionId();
+      if (sid) return deps.attachImagesFrom(msg, sid);
+      return deps.forward(msg);
     }
     deps.forward(msg);
   };

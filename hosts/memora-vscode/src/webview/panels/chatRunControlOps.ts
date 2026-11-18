@@ -14,6 +14,7 @@ import * as vscode from 'vscode';
 import type { Agent, AgentChunk } from '@zooique/memora';
 import { toNoticeText } from '../../extension/host/noticeText.js';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
+import { INTERNAL_SEED_SENDER } from '../../shared/constants.js';
 import type { HostedStopResult } from '../../extension/host/workSessionTools.js';
 import type {
   HostedPauseResult,
@@ -393,12 +394,22 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
           role: 'user',
           content: seedText,
           timestamp: now,
+          // HOSTED-INTERNAL-SEED-1：显式标记"内部汇报种子"，重放时据此跳过 user 气泡。
+          // name 是 RoundMessage 既有字段（实时/重放同一份），零协议扩张；真正用户托管输入
+          // 的 name = HOSTED_SENDER_NAME，不撞车。文本仍进模型上下文，落盘照旧——只不上屏。
+          name: INTERNAL_SEED_SENDER,
         },
         origin: 'hosted',
       };
       const start = (): void => {
         void deps.runFlow(
-          (signal) => agent.chat(seedText, signal, undefined, { origin: 'hosted' }),
+          (signal) =>
+            agent.chat(seedText, signal, undefined, {
+              origin: 'hosted',
+              // HOSTED-INTERNAL-SEED-1：与 seed.userMessage.name 同值——内核 appendUser 据此落
+              // RoundMessage.name，重启重放才能识别内部种子并跳过 user 气泡。两处缺一即回归。
+              senderName: INTERNAL_SEED_SENDER,
+            }),
           creator,
           seed,
         );

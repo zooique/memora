@@ -15,6 +15,7 @@ import {
   createChatRunControlOps,
   type ChatRunControlOpsDeps,
 } from '../panels/chatRunControlOps.js';
+import { INTERNAL_SEED_SENDER } from '../../shared/constants.js';
 
 vi.mock('vscode', () => ({ l10n: { t: (message: string) => message } }));
 
@@ -384,7 +385,15 @@ describe('落定主动浮现 — isSessionIdle / wakeSettlementReport', () => {
     void factory(new AbortController().signal).next();
     expect(chat).toHaveBeenCalledTimes(1);
     expect(chat.mock.calls[0]?.[0]).toBe(seed.userMessage?.content);
-    expect(chat.mock.calls[0]?.[3]).toEqual({ origin: 'hosted' });
+    // 订正锚（HOSTED-INTERNAL-SEED-1 · 2026-11-18）：原断言 { origin: 'hosted' } 保持——
+    // 来源戳语义不变；真机发现种子以 user 轮落盘、重启重放伪装成用户输入后，新增
+    // senderName 标记让内核 appendUser 落 RoundMessage.name，重放据此跳过 user 气泡。
+    expect(chat.mock.calls[0]?.[3]).toEqual({
+      origin: 'hosted',
+      senderName: INTERNAL_SEED_SENDER,
+    });
+    // 两个写端同值：seed（实时投影）与 chat opts（内核落盘）任一缺一即回归
+    expect(seed.userMessage).toMatchObject({ name: INTERNAL_SEED_SENDER });
   });
 
   it('不空闲 / 实例不在 → 不起轮，如实返回 false', () => {

@@ -25,6 +25,7 @@ import {
 import { fmtTime } from '../helpers/fmtTime.js';
 // 断言与真源同源：上限值消费 shared/constants.ts（非字面量复制）
 import {
+  INTERNAL_SEED_SENDER,
   MAX_ASK_ANSWER_CHARS,
   MAX_INPUT_CHARS,
   MAX_PENDING_INTERJECTIONS,
@@ -14129,5 +14130,69 @@ describe('未发送草稿（composer_draft_restore / composer_draft）', () => {
     // 快照语义：按「敲字那一刻」的归属与文本上行，不把 A 的字算到 B 头上
     expect(drafts).toHaveLength(1);
     expect(drafts[0]).toMatchObject({ sessionId: 'session-a', text: 'A 里敲的字' });
+  });
+});
+
+/**
+ * HOSTED-INTERNAL-SEED-1（2026-11-18 真机缺陷）：落定→唤醒助手汇报的种子轮以 role:'user'
+ * 落盘，重启重放曾被当用户输入画成气泡。主流 agent（Claude Code）的做法是内部注入指令
+ * 只进模型上下文、不进用户 timeline。本组钉死：种子文本不上屏、助手汇报照常、真输入不误伤。
+ */
+describe('内部汇报种子轮不上屏（HOSTED-INTERNAL-SEED-1）', () => {
+  it('重放内部种子轮：种子文本不出 user 气泡，助手汇报仍渲染', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+    const seedText = '有一条托管会话刚落定。请读上下文里的落定通知，然后向我汇报';
+    const reportText = '会话 A 已完成，建议下一步做 B';
+
+    dispatchReplay(
+      makeRound({
+        id: 'round-seed',
+        user: { content: seedText, ts: '2026-11-18T09:00:00.000Z' },
+        origin: 'hosted',
+        senderName: INTERNAL_SEED_SENDER,
+        assistantMessage: { content: reportText, ts: '2026-11-18T09:00:05.000Z' },
+        status: 'complete',
+      }),
+    );
+
+    // 种子文本绝不出现在任何 user 气泡（真机 bug 的判据本体）
+    const userBodies = [...messages.querySelectorAll('.msg.user .msg-body')].map(
+      (el) => el.textContent,
+    );
+    expect(userBodies).not.toContain(seedText);
+    // 但助手的汇报正文照常上屏——只藏内部指令，不藏结论
+    expect(collectAllBodyText(messages)).toContain(reportText);
+  });
+
+  it('真正的用户托管输入（senderName=Memora）不受影响，仍渲染 user 气泡', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+
+    dispatchReplay(
+      makeRound({
+        id: 'round-real',
+        user: { content: '帮我追加一个任务', ts: '2026-11-18T10:00:00.000Z' },
+        origin: 'hosted',
+        senderName: 'Memora',
+        status: 'complete',
+      }),
+    );
+
+    expect(messages.querySelector('.msg.user .msg-body')?.textContent).toBe('帮我追加一个任务');
+    expect(messages.querySelector('.msg.user .msg-origin-tag')?.textContent).toBe('Sent by Memora');
+  });
+
+  it('源码守卫：重放路径按 INTERNAL_SEED_SENDER 判种子，且跳渲染不跳复位', () => {
+    const src = readFileSync(join(process.cwd(), 'src/webview/scripts/chatView.ts'), 'utf8');
+    expect(src).toMatch(/r\.userMessage\.name === INTERNAL_SEED_SENDER/);
+    // 复位必须在 if 之外（跳过气泡后轮锚点仍复位，否则跨轮挂载串位）
+    const seedCheck = src.indexOf(
+      'const isInternalSeed = r.userMessage.name === INTERNAL_SEED_SENDER',
+    );
+    const skipBlock = src.indexOf('if (!isInternalSeed) {', seedCheck);
+    const reset = src.indexOf('resetForNewClosedLoop();', skipBlock);
+    const skipBlockEnd = src.indexOf('\n      }', skipBlock);
+    expect(reset).toBeGreaterThan(skipBlockEnd);
   });
 });
