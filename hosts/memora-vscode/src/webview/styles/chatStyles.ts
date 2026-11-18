@@ -1590,9 +1590,10 @@ export const chatStyles = `
    * 硬纪律一：本段每条规则都必须带 body[data-form='assistant'] 前缀——漏前缀即漏到自助形态。
    * 唯一例外是下面那条 #inputBox 基线（display:contents = 不生成盒子，等价于「没有这个
    * 包裹层」）；守卫用例 assistantFormView 逐条校验「除基线外全部带前缀」。
-   * 硬纪律二（用户拍板）：助手形态的输入区除发送键外不许有第二个控件——运行控制那排
-   * （技能 / 模型 / 润色 / 图片、暂停、状态行）在自助形态一个不少，这里只**不显示**、
-   * 不删 DOM：能力（内部停止 / 暂停）照旧可达，只是不给这个形态摆按钮。 */
+   * 硬纪律二（用户拍板 2026-11-16 口径，本注释为订正锚）：助手形态输入区只去暂停键
+   * 与状态徽章群；技能 / 模型 / 润色 / 图片与占用圆环照常显示（见下方「输入区减法」
+   * 规则），不为这个形态另造一套控件。所有差异只**不显示**相关节点、不删 DOM，
+   * 切回自助形态逐字恢复。 */
   /* 基线：包裹层不生成盒子 ⇒ 自助形态的输入区布局与加入本层之前逐像素一致 */
   #inputBox { display: contents; }
   /* 基线（第二条）：顶部身份条自助形态零占位——显隐全走 CSS（不走 hidden 属性）：
@@ -1715,6 +1716,10 @@ export const chatStyles = `
   /* ASSISTANT-WECHAT-UX-1：微信气泡不标来源——「由 X 发送」是工作会话的代理语义，
    * 助手窗里用户只跟助手对话，标签会让「谁说的」产生歧义。仅隐藏、不删 DOM。 */
   body[data-form='assistant'] .msg-origin-tag { display: none !important; }
+  /* ASSISTANT-WECHAT-UX-1 · C 类升档（2026-11-18 排雷后唯一安全项）：代码块复制条
+   * 是工作会话的工程工具条——微信式对话里代码块只留正文与语言标签，复制仍可手动
+   * 选中。仅隐藏、不删 DOM；self 形态基础规则逐字不变。 */
+  body[data-form='assistant'] .code-block__copy { display: none !important; }
   /* 交互输入行（你的补充 / 你答）在此形态上屏到消息流（见 appendInteractiveInput）——
    * 基础样式的 user-select:none 是过程行语义，这里恢复可选中：选中文字才能右键
    * 「引用回复」把内容追加进输入区（复用既有 quoteReply，零新协议）。 */

@@ -212,4 +212,28 @@ describe('助手窗微信心智对齐（ASSISTANT-WECHAT-UX-1）', () => {
       /\.round-group__footer \{\s*display: flex; align-items: center; justify-content: space-between;/,
     );
   });
+
+  it('⑦ 代码块复制条：助手形态源码守卫隐藏、DOM 保留，self 基础规则逐字不变', () => {
+    mountChatView('assistant');
+    dispatch({ type: 'user', text: '写段代码', ts: '2026-11-18T10:00:00.000Z' });
+    dispatch({
+      type: 'chunk',
+      content: '```ts\nconst a = 1;\n```',
+      ts: '2026-11-18T10:00:01.000Z',
+      roundId: 'r7',
+    });
+    dispatch({ type: 'done', roundId: 'r7' });
+    // 助手形态 DOM 仍保留复制按钮（仅 CSS 隐藏，切回 self 即恢复）
+    expect(document.querySelector('.code-block__copy')).not.toBeNull();
+    expect(document.querySelector('.code-block__lang')?.textContent).toBe('ts');
+
+    const css = readFileSync(CSS_SRC, 'utf8');
+    expect(css).toMatch(
+      /body\[data-form='assistant'\] \.code-block__copy \{ display: none !important; \}/,
+    );
+    // 不带伤：self 基础规则逐字不变（复制条在自助形态仍可见）
+    expect(css).toMatch(
+      /\.code-block__copy \{\s*padding: var\(--sp-0, 2px\) var\(--sp-2, 6px\);[\s\S]{0,220}?cursor: pointer;/,
+    );
+  });
 });
