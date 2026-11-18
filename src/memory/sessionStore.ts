@@ -176,7 +176,8 @@ export interface SessionMeta {
    *
    * 写入方 = 宿主 createSession 时由主控 create_session 工具的 mandate 参数一次性写入，
    *       **不从父会话继承**（分叉是另一条活，边界要重新声明）。
-   * 读取方 = Worker loop（消费前检查字段存在）+ 宿主事件钩子更新 workStatus 时对比边界。
+   * 读取方 = 当前无运行时读取方：宿主 `projectSessionStatus` 只读 `workStatus`，Worker 身份判定
+   *   读 `Round.origin` 轮戳。P2 Hand back 边界比对是预留消费点，按定案「≥3 真实案例」纪律待启。
    * 缺省 undefined = 旧数据 / 用户自助开的会话（自助会话**永远不写本字段**，读侧如实降级）。
    */
   workOrder?: string;

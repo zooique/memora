@@ -64,9 +64,10 @@ export interface SessionStatusReadPorts {
 /**
  * hosted Worker 的语义身份是否临时失效（B4）
  *
- * 定案 §3.2.1：用户在 Worker 会话里亲手发轮、且该轮仍在执行时，`workOrder` 暂停生效
- * （Worker 身份临时失效），轮跑完自动恢复。状态字段本身不改，只在消费侧加这一层判定。
- * 判据取「最近一轮无 hosted 级戳且未收场」：戳是轮级事实（`Round.origin`），不看会话身份；
+ * 定案 §3.2.1：用户在 Worker 会话里亲手发轮、且该轮仍在执行时，Worker 身份投影暂停
+ * （判据读 `Round.origin` 轮戳，不读 `workOrder` 字段），轮跑完自动恢复。状态字段本身不改，
+ * 只在消费侧加这一层判定。判据取「最近一轮无 hosted 级戳且未收场」：戳是轮级事实
+ * （`Round.origin`），不看会话身份；
  * 读不到轮 / 读不到状态一律当未触发，不把读不到说成身份失效。
  */
 function isWorkerIdentitySuspended(ports: SessionStatusReadPorts, sessionId: string): boolean {
@@ -105,8 +106,9 @@ export function projectSessionStatus(
   if (ports.readMeta) {
     const meta = ports.readMeta(sessionId);
     if (meta?.origin === 'hosted' && meta.workStatus) {
-      // B4：用户亲手发的轮仍在执行 ⇒ Worker 身份临时失效，workOrder / workStatus 不再
-      // 充当投影真源；回落到下方轮次与运行态投影（用户轮的真实状态）。该轮收场后本判定
+      // B4：用户亲手发的轮仍在执行 ⇒ Worker 身份投影暂停（读 `Round.origin` 轮戳，不读
+      // workOrder 字段），workStatus 不再充当投影真源；回落到下方轮次与运行态投影
+      // （用户轮的真实状态）。该轮收场后本判定
       // 自然失效、无需复位——投影是纯函数，每次调用都重读最新轮。
       if (!isWorkerIdentitySuspended(ports, sessionId)) {
         return mapWorkStatusToJobStatus(meta.workStatus);
@@ -140,8 +142,9 @@ export function projectSessionStatus(
  * SessionMeta.workStatus → WorkbenchJobStatus 映射
  *
  * 语义层 → 展示层的映射，独立成函数方便测试覆盖。
- * 工作会话被用户手动打断时 workOrder 暂停（宿主判定），但 workStatus 保持 'working'——
- * 工作台会同时展示轮次状态（可能是 waiting/running），这是正确的。
+ * 工作会话被用户手动打断时 Worker 身份投影暂停（按 `Round.origin` 轮戳判定，不读 workOrder
+ * 字段），但 workStatus 保持 'working'——工作台会同时展示轮次状态（可能是
+ * waiting/running），这是正确的。
  */
 function mapWorkStatusToJobStatus(
   workStatus: NonNullable<SessionMeta['workStatus']>,
