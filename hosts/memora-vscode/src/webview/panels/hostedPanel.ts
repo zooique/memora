@@ -21,6 +21,7 @@ import * as vscode from 'vscode';
 import { buildHtml } from './chatPanelHtml.js';
 import type { MemoraChatViewProvider } from './chatPanel.js';
 import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
+import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
 
 /** 托管页依赖 */
 export interface HostedPanelDeps {
@@ -28,6 +29,8 @@ export interface HostedPanelDeps {
   extensionUri: vscode.Uri;
   /** 对话状态机宿主（注册视图 + 转发上行消息） */
   chatProvider: MemoraChatViewProvider;
+  /** 工作区根（派生 attachments 资源根，与侧栏 chatPanel 同一真源） */
+  workspacePath: string;
 }
 
 /** 托管编辑器页（单例容器） */
@@ -40,10 +43,12 @@ export class MemoraHostedPanel {
 
   private readonly _extensionUri: vscode.Uri;
   private readonly _chatProvider: MemoraChatViewProvider;
+  private readonly _workspacePath: string;
 
   constructor(deps: HostedPanelDeps) {
     this._extensionUri = deps.extensionUri;
     this._chatProvider = deps.chatProvider;
+    this._workspacePath = deps.workspacePath;
   }
 
   /** 打开（或聚焦）托管页；标题随当前会话展示，切会话后由 open 时重取 */
@@ -58,7 +63,13 @@ export class MemoraHostedPanel {
       vscode.ViewColumn.Beside,
       {
         enableScripts: true,
-        localResourceRoots: [vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview')],
+        localResourceRoots: [
+          vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview'),
+          // IMG-2 K3 同口径对齐侧栏 chatPanel：助手窗收到图片回执后，悬停预览的
+          // asWebviewUri 指向 attachments 目录，不放行则图加载失败退文本态。
+          // 目录真源与侧栏同为 resolveAttachmentsDir，不新造路径拼接。
+          vscode.Uri.file(resolveAttachmentsDir(this._workspacePath)),
+        ],
       },
     );
     this._panel = panel;

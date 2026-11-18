@@ -898,6 +898,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const hostedPanel = new MemoraHostedPanel({
     extensionUri: context.extensionUri,
     chatProvider,
+    workspacePath,
   });
   registerOpenHostedCommand(context, hostedPanel);
 
