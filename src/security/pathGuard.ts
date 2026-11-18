@@ -263,17 +263,8 @@ export interface AuditEvent {
    * 事件类型：路径允许/拒绝；确认决策（写入 / 命令 / 代码 / 脚本执行 / 自定义工具）。
    * `write-*` 是历史命名：confirmGate 承载全部五类确认，非写入类请求同样落这几值
    * （见 confirmGate）；改名 = 破坏性公共面变更，收益仅为命名纯度 ⇒ 保留旧名。
-   * `write-deferred` = **待用户授权**（宿主回调返回 `'deferred'`）——既不是批准也不是拒绝，
-   * 单列一值是为了让审计能回答「这条不可逆操作为什么没执行：在等人点头」，
-   * 而不是被记成拒绝（记成拒绝就是审计说谎）。
    */
-  type:
-    | 'path-allow'
-    | 'path-deny'
-    | 'write-confirm'
-    | 'write-decline'
-    | 'write-auto'
-    | 'write-deferred';
+  type: 'path-allow' | 'path-deny' | 'write-confirm' | 'write-decline' | 'write-auto';
   /** 被裁决对象标识：写入类 = 目标文件绝对路径；命令/代码/脚本 = 命令字面量或目标标识；自定义工具 = 调用摘要 */
   path: string;
   /** 工具名（read_file / write_file / 自定义工具名） */
@@ -292,33 +283,15 @@ export interface AuditEvent {
 export type AuditListener = (event: AuditEvent) => void;
 
 /**
- * 确认回调的第三态：**待授权**——既不批准也不拒绝，把决定推迟到用户下一次明确表态。
- *
- * 为什么必须是独立的第三值而不是「返回 false」：
- * `false` 在内核的语义是**这条操作不许做**（落 `write-decline` 审计、产出 `permission_denied`），
- * 代理据此会换路子甚至放弃。而「待授权」的语义是**这条操作可以做，只是需要用户点头**——
- * 用 `false` 表达它会让审计说谎（写"拒绝"）、让代理误判（以为能力被禁）。
- *
- * 兼容性：现有全部实现返回 `boolean` 仍然合法（`boolean` 是本联合的子集），
- * 故本扩展**零破坏**；返回 `'deferred'` 是宿主按需启用的新能力。
- */
-export type ConfirmDeferral = 'deferred';
-
-/** 确认回调的返回值：批准 / 拒绝 / 待授权 */
-export type WriteConfirmationResult = boolean | ConfirmDeferral;
-
-/**
  * 确认请求：宿主在非交互式环境（WebUI/桌宠/无终端）注入自定义确认 UI，
- * 走此回调而非直接读 stdin。返回 true 确认 / false 拒绝 / `'deferred'` 待授权；
+ * 走此回调而非直接读 stdin。返回 true 确认 / false 拒绝；
  * 抛错视为拒绝（fail-closed）。
  *
  * ⚠️ 类型名 `WriteConfirmation*` 是**历史命名**：该回调承载全部确认
  * （写入 / 命令 / 代码 / 脚本执行 / 自定义工具），非写入类请求同样走它（见 `confirmGate`）。
  * 改名 = 破坏性公共面变更，收益仅为命名纯度 ⇒ 保留旧名 + 此注释说明。
  */
-export type WriteConfirmationRequest = (
-  info: WriteConfirmationInfo,
-) => Promise<WriteConfirmationResult>;
+export type WriteConfirmationRequest = (info: WriteConfirmationInfo) => Promise<boolean>;
 
 /** 写入确认请求的载荷 */
 export interface WriteConfirmationInfo {
@@ -332,15 +305,6 @@ export interface WriteConfirmationInfo {
   permission: Permission;
   /** 是否需确认（owner+confirmWrites=false 时为 false，宿主可跳过弹窗） */
   needsConfirm: boolean;
-  /**
-   * 命令裁决档位（**仅命令面与脚本面有值**，由 `confirmCommandRun` / `confirmScriptRun`
-   * 把已算出的 `classifyCommand` 结果透传；写入面与自定义工具面恒 undefined）。
-   *
-   * 为什么必须由内核带出而不是让宿主自己再算一遍：宿主分档（普通写自动、不可逆操作转授权）
-   * 的前提就是知道这一档，而宿主没有 `classifyCommand` 的第二份实现；让宿主重算等于
-   * 同一事实算两次（同一份清单两个调用面 = 必然漂移）。
-   */
-  verdict?: CommandVerdict;
   /** 文件当前内容预览（截断到 10KB，null 表示新文件）——供宿主 UI 展示 diff */
   beforeContent?: string | null;
   /** 写入后内容预览（截断到 10KB）——供宿主 UI 展示 diff */
@@ -700,7 +664,7 @@ export class SecurityGuard {
     /** diff 内容选项（宿主 UI 变更预览用，自动截断到 10KB） */
     options?: { beforeContent?: string | null; afterContent?: string },
   ): Promise<boolean> {
-    const outcome = await this.confirmGate(
+    return this.confirmGate(
       targetPath,
       tool,
       description,
@@ -712,10 +676,6 @@ export class SecurityGuard {
         afterContent: truncateForDiff(options?.afterContent),
       },
     );
-    // 类型窄化（双保险）：`confirmViaHandler` 已按 `verdict !== 'always-ask'` 把 deferred 折成
-    // 拒绝，写入面（verdict 恒 undefined）运行期不可能拿到 'deferred'。此处仍显式判 false
-    // 而不做 `as boolean` 断言——将来若有人给写入面塞 verdict，fail-closed 优先于静默放行。
-    return outcome === 'deferred' ? false : outcome;
   }
 
   /**
@@ -743,7 +703,7 @@ export class SecurityGuard {
     tool: string,
     description?: string,
     content?: string,
-  ): Promise<WriteConfirmationResult> {
+  ): Promise<boolean> {
     if (content) {
       const verdict = classifyCommand(content);
       if (verdict === 'deny') {
@@ -759,18 +719,8 @@ export class SecurityGuard {
       }
       if (verdict === 'always-ask') {
         // 恒弹：与 confirmCommandRun 的 always-ask 分支同判据（不可被档位豁免）
-        // verdict 透传：宿主据此把不可逆操作转成异步授权而不是代批
-        return this.confirmGate(targetPath, tool, description, true, undefined, undefined, verdict);
+        return this.confirmGate(targetPath, tool, description, true);
       }
-      return this.confirmGate(
-        targetPath,
-        tool,
-        description,
-        this.permission === 'guest' || this.confirmScripts,
-        undefined,
-        undefined,
-        verdict,
-      );
     }
     return this.confirmGate(
       targetPath,
@@ -790,11 +740,7 @@ export class SecurityGuard {
    *      将来的 allow 白名单对它无效——不可豁免，§13.2 定案）；
    *   3. 其余 → 与脚本执行同判据（guest 或 confirmScripts），未注入 handler 时 fail-closed。
    */
-  async confirmCommandRun(
-    command: string,
-    tool: string,
-    description?: string,
-  ): Promise<WriteConfirmationResult> {
+  async confirmCommandRun(command: string, tool: string, description?: string): Promise<boolean> {
     const verdict = classifyCommand(command);
     if (verdict === 'deny') {
       this.emitAudit({
@@ -812,10 +758,6 @@ export class SecurityGuard {
       tool,
       description,
       verdict === 'always-ask' || this.permission === 'guest' || this.confirmScripts,
-      undefined,
-      undefined,
-      // verdict 透传：宿主分档的前提（always-ask 才转异步授权；normal 不必问）
-      verdict,
     );
   }
 
@@ -837,17 +779,7 @@ export class SecurityGuard {
     summary: string,
     needConfirm: boolean,
   ): Promise<boolean> {
-    const outcome = await this.confirmGate(
-      summary,
-      toolName,
-      summary,
-      needConfirm,
-      undefined,
-      'custom',
-    );
-    // 类型窄化（双保险，同 `requestWriteConfirmation`）：自定义工具面 verdict 恒 undefined，
-    // `confirmViaHandler` 已把 deferred 折成拒绝；此处再显式判 false，不用 `as boolean` 掩盖。
-    return outcome === 'deferred' ? false : outcome;
+    return this.confirmGate(summary, toolName, summary, needConfirm, undefined, 'custom');
   }
 
   /**
@@ -868,13 +800,7 @@ export class SecurityGuard {
     needConfirm: boolean,
     diff?: { beforeContent?: string | null; afterContent?: string },
     source?: AuditEvent['source'],
-    /**
-     * 命令裁决档位（**仅命令面 / 脚本面传**；写入面与自定义工具面不传 ⇒ info 不带该字段）。
-     * 透传目的：宿主需要它才能分档（普通写直接放行 / 不可逆操作转异步授权），
-     * 而宿主没有 `classifyCommand` 的第二份实现。
-     */
-    verdict?: CommandVerdict,
-  ): Promise<WriteConfirmationResult> {
+  ): Promise<boolean> {
     // 无需确认：直接放行并记录审计
     if (!needConfirm) {
       this.emitAudit({
@@ -895,7 +821,6 @@ export class SecurityGuard {
       description,
       permission: this.permission,
       needsConfirm: needConfirm,
-      verdict,
       beforeContent: diff?.beforeContent,
       afterContent: diff?.afterContent,
       // diff 域语义判定单点：写入场景传了 diff 参数 → 有域；命令/代码/脚本/自定义工具不传 → 无域
@@ -927,62 +852,24 @@ export class SecurityGuard {
   /**
    * 通过宿主注入的 confirmationHandler 执行确认（**全部确认**的唯一执行路径：
    * 写入 / 命令 / 代码 / 脚本执行 / 自定义工具）。抛错视为拒绝（fail-closed 安全优先）。
-   *
-   * 三态处理：
-   * - `true`  → 放行，落 `write-confirm`；
-   * - `false` → 拒绝，落 `write-decline`；
-   * - `'deferred'` → **待用户授权**（宿主把不可逆操作转成异步授权，不阻塞本轮），
-   *   落 `write-deferred` 并原样冒泡——绝不折算成 `false`，否则审计说谎、代理误判。
    */
   private async confirmViaHandler(
     info: WriteConfirmationInfo,
     targetPath: string,
     tool: string,
     source?: AuditEvent['source'],
-  ): Promise<WriteConfirmationResult> {
+  ): Promise<boolean> {
     try {
-      const outcome = await this.confirmationHandler!(info);
-      if (outcome === 'deferred') {
-        /**
-         * 只有**恒询问清单（always-ask）**的操作才有「异步授权」这回事——
-         * 它是唯一「可以做但不该擅自做」的档位。其余面（写入 / 自定义工具 / 普通命令）
-         * 的 handler 若也返回 deferred，一律按**拒绝**处理：把「可逆操作」也推迟到用户表态，
-         * 等于把该直接干的活也卡住，与分档的初衷相反。
-         *
-         * 这一步是审计诚实性的闸：绝不能在折成拒绝的同时把审计写成 `write-deferred`
-         * （那会让日志说「在等人点头」而实际已经拒绝）。
-         */
-        if (info.verdict !== 'always-ask') {
-          this.emitAudit({
-            type: 'write-decline',
-            path: targetPath,
-            tool,
-            source,
-            decision: 'declined',
-            reason: `非恒询问操作不支持异步授权（verdict=${info.verdict ?? 'none'}），按拒绝处理`,
-            timestamp: nowIso(),
-          });
-          return false;
-        }
-        this.emitAudit({
-          type: 'write-deferred',
-          path: targetPath,
-          tool,
-          source,
-          reason: '待用户授权（异步授权，本轮不阻塞）',
-          timestamp: nowIso(),
-        });
-        return 'deferred';
-      }
+      const ok = await this.confirmationHandler!(info);
       this.emitAudit({
-        type: outcome ? 'write-confirm' : 'write-decline',
+        type: ok ? 'write-confirm' : 'write-decline',
         path: targetPath,
         tool,
         source,
-        decision: outcome ? 'confirmed' : 'declined',
+        decision: ok ? 'confirmed' : 'declined',
         timestamp: nowIso(),
       });
-      return outcome;
+      return ok;
     } catch (err) {
       // 抛错视为拒绝（fail-closed 安全优先）
       logger.warn({ err, targetPath }, '写入确认回调异常，视为拒绝');

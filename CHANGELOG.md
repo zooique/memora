@@ -10,6 +10,10 @@
 
 ## [Unreleased]
 
+### Removed（内核）
+
+- **回撤未发版的异步授权三态**（`HOSTED-CONFIRM-SOFT-1` · **消费者零影响**）：删 `ConfirmDeferral` / `WriteConfirmationResult` / `WriteConfirmationInfo.verdict` / `BlockedReason.auth_required` / `AuditEvent` 的 `write-deferred` 审计值，以及 `toolExecutor` 四处 deferred 分支与两条 `[ERR:*AUTH_DEFERRED]` 文案。2026-11-17 定案后宿主异步授权流已反向收口，这条三态链成为零消费面；且它**从未进入任何已发版**（引入提交不是 `v7.3.0` 的祖先），故本次回撤**不是 breaking change、不单独占版本号**，下一个内核版本由本区 allow-only 的公共面扩张决定。**对消费者**：7.3.0 及更早版本的公开面逐字不变（本来就没有这三态）；`WriteConfirmationRequest` 恢复为 `Promise<boolean>`，返回 `'deferred'` 的自定义实现（若有）会类型报错——该形态只存在于未发版区间。内核裁决链 `classifyCommand` / `CommandVerdict`、恒拦（`deny`）与恒弹（`always-ask`）判据一字未动。
+
 ### Added（内核）
 
 - **工具 allow-only 排他轴**（`KERNEL-TOOL-ALLOW-ONLY-1` · **消费者可感知 · 公开面扩张**）：新增 `AgentOptions.allowOnlyTools?: readonly string[]` 与 `ToolExecutor.setToolAllowOnly(...)`。此前表达「只给这几个工具」只能写 deny 补集，而 `isToolExposed` 先走 `customTools` / 常驻集，新工具与 MCP 桥接工具默认漏进封闭工具面（危险方向是漏，不是缺）。新轴判定排在 `isToolExposed` 首行：未列入的工具既不进提示词清单 / `chatOpts.tools`，执行闸也拒绝硬点名；`customTools` 与 `DEFAULT_EXPOSED_TOOLS` 常驻集不再豁免。空数组 `[]` 是「一个都不给」的显式形态而非默认值。与 `denyTools` 语义互斥，两者同时给出时装配期抛错（fail-closed，避免同一工具两处裁决）。**对消费者**：`undefined`（默认）行为逐字不变；宿主可据此装配封闭工具面（如助手会话只给会话管理工具），宿主接入见台账 `HOSTED-ROUTER-TOOL-SURFACE-1`，不在本版。

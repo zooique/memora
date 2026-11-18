@@ -69,8 +69,8 @@ function agentStub() {
   } as unknown as Agent;
   return {
     agent,
-    // 返回类型随内核 WriteConfirmationRequest 推导（内核三态仍含 `'deferred'`）：
-    // 宿主已不产生 deferred（异步授权流退役，HOSTED-CONFIRM-SOFT-1），但桩不窄化返回值
+    // 返回类型随内核 WriteConfirmationRequest 推导（内核三态已退役，现为 boolean）：
+    // 宿主已不产生 deferred（异步授权流退役，HOSTED-CONFIRM-SOFT-1），桩不窄化返回值
     // ——签名真源在内核，测试按需对返回值断言，桩不替调用方收敛类型
     trigger: (info: ConfirmInfo): ReturnType<WriteConfirmationRequest> => {
       if (!handler) throw new Error('onWriteConfirmation 未注入');

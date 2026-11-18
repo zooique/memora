@@ -182,19 +182,6 @@ export type BlockedReason =
   | 'invalid_intel_note' // remember_intel 参数为空
   // ── 执行层闸门族（ToolRunner denied/skip + ToolExecutor 暴露闸）──
   | 'permission_denied' //  宿主审批拒绝 / fail-closed
-  /**
-   * 待用户授权：**不是拒绝，是「没开始」**。
-   *
-   * 与 `permission_denied` 的分工（两者都挡下，但吞掉这一区别会让代理行为错乱）：
-   * - `permission_denied`＝这条操作**不许做**（恒拦 / 用户点了拒绝 / fail-closed）⇒ 代理应换路子；
-   * - `auth_required`＝这条操作**可以做，但需要用户点头**（不可逆操作进了异步授权）⇒
-   *   代理应把它转述给用户请求授权，拿到授权后重试同一操作。
-   *
-   * 生产者只有一处：`SecurityGuard.confirmGate` 收到宿主回调的 `'deferred'` 时冒泡上来
-   * （宿主判据见 `confirmCoordinator`：托管轮 + always-ask + 未授权）。
-   * `hasRealFailure` 恒 false——挡下是主动的，背后没有任何执行失败。
-   */
-  | 'auth_required'
   | 'readonly_denied' //    只读模式禁写工具
   | 'idempotent_skip' //    outbox 幂等：已执行过
   | 'not_exposed'; //       工具已注册但本轮未暴露（EXPOSURE-GATE-1 执行闸）
