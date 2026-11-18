@@ -20,6 +20,7 @@
   "command.toggleResidentRule.title": "Memora: Toggle Project Rule",
   "command.manageResidentRules.title": "Memora: Manage Project Rules",
   "command.addToChat.title": "Memora: Add to Chat",
+  "command.addToAssistant.title": "Memora: Add to Assistant",
   "command.reviewFileChanges.title": "Memora: Review File Changes",
   "command.confirmAllFileChanges.title": "Memora: Confirm All File Changes",
   "command.revertAllFileChanges.title": "Memora: Revert All File Changes",

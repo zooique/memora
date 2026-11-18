@@ -30,6 +30,7 @@ function readNlsFile(path: string): Record<string, string> | undefined {
 /** 命令标题的 nls 键映射（键命名契约见 ADR-042 决策 3：`command.<id 去 memora. 前缀>.title`） */
 const COMMAND_TITLE_NLS_KEYS = {
   addToChat: 'command.addToChat.title',
+  addToAssistant: 'command.addToAssistant.title',
   registerWork: 'command.registerWork.title',
   toggleResidentRule: 'command.toggleResidentRule.title',
 } as const;

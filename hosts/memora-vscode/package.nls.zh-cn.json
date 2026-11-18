@@ -20,6 +20,7 @@
   "command.toggleResidentRule.title": "Memora: 切换项目规则",
   "command.manageResidentRules.title": "Memora: 管理项目规则",
   "command.addToChat.title": "Memora: 添加到对话",
+  "command.addToAssistant.title": "Memora: 添加到助手",
   "command.reviewFileChanges.title": "Memora: 查看文件改动",
   "command.confirmAllFileChanges.title": "Memora: 全部确认文件改动",
   "command.revertAllFileChanges.title": "Memora: 全部回退文件改动",

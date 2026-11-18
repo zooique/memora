@@ -134,6 +134,11 @@
         "icon": "$(references)"
       },
       {
+        "command": "memora.addToAssistant",
+        "title": "%command.addToAssistant.title%",
+        "icon": "$(comment-discussion)"
+      },
+      {
         "command": "memora.reviewFileChanges",
         "title": "%command.reviewFileChanges.title%",
         "icon": "$(diff)"
@@ -393,6 +398,11 @@
           "group": "navigation@8"
         },
         {
+          "command": "memora.addToAssistant",
+          "when": "!explorerResourceIsRoot",
+          "group": "navigation@7"
+        },
+        {
           "command": "memora.registerWork",
           "when": "!explorerResourceIsRoot && !explorerResourceIsFolder",
           "group": "navigation@9"
@@ -407,6 +417,10 @@
         {
           "command": "memora.addToChat",
           "group": "navigation@8"
+        },
+        {
+          "command": "memora.addToAssistant",
+          "group": "navigation@7"
         },
         {
           "command": "memora.registerWork",

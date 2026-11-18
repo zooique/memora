@@ -20,9 +20,10 @@
 import * as vscode from 'vscode';
 import { buildHtml } from './chatPanelHtml.js';
 import type { MemoraChatViewProvider } from './chatPanel.js';
-import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
+import type { ChatRef, WebviewToExtensionMessage } from '../../shared/protocol.js';
 import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
 import type { WorkbenchSeatSource, WorkbenchSnapshot } from '../../shared/workbenchDto.js';
+import { dedupeRefs } from '../../shared/refKey.js';
 
 /** 托管页依赖 */
 export interface HostedPanelDeps {
@@ -48,6 +49,33 @@ export class MemoraHostedPanel {
   private _panel: vscode.WebviewPanel | undefined;
   /** 广播器注销句柄（面板销毁时调用） */
   private _unregister: vscode.Disposable | undefined;
+  /**
+   * 待投引用缓冲（ADDED-TO-ASSISTANT-1）：右键「添加到助手」可能发生在助手页未打开 /
+   * 刚打开未 ready 时，此时 postMessage 会丢（与侧栏 `_pendingRefs` 同因）。先合并缓冲，
+   * 等本页 ready 后一次性补发；草稿与会话无关，不落盘、不按会话 id 路由。
+   */
+  private _pendingRefs: ChatRef[] = [];
+  /** 本页 webview 脚本是否已就绪（决定引用直投还是缓冲到 ready 补发） */
+  private _ready = false;
+
+  /**
+   * 右键「添加到助手」的引用投递面（ADDED-TO-ASSISTANT-1）
+   *
+   * 引用是与会话无关的**输入区草稿**，直接投本页 webview 的 `addRef` 即可——不经广播器、
+   * 不按助手会话 id 路由（空态未建会话也要能挂）。未 ready 时合并缓冲，ready 后补发，
+   * 与侧栏 `chatPanel.pushRefs` 同构。去重判据共用 `dedupeRefs`（含行区间）。
+   */
+  public attachRefs(refs: ChatRef[]): void {
+    this._pendingRefs = dedupeRefs([...this._pendingRefs, ...refs]);
+    if (this._ready && this._panel) this.flushPendingRefs();
+  }
+
+  /** ready 后把缓冲引用一次性投给本页（单次投递，不逐条 post） */
+  private flushPendingRefs(): void {
+    if (this._pendingRefs.length === 0 || !this._panel) return;
+    void this._panel.webview.postMessage({ type: 'addRef', refs: this._pendingRefs });
+    this._pendingRefs = [];
+  }
 
   private readonly _extensionUri: vscode.Uri;
   private readonly _chatProvider: MemoraChatViewProvider;
@@ -88,6 +116,7 @@ export class MemoraHostedPanel {
       },
     );
     this._panel = panel;
+    this._ready = false; // 新 webview 脚本未就绪，引用先缓冲到 ready（ADDED-TO-ASSISTANT-1）
 
     // 挂到对话广播器：绑定助手会话（指针，现场读取）+ 只收气泡级消息
     this._unregister = this._chatProvider.registerAdditionalView(panel.webview, {
@@ -103,6 +132,11 @@ export class MemoraHostedPanel {
 
     panel.webview.onDidReceiveMessage((message: WebviewToExtensionMessage) => {
       if (this._panel !== panel) return;
+      if (message.type === 'ready') {
+        // webview 监听器已注册：补发「添加到助手」缓冲的引用草稿（ADDED-TO-ASSISTANT-1）
+        this._ready = true;
+        this.flushPendingRefs();
+      }
       // INLINE-WORKBENCH-1：助手页「工作台」按钮就地展开抽屉，不再开独立 editor tab。
       // 上行 type 不变（assistantFormView 判据锁「只上报意图、选座/取数在宿主」）；
       // 宿主按当前助手会话现场构建快照直投本页，与独立面板同一投影真源、零新增 type。
@@ -123,6 +157,7 @@ export class MemoraHostedPanel {
       this._unregister?.dispose();
       this._unregister = undefined;
       this._panel = undefined;
+      this._ready = false;
     });
   }
 }

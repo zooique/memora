@@ -16,7 +16,7 @@ import { writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { makeSuiteTempDir } from '../../../__tests__/helpers/tmpDir.js';
 import { pngBytes } from '../../../__tests__/helpers/imageTestBytes.js';
-import { addToChatCommand } from '../../commands/addToChat.js';
+import { addToChatCommand, type RefDelivery } from '../../commands/addToChat.js';
 
 /** 可变状态容器：workspaceFolders 由各用例按需改写（factory 用 getter 取活值） */
 const state = vi.hoisted(() => ({ wsFolders: [] as Array<{ uri: { fsPath: string } }> }));
@@ -135,5 +135,54 @@ describe('addToChatCommand — IMG-12 真图接管', () => {
     const vscodeMod = await import('vscode');
     expect(vscodeMod.commands.executeCommand).toHaveBeenCalledTimes(1);
     expect(vscodeMod.commands.executeCommand).toHaveBeenCalledWith('memora.chat.focus');
+  });
+});
+
+/**
+ * ADDED-TO-ASSISTANT-1：解析链共用、投递目标可注入。
+ * 钉住「同一份解析 → 不同投递面」——缺省 delivery 走侧栏（上面已逐字覆盖），
+ * 注入 helper delivery 时聚焦命令 / 引用落点 / 图片落点全走注入面，provider 默认面不碰。
+ */
+describe('addToChatCommand — 注入投递目标（助手复用解析链）', () => {
+  it('注入 delivery → 聚焦命令 / 引用 / 图片全走注入面，provider 默认投递面零调用', async () => {
+    const provider = makeProvider();
+    const img = uri('inject.png');
+    const txt = uri('inject.md');
+    writeFileSync(img.fsPath, pngBytes(4, 4));
+    writeFileSync(txt.fsPath, '# hello');
+    const delivery: RefDelivery = {
+      focusCommand: 'memora.openHosted',
+      attachRefs: vi.fn(),
+      attachImages: vi.fn(),
+    };
+
+    await addToChatCommand([img, txt] as never, provider as never, TITLE, delivery);
+
+    const vscodeMod = await import('vscode');
+    expect(vscodeMod.commands.executeCommand).toHaveBeenCalledWith('memora.openHosted');
+    expect(vscodeMod.commands.executeCommand).not.toHaveBeenCalledWith('memora.chat.focus');
+    expect(delivery.attachImages).toHaveBeenCalledWith([img.fsPath]);
+    expect(delivery.attachRefs).toHaveBeenCalledWith([
+      { path: relativeOf(txt.fsPath), kind: 'file' },
+    ]);
+    // 解析仍走同一条链（图片被识别、文本挂引用），只是投递面换了
+    expect(provider.pushRefs).not.toHaveBeenCalled();
+    expect(provider.pickAndAttachImages).not.toHaveBeenCalled();
+  });
+
+  it('注入 delivery + 全部被拒 → 不聚焦、不投递（空操作判据对注入面同样成立）', async () => {
+    const provider = makeProvider();
+    const delivery: RefDelivery = {
+      focusCommand: 'memora.openHosted',
+      attachRefs: vi.fn(),
+      attachImages: vi.fn(),
+    };
+
+    await addToChatCommand(undefined as never, provider as never, TITLE, delivery);
+
+    const vscodeMod = await import('vscode');
+    expect(vscodeMod.commands.executeCommand).not.toHaveBeenCalled();
+    expect(delivery.attachRefs).not.toHaveBeenCalled();
+    expect(delivery.attachImages).not.toHaveBeenCalled();
   });
 });

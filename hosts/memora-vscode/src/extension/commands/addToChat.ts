@@ -55,16 +55,43 @@ export function registerAddToChatCommand(
 }
 
 /**
- * 把文件/目录引用挂到对话输入区
+ * 引用投递目标（SSOT：解析链共用，只有「往哪投」不同）
+ *
+ * 缺省 = 侧栏对话（ADDED-TO-ASSISTANT-1 之前唯一形态）；助手命令注入助手目标。
+ * 拆出这一层的理由：路径归属 / 图片嗅探 / 选区行区间 / 去重是**目标无关**的解析判据，
+ * 两种入口复制一份必然漂移；把差异收敛成「投递面 + 聚焦命令」两个注入点即可零复制共用。
+ */
+export interface RefDelivery {
+  /** 聚焦/打开目标面板（侧栏 = memora.chat.focus；助手 = memora.openHosted） */
+  readonly focusCommand: string;
+  /** 挂文本引用（侧栏 = pushRefs；助手 = 定向到助手会话） */
+  attachRefs(refs: ChatRef[]): void;
+  /** 挂真图（侧栏 = 无目标；助手 = 传助手会话 id，复刻 IMAGE-TARGET-1 定向） */
+  attachImages(paths: string[]): void;
+}
+
+/** 缺省投递目标 = 侧栏对话（既有行为逐字不变） */
+function sidebarDelivery(chatProvider: MemoraChatViewProvider): RefDelivery {
+  return {
+    focusCommand: 'memora.chat.focus',
+    attachRefs: (refs) => chatProvider.pushRefs(refs),
+    attachImages: (paths) => chatProvider.pickAndAttachImages(paths),
+  };
+}
+
+/**
+ * 把文件/目录引用挂到对话输入区（解析链与投递目标分离）
  *
  * @param uri 右键菜单传入的目标（文件 / 目录 / 多选数组 / 命令面板调用时为 undefined）
- * @param chatProvider 对话视图提供者（引用投递面；未聚焦时 pushRefs 会缓冲到 ready 补发）
+ * @param chatProvider 对话视图提供者（解析期只用于图片摄取的默认投递兜底）
  * @param addToChatTitle 菜单标题原文（与命令面板同源，经 `resolveCommandTitle` 解析）
+ * @param delivery 投递目标，缺省 = 侧栏对话（既有调用者零改动）
  */
 export async function addToChatCommand(
   uri: vscode.Uri | vscode.Uri[] | undefined,
   chatProvider: MemoraChatViewProvider,
   addToChatTitle: string,
+  delivery: RefDelivery = sidebarDelivery(chatProvider),
 ): Promise<void> {
   // 仅支持从右键菜单触发（必须带 uri 参数）；Explorer 多选返回 uri 数组
   const uris = Array.isArray(uri) ? uri : uri ? [uri] : [];
@@ -129,11 +156,11 @@ export async function addToChatCommand(
     );
   }
   if (refs.length === 0 && imagePaths.length === 0) return; // 全部被拒：不聚焦面板、不产空操作
-  // 先确保对话面板可见：引用侧未聚焦时 pushRefs 缓冲到 ready 补发（与 prefillInput 同构）；
+  // 先确保目标面板可见：引用侧未聚焦时目标投递器缓冲到 ready 补发（与 prefillInput 同构）；
   // 图片侧的面板闸归 chatPanel / imagePick（聚焦后仍未解析 → 引导文案，不落盘造 G9 孤儿）
-  await vscode.commands.executeCommand('memora.chat.focus');
-  if (imagePaths.length > 0) chatProvider.pickAndAttachImages(imagePaths);
-  if (refs.length > 0) chatProvider.pushRefs(refs);
+  await vscode.commands.executeCommand(delivery.focusCommand);
+  if (imagePaths.length > 0) delivery.attachImages(imagePaths);
+  if (refs.length > 0) delivery.attachRefs(refs);
 }
 
 /**

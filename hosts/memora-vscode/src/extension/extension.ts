@@ -93,6 +93,7 @@ import { notifyWorkProjectionChanged } from './host/workProjectionBridge.js';
 import { answerLanguageAssembly } from './host/answerLanguageConfig.js';
 import { createTrustNotice } from './host/windowNotices.js';
 import { registerAddToChatCommand } from './commands/addToChat.js';
+import { registerAddToAssistantCommand } from './commands/addToAssistant.js';
 import { createUserDataResetHandler } from './commands/userDataReset.js';
 import { importAssetCommand } from './commands/importAsset.js';
 import { readDisabledSkills, syncDisabledSkills } from './host/skillSync.js';
@@ -1176,6 +1177,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // 命令：添加到对话（实现与标题同源解析见 `commands/addToChat.ts`，ADR-042 后果第 2 条）
   registerAddToChatCommand(context, chatProvider);
+  // 命令：添加到助手（ADDED-TO-ASSISTANT-1）：与添加到对话共用解析链，只换投递目标 + 自动开助手页
+  registerAddToAssistantCommand(context, chatProvider, hostedPanel);
 
   registerResidentRuleCommands(context, tryGetAgent, notifyWorkProjectionChanged);
 
