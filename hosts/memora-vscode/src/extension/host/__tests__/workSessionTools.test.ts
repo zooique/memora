@@ -1043,6 +1043,9 @@ describe('托管 v0 · create_session（工具层）', () => {
         '用户明确要求 = 授权',
         '[HAND_BACK] reason:',
         '转述用户',
+        // ASSISTANT-EMPTY-ACK-1：话术不得先于回执——「状态以成功回执为准」必须在两条工具契约里
+        '派活 / 开活的状态以工具成功回执为准',
+        '未拿到时是已发起、等待受理',
       ]) {
         expect(create?.description).toContain(anchor);
         expect(send?.description).toContain(anchor);
