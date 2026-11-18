@@ -527,6 +527,106 @@ describe('工具执行器（6 个工具）', () => {
     });
   });
 
+  // ─── allow-only 轴（工具面排他轴 · 封闭工具面唯一可表达的形态）─────────
+  describe('allow-only 轴（allowOnlyTools：全集即名单，customTools 与常驻集不豁免）', () => {
+    afterEach(() => {
+      // null = 撤销排他、回既有路径，任何时候都允许（与 deny 是否为空无关）
+      executor.setToolAllowOnly(null);
+      executor.setDenyTools([]);
+      executor.setToolWhitelist(null);
+    });
+
+    it('排他收口常驻写工具：未列入的 write_file / run_command 不可见且执行闸拒绝', async () => {
+      executor.setToolAllowOnly(['read_file']);
+      const names = executor.list.map((t) => t.name);
+      expect(names).toContain('read_file');
+      // 这四条是变异面：把 allow-only 判定挪到 DEFAULT_EXPOSED_TOOLS 之后，它们全漏
+      expect(names).not.toContain('write_file');
+      expect(names).not.toContain('delete_file');
+      expect(names).not.toContain('run_command');
+      expect(names).not.toContain('task_table_write');
+
+      // 暴露面 = 可执行面（EXPOSURE-GATE-1）：硬点名同样拒绝，不是「看不见但能跑」
+      const outcomes: ToolOutcome[] = [];
+      const text = await executor.execute(
+        'write_file',
+        JSON.stringify({ path: 'leak.txt', content: 'x' }),
+        undefined,
+        (o) => outcomes.push(o),
+      );
+      expect(text).toContain('[ERR:TOOL:NOT_EXPOSED]');
+      expect(outcomes[0]).toMatchObject({ status: 'blocked', blockedReason: 'not_exposed' });
+    });
+
+    it('变异钉：allow-only 必须早于 customTools.has(name)，否则 MCP / 自定义写工具漏进封闭面', async () => {
+      // 变异方向：把排他判定挪到 `customTools.has(name)` 之后 ⇒ 本用例必红。
+      // 自定义 / MCP 是「注入即恒暴露」分支，只测内置工具覆盖不到这条缝。
+      const def = {
+        name: 'allow_only_custom_write_probe',
+        description: '宿主注册的写工具探针',
+        parameters: {
+          type: 'object' as const,
+          properties: { path: { type: 'string', description: '目标路径' } },
+          required: ['path'],
+        },
+      };
+      try {
+        executor.registerTool(def as never, async () => 'custom-write-ok');
+        // 对照组：未启用排他时确实走「自定义工具恒暴露」分支（证明探针命中那条缝）
+        expect(executor.list.map((t) => t.name)).toContain('allow_only_custom_write_probe');
+
+        executor.setToolAllowOnly(['read_file']);
+        expect(executor.list.map((t) => t.name)).not.toContain('allow_only_custom_write_probe');
+
+        const outcomes: ToolOutcome[] = [];
+        const text = await executor.execute(
+          'allow_only_custom_write_probe',
+          JSON.stringify({ path: 'x.txt' }),
+          undefined,
+          (o) => outcomes.push(o),
+        );
+        expect(text).toContain('[ERR:TOOL:NOT_EXPOSED]');
+        expect(outcomes[0]).toMatchObject({ status: 'blocked', blockedReason: 'not_exposed' });
+      } finally {
+        executor.removeTool('allow_only_custom_write_probe');
+      }
+    });
+
+    it('空数组是显式「一个都不给」，不是默认值；白名单也不能把特权工具加回来', () => {
+      // 独立实例：空数组必须照常注入（判 undefined 而非 length），否则封闭面退化成全开
+      const exec = new ToolExecutor(tmpProject, security, index);
+      exec.setToolWhitelist(['web_search']);
+      exec.setToolAllowOnly([]);
+      expect(exec.list).toHaveLength(0);
+    });
+
+    it('与 deny 双向互斥：后设的一方装配期抛错，不静默择一（避免两套判据）', () => {
+      executor.setDenyTools(['write_file']);
+      expect(() => executor.setToolAllowOnly(['read_file'])).toThrow(/语义互斥/);
+
+      executor.setDenyTools([]);
+      executor.setToolAllowOnly(['read_file']);
+      expect(() => executor.setDenyTools(['write_file'])).toThrow(/语义互斥/);
+      // 空 deny 是默认态，不触发冲突
+      expect(() => executor.setDenyTools([])).not.toThrow();
+    });
+
+    it('撤销排他回到既有路径：null 后常驻工具逐字恢复', () => {
+      executor.setToolAllowOnly(['read_file']);
+      expect(executor.list.map((t) => t.name)).not.toContain('write_file');
+      executor.setToolAllowOnly(null);
+      expect(executor.list.map((t) => t.name)).toContain('write_file');
+      expect(executor.list.map((t) => t.name)).toContain('run_command');
+    });
+
+    it('默认关闭：未调用 setter 时行为与改动前逐字一致', () => {
+      const names = executor.list.map((t) => t.name);
+      expect(names).toContain('write_file');
+      expect(names).toContain('run_command');
+      expect(names).toContain('ask_user');
+    });
+  });
+
   describe('run_project_script（默认开放：项目内已有脚本执行）', () => {
     // 本族三条为真进程 spawn，与 run_command / run_code 族同口径显式放宽到 20s
     // （5s 缺省在门禁负载下假超时，2026-10-07 实锤；耗时非被测行为，断言全在结果面）

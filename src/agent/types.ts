@@ -745,6 +745,19 @@ export interface AgentOptions {
    */
   denyTools?: readonly string[];
   /**
+   * 工具 allow-only 排他集（工具面第三根轴 · 默认 undefined ⇒ 未启用，现有消费者逐字不变）。
+   *
+   * 与 denyTools 相反：deny 是「全集减名单」，allow-only 是「全集即名单」——
+   * 未列入的工具既不出现在提示词工具清单 / `chatOpts.tools`，执行闸也拒绝硬点名调用，
+   * 且 `customTools`（含 MCP 桥接）与 `DEFAULT_EXPOSED_TOOLS` 常驻集**不再豁免**。
+   * 这是封闭工具面（只给会话管理工具）唯一可表达的形态。
+   *
+   * `undefined` = 不启用；数组（含 `[]`）= 启用，`[]` 是「一个都不给」的显式形态，
+   * 不是默认值。与 `denyTools` 语义互斥，两者同时给出时装配期抛错（fail-closed，
+   * 避免同一工具两处裁决）。唯一判定落点 = `ToolExecutor.isToolExposed` 首行。
+   */
+  allowOnlyTools?: readonly string[];
+  /**
    * 宿主环境提供者（可选，不配则 system prompt 不注入环境段）：宿主上报运行环境事实
    * （OS / shell / 可用运行时），内核经 buildEnvironmentContextBlock 注入 system prompt。
    * 命令执行能力方案 §10.4-②：探测环境 → 把事实告诉模型 → 由模型自己决定（对齐 Cline System

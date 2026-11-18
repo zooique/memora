@@ -759,6 +759,18 @@ export class ToolExecutor {
    */
   private denyTools: ReadonlySet<string> = new Set();
 
+  /**
+   * 工具 allow-only 集（工具面排他轴 · 默认 null ⇒ 未启用，现有消费者逐字不变）
+   *
+   * deny 是「全集减名单」，allow-only 是「全集即名单」——后者能把 `customTools` 与
+   * `DEFAULT_EXPOSED_TOOLS` 一并收口，是封闭工具面唯一可表达的形态。判据位置见
+   * `isToolExposed` 首行（必须早于自定义工具与常驻集，否则写工具漏进来）。
+   *
+   * 与 deny 语义互斥：同一 ToolExecutor 不得同时启用两套判据（避免同一工具两处裁决）。
+   * 双向拒绝放在装配期 fail-closed，不靠调用方自觉。
+   */
+  private allowOnlyTools: ReadonlySet<string> | null = null;
+
   /** 安全守卫（构造参数转存，run_code/run_project_script 执行前确认用） */
   private readonly security: SecurityGuard;
 
@@ -1130,8 +1142,35 @@ export class ToolExecutor {
    * @param tools 禁止暴露和执行的工具名（不存在的名字无副作用）
    */
   setDenyTools(tools: readonly string[]): void {
+    // 与 allow-only 互斥：两套判据并存 = 同一工具两处裁决。空数组是默认态不触发冲突。
+    if (tools.length > 0 && this.allowOnlyTools !== null) {
+      throw new Error(
+        'denyTools 与 allowOnlyTools 语义互斥：同一 Agent 不得同时启用两套工具面判据',
+      );
+    }
     this.denyTools = new Set(tools);
     // 暴露面变化 ⇒ 通知 loop 刷新 toolDefinitions 快照与 system prompt（同 setToolWhitelist）
+    this.onToolsChanged?.();
+  }
+
+  /**
+   * 设置 allow-only 排他工具面（装配期一次性注入，与 `setDenyTools` 同形态）
+   *
+   * `null`（默认）= 不启用，既有 deny / 白名单路径逐字不变；
+   * 数组（含空数组）= 启用，只有名单内的工具可见且可执行——空数组是「一个都不给」的显式形态。
+   * 判定排 `isToolExposed` 首行，先于 `customTools` / `projectSearchProvider` / 常驻集。
+   *
+   * @param tools 允许暴露与执行的工具名；null = 退出排他模式
+   */
+  setToolAllowOnly(tools: readonly string[] | null): void {
+    // 与 deny 互斥：非空 deny 表示调用方已选减法轴，此处 fail-closed 而非静默覆盖。
+    // null 是撤销排他、回到既有路径，任何时候都允许（与 deny 是否为空无关）。
+    if (tools !== null && this.denyTools.size > 0) {
+      throw new Error(
+        'allowOnlyTools 与 denyTools 语义互斥：同一 Agent 不得同时启用两套工具面判据',
+      );
+    }
+    this.allowOnlyTools = tools === null ? null : new Set(tools);
     this.onToolsChanged?.();
   }
 
@@ -1197,9 +1236,12 @@ export class ToolExecutor {
    * 「某工具此刻是否暴露」的唯一判定（EXPOSURE-GATE-1 单点）
    *
    * 暴露面（`list`）与执行闸（`execute`）共用本方法：前者决定「摆给 LLM 看什么」，
-   * 后者决定「模型硬点名时放不放行」。只此一份规则，不并列第二套白名单判据（两个轴）。
+   * 后者决定「模型硬点名时放不放行」。只此一份规则，不并列第二套判据——三根轴在此
+   * 汇合（allow-only 排他 / deny 减法 / 白名单特权声明），其中 allow-only 与 deny 互斥。
    *
    * 判据分层（tool-exposure-model 特权声明模型）：
+   * - **allow-only 集：第零层，排他**——非 null 时只有名单内工具可见 / 可执行，`customTools`
+   *   与常驻集一律不豁免。封闭工具面（只给会话管理工具）唯一可表达的形态；默认 null 不启用。
    * - **deny 集：第一层，且必须早于 `customTools.has(name)`**——宿主注册的自定义 / MCP 工具
    *   在第一层之外是「注入即恒暴露」，deny 排在它后面就等于写工具绕过 deny（变异测试钉住）；
    * - 自定义工具 / search_project：宿主能力面，注入即暴露（角色包能力声明不越权过滤）；
@@ -1215,6 +1257,9 @@ export class ToolExecutor {
    * @returns 此刻是否在 LLM 可见的工具面内
    */
   private isToolExposed(name: string): boolean {
+    // allow-only 排他轴：必须首行，先于自定义工具 / 常驻集——否则那两族恒真分支会漏工具
+    // （封闭工具面的危险方向是漏：新工具默认进去，而不是缺）。null = 未启用，落到既有判据链。
+    if (this.allowOnlyTools !== null) return this.allowOnlyTools.has(name);
     // deny 是唯一减法：必须排第一行、必须先于自定义工具恒暴露分支（否则 MCP / 自定义写工具绕过）
     if (this.denyTools.has(name)) return false;
     // 自定义工具（含 MCP 桥接注册）恒暴露：宿主注册属宿主能力面

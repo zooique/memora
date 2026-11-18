@@ -814,6 +814,7 @@ type AssembleRuntimeParams = Pick<
   | 'projectSearchProvider'
   | 'imageReadPort'
   | 'denyTools'
+  | 'allowOnlyTools'
   | 'environmentProvider'
   | 'workspaceTrusted'
   | 'scriptNodePath'
@@ -1403,6 +1404,13 @@ export async function assembleComponents(
   // 默认空数组不调用 ⇒ 父会话行为零变化（不触发一次多余的暴露面通知）。
   if (input.denyTools && input.denyTools.length > 0) {
     toolExec.setDenyTools(input.denyTools);
+  }
+
+  // 工具 allow-only 排他集（封闭工具面）：判 undefined 而非 length——空数组是「一个都不给」
+  // 的显式形态，必须照常注入。与 denyTools 的互斥由两个 setter 双向 fail-closed，
+  // 装配层不静默择一（两套判据并存 = 同一工具两处裁决）。
+  if (input.allowOnlyTools !== undefined) {
+    toolExec.setToolAllowOnly(input.allowOnlyTools);
   }
 
   // ── 会话管理器（先于 loop 创建）──

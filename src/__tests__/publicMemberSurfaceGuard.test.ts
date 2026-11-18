@@ -490,6 +490,11 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       // ToolExecutor.isToolExposed 第一行；默认 undefined/[] ⇒ 父会话行为零变化。
       // 子会话只允许传 SUBAGENT_DENIED_TOOLS 常量清单（禁止调用方随手拼）。
       'denyTools',
+      // 2026-11-18 新增（KERNEL-TOOL-ALLOW-ONLY-1 · 工具面排他轴，非 Breaking）：
+      // 定性 = 真能力（非 no-op 谎报）：唯一可表达「封闭工具面」的装配入参，判定在
+      // ToolExecutor.isToolExposed 首行；与 denyTools 语义互斥，空数组 = 显式一个都不给。
+      // 默认 undefined ⇒ 现有消费者逐字不变。
+      'allowOnlyTools',
       'disabledSkills',
       'enableContextSummary',
       'environmentProvider',
@@ -1314,6 +1319,10 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
       'setOnMemoryRecalled',
       'setOnToolsChanged',
       'setSearchResultObserver',
+      // 2026-11-18 新增（KERNEL-TOOL-ALLOW-ONLY-1 · 工具面排他轴）：装配期注入封闭工具面，
+      // 与 setDenyTools 同形态且语义互斥。真消费者 = assembler.assembleComponents
+      // （AgentOptions.allowOnlyTools 透传）；定性 = 真能力：不注入时现有消费者逐字不变。
+      'setToolAllowOnly',
       'setToolWhitelist',
     ],
   }, // 来源 Agent.tools / 宿主调用 7 个 / 文件 F:\zooique\memora\src\agent\toolExecutor.ts

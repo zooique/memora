@@ -8,6 +8,12 @@
 >
 > 本文件 2026-10-19 起按 `CHLOG-TRIM-1` 精简：只记「改了什么 + 为什么 + 对消费者的影响」；逐批拍板过程、变异验证收据、台账叙事的 SSOT 在仓库台账 `tasks/待完成任务.md` 对应 ID 条目（npm 包不含），此处只留 ID 锚保交叉引用。
 
+## [Unreleased]
+
+### Added（内核）
+
+- **工具 allow-only 排他轴**（`KERNEL-TOOL-ALLOW-ONLY-1` · **消费者可感知 · 公开面扩张**）：新增 `AgentOptions.allowOnlyTools?: readonly string[]` 与 `ToolExecutor.setToolAllowOnly(...)`。此前表达「只给这几个工具」只能写 deny 补集，而 `isToolExposed` 先走 `customTools` / 常驻集，新工具与 MCP 桥接工具默认漏进封闭工具面（危险方向是漏，不是缺）。新轴判定排在 `isToolExposed` 首行：未列入的工具既不进提示词清单 / `chatOpts.tools`，执行闸也拒绝硬点名；`customTools` 与 `DEFAULT_EXPOSED_TOOLS` 常驻集不再豁免。空数组 `[]` 是「一个都不给」的显式形态而非默认值。与 `denyTools` 语义互斥，两者同时给出时装配期抛错（fail-closed，避免同一工具两处裁决）。**对消费者**：`undefined`（默认）行为逐字不变；宿主可据此装配封闭工具面（如助手会话只给会话管理工具），宿主接入见台账 `HOSTED-ROUTER-TOOL-SURFACE-1`，不在本版。
+
 ## [7.3.0] · 2026-11-16
 
 > 收 **7.2.0（2026-11-12）之后**的内核变更。本版集中扩张「会话与轮次来源」的数据层：`Round.origin` / `SessionMeta.origin`（输入来源，二值、可选、零迁移）、`Round.dispatchedBy`（派发归属）、`SessionMeta.declaredPaths`（开活范围声明），并让 `Agent.chat()` 与 `forkSession()` 把来源透传到落盘与视图投影。另开放 `SkillManager` 导出，供宿主在无会话实例时编目技能池。本片只打通数据层，界面渲染属后续版本。
