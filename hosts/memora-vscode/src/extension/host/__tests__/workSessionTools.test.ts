@@ -23,6 +23,7 @@ import {
   CREATE_SESSION_TOOL_NAME,
   LIST_ROLE_PACKS_TOOL_NAME,
   LIST_WORK_SESSIONS_TOOL_NAME,
+  ORCHESTRATOR_ALLOWED_TOOLS,
   PAUSE_WORK_SESSION_TOOL_NAME,
   READ_MEMORY_SUMMARY_TOOL_NAME,
   RESUME_WORK_SESSION_TOOL_NAME,
@@ -1746,6 +1747,94 @@ describe('托管 v0 · pause / resume（判据 6 成对开放）', () => {
       }
       expect(paused).not.toHaveBeenCalled();
       expect(resumed).not.toHaveBeenCalled();
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+});
+
+/**
+ * HOSTED-ROUTER-TOOL-SURFACE-1 · 宝的工具面闭合守卫
+ *
+ * 判据原文说「从装配产物反查，不靠人读清单」——这里全部走真实 `assembleAgent` 的
+ * `agent.tools.list`（allow-only 过滤后的暴露面快照），不在测试里抄第二份工具名表。
+ * 名单真源 = `ORCHESTRATOR_ALLOWED_TOOLS`，从同一模块导入，改名自动跟随。
+ */
+describe('HOSTED-ROUTER-TOOL-SURFACE-1 · 宝工具面闭合（allow-only）', () => {
+  /** 定案 §五「不配读文件 / 跑命令 / 改代码」的技术工具代表面 */
+  const TECHNICAL_TOOLS = [
+    'read_file',
+    'write_file',
+    'delete_file',
+    'run_command',
+    'run_project_script',
+    'run_code',
+    'code:execute',
+    'trace_summary', // 判据 5 记忆收口：原始带 roundId 的读口也必须被白名单挡住
+    'task_table_write',
+    'compress_context',
+    'remember_intel',
+    'ask_user',
+  ] as const;
+
+  it('判据 ①：宝装配后只暴露九个会话工具，技术工具全不可见', async () => {
+    // 完整依赖盒 ⇒ 九个工具全注册；列表即 allow-only 过滤后的真实交付面
+    const probe = await assembleProbe(true, {});
+    try {
+      const names = probe.agent.tools!.list.map((t) => t.name);
+      // 正例：九个会话工具一个不少（漏一个 = 宝静默断臂）
+      for (const name of ORCHESTRATOR_ALLOWED_TOOLS) {
+        expect(names, `宝缺会话工具 ${name}`).toContain(name);
+      }
+      expect(names).toHaveLength(ORCHESTRATOR_ALLOWED_TOOLS.length);
+      // 反例：技术工具代表面一个都不能有
+      for (const name of TECHNICAL_TOOLS) {
+        expect(names, `技术工具漏进宝面：${name}`).not.toContain(name);
+      }
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('判据 ②：执行闸同源闭合——硬点名未列入工具也拿不到（不是「看不见能跑」）', async () => {
+    const probe = await assembleProbe(true, {});
+    try {
+      const raw = await probe.agent.tools!.execute(
+        'run_command',
+        JSON.stringify({ command: 'echo x' }),
+      );
+      expect(raw).toContain('[ERR:TOOL:NOT_EXPOSED]');
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('判据 ③：自助会话工具面零变化——技术工具照旧可见', async () => {
+    // orchestratorSession 缺省 ⇒ 不注入 allowOnlyTools ⇒ 走内核默认全开
+    const probe = await assembleProbe(undefined);
+    try {
+      const names = probe.agent.tools!.list.map((t) => t.name);
+      for (const name of ['read_file', 'write_file', 'run_command', 'trace_summary'] as const) {
+        expect(names, `自助会话工具面被误收窄：${name}`).toContain(name);
+      }
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
+
+  it('判据 ④：角色包 capabilities 不能把技术工具加回宝', async () => {
+    // 角色包 capabilities 经 setToolWhitelist 生效；allow-only 判定排首行，白名单加不回来。
+    // 用真实装配的宝，走它自己的角色包管理器切到声明了 web:search 的内置包。
+    const probe = await assembleProbe(true, {});
+    try {
+      const exec = probe.agent.tools!;
+      // 声明宽能力：内核 setToolWhitelist 会放行 web_search / run_code 等特权工具
+      exec.setToolWhitelist(['web_search', 'web_fetch', 'run_code']);
+      const names = exec.list.map((t) => t.name);
+      for (const name of TECHNICAL_TOOLS) {
+        expect(names, `角色包 capabilities 把技术工具加回宝面：${name}`).not.toContain(name);
+      }
+      expect(names).toHaveLength(ORCHESTRATOR_ALLOWED_TOOLS.length);
     } finally {
       await disposeProbe(probe);
     }

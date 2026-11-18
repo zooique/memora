@@ -245,6 +245,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 工具 deny 集（工具面第二根轴 · 减法）：透传装配 → toolExec.setDenyTools。
       // 默认 undefined ⇒ 装配期不调用，父会话行为零变化；子会话 v1 只传 SUBAGENT_DENIED_TOOLS。
       denyTools: opts.denyTools,
+      // 工具 allow-only 集（工具面排他轴）：与 denyTools 同形态透传 → toolExec.setToolAllowOnly。
+      // 漏这一段的后果不是类型错误，而是字段停在 AgentOptions 上、执行器静默全开——
+      // 装配函数的 Pick 与单元测试都覆盖不到 Agent 自己的这段显式转发。
+      allowOnlyTools: opts.allowOnlyTools,
       // 宿主环境提供者（可选）：system prompt 注入运行环境事实段（命令执行能力方案 §10.4-②）
       environmentProvider: opts.environmentProvider,
       // 脚本执行 node 路径（可选）：宿主注入真实 node 路径，避免无独立 node 时 ENOENT
@@ -1359,6 +1363,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 工具 deny 集（工具面第二根轴 · 减法）：透传装配 → toolExec.setDenyTools。
       // 默认 undefined ⇒ 不注入，父会话行为零变化；子会话 v1 只传 SUBAGENT_DENIED_TOOLS。
       denyTools: this.#config.denyTools,
+      // 工具 allow-only 集（工具面排他轴）：与 denyTools 同形态，从 #config 透传进装配器。
+      // 与构造段成对——少任何一段，字段都到不了执行器（类型系统不会报，暴露面静默全开）。
+      allowOnlyTools: this.#config.allowOnlyTools,
       // 运行环境提供者：漏转发 ⇒ 装配期初始前缀缺「## 运行环境」段（rolePackBaseTokens 也随之偏小）；
       // 每轮 prepare 刷新会按 #config 重建前缀自愈，故只在首轮前可见，但装配期快照应与运行期同源。
       environmentProvider: this.#config.environmentProvider,

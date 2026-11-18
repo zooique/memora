@@ -41,6 +41,7 @@ import {
 // 代答子会话提问的工具面（定义 / 参数解析 / 回执类型）：独立闭环外置，注册仍在本文件
 import {
   ANSWER_SESSION_QUESTION_DEFINITION,
+  ANSWER_SESSION_QUESTION_TOOL_NAME,
   parseAnswerQuestionArgs,
   type HostedQuestionAnswerer,
 } from './answerSessionQuestionTool.js';
@@ -124,6 +125,32 @@ export const MEMORY_SUMMARY_TEXT_CHARS = 120;
  */
 export const PAUSE_WORK_SESSION_TOOL_NAME = 'pause_work_session';
 export const RESUME_WORK_SESSION_TOOL_NAME = 'resume_work_session';
+
+/**
+ * 宝的完整工具面（HOSTED-ROUTER-TOOL-SURFACE-1 · 封闭白名单唯一真源）
+ *
+ * 定案 §一 / §五「Router 不配技术工具」：宝只有会话管理 + 两个只读查询，零读文件 /
+ * 跑命令 / 改代码 / 内核基建。名单从上方九个工具名常量逐项派生（含代答工具名，
+ * 它住在独立模块），装配层只引用本常量、不另抄字面量——抄一份就是第二真源，
+ * 内核新增工具或本模块改名时必漂移。
+ *
+ * 为什么不用 deny 补集：deny 是「全集减名单」，内核新出的工具默认漏进宝面
+ * （危险方向是漏）。allow-only 是「全集即名单」，新工具默认不进，与设计硬约束同向。
+ *
+ * ⚠️ 名单只控制暴露面，不控制注册：`registerWorkSessionTools` 按回调到位情况注册，
+ * 缺回调的工具本就不在装配产物里，allow-only 过滤对不存在的名字零副作用。
+ */
+export const ORCHESTRATOR_ALLOWED_TOOLS: readonly string[] = [
+  LIST_WORK_SESSIONS_TOOL_NAME,
+  SEND_TO_SESSION_TOOL_NAME,
+  CREATE_SESSION_TOOL_NAME,
+  STOP_WORK_SESSION_TOOL_NAME,
+  LIST_ROLE_PACKS_TOOL_NAME,
+  READ_MEMORY_SUMMARY_TOOL_NAME,
+  PAUSE_WORK_SESSION_TOOL_NAME,
+  RESUME_WORK_SESSION_TOOL_NAME,
+  ANSWER_SESSION_QUESTION_TOOL_NAME,
+];
 
 /**
  * 派发回调可产生的业务结果（**唯一**真源 = `chatPanel.dispatchHostedInput` 的返回面）

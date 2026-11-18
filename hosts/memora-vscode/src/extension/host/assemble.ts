@@ -52,6 +52,7 @@ import { startMcpServers } from './mcp/runtime.js';
 import type { McpServerConfig } from './mcp/connectionManager.js';
 import {
   buildMemorySummaryFacts,
+  ORCHESTRATOR_ALLOWED_TOOLS,
   registerWorkSessionTools,
   type HostedInputDispatcher,
   type HostedSessionCreator,
@@ -655,11 +656,13 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // GC 自启开关：宿主统一传 false，由 MemoryGcScheduler 单点驱动（E6）；
     // undefined 保持内核默认 true（demo / 独立装配场景自足）
     autoStartGc,
-    // 判据 5 记忆收口：主控禁掉原始 `trace_summary`（它带 roundId 时会回读原始对话）。
-    // 与下方注册的窄工具 `read_memory_summary` 必须同批生效——只做一件等于没做：
-    // 原始工具仍在 DEFAULT_EXPOSED_TOOLS 里，不 deny 就能被直接调用。
-    // 自助会话不受影响（trace_summary 照旧暴露）；这里只收主控这一次装配。
-    ...(orchestratorSession ? { denyTools: ['trace_summary'] } : {}),
+    // 宝的工具面收口（HOSTED-ROUTER-TOOL-SURFACE-1 · 定案 S1「Router 不配技术工具」）：
+    // allow-only 白名单取代原 deny 补集——deny 只能减掉点名的工具，内核新增工具默认
+    // 漏进宝面（危险方向是漏）；allow-only 是「全集即名单」，不在九个会话工具内的
+    // 一律不可见，原始 `trace_summary`（判据 5）、read_file / run_command / write_file
+    // 连同内核基建工具一并闭合，不逐项枚举。名单唯一真源 = ORCHESTRATOR_ALLOWED_TOOLS。
+    // 自助会话 / Worker 不带本标记 ⇒ 不注入 ⇒ 工具面逐字不变。
+    ...(orchestratorSession ? { allowOnlyTools: ORCHESTRATOR_ALLOWED_TOOLS } : {}),
   });
 
   // 4. 初始化（加载记忆/角色包/会话，注册内置工具）
