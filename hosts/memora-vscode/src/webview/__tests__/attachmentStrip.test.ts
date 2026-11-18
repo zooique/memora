@@ -2,12 +2,17 @@
  * 聊天记录缩略图条测试（`helpers/attachmentStrip.ts`）
  *
  * 覆盖四个判据：有 URL 出图 / 无 URL 落文字态 / 加载失败降级（`error` 只表达「这次没取到」）/
- * 无附件零 DOM。
+ * 无附件零 DOM；外加 HOSTED-IMAGE-1 判据②「点开预览」：单例 / 三条关闭路径 / 点图不关。
  */
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import type { ImageRef } from '@zooique/memora';
-import { renderAttachmentStrip, attachmentFailedText } from '../helpers/attachmentStrip.js';
+import {
+  renderAttachmentStrip,
+  attachmentFailedText,
+  IMAGE_LIGHTBOX_ID,
+  closeImageLightbox,
+} from '../helpers/attachmentStrip.js';
 
 const SHA = 'a1b2c3d4e5f6';
 
@@ -85,5 +90,89 @@ describe('renderAttachmentStrip：正文缩略图', () => {
     });
     const alts = Array.from(host.querySelectorAll('img')).map((i) => i.alt);
     expect(alts).toEqual(['a.png', 'b.png']);
+  });
+});
+
+describe('点开预览（HOSTED-IMAGE-1 判据② · 单例浮层）', () => {
+  afterEach(() => {
+    const overlay = document.getElementById(IMAGE_LIGHTBOX_ID);
+    if (overlay) {
+      const host = document.createElement('div');
+      closeImageLightbox(host);
+      overlay.remove();
+    }
+  });
+
+  const withImages = () => {
+    const host = container();
+    const a = 'aaaa';
+    const b = 'bbbb';
+    renderAttachmentStrip(host, {
+      attachments: [ref(a, 'a.png'), ref(b, 'b.png')],
+      attachmentUris: { [a]: 'memora-resource://a.png', [b]: 'memora-resource://b.png' },
+    });
+    return host;
+  };
+
+  it('点缩略图 ⇒ 开全屏浮层、显示大图 + 文件名，同真源 URL', () => {
+    const host = withImages();
+    host.querySelector<HTMLImageElement>('.msg-attachment')!.click();
+    const overlay = document.getElementById(IMAGE_LIGHTBOX_ID)!;
+    expect(overlay).not.toBeNull();
+    expect(overlay.hidden).toBe(false);
+    expect(overlay.getAttribute('role')).toBe('dialog');
+    const image = overlay.querySelector<HTMLImageElement>('.msg-image-lightbox__image')!;
+    expect(image.src).toContain('memora-resource://a.png');
+    expect(image.alt).toBe('a.png');
+    expect(overlay.querySelector('.msg-image-lightbox__caption')?.textContent).toBe('a.png');
+  });
+
+  it('重挂两条消息后再点 ⇒ 仍只有一个浮层，切图不留上一张位图', () => {
+    const first = withImages();
+    first.querySelector<HTMLImageElement>('.msg-attachment')!.click();
+    const second = withImages();
+    const thumbs = second.querySelectorAll<HTMLImageElement>('.msg-attachment');
+    thumbs[1].click();
+    const overlays = document.querySelectorAll(`#${IMAGE_LIGHTBOX_ID}`);
+    expect(overlays).toHaveLength(1);
+    const image = overlays[0].querySelector<HTMLImageElement>('.msg-image-lightbox__image')!;
+    expect(image.src).toContain('memora-resource://b.png');
+  });
+
+  it('三条关闭路径（按钮 / 点遮罩 / ESC）收敛到同一出口，关闭即清 src', () => {
+    const host = withImages();
+    host.querySelector<HTMLImageElement>('.msg-attachment')!.click();
+    const overlay = document.getElementById(IMAGE_LIGHTBOX_ID)!;
+    const image = () => overlay.querySelector<HTMLImageElement>('.msg-image-lightbox__image')!;
+
+    overlay.querySelector<HTMLButtonElement>('.msg-image-lightbox__close')!.click();
+    expect(overlay.hidden).toBe(true);
+    expect(image().getAttribute('src')).toBeNull();
+
+    host.querySelector<HTMLImageElement>('.msg-attachment')!.click();
+    overlay.click();
+    expect(overlay.hidden).toBe(true);
+    expect(image().getAttribute('src')).toBeNull();
+
+    host.querySelector<HTMLImageElement>('.msg-attachment')!.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(overlay.hidden).toBe(true);
+    expect(image().getAttribute('src')).toBeNull();
+  });
+
+  it('点大图本身不关闭（防误触）；非 ESC 键不关闭', () => {
+    const host = withImages();
+    host.querySelector<HTMLImageElement>('.msg-attachment')!.click();
+    const overlay = document.getElementById(IMAGE_LIGHTBOX_ID)!;
+    overlay.querySelector<HTMLImageElement>('.msg-image-lightbox__image')!.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(overlay.hidden).toBe(false);
+  });
+
+  it('无 URL 落文字态 ⇒ 无可点缩略图，不开浮层', () => {
+    const host = container();
+    renderAttachmentStrip(host, { attachments: [ref()], attachmentUris: {} });
+    expect(host.querySelector('.msg-attachment')).toBeNull();
+    expect(document.getElementById(IMAGE_LIGHTBOX_ID)).toBeNull();
   });
 });

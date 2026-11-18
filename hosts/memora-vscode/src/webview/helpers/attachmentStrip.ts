@@ -19,6 +19,12 @@
  *    （`error` 事件语义 = 这次请求失败，IMG-6 已钉死）；
  * 3. **长会话不炸**：`loading="lazy"` + `decoding="async"`，且用 `ImageRef` 的宽高设属性
  *    预留占位（60 轮 × ≤5 张 ≈ 上限 300 张，无占位会边加载边跳）。
+ *
+ * ## 点开预览（HOSTED-IMAGE-1 判据②）
+ * 缩略图点击开全屏浮层看大图——`imageCapture` 的悬停 tip 是**输入框候选**的扫视预览
+ * （发送前），语义不同，不复用、不合并（D30：输入 chips 与正文缩略图是两种形态）。
+ * 浮层是**单例 + 点击才设 src**：一个时刻只解码一张，关闭即清 src，内存峰值 = 当前一张。
+ * 大图 URL 直接取 `attachmentUris[sha256]`（与缩略图同一真源），不另存、不重算。
  */
 import * as l10n from '@vscode/l10n';
 
@@ -45,6 +51,87 @@ export interface UserAttachmentView {
 export function attachmentFailedText(sha256: string): string {
   // 调用时取译文（本模块在 `initWebviewL10n` 之前即被 import）；短哈希是定位线索，非文案
   return l10n.t('Preview failed to load ({0})', sha256.slice(0, 8));
+}
+
+/** 全屏预览浮层的文档级 id（单例查重，防重挂后出现第二份） */
+export const IMAGE_LIGHTBOX_ID = 'msgImageLightbox';
+
+/**
+ * 打开/切换全屏大图浮层；重复点击只换 `src`，不叠第二层。
+ *
+ * 内联样式合法（CSP `style-src 'unsafe-inline'`）；裸值不入户 `styles/` 令牌守卫的扫描面
+ * （Scope 只扫 styles/，helpers 的浮层与 `errorBoundary` 同类自包含安全网）。
+ * ESC / 点遮罩 / 点关闭按钮三条关闭路径收敛到 `closeImageLightbox` 单点。
+ */
+export function openImageLightbox(parent: HTMLElement, ref: ImageRef, uri: string): void {
+  const doc = parent.ownerDocument;
+  let overlay = doc.getElementById(IMAGE_LIGHTBOX_ID);
+  if (!overlay) {
+    overlay = buildLightbox(doc);
+    (doc.body ?? doc.documentElement).appendChild(overlay);
+  }
+  const image = overlay.querySelector<HTMLImageElement>('.msg-image-lightbox__image')!;
+  const caption = overlay.querySelector<HTMLElement>('.msg-image-lightbox__caption')!;
+  caption.textContent = ref.name;
+  // 先清 src 再设：同一 <img> 连看两张时不留上一张的解码位图
+  image.removeAttribute('src');
+  image.src = uri;
+  image.alt = ref.name;
+  overlay.hidden = false;
+}
+
+/** 关闭浮层并清空位图（唯一出口：ESC / 点遮罩 / 关闭按钮共用） */
+export function closeImageLightbox(parent: HTMLElement): void {
+  const overlay = parent.ownerDocument.getElementById(IMAGE_LIGHTBOX_ID);
+  if (!overlay) return;
+  overlay.hidden = true;
+  overlay.querySelector<HTMLImageElement>('.msg-image-lightbox__image')?.removeAttribute('src');
+}
+
+/** 懒建浮层骨架（只在首次点开时调用，之后复用同一节点） */
+function buildLightbox(doc: Document): HTMLElement {
+  const overlay = doc.createElement('div');
+  overlay.id = IMAGE_LIGHTBOX_ID;
+  overlay.className = 'msg-image-lightbox';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.style.cssText =
+    'position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;' +
+    'align-items:center;justify-content:center;gap:12px;padding:24px;' +
+    'background:rgba(0,0,0,0.82);cursor:zoom-out;';
+
+  const image = doc.createElement('img');
+  image.className = 'msg-image-lightbox__image';
+  image.style.cssText =
+    'max-width:96%;max-height:82vh;object-fit:contain;cursor:default;' +
+    'box-shadow:0 4px 24px rgba(0,0,0,0.6);';
+  // 点图本身不关闭（避免误触把正在看的图关掉）；点图外遮罩才关
+  image.addEventListener('click', (event) => event.stopPropagation());
+
+  const caption = doc.createElement('div');
+  caption.className = 'msg-image-lightbox__caption';
+  caption.style.cssText =
+    'color:#fff;font-size:12px;max-width:96%;text-align:center;word-break:break-all;';
+
+  const close = doc.createElement('button');
+  close.type = 'button';
+  close.className = 'msg-image-lightbox__close';
+  close.textContent = l10n.t('Close');
+  close.style.cssText =
+    'padding:4px 14px;border:1px solid rgba(255,255,255,0.5);border-radius:4px;' +
+    'background:rgba(0,0,0,0.4);color:#fff;cursor:pointer;';
+
+  overlay.appendChild(image);
+  overlay.appendChild(caption);
+  overlay.appendChild(close);
+
+  const hide = () => closeImageLightbox(overlay);
+  overlay.addEventListener('click', hide);
+  close.addEventListener('click', hide);
+  doc.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !overlay.hidden) hide();
+  });
+  return overlay;
 }
 
 /**
@@ -81,6 +168,9 @@ function buildThumb(ref: ImageRef, uri: string): HTMLElement {
   img.height = ref.height;
   img.loading = 'lazy';
   img.decoding = 'async';
+  // 点开看大图（HOSTED-IMAGE-1 判据②）：URL 与缩略图同一真源，点击时才设浮层 src
+  img.style.cursor = 'zoom-in';
+  img.addEventListener('click', () => openImageLightbox(img, ref, uri));
   img.addEventListener(
     'error',
     () => {
