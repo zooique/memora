@@ -22,6 +22,7 @@ import { buildHtml } from './chatPanelHtml.js';
 import type { MemoraChatViewProvider } from './chatPanel.js';
 import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
 import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
+import type { WorkbenchSnapshot } from '../../shared/workbenchDto.js';
 
 /** 托管页依赖 */
 export interface HostedPanelDeps {
@@ -31,6 +32,8 @@ export interface HostedPanelDeps {
   chatProvider: MemoraChatViewProvider;
   /** 工作区根（派生 attachments 资源根，与侧栏 chatPanel 同一真源） */
   workspacePath: string;
+  /** 现场构建工作台快照（INLINE-WORKBENCH-1）：真源 = workbenchPanel.buildSnapshot，零第二套投影 */
+  buildWorkbenchSnapshot: (orchestratorId: string) => WorkbenchSnapshot;
 }
 
 /** 托管编辑器页（单例容器） */
@@ -44,11 +47,13 @@ export class MemoraHostedPanel {
   private readonly _extensionUri: vscode.Uri;
   private readonly _chatProvider: MemoraChatViewProvider;
   private readonly _workspacePath: string;
+  private readonly _buildWorkbenchSnapshot: (orchestratorId: string) => WorkbenchSnapshot;
 
   constructor(deps: HostedPanelDeps) {
     this._extensionUri = deps.extensionUri;
     this._chatProvider = deps.chatProvider;
     this._workspacePath = deps.workspacePath;
+    this._buildWorkbenchSnapshot = deps.buildWorkbenchSnapshot;
   }
 
   /** 打开（或聚焦）托管页；标题随当前会话展示，切会话后由 open 时重取 */
@@ -88,6 +93,17 @@ export class MemoraHostedPanel {
 
     panel.webview.onDidReceiveMessage((message: WebviewToExtensionMessage) => {
       if (this._panel !== panel) return;
+      // INLINE-WORKBENCH-1：助手页「工作台」按钮就地展开抽屉，不再开独立 editor tab。
+      // 上行 type 不变（assistantFormView 判据锁「只上报意图、选座/取数在宿主」）；
+      // 宿主按当前助手会话现场构建快照直投本页，与独立面板同一投影真源、零新增 type。
+      if (message.type === 'assistant_open_workbench') {
+        const sid = this._chatProvider.getAssistantSessionId() ?? '';
+        void panel.webview.postMessage({
+          type: 'workbench_snapshot',
+          snapshot: this._buildWorkbenchSnapshot(sid),
+        });
+        return;
+      }
       this._chatProvider.routeHostedMessage(message);
     });
 

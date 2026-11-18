@@ -899,6 +899,8 @@ export function activate(context: vscode.ExtensionContext): void {
     extensionUri: context.extensionUri,
     chatProvider,
     workspacePath,
+    // 助手页内嵌工作台抽屉：现场构建与独立面板共用同一投影真源（INLINE-WORKBENCH-1）
+    buildWorkbenchSnapshot: (orchestratorId) => workbenchPanel.buildSnapshot(orchestratorId),
   });
   registerOpenHostedCommand(context, hostedPanel);
 

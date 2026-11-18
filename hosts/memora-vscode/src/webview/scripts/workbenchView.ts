@@ -194,7 +194,7 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
  * @param snapshot 宿主投递的全量快照
  * @returns 要显示的句子（空串 = 隐藏该行）
  */
-function seatStateText(snapshot: WorkbenchSnapshot): string {
+export function seatStateText(snapshot: WorkbenchSnapshot): string {
   // 恢复的座位虽然也是 managed，但它恰好需要被看见一次 ⇒ 显式例外，不随 managed 隐藏
   if (snapshot.orchestrator.managed && snapshot.seatSource !== 'restored') return '';
   if (snapshot.seatSource === 'restored') {
@@ -351,7 +351,7 @@ function renderProgress(document: Document, job: WorkbenchJob): DocumentFragment
  * @param status 宿主投影的状态
  * @returns 主标签（可选）与副行明细（可选）
  */
-function describeStatus(status: WorkbenchJobStatus): {
+export function describeStatus(status: WorkbenchJobStatus): {
   badge?: { kind: 'running' | 'waiting' | 'completed' | 'stopped'; label: string };
   detail?: string;
 } {

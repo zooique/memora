@@ -22,6 +22,8 @@ const HTML = `
     <span id="assistantState" class="assistant-mode-bar__state" hidden></span>
     <button id="assistantWorkbenchBtn" class="assistant-mode-bar__link" type="button">Workbench</button>
   </div>
+  <!-- 助手页内嵌工作台抽屉（INLINE-WORKBENCH-1）：与生产骨架同步 -->
+  <section id="assistantWorkbenchDrawer" class="assistant-workbench-drawer" hidden></section>
   <div id="sessionTitleBar" class="session-title-bar">
     <!-- title 与生产骨架同步：只挂内层标题文本（容器级 title 会被无 title 后代继承，历史菜单条目悬停误显示） -->
     <span id="sessionTitleText" title="当前会话"></span>

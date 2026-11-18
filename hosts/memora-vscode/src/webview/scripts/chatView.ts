@@ -115,6 +115,7 @@ import {
   DISPATCH_SESSION_ATTR,
   refreshDispatchSessionCards,
 } from '../helpers/dispatchSessionCard.js';
+import { createAssistantWorkbenchDrawer } from '../helpers/assistantWorkbenchDrawer.js';
 import {
   appendInterruptedRow,
   createProcessFlowCells,
@@ -413,6 +414,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     dispatchCard: {
       build: (doc, sid) => buildDispatchSessionCard(doc, sid),
     },
+  });
+  // 助手页内嵌工作台抽屉：点击出口复用既有 switch_session（与派活会话卡同款，零新 type）
+  const workbenchDrawer = createAssistantWorkbenchDrawer({
+    document,
+    openSession: (sessionId) => vscode.postMessage({ type: 'switch_session', sessionId }),
   });
   // 下拉选择器与问答回顾行（CHATVIEW-SLIM-3 首刀）：零状态 DOM 构造，deps 注入
   const pickerView = createPickerView({ document });
@@ -3575,6 +3581,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       historyMenuApi.setActivity(msg.runningIds, msg.pendingIds, msg.badgeCount);
       // 派活会话卡同消费本快照（标题/旋转同源，零新建通道）；卡片由工具行渲染时建好，此处只刷新
       refreshDispatchSessionCards(document, msg.titleById ?? {}, msg.runningIds);
+    } else if (msg.type === 'workbench_snapshot') {
+      // 助手页内嵌工作台抽屉（INLINE-WORKBENCH-1）：宿主按当前助手会话现场构建的快照，
+      // 渲染并就地展开；self 形态不渲染该容器（CSS 恒隐藏），零副作用。
+      workbenchDrawer.render(msg.snapshot);
+      const drawer = document.getElementById('assistantWorkbenchDrawer');
+      if (drawer) drawer.hidden = false;
     } else if (msg.type === 'chat_archive_mode') {
       // 归档模式运行时真值：只驱动留存按钮文案（manual 模式按钮兼做归档触发；是否有数据收在容器内）
       historyMenuApi.setArchiveMode(msg.mode);

@@ -12395,6 +12395,45 @@ describe('块类型标与折叠箭头（批次三）', () => {
     expect((row() as HTMLElement).dataset.userToggled).toBeUndefined();
   });
 
+  it('assistant 页收到 workbench_snapshot → 内嵌抽屉渲染并就地展开；点会话复用 switch_session', () => {
+    const { postMessage } = mountChatView('assistant');
+    const drawer = () => document.getElementById('assistantWorkbenchDrawer') as HTMLElement;
+    // 初始隐藏（首帧纪律：数据未到不展开空抽屉）
+    expect(drawer().hidden).toBe(true);
+    dispatch({
+      type: 'workbench_snapshot',
+      snapshot: {
+        orchestrator: { name: 'Memora', sessionId: 'agent-1', title: '代理会话', managed: true },
+        jobs: [
+          {
+            sessionId: '2026-11-18-wb',
+            title: '统计目录文件数',
+            status: { kind: 'running' },
+            updatedAt: '2026-11-18T00:00:00.000Z',
+          },
+        ],
+        seatSource: 'live',
+        filteredCount: 0,
+        foreignDispatches: 0,
+        coverage: 'complete',
+        missingCount: 0,
+        coverageReasons: [],
+        scan: { maxRounds: 60, totalRounds: 0, scannedRounds: 0 },
+      },
+    });
+    // 收到快照 → 展开 + 渲染会话名/状态
+    expect(drawer().hidden).toBe(false);
+    expect(drawer().querySelector('.awb-job__title')?.textContent).toBe('统计目录文件数');
+    expect(drawer().querySelector('.awb-badge')?.textContent).toBe('Running');
+    // 点击「去这个会话」→ 复用 switch_session（零新增协议 type）
+    postMessage.mockClear();
+    (drawer().querySelector('.awb-job__open') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'switch_session',
+      sessionId: '2026-11-18-wb',
+    });
+  });
+
   it('delegate 截断标注三态：字段 true/false 为权威，字段缺失退回旧长度兜底', () => {
     mountChatView();
     dispatch({ type: 'chunk', content: '派子任务' });

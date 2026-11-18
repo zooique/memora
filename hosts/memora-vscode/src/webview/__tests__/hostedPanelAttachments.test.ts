@@ -61,6 +61,7 @@ function openAndGetOptions(workspacePath: string): {
     extensionUri: {} as never,
     chatProvider: chatProviderStub() as never,
     workspacePath,
+    buildWorkbenchSnapshot: () => ({}) as never,
   });
   panel.open();
   return { options: mocks.createWebviewPanel.mock.calls[0][3] as Record<string, unknown> };

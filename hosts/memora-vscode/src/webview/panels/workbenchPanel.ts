@@ -17,7 +17,7 @@ import * as vscode from 'vscode';
 import { buildWorkbenchHtml } from './workbenchHtml.js';
 import { buildWorkbenchSnapshot, type WorkbenchSnapshotInputs } from '../helpers/workbenchModel.js';
 import type { WorkbenchHistoryResult } from '../helpers/workbenchHistory.js';
-import type { WorkbenchSeatSource } from '../../shared/workbenchDto.js';
+import type { WorkbenchSeatSource, WorkbenchSnapshot } from '../../shared/workbenchDto.js';
 import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
@@ -166,6 +166,23 @@ export class MemoraWorkbenchPanel {
         });
       }
     });
+  }
+
+  /**
+   * 现场构建一份快照（不依赖面板是否打开 / ready）
+   *
+   * 供「助手页内嵌工作台抽屉」复用：点开时按当前助手会话现场重建一次历史 + 投影，
+   * 与独立面板消费同一份 `buildWorkbenchSnapshot` 真源，零第二套投影逻辑。
+   * 读盘代价只在用户点开时付（同 `open()` 纪律），不做后台轮询。
+   */
+  public buildSnapshot(
+    orchestratorId: string,
+    seatSource: WorkbenchSeatSource = 'live',
+  ): WorkbenchSnapshot {
+    const history = this._dataSource.rebuildHistory(orchestratorId);
+    return buildWorkbenchSnapshot(
+      this._dataSource.buildInputs(orchestratorId, history, seatSource),
+    );
   }
 
   /**

@@ -1652,6 +1652,59 @@ export const chatStyles = `
     cursor: pointer;
     text-decoration: underline;
   }
+  /* 内嵌工作台抽屉（INLINE-WORKBENCH-1）：点身份条「工作台」就地展开，替掉独立 editor tab。
+   * 仅 assistant 形态可见（self 形态恒隐藏，同身份条首帧纪律）；不在 #messages 滚动容器内。
+   * 状态徽记色复用既有令牌（accent 在跑 / error 中止 / secondary 其余），零新增色源。 */
+  .assistant-workbench-drawer { display: none; }
+  body[data-form='assistant'] .assistant-workbench-drawer:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2, 6px);
+    padding: var(--sp-2, 6px) var(--sp-5, 12px);
+    border-bottom: var(--line-solid);
+    background: var(--surface-card);
+    font-size: var(--font-sm, 11px);
+    flex: 0 0 auto;
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+  body[data-form='assistant'] .awb-seat {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 6px);
+    color: var(--text-secondary);
+  }
+  body[data-form='assistant'] .awb-seat__name { color: var(--text-primary); font-weight: 600; }
+  body[data-form='assistant'] .awb-jobs {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1, 4px);
+  }
+  body[data-form='assistant'] .awb-job {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 6px);
+  }
+  body[data-form='assistant'] .awb-job__title { flex: 1 1 auto; min-width: 0; }
+  body[data-form='assistant'] .awb-badge {
+    flex: 0 0 auto;
+    color: var(--text-secondary);
+  }
+  body[data-form='assistant'] .awb-badge--running { color: var(--accent); }
+  body[data-form='assistant'] .awb-badge--stopped { color: var(--text-error); }
+  body[data-form='assistant'] .awb-job__open {
+    flex: 0 0 auto;
+    border: none;
+    background: transparent;
+    color: var(--text-link);
+    font: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  body[data-form='assistant'] .awb-empty { color: var(--text-secondary); }
   /* 卡片本体：形态差异由**左缘强调条**承担，整圈描边保留给聚焦态
    * 底色改回卡片自己的主题面（--surface-card = editorWidget-background，与消息面同族），
    * 不再用 accent 淡底——那会落到 editor-inactiveSelectionBackground，与用户消息气泡同色，

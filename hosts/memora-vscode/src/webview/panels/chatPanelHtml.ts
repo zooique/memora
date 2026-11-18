@@ -46,6 +46,10 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string, form: UiForm
     <span id="assistantState" class="assistant-mode-bar__state" hidden></span>
     <button id="assistantWorkbenchBtn" class="assistant-mode-bar__link" type="button">${vscode.l10n.t('Workbench')}</button>
   </div>
+  <!-- 助手页内嵌工作台抽屉（INLINE-WORKBENCH-1）：点身份条「工作台」就地展开，
+       不再开独立 editor tab。默认 hidden，收到 workbench_snapshot 后由 chatView 展开。
+       仅 assistant 形态可见（self 形态 CSS 恒隐藏）；不在 #messages 滚动容器内。 -->
+  <section id="assistantWorkbenchDrawer" class="assistant-workbench-drawer" hidden aria-label="${vscode.l10n.t('Workbench')}"></section>
 
   <!-- 消息流：日期分隔线 + 消息 + 空状态引导 -->
   <!-- 会话标题条：
