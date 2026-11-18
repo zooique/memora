@@ -111,6 +111,11 @@ import {
 } from '../helpers/processFlowModel.js';
 import { createMemoryHitsBlock } from './memoryHitsBlock.js';
 import {
+  buildDispatchSessionCard,
+  DISPATCH_SESSION_ATTR,
+  refreshDispatchSessionCards,
+} from '../helpers/dispatchSessionCard.js';
+import {
   appendInterruptedRow,
   createProcessFlowCells,
   insertPlanItemInOrder,
@@ -402,7 +407,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const planBar = createPlanBarView({ document });
   // 过程流单元格与记忆命中块（CHATVIEW-SLIM-2 第 5 刀）：零状态 DOM 构造，deps 注入
   const memoryHitsBlock = createMemoryHitsBlock({ document, vscode });
-  const cells = createProcessFlowCells({ document, memoryHits: memoryHitsBlock });
+  const cells = createProcessFlowCells({
+    document,
+    memoryHits: memoryHitsBlock,
+    dispatchCard: {
+      build: (doc, sid) => buildDispatchSessionCard(doc, sid),
+    },
+  });
   // 下拉选择器与问答回顾行（CHATVIEW-SLIM-3 首刀）：零状态 DOM 构造，deps 注入
   const pickerView = createPickerView({ document });
   const qaRowView = createQaRowView({ document });
@@ -3562,6 +3573,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'session_activity') {
       // 会话活跃度快照：列表条目 + 入口角标同一数据源，统一由历史菜单域投影
       historyMenuApi.setActivity(msg.runningIds, msg.pendingIds, msg.badgeCount);
+      // 派活会话卡同消费本快照（标题/旋转同源，零新建通道）；卡片由工具行渲染时建好，此处只刷新
+      refreshDispatchSessionCards(document, msg.titleById ?? {}, msg.runningIds);
     } else if (msg.type === 'chat_archive_mode') {
       // 归档模式运行时真值：只驱动留存按钮文案（manual 模式按钮兼做归档触发；是否有数据收在容器内）
       historyMenuApi.setArchiveMode(msg.mode);
@@ -4066,9 +4079,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 此后程序默认值（工具行成功收起/失败展开等）不得再覆盖该块的 open——
   // 覆盖消费点见 updateToolRowState；键盘激活 summary 同样派生 click，一并覆盖。
   document.addEventListener('click', (e) => {
+    // 派活会话卡嵌在 summary 内，点它只该切会话、不算用户接管折叠 ⇒ 本委托跳过（否则误设 userToggled）
+    if ((e.target as HTMLElement | null)?.closest?.(`[${DISPATCH_SESSION_ATTR}]`)) return;
     const summary = (e.target as HTMLElement | null)?.closest?.('summary');
     const details = summary?.closest('details');
     if (details) details.dataset.userToggled = 'true';
+  });
+  // 派活会话卡：点卡片切到目标会话（复用历史条目的 switch_session 出口）。
+  // 卡片嵌在 <summary> 内 ⇒ preventDefault 阻止 details 原生开合（stopPropagation 挡不住同层委托，
+  // 折叠误记由上面那个委托自行跳过）。两者分工：这里管「不折叠」，那里管「不误记」。
+  document.addEventListener('click', (e) => {
+    const card = (e.target as HTMLElement | null)?.closest?.(`[${DISPATCH_SESSION_ATTR}]`);
+    if (!card) return;
+    e.preventDefault();
+    const sid = card.getAttribute(DISPATCH_SESSION_ATTR);
+    if (sid) vscode.postMessage({ type: 'switch_session', sessionId: sid });
   });
 
   // 下拉菜单：显式回调映射替代原 window.__xxx 全局函数名（去全局污染）

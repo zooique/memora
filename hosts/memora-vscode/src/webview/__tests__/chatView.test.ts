@@ -12329,6 +12329,72 @@ describe('块类型标与折叠箭头（批次三）', () => {
     expect(row().querySelector('.round-block__tool-summary')).toBeNull();
   });
 
+  it('send_to_session 工具行挂派活会话卡：sid 锚点 + 快照刷名字/旋转 + 点击切会话', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'chunk', content: '已派活' });
+    dispatchEv({
+      type: 'tool_start',
+      seq: 2,
+      ts: 'T1',
+      payload: {
+        toolCallId: 'send-1',
+        name: 'send_to_session',
+        args: JSON.stringify({ sid: '2026-11-18-target', text: '帮我统计目录' }),
+        stepIndex: 1,
+      },
+    });
+    dispatchEv({
+      type: 'tool_result',
+      seq: 3,
+      ts: 'T2',
+      payload: {
+        toolCallId: 'send-1',
+        name: 'send_to_session',
+        ok: true,
+        summary: '{\n  "ok": true,\n  "accepted": true\n}',
+      },
+    });
+    const row = () => document.querySelector('.round-block__tool[data-tool-call-id="send-1"]')!;
+    const card = () => row().querySelector<HTMLElement>('.dispatch-session-card');
+    // 卡片在 summary 常显区（折叠后仍可见），sid 锚点来自工具入参
+    expect(card()).not.toBeNull();
+    expect(row().querySelector('summary')?.contains(card()!)).toBe(true);
+    expect(card()!.getAttribute('data-dispatch-session')).toBe('2026-11-18-target');
+    // 未收到快照前名字 = sid（不空着）
+    expect(card()!.querySelector('.dispatch-session-card__name')?.textContent).toBe(
+      '2026-11-18-target',
+    );
+    // 快照到达：标题换成展示名，running 集合含目标 ⇒ 亮旋转
+    dispatch({
+      type: 'session_activity',
+      runningIds: ['2026-11-18-target'],
+      pendingIds: [],
+      badgeCount: 0,
+      titleById: { '2026-11-18-target': '统计目录文件数' },
+    });
+    expect(card()!.querySelector('.dispatch-session-card__name')?.textContent).toBe(
+      '统计目录文件数',
+    );
+    expect(card()!.classList.contains('is-running')).toBe(true);
+    // 目标跑完 ⇒ 熄旋转
+    dispatch({
+      type: 'session_activity',
+      runningIds: [],
+      pendingIds: [],
+      badgeCount: 0,
+      titleById: { '2026-11-18-target': '统计目录文件数' },
+    });
+    expect(card()!.classList.contains('is-running')).toBe(false);
+    // 点击卡片 → switch_session，且不误记折叠意图（卡片嵌在 summary 内，点它不算用户接管开合）
+    postMessage.mockClear();
+    card()!.click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'switch_session',
+      sessionId: '2026-11-18-target',
+    });
+    expect((row() as HTMLElement).dataset.userToggled).toBeUndefined();
+  });
+
   it('delegate 截断标注三态：字段 true/false 为权威，字段缺失退回旧长度兜底', () => {
     mountChatView();
     dispatch({ type: 'chunk', content: '派子任务' });

@@ -8,7 +8,9 @@
  * 口径（与迁移前逐字一致，**不是**新语义）：
  *   - `runningIds`：运行态表里 `streaming === true` 的会话；
  *   - `pendingIds`：有未答提问或有待确认的会话；
- *   - `badgeCount`：角标只数「别的会话」（当前显示会话的待处理已在屏上可见）。
+ *   - `badgeCount`：角标只数「别的会话」（当前显示会话的待处理已在屏上可见）；
+ *   - `titleById`：遍历面内会话的展示名（真源 = `sessionTitleFor`，与工作台标题同源），
+ *     供派活会话卡显示名字——webview 侧拿不到 SessionMeta，只能由宿主随快照投影下发。
  */
 
 /** 本模块的输入面（全部由调用方以闭包注入，本模块不持有任何存储） */
@@ -21,6 +23,8 @@ export interface SessionActivityInputs {
   isStreaming: (sessionId: string) => boolean;
   /** 某会话是否在等用户（待答提问 / 待确认） */
   isWaiting: (sessionId: string) => boolean;
+  /** 会话展示名（真源 = sessionTitleFor / getSessionDisplayName，宿主注入） */
+  titleFor: (sessionId: string) => string;
 }
 
 /** 活跃度快照（字段与 `session_activity` 协议载荷同构） */
@@ -31,6 +35,8 @@ export interface SessionActivitySnapshot {
   pendingIds: string[];
   /** 入口角标数字（= 排除当前会话后的 pending 数） */
   badgeCount: number;
+  /** sid → 展示名（遍历面内会话；派活会话卡按此显示，未命中回落 sid） */
+  titleById: Record<string, string>;
 }
 
 /**
@@ -48,10 +54,14 @@ function collectSessionActivity(input: SessionActivityInputs): SessionActivitySn
   const ids = [...new Set(input.sessionIds)];
   const runningIds = ids.filter((id) => input.isStreaming(id));
   const pendingIds = ids.filter((id) => input.isWaiting(id));
+  // 遍历面内会话的展示名：每次快照重算（标题会随改名变），只收在面的会话（与角标同源，不额外扫盘）
+  const titleById: Record<string, string> = {};
+  for (const id of ids) titleById[id] = input.titleFor(id);
   return {
     runningIds,
     pendingIds,
     badgeCount: pendingIds.filter((id) => id !== input.currentSessionId).length,
+    titleById,
   };
 }
 
@@ -109,6 +119,7 @@ export function pushPanelSessionActivity(deps: PanelSessionActivityDeps): string
     currentSessionId: deps.currentSessionId,
     isStreaming: deps.isStreaming,
     isWaiting: deps.isWaiting,
+    titleFor: deps.titleFor,
     lastSerialized: deps.lastSerialized,
     force: deps.force,
     post: deps.post,

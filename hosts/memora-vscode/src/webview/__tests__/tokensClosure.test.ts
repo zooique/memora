@@ -636,7 +636,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     'icon-': 17,
     // 24：助手形态状态签（chatStyles）左侧 accent 圆点宽/高各引 var(--dot-sm) +2
     // （2026-11-15，ASSISTANT-FORM 视觉评审；实数经 ../../scripts/count-token-refs.mjs 实锤同步）。
-    'dot-': 24,
+    // 26：派活会话卡（DISPATCH-SESSION-CARD-1）运行态旋转环宽/高各引 var(--dot-lg) +2
+    // （2026-11-18，与工具行 is-tool-running 同款环、同款尺寸令牌；机械实测同步）。
+    'dot-': 26,
     // 82：作品页（worksStyles）提示行与清单行各引 var(--line-solid) +2（2026-11-09，
     // WORK-PROJECTION-MOVE-1；实数经 scripts/count-token-refs.mjs 实锤同步）。
     // 84：同日第二批 UI 反馈订正，worksStyles 补页头 border-bottom / 页尾 border-top
@@ -653,7 +655,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // scripts/count-token-refs.mjs 实锤同步）。
     // 2026-11-18 授权请求卡随异步授权流退役（HOSTED-CONFIRM-SOFT-1）⇒ 91-2=89
     //（卡体 border 与命令原文块 border 各一处 var(--line-input) 同批删除；机械实测同步）。
-    'line-': 89, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
+    // 90：派活会话卡（DISPATCH-SESSION-CARD-1）描边引 var(--line-solid) +1
+    // （2026-11-18，与工具行同款边框令牌，避免裸 px；机械实测同步）。
+    'line-': 90, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
     //             var(--line-solid) +1 ⇒ 79→80（UI-STATUS-DIVIDE-1，与
     //             `.context-ring__injection` 同一既有令牌，未新造颜色）；
     //             实数经 scripts/count-token-refs.mjs 实锤同步。

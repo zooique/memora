@@ -2965,6 +2965,33 @@ export const chatStyles = `
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
   }
   .round-block__tool summary:focus-visible { box-shadow: 0 0 0 1px var(--border-focus); }
+  /* 派活会话卡（DISPATCH-SESSION-CARD-1）：嵌在工具行 summary 内的常显按钮，点它切到目标会话。
+     名字由 session_activity.titleById 刷新；running 时前置旋转环（复用工具行的 toolSpinner 动画，
+     不新建 keyframes、不引新令牌）。环即状态，无需额外文字。 */
+  .dispatch-session-card {
+    display: inline-flex; align-items: center; gap: var(--sp-2, 6px);
+    margin-left: var(--sp-3, 8px); padding: var(--sp-1, 4px) var(--sp-2, 6px);
+    border: var(--line-solid);
+    border-radius: var(--radius, 6px);
+    background: var(--surface-thought, #252526);
+    color: var(--text-primary, #cccccc);
+    font: inherit; font-size: var(--font-xs, 10px); cursor: pointer;
+    vertical-align: middle;
+  }
+  .dispatch-session-card:hover { border-color: var(--accent, #0e639c); }
+  .dispatch-session-card:focus-visible { box-shadow: 0 0 0 1px var(--border-focus); }
+  .dispatch-session-card__icon { display: inline-flex; align-items: center; }
+  .dispatch-session-card__name { max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dispatch-session-card.is-running .dispatch-session-card__icon::before {
+    content: ''; display: inline-block; width: var(--dot-lg); height: var(--dot-lg);
+    margin-right: var(--sp-1, 4px); vertical-align: -1px;
+    border: thin solid transparent; border-top-color: var(--accent, #0e639c);
+    border-radius: 50%; box-sizing: border-box;
+    animation: toolSpinner var(--dur-spin-soft) linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dispatch-session-card.is-running .dispatch-session-card__icon::before { animation: none; }
+  }
   .round-block__tool-summary { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); padding: 0 0 var(--sp-1, 4px); }
   /* web_search 裁决证据块：工具行展开体内的归因三件套（端点/条数/命中标题），与结果摘要同层。
      仅重放路径渲染（证据轮末才落盘，实时无此字段）；逐行紧凑、弱化色，展开行体时随行可见 */

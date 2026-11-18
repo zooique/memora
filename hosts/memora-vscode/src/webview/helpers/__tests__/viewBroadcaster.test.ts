@@ -30,6 +30,7 @@ const ACTIVITY: ExtensionToWebviewMessage = {
   runningIds: [],
   pendingIds: [],
   badgeCount: 0,
+  titleById: {},
 };
 
 describe('viewBroadcaster', () => {

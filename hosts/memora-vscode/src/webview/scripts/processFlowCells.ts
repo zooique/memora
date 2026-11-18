@@ -39,7 +39,21 @@ import {
 } from '../helpers/processFlowModel.js';
 import { setTerminus } from '../helpers/statusAttrs.js';
 import { getIconSvg } from './icons.js';
+
+/**
+ * 派活工具名（字面量锚点）。真源 = extension/host/workSessionTools.ts 的
+ * SEND_TO_SESSION_TOOL_NAME；此处不 import 它——那是宿主模块，会拖值导入进 webview bundle。
+ * webview 侧同类工具名都走 helpers/toolNameMap 的展示映射，但那张表只管显示名、不含派活工具；
+ * 为避免为单个判断扩表，这里用字面量并注释真源（改名时两边同步，与 workbenchHistory 的契约同型）。
+ */
+const SEND_TO_SESSION_TOOL_NAME = 'send_to_session';
 import type { MemoryHitsBlock } from './memoryHitsBlock.js';
+
+/** 派活会话卡构造器（由 helper 注入；本工厂不 import 卡片实现，保持域边界） */
+export interface DispatchCardBuilder {
+  /** 造卡片骨架（sid 来自工具行 args）；返回 null 表示本环境不渲染派活卡 */
+  build(doc: Document, sid: string): HTMLElement | null;
+}
 
 /** 过程流单元格依赖：文档对象 + 记忆命中块（工具行内命中明细的唯一实现） */
 export interface ProcessFlowCellsDeps {
@@ -47,6 +61,8 @@ export interface ProcessFlowCellsDeps {
   document: Document;
   /** 记忆命中块构造器（`renderToolRow` 内命中明细复用同一实现） */
   memoryHits: MemoryHitsBlock;
+  /** 派活会话卡构造器（缺省 = 不渲染；测试可传桩） */
+  dispatchCard?: DispatchCardBuilder;
 }
 
 /** 单元格工厂窄接口：chatView 仅经此驱动，域内辅助函数零暴露 */
@@ -421,7 +437,7 @@ export function appendInterruptedRow(host: HTMLElement, events: ProcessEvent[]):
  * @param deps 文档对象 + 记忆命中块
  */
 export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowCells {
-  const { document, memoryHits } = deps;
+  const { document, memoryHits, dispatchCard } = deps;
 
   /**
    * 获取或创建小节容器（进行中增量专用：不清理已有内容，防误删已追加的工具行）
@@ -821,6 +837,15 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
     // 前导空格：span 间空白不折叠，显式补「叙述 (状态)」间距；delegate 用定稿的角括号徽标
     statusSpan.textContent = delegateUi ? delegateBadgeText(status) : ` (${status})`;
     summary.append(iconSpan, labelSpan, statusSpan);
+    // 派活会话卡（DISPATCH-SESSION-CARD-1）：放 summary 常显区而非折叠 body，
+    // 折叠后仍可见「派给谁」；sid 来自本行 args，与这次派活一一绑定。
+    if (dispatchCard && start.payload.name === SEND_TO_SESSION_TOOL_NAME) {
+      const sid = argStr(parseToolArgs(start.payload.args), 'sid');
+      if (sid) {
+        const card = dispatchCard.build(document, sid);
+        if (card) summary.appendChild(card);
+      }
+    }
     row.appendChild(summary);
     if (start.payload.name === 'delegate_task') {
       // 派发段：task 全文 + capabilities（唯一可见的联网权说明）

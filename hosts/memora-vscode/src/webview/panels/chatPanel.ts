@@ -2673,6 +2673,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       excludeSessionIds: [this.getAssistantSessionId()],
       isStreaming: this.workbench.isStreaming,
       isWaiting: this.workbench.isWaiting,
+      titleFor: (sid) => sessionTitleFor(this.sessionStore, sid, vscode.l10n),
       lastSerialized: this._lastSessionActivity,
       force,
       // 跨会话全局信号：刻意绕过 `post()`（不进任何单流的界面投影）；多视图走 postRaw 扇出

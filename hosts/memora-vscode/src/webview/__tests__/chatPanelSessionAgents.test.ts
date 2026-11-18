@@ -1677,6 +1677,7 @@ interface ActivitySnapshot {
   runningIds: string[];
   pendingIds: string[];
   badgeCount: number;
+  titleById: Record<string, string>;
 }
 
 /** 取最后一条会话活跃度快照（未推送过 = undefined） */

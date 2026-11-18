@@ -1457,6 +1457,13 @@ export type ExtensionToWebviewMessage =
       pendingIds: string[];
       /** 入口角标数字（当前显示会话不计入：它的待处理已在屏上可见） */
       badgeCount: number;
+      /**
+       * sid → 展示名（真源 = 宿主 sessionTitleFor，与工作台标题同源）
+       *
+       * 供派活会话卡显示「派给哪个会话」：webview 侧无 SessionMeta 读口，标题只能由宿主
+       * 随本快照投影下发。只收遍历面内的会话（与 runningIds 同源），改名后随下次快照刷新。
+       */
+      titleById: Record<string, string>;
     }
   /**
    * Chat Panel Provider 列表同步（底部模型下拉框的数据）
