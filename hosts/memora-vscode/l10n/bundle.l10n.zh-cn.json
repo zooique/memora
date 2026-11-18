@@ -1490,5 +1490,6 @@
   "Advancing…": "正在推进…",
   "Awaiting your answer": "等待你的回答",
   "Quote this message": "引用此条消息",
-  "Quote this answer": "引用此条回答"
+  "Quote this answer": "引用此条回答",
+  "Inline view. To keep a workbench open side by side, use the Command Palette.": "这里是就地视图；若需并排常驻的工作台，请用命令面板打开。"
 }

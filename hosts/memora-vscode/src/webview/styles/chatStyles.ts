@@ -1668,6 +1668,8 @@ export const chatStyles = `
     max-height: 40vh;
     overflow-y: auto;
   }
+  /* 就地视图说明行：复用既有次要文字令牌，零新增色源；不占交互、不参与座位/状态判据 */
+  body[data-form='assistant'] .awb-hint { color: var(--text-secondary); }
   body[data-form='assistant'] .awb-seat {
     display: flex;
     align-items: center;

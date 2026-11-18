@@ -74,6 +74,15 @@ export function createAssistantWorkbenchDrawer(
       const drawer = document.getElementById('assistantWorkbenchDrawer');
       if (!drawer) return;
 
+      // 就地视图说明（两入口分工可见）：点身份条「工作台」看到的是助手页内嵌投影，
+      // 常驻并排看板在命令面板。只指向命令面板、不硬编码命令标题——命令标题真源在
+      // package.nls 的 command.openWorkbench.title，此处复述会产生第二份可漂移文案。
+      const hint = document.createElement('div');
+      hint.className = 'awb-hint';
+      hint.textContent = l10n.t(
+        'Inline view. To keep a workbench open side by side, use the Command Palette.',
+      );
+
       const seat = document.createElement('div');
       seat.className = 'awb-seat';
       const name = document.createElement('span');
@@ -105,7 +114,7 @@ export function createAssistantWorkbenchDrawer(
         list.appendChild(empty);
       }
 
-      drawer.replaceChildren(seat, list);
+      drawer.replaceChildren(hint, seat, list);
     },
   };
 }
