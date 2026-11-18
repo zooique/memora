@@ -225,7 +225,7 @@ import { createWorkbenchReadPorts } from '../helpers/workbenchReadPorts.js';
 // Agent 就绪守卫（取实例 + 懒装配 + 提示；外置守面板有效行上限）
 import { requireAgent } from '../helpers/requireAgent.js';
 // 托管子会话中断通知器（第三切片）：只投系统事件队列，不写历史、不落盘
-import { HostedSessionNotifier } from '../helpers/hostedSessionNotice.js';
+import { HostedSessionNotifier, noteHandBackOrSettlement } from '../helpers/hostedSessionNotice.js';
 import {
   noteBlockedOnAsk,
   noteFlowSettled,
@@ -3816,12 +3816,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 此处推一次快照让 webview 同步——正常/中断 → 空 items（顶部条收起）；
     // 暂停 → 保留当前 plan（paused 分支前面，plan 还没被清，继续供 resume 消费）
     this.postPlanUpdate();
-    // 托管子会话落定通知（第四切片）：本轮收场（成功 / 失败 / 中断）→ 告诉创建它的主控，
-    // 让它下次说话时在上下文里看到「哪条会话落定了、结论是什么」。只对「本进程记录过创建者的
-    // 代理驱动会话」生效；暂停可续跑、不是终态，不通知（判据在通知器内，走内核收场单点）。
-    this._hostedNotifier.noteSettledFlow(
+    // 交回 / 落定分流（P2）：收场文本命中 [HAND_BACK] 即接管本轮，否则走原落定三档；
+    // 判据单点在 noteHandBackOrSettlement，面板不写第二份「先交回还是先落定」。
+    // 暂停可续跑、不是终态，仍走通知器原判据。
+    noteHandBackOrSettlement(
+      this._hostedNotifier,
       sessionId,
       latestRoundId,
+      latestRoundId ? textByRound.get(latestRoundId) : undefined,
       pausedOnPurpose,
       controller.signal.aborted,
     );

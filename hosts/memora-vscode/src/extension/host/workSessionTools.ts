@@ -55,10 +55,13 @@ import {
  * 刻意不进 `Agent.chat()` 的 input：input 会原样落盘成轮的用户消息，注入纪律会让
  * live 投影（原文）与重启后的落盘历史（带纪律）显示漂移；Worker 侧送达需内核提示词注入位，
  * 不在宿主批内夹带（见台账补记）。
+ * P2 Hand back 两句同在本常量（Worker 交回格式 + Router 三选一），不另造第二份纪律真源。
  */
 const WORK_SESSION_TOOL_DISCIPLINE =
   '岗位纪律（不可违反）：不推送、不发布；遇到先提醒；用户明确要求 = 授权。' +
-  '开活 / 派活时把边界写进 mandate；不把推送 / 发布 / 发版这类不可逆操作交给 Worker。';
+  '开活 / 派活时把边界写进 mandate；不把推送 / 发布 / 发版这类不可逆操作交给 Worker。' +
+  'Worker 发现超出 mandate 时，把交回消息作为本轮唯一输出，首字符写 [HAND_BACK] reason: <一句话>。' +
+  '收到交回后你决定转新活（create_session）/ 合并到现有活（send_to_session）/ 转述用户。';
 
 /**
  * 会话清单工具名（装配点、单测、后续切片共用的唯一字面量）

@@ -171,13 +171,14 @@ export interface SessionMeta {
    *   两者不同维度，不可互相替代。Worker 拿到 declaredPaths=['src/agent'] 知道不能动 ui/，
    *   但不知道「能不能重构 src/agent 的结构」——这是 workOrder 回答的。
    *
-   * 语义边界：记录不是权限。workOrder 只供 Worker 理解任务 + 未来 Hand back 做边界比对，
+   * 语义边界：记录不是权限。workOrder 只供 Worker 理解任务 + Hand back 时做边界比对，
    *      不表达父子关系、不当门禁授权依据。
    *
    * 写入方 = 宿主 createSession 时由主控 create_session 工具的 mandate 参数一次性写入，
    *       **不从父会话继承**（分叉是另一条活，边界要重新声明）。
-   * 读取方 = 当前无运行时读取方：宿主 `projectSessionStatus` 只读 `workStatus`，Worker 身份判定
-   *   读 `Round.origin` 轮戳。P2 Hand back 边界比对是预留消费点，按定案「≥3 真实案例」纪律待启。
+   * 读取方 = 宿主 Hand back 边界比对：`HostedSessionNotifier.formatHandBack` 在 Worker 交回时
+   *   把本字段随通知注入创建者 Router，供其决定转新活 / 合并 / 转述用户；Worker loop 不读本字段，
+   *   Worker 身份判定仍读 `Round.origin` 轮戳，工作台状态投影只读 `workStatus`。
    * 缺省 undefined = 旧数据 / 用户自助开的会话（自助会话**永远不写本字段**，读侧如实降级）。
    */
   workOrder?: string;

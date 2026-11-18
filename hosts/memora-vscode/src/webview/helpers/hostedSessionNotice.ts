@@ -30,6 +30,10 @@
  * 托管子会话挂上 ask_user 提问时，同样走本投递器叫醒创建者（题面 + 选项随事实带出），
  * 替代「等 30 分钟超时由子会话自己代选」。与落定**共用**投递 / 去重 / 待办 / 唤醒骨架，
  * 只换事实正文与去重键前缀；不另造第二通道、不用 `chat()` 伪造用户发言。
+ *
+ * 第七切片（P2 Hand back）：Worker 超界交回走同一投递器的 `handback` 档——收场文本以
+ * `[HAND_BACK]` 开头时接管本轮落定通知（只投一条，防双醒），正文带原派活边界
+ * `workOrder` 供 Router 决策；去重键前缀与落定 / needs-answer 隔离。不启用第二套消费者。
  */
 import {
   getSessionDisplayName,
@@ -41,6 +45,12 @@ import {
 } from '@zooique/memora';
 import { deriveInterruptReason } from '../../shared/interruptReason.js';
 import type { PendingQuestionDto } from '../../shared/protocol.js';
+import {
+  formatHandBackMessage,
+  isHandBackMessage,
+  parseHandBackMessage,
+  type HandBackMessage,
+} from './handBackMessage.js';
 
 /** 通知器依赖（全部由面板注入闭包；本类不持有面板实例） */
 export interface HostedSessionNoticeDeps {
@@ -196,6 +206,26 @@ function formatNeedsAnswer(
 function needsAnswerKey(sessionId: string, questions: readonly PendingQuestionDto[]): string {
   const signature = questions.map((q) => q.askCallId ?? q.question).join('|');
   return `needs-answer:${sessionId}:${signature}`;
+}
+
+/**
+ * 把 Worker 交回拼成一条 system 事实句（喂给创建者 Router，非用户发言）
+ *
+ * 格式真源 = `handBackMessage.ts` 的 B6/B9；本函数只负责通知外壳与「原派活边界」，
+ * 不另造第二份解析或格式化。`workOrder` 是唯一运行时读取点：交回时把派活边界
+ * 一并带出，Router 才能据此决定转新活 / 合并 / 转述用户。
+ */
+function formatHandBack(
+  title: string,
+  sessionId: string,
+  msg: HandBackMessage,
+  workOrder: string | undefined,
+): string {
+  const boundary = workOrder ? `\n原派活边界：${workOrder}` : '';
+  return (
+    `[托管会话交回] 会话《${title}》（sid=${sessionId}）超出派活边界，请决定转新活 / 合并到现有活 / 转述用户：\n` +
+    `${formatHandBackMessage(msg)}${boundary}`
+  );
 }
 
 /**
@@ -372,6 +402,28 @@ export class HostedSessionNotifier {
   }
 
   /**
+   * Worker 超界交回 → 注入创建者 Router（P2 · 与落定 / needs-answer 共骨架）
+   *
+   * @returns true = 命中交回并已投递 / 压待办 / 同因已投过（调用方据此抑制落定通知）；
+   *          false = 不是交回消息、解析失败、或目标不该通知（调用方照常发落定通知）
+   */
+  noteHandBack(sessionId: string, rawText: string): boolean {
+    if (!isHandBackMessage(rawText)) return false;
+    const msg = parseHandBackMessage(rawText);
+    if (!msg) return false;
+    const key = `handback:${sessionId}:${msg.reason}`;
+    // 同因重复信号：算已受理（抑制落定通知），但不再投第二条
+    if (this.notified.has(key)) return true;
+    const target = this.resolveTarget(sessionId);
+    if (!target) return false;
+    const workOrder = this.deps.readSessionMeta(sessionId)?.workOrder;
+    const text = formatHandBack(target.title, sessionId, msg, workOrder);
+    const delivered = this.deliver(target.creator, text, key);
+    // deliver 在未装配 / 忙时压待办也返回 false，但已记去重键 ⇒ 视为受理
+    return delivered || this.notified.has(key);
+  }
+
+  /**
    * 判定该会话是否该通知，并取出标题与创建者
    *
    * @returns undefined = 不通知（无元数据 / 没有创建者账本 / 目标已不由代理驱动 / 创建者已非托管）
@@ -448,4 +500,21 @@ export class HostedSessionNotifier {
     if (queue) queue.push(text);
     else this.pendingReports.set(creator, [text]);
   }
+}
+
+/**
+ * 收场分流单点：交回命中则接管本轮，未命中照常落定
+ *
+ * 面板只调这一处，避免在 chatPanel 里写第二份「先交回还是先落定」的判据。
+ */
+export function noteHandBackOrSettlement(
+  notifier: HostedSessionNotifier,
+  sessionId: string,
+  roundId: string | undefined,
+  finalText: string | undefined,
+  paused: boolean,
+  hostAborted: boolean,
+): void {
+  if (finalText && notifier.noteHandBack(sessionId, finalText)) return;
+  notifier.noteSettledFlow(sessionId, roundId, paused, hostAborted);
 }

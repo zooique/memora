@@ -1027,7 +1027,7 @@ describe('托管 v0 · create_session（工具层）', () => {
     }
   }, 120_000);
 
-  it('岗位纪律进工具契约：create / send 三条齐全且尾段同源；mandate 不再假称送达 Worker', async () => {
+  it('岗位纪律进工具契约：三条 + Hand back 两句齐全且尾段同源；mandate 不再假称送达 Worker', async () => {
     const probe = await assembleProbe(true, {});
     try {
       // 从运行时定义面读（与模型看到的是同一份），不在测试里抄一份契约文案
@@ -1036,8 +1036,14 @@ describe('托管 v0 · create_session（工具层）', () => {
       const send = definitions.find((entry) => entry.name === SEND_TO_SESSION_TOOL_NAME);
       expect(create?.description).toBeDefined();
       expect(send?.description).toBeDefined();
-      // 三条锚点来自 SOFT-1 定案；每个委派动作都必须带上，缺一处即纪律出现盲区
-      for (const anchor of ['不推送、不发布', '遇到先提醒', '用户明确要求 = 授权']) {
+      // 三条旧锚来自 SOFT-1；P2 再加 Worker 交回格式与 Router 三选一，缺一处即纪律出现盲区
+      for (const anchor of [
+        '不推送、不发布',
+        '遇到先提醒',
+        '用户明确要求 = 授权',
+        '[HAND_BACK] reason:',
+        '转述用户',
+      ]) {
         expect(create?.description).toContain(anchor);
         expect(send?.description).toContain(anchor);
       }

@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type { Agent, ProcessEvent, Round, RoundStatus, SessionMeta } from '@zooique/memora';
 import type { PendingQuestionDto } from '../../shared/protocol.js';
-import { HostedSessionNotifier } from '../helpers/hostedSessionNotice.js';
+import { HostedSessionNotifier, noteHandBackOrSettlement } from '../helpers/hostedSessionNotice.js';
 import { SessionModeStore } from '../../extension/host/sessionModeStore.js';
 
 const TS = '2026-11-14T10:00:00.000Z';
@@ -640,5 +640,114 @@ describe('HostedSessionNotifier · 等你作答（HOSTED-ASK-ROUTE-1）', () => 
     expect(src.match(/noteNeedsAnswer\(\{/g)?.length).toBe(2);
     // 完成判据③：超时保底没被本切片移除
     expect(src.match(/ask\.armAskTimeout\(\)/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('P2 · Hand back 交回档（与落定共投递面）', () => {
+  const hand = (workOrder?: string) => {
+    const h = harness();
+    h.metas.set(CHILD, {
+      ...meta(CHILD, 'hosted', '抓取任务'),
+      ...(workOrder ? { workOrder } : {}),
+    });
+    h.notifier.remember(CHILD, CREATOR);
+    return h;
+  };
+  const localQuestions = (id: string) => [{ slot: 'slot-0', askCallId: id, question: '选哪个？' }];
+
+  it('非前缀 / reason 缺失 → 不投，落定照常', () => {
+    const h = hand();
+    expect(h.notifier.noteHandBack(CHILD, '[后台命令完成] foo')).toBe(false);
+    expect(h.notifier.noteHandBack(CHILD, '[HAND_BACK] suggestion: x')).toBe(false);
+    expect(h.creatorQueue).not.toHaveBeenCalled();
+  });
+
+  it('命中交回 → 只投 Router，正文带 reason 与原派活边界，子会话静默', () => {
+    const h = hand('只做文档，不推送');
+    expect(
+      h.notifier.noteHandBack(CHILD, '[HAND_BACK] reason: 超出范围 | suggestion: 新建会话'),
+    ).toBe(true);
+    expect(h.creatorQueue).toHaveBeenCalledTimes(1);
+    expect(h.childQueue).not.toHaveBeenCalled();
+    const text = h.creatorQueue.mock.calls[0][0] as string;
+    expect(text).toContain('[托管会话交回]');
+    expect(text).toContain('抓取任务');
+    expect(text).toContain('超出范围');
+    expect(text).toContain('只做文档，不推送');
+    expect(text).toContain('[HAND_BACK] reason: 超出范围 | suggestion: 新建会话');
+  });
+
+  it('规范化：字段顺序乱也按 handBackMessage 真源矫正', () => {
+    const h = hand();
+    h.notifier.noteHandBack(CHILD, '[HAND_BACK] suggestion: y | reason: x');
+    const text = h.creatorQueue.mock.calls[0][0] as string;
+    expect(text).toContain('[HAND_BACK] reason: x | suggestion: y');
+  });
+
+  it('同因幂等；不同 reason 各投各的；与 needs-answer / 落定键撞串不互吞', () => {
+    const h = hand();
+    expect(h.notifier.noteHandBack(CHILD, '[HAND_BACK] reason: 超界A')).toBe(true);
+    expect(h.notifier.noteHandBack(CHILD, '[HAND_BACK] reason: 超界A')).toBe(true);
+    expect(h.creatorQueue).toHaveBeenCalledTimes(1);
+    expect(h.notifier.noteHandBack(CHILD, '[HAND_BACK] reason: 超界B')).toBe(true);
+    // handback 键与 needs-answer / 落定键前缀隔离：同串不吞
+    h.rounds.set('超界A', round('超界A', 'complete', []));
+    expect(
+      h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: localQuestions('超界A') }),
+    ).toBe(true);
+    expect(h.notifier.noteSettledFlow(CHILD, '超界A', false, false)).toBe(true);
+    expect(h.creatorQueue).toHaveBeenCalledTimes(4);
+  });
+
+  it('降级：无创建者 / 创建者被收回 / 用户轮无戳 → 不投，落定仍可走', () => {
+    const noCreator = harness();
+    expect(noCreator.notifier.noteHandBack(CHILD, '[HAND_BACK] reason: x')).toBe(false);
+
+    const unmanaged = hand();
+    unmanaged.managed.delete(CREATOR);
+    expect(unmanaged.notifier.noteHandBack(CHILD, '[HAND_BACK] reason: x')).toBe(false);
+
+    const userRound = hand();
+    userRound.driven.delete(CHILD);
+    expect(userRound.notifier.noteHandBack(CHILD, '[HAND_BACK] reason: x')).toBe(false);
+    expect(userRound.creatorQueue).not.toHaveBeenCalled();
+  });
+
+  it('忙 / 未装配 → 视为受理，压待办不丢，放出后只投一条', () => {
+    const busy = hand();
+    busy.setCanWake(false);
+    expect(busy.notifier.noteHandBack(CHILD, '[HAND_BACK] reason: 忙')).toBe(true);
+    expect(busy.creatorQueue).not.toHaveBeenCalled();
+    busy.setCanWake(true);
+    busy.notifier.flushPending(CREATOR);
+    expect(busy.creatorQueue).toHaveBeenCalledTimes(1);
+
+    const absent = hand();
+    absent.setCreatorAssembled(false);
+    expect(absent.notifier.noteHandBack(CHILD, '[HAND_BACK] reason: 未装配')).toBe(true);
+    absent.setCreatorAssembled(true);
+    absent.notifier.flushPending(CREATOR);
+    expect(absent.creatorQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('收场分流：命中交回接管本轮，未命中落定照发', () => {
+    const h = hand();
+    h.rounds.set('r9', round('r9', 'complete', []));
+    noteHandBackOrSettlement(h.notifier, CHILD, 'r9', '[HAND_BACK] reason: 超界', false, false);
+    expect(h.creatorQueue).toHaveBeenCalledTimes(1);
+    expect(h.creatorQueue.mock.calls[0][0] as string).toContain('[托管会话交回]');
+    noteHandBackOrSettlement(h.notifier, CHILD, 'r9', '普通回答', false, false);
+    expect(h.creatorQueue).toHaveBeenCalledTimes(2);
+    expect(h.creatorQueue.mock.calls[1][0] as string).toContain('[托管会话已落定]');
+  });
+
+  it('源码守卫：面板只经分流单点收场，不直连 noteSettledFlow', () => {
+    const src = readFileSync(
+      fileURLToPath(new URL('../panels/chatPanel.ts', import.meta.url)),
+      'utf-8',
+    );
+    expect(src.match(/noteHandBackOrSettlement\(/g)?.length).toBe(1);
+    expect(src).toContain('textByRound.get(latestRoundId)');
+    expect(src).not.toContain('this._hostedNotifier.noteSettledFlow(');
   });
 });
