@@ -12329,174 +12329,110 @@ describe('块类型标与折叠箭头（批次三）', () => {
     expect(row().querySelector('.round-block__tool-summary')).toBeNull();
   });
 
-  it('send_to_session 工具行挂派活会话卡：sid 锚点 + 快照刷名字/旋转 + 点击切会话', () => {
+  it('盖章会话卡：dispatchedSessions 驱动独立卡区，真名/旋转同源 + 点击切会话（DISPATCH-CARD-ZONE-1）', () => {
     const { postMessage } = mountChatView();
-    dispatch({ type: 'chunk', content: '已派活' });
-    dispatchEv({
-      type: 'tool_start',
-      seq: 2,
-      ts: 'T1',
-      payload: {
-        toolCallId: 'send-1',
-        name: 'send_to_session',
-        args: JSON.stringify({ sid: '2026-11-18-target', text: '帮我统计目录' }),
-        stepIndex: 1,
-      },
-    });
-    dispatchEv({
-      type: 'tool_result',
-      seq: 3,
-      ts: 'T2',
-      payload: {
-        toolCallId: 'send-1',
-        name: 'send_to_session',
-        ok: true,
-        summary: '{\n  "ok": true,\n  "accepted": true\n}',
-      },
-    });
-    const row = () => document.querySelector('.round-block__tool[data-tool-call-id="send-1"]')!;
-    const card = () => row().querySelector<HTMLElement>('.dispatch-session-card');
-    // 卡片在 summary 常显区（折叠后仍可见），sid 锚点来自工具入参
-    expect(card()).not.toBeNull();
-    expect(row().querySelector('summary')?.contains(card()!)).toBe(true);
-    expect(card()!.getAttribute('data-dispatch-session')).toBe('2026-11-18-target');
-    // 未收到快照前名字 = sid（不空着）
-    expect(card()!.querySelector('.dispatch-session-card__name')?.textContent).toBe(
-      '2026-11-18-target',
-    );
-    // 快照到达：标题换成展示名，running 集合含目标 ⇒ 亮旋转
+    const zone = () => document.getElementById('dispatchSessionCardZone') as HTMLElement;
+    const card = () => zone().querySelector<HTMLElement>('.dispatch-session-card');
+    // 未盖章前卡区隐藏（空态不上屏）
+    expect(zone().hidden).toBe(true);
+
+    // 派活受理快照到达：盖章列表（真名由宿主下发）⇒ 卡区立即出卡，不等工具行/重启
     dispatch({
       type: 'session_activity',
       runningIds: ['2026-11-18-target'],
       pendingIds: [],
       badgeCount: 0,
-      titleById: { '2026-11-18-target': '统计目录文件数' },
+      titleById: {},
+      dispatchedSessions: [{ sid: '2026-11-18-target', title: '统计目录文件数', via: 'delegate' }],
     });
+    expect(zone().hidden).toBe(false);
+    expect(card()).not.toBeNull();
+    expect(card()!.getAttribute('data-dispatch-session')).toBe('2026-11-18-target');
+    // 名字取宿主真源（不依赖 titleById 遍历面）
     expect(card()!.querySelector('.dispatch-session-card__name')?.textContent).toBe(
       '统计目录文件数',
     );
     expect(card()!.classList.contains('is-running')).toBe(true);
-    // 目标跑完 ⇒ 熄旋转
+    // 卡片是第三形态：不在工具行、不在 .round-block 内
+    expect(card()!.closest('.round-block')).toBeNull();
+
+    // 目标跑完 ⇒ 卡仍在，只熄旋转（跑完卡还在）
     dispatch({
       type: 'session_activity',
       runningIds: [],
       pendingIds: [],
       badgeCount: 0,
-      titleById: { '2026-11-18-target': '统计目录文件数' },
+      titleById: {},
+      dispatchedSessions: [{ sid: '2026-11-18-target', title: '统计目录文件数', via: 'delegate' }],
     });
+    expect(card()).not.toBeNull();
     expect(card()!.classList.contains('is-running')).toBe(false);
-    // 点击卡片 → switch_session，且不误记折叠意图（卡片嵌在 summary 内，点它不算用户接管开合）
+
+    // 点击卡片 → switch_session
     postMessage.mockClear();
     card()!.click();
     expect(postMessage).toHaveBeenCalledWith({
       type: 'switch_session',
       sessionId: '2026-11-18-target',
     });
-    expect((row() as HTMLElement).dataset.userToggled).toBeUndefined();
   });
 
-  it('create_session 工具行也挂派活会话卡：sid 从结果摘要解析（args 无 sid）· DISPATCH-CREATE-CARD-1', () => {
+  it('create 会话同样盖章出卡（via=create），不等工具结果/replay · DISPATCH-CREATE-CARD-1', () => {
     const { postMessage } = mountChatView();
-    dispatch({ type: 'chunk', content: '已开会话' });
-    dispatchEv({
-      type: 'tool_start',
-      seq: 2,
-      ts: 'T1',
-      payload: {
-        toolCallId: 'create-1',
-        name: 'create_session',
-        // 建会话的入参只有 title/text/paths——sid 由宿主生成，不在 args 里
-        args: JSON.stringify({ title: '补 README', text: '加一条 Node 22 要求', paths: ['.'] }),
-        stepIndex: 1,
-      },
+    const zone = () => document.getElementById('dispatchSessionCardZone') as HTMLElement;
+    // 新建会话被盖章：dispatchedSessions 一到就出卡，真名由宿主下发，via 标 create
+    dispatch({
+      type: 'session_activity',
+      runningIds: [],
+      pendingIds: [],
+      badgeCount: 0,
+      titleById: {},
+      dispatchedSessions: [{ sid: '2026-11-19-readme-node22', title: '补 README', via: 'create' }],
     });
-    // 增量期 result 未到 ⇒ 卡不出（sid 还不可知）
-    const row = () => document.querySelector('.round-block__tool[data-tool-call-id="create-1"]')!;
-    expect(row().querySelector('.dispatch-session-card')).toBeNull();
-    dispatchEv({
-      type: 'tool_result',
-      seq: 3,
-      ts: 'T2',
-      payload: {
-        toolCallId: 'create-1',
-        name: 'create_session',
-        ok: true,
-        // 真源 serializeCreateSessionResult 的形态；内核会截到 100 字符但 sid 在前部
-        summary:
-          '{\n  "ok": true,\n  "sid": "2026-11-19-readme-node22",\n  "title": "补 README"\n}',
-      },
-    });
-    // 收场 → finalize 全量重建工具行（真机「任务完成报告结论」必经此路）
-    dispatch({ type: 'done' });
-    const card = () => row().querySelector<HTMLElement>('.dispatch-session-card');
-    // 收场全量重建后卡挂出：sid 锚点来自结果摘要，而非 args
-    expect(card()).not.toBeNull();
-    expect(card()!.getAttribute('data-dispatch-session')).toBe('2026-11-19-readme-node22');
-    expect(card()!.querySelector('.dispatch-session-card__name')?.textContent).toBe(
-      '2026-11-19-readme-node22',
-    );
-    // 点击出口与 send_to_session 同款 → switch_session 切到新建会话
+    const card = zone().querySelector<HTMLElement>('.dispatch-session-card');
+    expect(card).not.toBeNull();
+    expect(card!.getAttribute('data-dispatch-session')).toBe('2026-11-19-readme-node22');
+    expect(card!.querySelector('.dispatch-session-card__name')?.textContent).toBe('补 README');
+    expect(card!.dataset.via).toBe('create');
+    // 点击出口与 delegate 同款 → switch_session 切到新建会话
     postMessage.mockClear();
-    card()!.click();
+    card!.click();
     expect(postMessage).toHaveBeenCalledWith({
       type: 'switch_session',
       sessionId: '2026-11-19-readme-node22',
     });
   });
 
-  it('create_session 失败结果不出派活卡（无 sid 不编卡）', () => {
+  it('失败的会话不进盖章列表 ⇒ 卡区不出卡（无盖章不编卡）', () => {
     mountChatView();
-    dispatch({ type: 'chunk', content: '开会话失败' });
-    dispatchEv({
-      type: 'tool_start',
-      seq: 2,
-      ts: 'T1',
-      payload: {
-        toolCallId: 'create-fail',
-        name: 'create_session',
-        args: JSON.stringify({ title: '补 README', text: 'x', paths: ['.'] }),
-        stepIndex: 1,
-      },
+    dispatch({
+      type: 'session_activity',
+      runningIds: [],
+      pendingIds: [],
+      badgeCount: 0,
+      titleById: {},
+      dispatchedSessions: [], // 受理失败 → 宿主不登记账本、无 dispatchedBy ⇒ 列表为空
     });
-    dispatchEv({
-      type: 'tool_result',
-      seq: 3,
-      ts: 'T2',
-      payload: {
-        toolCallId: 'create-fail',
-        name: 'create_session',
-        ok: false,
-        summary: '{\n  "ok": false,\n  "code": "E_ROLE_PACK",\n  "message": "角色包不可用"\n}',
-      },
-    });
-    const row = document.querySelector('.round-block__tool[data-tool-call-id="create-fail"]')!;
-    expect(row.querySelector('.dispatch-session-card')).toBeNull();
+    const zone = document.getElementById('dispatchSessionCardZone') as HTMLElement;
+    expect(zone.querySelector('.dispatch-session-card')).toBeNull();
+    expect(zone.hidden).toBe(true);
   });
 
-  it('助手形态派活卡挂在轮级可见容器，不被收起的 .round-block 连坐', () => {
+  it('助手形态卡区同样是 #messages 同级独立插槽，不被收起的 .round-block 连坐', () => {
     mountChatView('assistant');
-    dispatch({ type: 'chunk', content: '已派活' });
-    dispatchEv({
-      type: 'tool_start',
-      seq: 2,
-      ts: 'T1',
-      payload: {
-        toolCallId: 'send-2',
-        name: 'send_to_session',
-        args: JSON.stringify({ sid: '2026-11-18-visible' }),
-        stepIndex: 1,
-      },
+    dispatch({
+      type: 'session_activity',
+      runningIds: [],
+      pendingIds: [],
+      badgeCount: 0,
+      titleById: {},
+      dispatchedSessions: [{ sid: '2026-11-18-visible', title: '可见会话', via: 'delegate' }],
     });
-    const row = document.querySelector('.round-block__tool[data-tool-call-id="send-2"]')!;
     const card = document.querySelector<HTMLElement>('.dispatch-session-card')!;
-    const parent = card.parentElement;
-
     expect(card).not.toBeNull();
-    // 真判据：卡片脱离被 CSS 收起的 .round-block（否则助手窗整块不可见）。
-    // 工具行渲染早于轮容器建立是常见时序 ⇒ 可见终位为消息流或轮容器底栏前，二者皆可。
-    expect(row.querySelector('.dispatch-session-card')).toBeNull();
     expect(card.closest('.round-block')).toBeNull();
-    expect(parent?.id === 'messages' || parent?.classList.contains('round-group')).toBe(true);
+    // 第三形态：卡片在独立卡区，不在消息流、也不在工具行内
+    expect(card.parentElement?.id).toBe('dispatchSessionCardZone');
   });
 
   it('assistant 页收到 workbench_snapshot → 内嵌抽屉渲染并就地展开；点会话复用 switch_session', () => {
