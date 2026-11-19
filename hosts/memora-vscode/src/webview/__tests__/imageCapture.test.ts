@@ -154,6 +154,17 @@ describe('pickImageFiles', () => {
     expect(pickImageFiles(transferOf({ items: [], files: [txt] }))).toEqual([]);
   });
 
+  // HOSTED-IMAGE-DROP-SILENT-1：Windows 资源管理器拖入常给空 type（或通用二进制），
+  // 旧实现按 `image/` 前缀过滤会把真图整批滤掉 ⇒ 高亮承诺了却静默不收。
+  it('声明 type 为空 / application/octet-stream 的图片文件放行（真裁决交给 magic bytes 嗅探）', () => {
+    const noType = new File([pngBytes(2, 2)], 'a.png');
+    const octet = new File([pngBytes(2, 2)], 'b.png', { type: 'application/octet-stream' });
+    expect(pickImageFiles(transferOf({ items: [], files: [noType, octet] }))).toEqual([
+      noType,
+      octet,
+    ]);
+  });
+
   it('null transfer => 空数组（粘贴事件可能没有 clipboardData）', () => {
     expect(pickImageFiles(null)).toEqual([]);
   });
@@ -435,6 +446,54 @@ describe('createImageCapture — 拖入', () => {
     expect(handle.accepted[0]!.source).toBe('drop-file');
     // 拖入的文件是真实文件系统条目，名字是**用户认得的那个** ⇒ 不得被 sha 派生名顶掉
     expect(handle.accepted[0]!.name).toBe('截图 2026-10-28.png');
+  });
+
+  // HOSTED-IMAGE-DROP-SILENT-1 真机主路径：Windows 拖入的 File.type 为空，
+  // 放行后由共享校验链的 magic bytes 认出 PNG ⇒ 正常建 chip（不再静默落空）。
+  it('拖入空声明的 PNG => 走字节校验建 chip（Windows 资源管理器主路径）', async () => {
+    handle = createImageCapture({
+      doc: document,
+      ...dom,
+      readBytes: async () => pngBytes(4, 4),
+      sha256: async () => SHA,
+    });
+    const file = new File([pngBytes(4, 4)], '无类型.png');
+    expect(file.type).toBe('');
+    dom.dropZone.dispatchEvent(
+      eventWithData('drop', 'dataTransfer', transferOf({ items: [], files: [file] })),
+    );
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+
+    expect(handle.accepted.length).toBe(1);
+    expect(handle.accepted[0]!.source).toBe('drop-file');
+    expect(handle.accepted[0]!.mime).toBe('image/png');
+  });
+
+  it('拖入非图片文件 => 高亮不亮、松手给可见提示（不再静默）', () => {
+    const notices: string[] = [];
+    handle = createImageCapture({
+      doc: document,
+      ...dom,
+      readBytes: async () => new Uint8Array(),
+      sha256: async () => SHA,
+      notice: (t) => notices.push(t),
+    });
+    const txt = new File(['hello'], 'a.txt', { type: 'text/plain' });
+    // Chromium 的 dragover 能从 items 读到声明的 kind/type ⇒ 非图直接不承诺高亮
+    const transfer = transferOf({
+      items: [{ kind: 'file', type: 'text/plain', getAsFile: () => txt }],
+      files: [txt],
+    });
+    const over = eventWithData('dragover', 'dataTransfer', transfer);
+    dom.dropZone.dispatchEvent(over);
+    // 收不收与亮不亮同源：非图片不给「+复制」承诺
+    expect(over.defaultPrevented).toBe(false);
+    expect(dom.dropZone.classList.contains('is-image-drag')).toBe(false);
+    const drop = eventWithData('drop', 'dataTransfer', transfer);
+    dom.dropZone.dispatchEvent(drop);
+    expect(drop.defaultPrevented).toBe(true);
+    expect(notices).toEqual(['Only local image files can be dropped here']);
+    expect(chips().length).toBe(0);
   });
 
   it('dragover 只在带 Files / uri-list 时抢占（拖别的不许 preventDefault）', () => {

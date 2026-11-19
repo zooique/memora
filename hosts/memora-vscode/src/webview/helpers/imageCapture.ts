@@ -267,7 +267,25 @@ async function defaultReadBytes(file: File): Promise<Uint8Array> {
   });
 }
 
-/** 从 `DataTransfer` 里挑出图片文件（`kind === 'file'` 且声明类型是图片） */
+/**
+ * 声明 MIME 是否「可能是一张图」——**拖拽高亮与接收共用的唯一判据**（HOSTED-IMAGE-DROP-SILENT-1）
+ *
+ * 为什么不能只判 `startsWith('image/')`：Windows 从资源管理器拖入时 `File.type` 常为空串
+ * （或通用 `application/octet-stream`），按前缀过滤会把真实图片整批滤掉——落点已高亮承诺
+ * 「能放」，松手却什么都没发生（真机三次复现的静默失败）。
+ *
+ * 为什么空声明可以直接放行：声明 MIME 是**外部可伪造/可缺失**的输入，
+ * `shared/imageValidation.validateImageCandidate` 的 magic bytes 嗅探才是唯一裁决（第 3 步）。
+ * 这里只做粗筛；放行后若嗅探不认，采集层会给**可见**的拒收 chip，绝不静默丢。
+ */
+function isImageCandidateMime(declaredMime: string | undefined): boolean {
+  const mime = (declaredMime ?? '').toLowerCase();
+  // 空 / 通用二进制 = 平台没给出真实类型（Windows 资源管理器拖入的常见形态）⇒ 交下游嗅探
+  if (mime === '' || mime === 'application/octet-stream') return true;
+  return mime.startsWith('image/');
+}
+
+/** 从 `DataTransfer` 里挑出「可能是图片」的文件（`kind === 'file'` 且过 MIME 粗筛） */
 export function pickImageFiles(transfer: DataTransfer | null): File[] {
   if (!transfer) return [];
   const out: File[] = [];
@@ -277,16 +295,40 @@ export function pickImageFiles(transfer: DataTransfer | null): File[] {
       const item = items[i];
       if (!item || item.kind !== 'file') continue;
       const file = item.getAsFile();
-      if (file && file.type.startsWith('image/')) out.push(file);
+      if (file && isImageCandidateMime(file.type)) out.push(file);
     }
     if (out.length > 0) return out;
   }
   // 某些平台 `items` 为空但 `files` 有值（边界文档 B3 的同族现象）⇒ 两条都看
   for (let i = 0; i < transfer.files.length; i++) {
     const file = transfer.files[i];
-    if (file && file.type.startsWith('image/')) out.push(file);
+    if (file && isImageCandidateMime(file.type)) out.push(file);
   }
   return out;
+}
+
+/**
+ * `dragover` 期能否承诺「这里可以松手」——与 {@link pickImageFiles} **同一判据**
+ *
+ * 高亮 = 承诺；承诺的宽度必须等于接收的宽度（两套条件 = 界面撒谎）。
+ * `dragover` 期拿不到文件字节，只能看 `items` 的 kind/type；平台不给 items 明细时
+ * 退回类型面兜底（此时收不了也在 drop 处给可见提示，不静默）。
+ */
+function dragMayCarryImage(transfer: DataTransfer | null): boolean {
+  if (!transfer) return false;
+  const types = Array.from(transfer.types);
+  const items = transfer.items;
+  if (items && items.length > 0) {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item?.kind === 'file' && isImageCandidateMime(item.type)) return true;
+    }
+    // 资源管理器拖入：只有 uri-list（webview 读不到工作区字节，交宿主摄取）
+    return types.includes('text/uri-list');
+  }
+  // items 明细缺失：`Files` 下面可能是图也可能不是——无法在 dragover 期分辨，
+  // 按「可能」承诺；drop 侧对非图文件给可见提示，避免第二次静默。
+  return types.includes('Files') || types.includes('text/uri-list');
 }
 
 /**
@@ -810,10 +852,9 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
   }
 
   function onDragOver(e: DragEvent): void {
-    const transfer = e.dataTransfer;
-    const hasFiles = transfer ? Array.from(transfer.types).includes('Files') : false;
-    const hasUri = transfer ? Array.from(transfer.types).includes('text/uri-list') : false;
-    if (!hasFiles && !hasUri) return; // 拖的是别的东西：不抢
+    // 高亮（承诺能放）= 接收判据，同一函数裁决（HOSTED-IMAGE-DROP-SILENT-1）：
+    // 旧实现按 `types 含 Files / uri-list` 高亮，比接收条件宽 ⇒ 界面承诺了放不进来的拖拽
+    if (!dragMayCarryImage(e.dataTransfer)) return;
     e.preventDefault();
     e.dataTransfer!.dropEffect = 'copy';
     dropZone?.classList.add('is-image-drag');
@@ -837,7 +878,15 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     // 把 `file:` URI 报宿主摄取（webview 读不到工作区文件字节）；非 `file:` 方案（浏览器拖图等）
     // 本端就拒——拦下事件是防 webview 被拖拽导航，提示是不静默丢用户动作
     const uris = parseUriList(transfer.getData('text/uri-list'));
-    if (uris.length === 0) return;
+    if (uris.length === 0) {
+      // 有文件进来、却没有一张过了粗筛（如 .txt / .pdf）：不能沿用旧实现的静默 return——
+      // 用户已松手，必须知道「为什么什么都没发生」（与下方非本地 URI 同一提示，键面单一）
+      if (Array.from(transfer.types).includes('Files')) {
+        e.preventDefault();
+        notice(l10n.t('Only local image files can be dropped here'));
+      }
+      return;
+    }
     e.preventDefault();
     const fileUris = uris.filter((u) => u.startsWith('file:'));
     if (fileUris.length === 0) {
