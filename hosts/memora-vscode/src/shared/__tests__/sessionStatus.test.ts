@@ -12,6 +12,8 @@ import type { ProcessEvent, Round, RoundStatus } from '@zooique/memora';
 import {
   isAgentDrivenFailClosed,
   isSessionAgentDriven,
+  isUserTakingOver,
+  isUserTakingOverFailClosed,
   projectCreatedBy,
   projectSessionStatus,
   resolveListCoverage,
@@ -476,5 +478,64 @@ describe('isAgentDrivenFailClosed — 三态折布尔的门禁适配', () => {
   it('确定驱动折 true、明确非驱动折 false——不过度拒绝也不放宽', () => {
     expect(isAgentDrivenFailClosed(ports({ readMeta: () => hostedMeta }), 's1')).toBe(true);
     expect(isAgentDrivenFailClosed(ports({ readMeta: () => undefined }), 's1')).toBe(false);
+  });
+});
+
+/**
+ * 带 origin 的轮替身（isUserTakingOver 只看最近轮 origin + 收场态，与会话出生无关）
+ */
+function roundWithOrigin(status: RoundStatus, origin: 'user' | 'hosted' | undefined): Round {
+  return { ...round(status), origin } as Round;
+}
+
+describe('isUserTakingOver — 派活目标的接管门禁（DISPATCH-TAKEOVER-GUARD-1）', () => {
+  it('用户手发轮未收场（pending）⇒ 接管中 true，拒绝派活', () => {
+    const p = ports({
+      readRoundIds: () => ['r1'],
+      readRound: () => roundWithOrigin('pending', 'user'),
+      readRoundStatus: () => 'pending',
+    });
+    expect(isUserTakingOver(p, 's1')).toBe(true);
+    expect(isUserTakingOverFailClosed(p, 's1')).toBe(true);
+  });
+
+  it('最近轮是 hosted 派发轮（即便未收场）⇒ 无用户接管 false，放行', () => {
+    const p = ports({
+      readRoundIds: () => ['r1'],
+      readRound: () => roundWithOrigin('pending', 'hosted'),
+      readRoundStatus: () => 'pending',
+    });
+    expect(isUserTakingOver(p, 's1')).toBe(false);
+    expect(isUserTakingOverFailClosed(p, 's1')).toBe(false);
+  });
+
+  it('用户手发轮已收场（complete）⇒ 放行——自建会话的历史用户轮不误伤', () => {
+    const p = ports({
+      readRoundIds: () => ['r1'],
+      readRound: () => roundWithOrigin('complete', 'user'),
+      readRoundStatus: () => 'complete',
+    });
+    expect(isUserTakingOver(p, 's1')).toBe(false);
+  });
+
+  it('一轮都没有（空会话）⇒ 无接管，放行——新建/空会话派活不受影响', () => {
+    expect(isUserTakingOver(ports(), 's1')).toBe(false);
+    expect(isUserTakingOverFailClosed(ports(), 's1')).toBe(false);
+  });
+
+  it('轮 id 在但整轮读不到 ⇒ undefined，门禁折真拒绝（fail-closed，不误当可派）', () => {
+    const p = ports({ readRoundIds: () => ['r1'], readRound: () => undefined });
+    expect(isUserTakingOver(p, 's1')).toBeUndefined();
+    expect(isUserTakingOverFailClosed(p, 's1')).toBe(true);
+  });
+
+  it('状态读不到（轮在、索引与轮状态皆缺）⇒ undefined，门禁折真拒绝', () => {
+    const p = ports({
+      readRoundIds: () => ['r1'],
+      readRound: () => ({ ...round('pending'), origin: 'user', status: undefined }) as never,
+      readRoundStatus: () => undefined,
+    });
+    expect(isUserTakingOver(p, 's1')).toBeUndefined();
+    expect(isUserTakingOverFailClosed(p, 's1')).toBe(true);
   });
 });

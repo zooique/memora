@@ -79,6 +79,7 @@
   "Memora: images go with a new message": "Memora：图片只能随新消息发送",
   "Memora: only managed sessions can call send_to_session.": "Memora：当前会话不能向其他会话派发输入。",
   "Memora: the target session is running; the input was not sent.": "Memora：目标会话正在运行，本条输入未发送。",
+  "Memora: the target session is being handled by you right now; the input was not sent. Finish or stop your turn first.": "Memora：目标会话此刻正由你在操作，本条输入未发送。请先结束或停止你那一轮。",
   "Memora: another window is using the target session; the input was not sent. Send it later, or switch to another session.": "Memora：另一个窗口正在使用目标会话，本条输入未发送。请稍后重试，或换一条会话。",
   "Memora: only managed sessions can create sessions.": "Memora：只有助手代理可以开新会话。",
   "Memora: role pack not found or unavailable: {0}": "Memora：角色包不存在或不可用：{0}",

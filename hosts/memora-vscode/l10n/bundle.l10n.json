@@ -80,6 +80,7 @@
   "Memora: images go with a new message": "",
   "Memora: only managed sessions can call send_to_session.": "",
   "Memora: the target session is running; the input was not sent.": "",
+  "Memora: the target session is being handled by you right now; the input was not sent. Finish or stop your turn first.": "",
   "Memora: another window is using the target session; the input was not sent. Send it later, or switch to another session.": "",
   "Memora: only managed sessions can create sessions.": "",
   "Memora: role pack not found or unavailable: {0}": "",

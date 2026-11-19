@@ -33,6 +33,14 @@ export interface HostedDispatchDeps {
   isManaged: (sessionId: string) => boolean;
   /** 该会话当前是否在跑流（peek 语义：读操作不建记录） */
   isStreaming: (sessionId: string) => boolean;
+  /**
+   * 目标会话是否处于「用户亲手发轮且未收场」的接管态（DISPATCH-TAKEOVER-GUARD-1）
+   *
+   * 与 isAgentDriven 不同：派发目标可以是用户自建会话，门禁须看「用户此刻是否在亲自操作」
+   * 而非「会话是否代理出生」。暂停 / ask 等待期 streaming=false，E_BUSY 挡不住，须靠本判据
+   * 拒绝——否则 agent.chat 会自动 resume 用户暂停的轮（fail-open）。
+   */
+  isTargetTakenOver: (sessionId: string) => boolean;
   /** 面板当前显示源（判断「用户是否正在看目标会话」，决定收尾还不还锁） */
   currentSessionId: () => string;
   /** 取（或确认已持有）目标会话的跨进程写锁；false = 另一个窗口正持有 */
@@ -93,6 +101,22 @@ export async function dispatchHostedInputWith(
       ok: false,
       code: 'E_DENIED',
       message: l10n.t('Memora: only managed sessions can call send_to_session.'),
+    };
+  }
+  // ①.5 目标接管门禁（DISPATCH-TAKEOVER-GUARD-1）：用户正在这条会话里亲手发轮且未收场（含
+  //     软暂停 / ask 等待——两态 streaming=false，E_BUSY 挡不住），代理不许往里插输入。
+  //     不接 isAgentDriven：派发目标可以是用户自建会话，那样会误伤设计内的正常派发。
+  if (deps.isTargetTakenOver(targetSessionId)) {
+    logger.warn(
+      { from: callingSessionId, to: targetSessionId, code: 'E_DENIED' },
+      '派发被拒：目标会话用户接管中',
+    );
+    return {
+      ok: false,
+      code: 'E_DENIED',
+      message: l10n.t(
+        'Memora: the target session is being handled by you right now; the input was not sent. Finish or stop your turn first.',
+      ),
     };
   }
   // 前置判忙的同一份信封（两处判据必须同文案，抽一份防漂移）

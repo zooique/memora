@@ -129,6 +129,56 @@ export function isAgentDrivenFailClosed(ports: SessionStatusReadPorts, sessionId
 }
 
 /**
+ * 「用户是否正在这条会话里亲手操作且未做完」——派活（`send_to_session`）的目标接管门禁
+ *
+ * 为什么与 `isSessionAgentDriven` 分开：派发目标**可以是用户自建会话**（`send_to_session`
+ * 的 sid 来自 `list_work_sessions`，该清单含自建会话；孤儿轮注释亦明载「派给用户自建会话」
+ * 是设计内场景）。若派活门禁照搬 `isAgentDriven`（非 hosted 出生即 false），会误伤这一整类
+ * 正常派发。故本判据**只看最近一轮**，与会话出生无关：
+ *   - 最近轮 `origin !== 'hosted'` 且未收场 ⇒ 用户接管中，代理不许往里插输入；
+ *   - 最近轮是 hosted 派发轮 / 已收场 / 根本没有轮 ⇒ 无用户接管，可派；
+ *   - 轮 id 在但整轮读不到 / 状态读不到 ⇒ 盘读异常（`undefined`），门禁 fail-closed 拒绝。
+ *
+ * 事实来源与 `isWorkerIdentitySuspended` 相同（最近轮 `Round.origin` + 收场态），但后者是
+ * 工作台展示投影、读不到当「未触发」；本判据供**门禁**用，读不到必须拒绝，方向相反，
+ * 故独立成函数而非复用——复用会把 fail-closed 悄悄改成 fail-open。
+ *
+ * @returns true=用户接管中（拒派）/ false=可派 / undefined=盘读异常（门禁须拒绝）
+ */
+export function isUserTakingOver(
+  ports: SessionStatusReadPorts,
+  sessionId: string,
+): boolean | undefined {
+  const lastRoundId = ports.readRoundIds(sessionId).at(-1);
+  // 一轮都没有：用户还没在这条会话里发过任何东西 ⇒ 无接管
+  if (!lastRoundId) return false;
+  const round = ports.readRound(lastRoundId);
+  // 轮 id 在但整轮读不到 = 盘读异常 ⇒ 不确定，门禁须拒绝
+  if (!round) return undefined;
+  // 最近轮是代理派发的（含 create 首轮 / dispatch / 汇报种子）⇒ 无用户接管
+  if (round.origin === 'hosted') return false;
+  const status = ports.readRoundStatus(lastRoundId) ?? round.status;
+  // 状态读不到 = 盘读异常 ⇒ 不确定，门禁须拒绝
+  if (status === undefined) return undefined;
+  // 用户手发的轮未收场 = 用户接管中；已收场 = 放行
+  return !isRoundSettled(status);
+}
+
+/**
+ * 用户接管判据的 fail-closed 布尔适配（派活门禁专用）
+ *
+ * 三态里 `undefined`（盘读异常）与 `true`（用户接管中）都折成 true = **拒绝派活**；
+ * 只有明确 `false` 才放行。与 `isAgentDrivenFailClosed` 同为门禁适配，方向不同是因语义不同：
+ * 前者判「代理在不在驱动」（true 才许操作），本函数判「用户在不在接管」（true 就不许派）。
+ */
+export function isUserTakingOverFailClosed(
+  ports: SessionStatusReadPorts,
+  sessionId: string,
+): boolean {
+  return isUserTakingOver(ports, sessionId) !== false;
+}
+
+/**
  * 单会话状态投影（优先级：等你 > 在跑 > 终态）
  *
  * 为什么「等你」优先：会话在等用户拍板时才是可行动的；此时即使运行态表还残留

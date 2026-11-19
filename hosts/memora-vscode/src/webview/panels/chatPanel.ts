@@ -225,7 +225,7 @@ import { requireAgent } from '../helpers/requireAgent.js';
 // 托管子会话中断通知器（第三切片）：只投系统事件队列，不写历史、不落盘
 import { HostedSessionNotifier, noteHandBackOrSettlement } from '../helpers/hostedSessionNotice.js';
 // 驱动权读盘判据（取代内存 agentDriven 集合，见 HOSTED-ROUND-ORIGIN-1）
-import { makeAgentDrivenCheck } from '../helpers/sessionDrivePorts.js';
+import { makeAgentDrivenCheck, makeUserTakingOverCheck } from '../helpers/sessionDrivePorts.js';
 import {
   noteBlockedOnAsk,
   noteFlowSettled,
@@ -352,16 +352,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _pendingPrefill?: string;
   /** 右键「添加到对话」引用缓冲：对话视图未就绪时暂存，ready 后补发（与 _pendingPrefill 同构） */
   private _pendingRefs?: ChatRef[];
-  /** 驱动权读盘判据（外置）：延迟闭包避开字段初始化顺序，盘异常折 false */
-  private readonly _agentDrivenCheck = makeAgentDrivenCheck({
+  /** 驱动权 / 用户接管读盘判据共用的延迟读口（避开字段初始化顺序，两判据同源不分叉） */
+  private readonly _sessionDriveSources = {
     peekActivity: () => (id: string) => ({
       running: this.workbench.isStreaming(id),
       waiting: this.workbench.isWaiting(id),
     }),
-    readMeta: () => (id) => this.sessionStore.getSessionMeta(id),
-    readRoundIds: () => (id) => this.sessionStore.getRoundIds(id),
-    readRound: () => (id) => this._eventLogRoundStore?.getById(id) ?? undefined,
-  });
+    readMeta: () => (id: string) => this.sessionStore.getSessionMeta(id),
+    readRoundIds: () => (id: string) => this.sessionStore.getRoundIds(id),
+    readRound: () => (id: string) => this._eventLogRoundStore?.getById(id) ?? undefined,
+  };
+  /** 驱动权读盘判据（外置）：盘异常折 false */
+  private readonly _agentDrivenCheck = makeAgentDrivenCheck(this._sessionDriveSources);
+  /** 用户接管读盘判据（外置）：派活门禁用，盘异常折「接管中」拒派 */
+  private readonly _userTakingOverCheck = makeUserTakingOverCheck(this._sessionDriveSources);
   /**
    * @ 提及 QuickPick 的并发守卫随域外置（见 `chatRefOps.ts` 的 `mentionQuickPickOpen`），
    * 面板不再持有该状态。
@@ -2841,6 +2845,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       {
         isManaged: (sessionId) => this.sessionModes.isManaged(sessionId),
         isStreaming: (sessionId) => this._runtime.peek(sessionId)?.streaming === true,
+        isTargetTakenOver: (sessionId) => this._userTakingOverCheck(sessionId),
         currentSessionId: () => this._currentSessionId,
         acquireLock: (sessionId) => this._lockFinalizer.acquire(sessionId),
         holdsLock: (sessionId) => this._lockFinalizer.holds(sessionId),

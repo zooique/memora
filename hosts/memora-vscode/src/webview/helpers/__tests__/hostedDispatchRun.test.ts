@@ -35,6 +35,7 @@ function makeDeps(overrides: Partial<HostedDispatchDeps> = {}): {
   const deps: HostedDispatchDeps = {
     isManaged: () => true,
     isStreaming: () => false,
+    isTargetTakenOver: () => false,
     currentSessionId: () => 'other-session',
     // acquire=true + holds=false ⇒ acquireDispatchWriteLease 拿到租约，refusal 为空
     acquireLock: async () => true,
@@ -106,5 +107,62 @@ describe('dispatchHostedInputWith · 代发输入即时上屏', () => {
     expect(result.ok).toBe(false);
     expect(echoes).toHaveLength(0);
     expect(starts).toHaveLength(0);
+  });
+});
+
+/**
+ * DISPATCH-TAKEOVER-GUARD-1：用户接管态派活门禁
+ *
+ * 真机推演反例：用户在工作会话手发一轮后软暂停（streaming=false），助手 send_to_session
+ * 会绕过 E_BUSY，命中 agent.chat 的 autoResumeIfPaused 续跑用户暂停的轮（fail-open）。
+ * 门禁须在接管态拒派，且不影响自建会话 / 已收场会话的正常派发。
+ */
+describe('dispatchHostedInputWith · 用户接管态派活门禁', () => {
+  it('目标用户接管中 ⇒ E_DENIED，不上屏、不起流、不拿锁、不登记驱动', async () => {
+    const acquired: string[] = [];
+    const marked: string[] = [];
+    const { deps, echoes, starts } = makeDeps({
+      isTargetTakenOver: (sid) => sid === 'target-session',
+      acquireLock: async (sid) => {
+        acquired.push(sid);
+        return true;
+      },
+      markAgentDriven: (sid) => marked.push(sid),
+    });
+
+    const result = await dispatchHostedInputWith(
+      deps,
+      'assistant',
+      'target-session',
+      '任务',
+      'Memora',
+    );
+
+    expect(result).toMatchObject({ ok: false, code: 'E_DENIED' });
+    expect(echoes).toHaveLength(0);
+    expect(starts).toHaveLength(0);
+    expect(acquired).toHaveLength(0);
+    expect(marked).toHaveLength(0);
+  });
+
+  it('目标非接管（自建会话 / 已收场）⇒ 正常受理，门禁不误伤设计内派发', async () => {
+    const { deps, echoes, starts } = makeDeps({
+      isTargetTakenOver: () => false,
+    });
+
+    const result = await dispatchHostedInputWith(deps, 'assistant', 'self-built', '任务', 'Memora');
+
+    expect(result.ok).toBe(true);
+    expect(echoes).toHaveLength(1);
+    expect(starts).toHaveLength(1);
+  });
+
+  it('接管判据优先于判忙：接管中的目标即使 streaming=false 也拒（E_DENIED 非 E_BUSY）', async () => {
+    const { deps } = makeDeps({
+      isTargetTakenOver: () => true,
+      isStreaming: () => false,
+    });
+    const result = await dispatchHostedInputWith(deps, 'assistant', 'target', '任务', 'Memora');
+    expect(result).toMatchObject({ ok: false, code: 'E_DENIED' });
   });
 });

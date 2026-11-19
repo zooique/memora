@@ -12,6 +12,7 @@
  */
 import {
   isAgentDrivenFailClosed,
+  isUserTakingOverFailClosed,
   type SessionStatusReadPorts,
 } from '../../shared/sessionStatus.js';
 import type { Round, SessionMeta } from '@zooique/memora';
@@ -35,6 +36,29 @@ export function makeAgentDrivenCheck(
 ): (sessionId: string) => boolean {
   return (sessionId) =>
     isAgentDrivenFailClosed(
+      {
+        peekActivity: sources.peekActivity(),
+        readMeta: sources.readMeta(),
+        readRoundIds: sources.readRoundIds(),
+        readRound: sources.readRound(),
+        readRoundStatus: () => undefined,
+      },
+      sessionId,
+    );
+}
+
+/**
+ * 造一个「用户是否正在这条会话里接管」的读盘判据闭包（派活门禁专用）
+ *
+ * 与 `makeAgentDrivenCheck` 共用 `SessionDrivePortSources`（同一批延迟闭包），只是判据函数换
+ * 成 `isUserTakingOverFailClosed`——派活目标可以是自建会话，门禁看「用户在不在手发轮未收场」
+ * 而非「代理在不在驱动」。readRoundStatus 同样走整轮兜底（面板无独立状态索引）。
+ */
+export function makeUserTakingOverCheck(
+  sources: SessionDrivePortSources,
+): (sessionId: string) => boolean {
+  return (sessionId) =>
+    isUserTakingOverFailClosed(
       {
         peekActivity: sources.peekActivity(),
         readMeta: sources.readMeta(),
