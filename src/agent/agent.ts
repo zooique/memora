@@ -42,6 +42,7 @@ import {
   assembleComponents,
   buildSystemPromptPrefix,
   buildEnvironmentContextBlock,
+  buildWorkOrderContextBlock,
 } from '@/agent/assembler.js';
 import { estimateTokensMessages } from '@/agent/contextManager.js';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
@@ -1659,6 +1660,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const environmentContext = buildEnvironmentContextBlock(
       this.#config.environmentProvider?.getEnvironment() ?? null,
     );
+    // 本会话职责边界段（托管派活 mandate）：同步读当前会话 SessionMeta（内存 Map，零 IO）。
+    // 真机 T5：App 只把边界落 workOrder、Worker 首轮只拿 text ⇒ Worker 不知道边界存在而越界改文件；
+    // 这里只投影边界内容，不注入 [HAND_BACK] 协议（交回协议仍只在 Router 工具描述里）。
+    const workOrderContext = buildWorkOrderContextBlock(this.readCurrentWorkOrder());
     const newPrefix = buildSystemPromptPrefix(
       rolePackPrompt,
       globalSkillList,
@@ -1666,6 +1671,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       workProjectionContext,
       environmentContext,
       residentRulesContext,
+      workOrderContext,
     );
     this.loop.refreshRolePackPrefix(newPrefix);
     // 角色包底盘占用随切换实时更新（不依赖跑 prepare）：装配此刻即确定的真值
@@ -1673,6 +1679,21 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 同步注入角色包策略的 ChatOptions 覆盖项（temperature / outputLimit）
     // 键恒为 activePack：buildChatOptionsFromStrategy 读激活包策略，不随本轮装配视角变
     this.loop.setChatOptions(this.buildChatOptionsFromStrategy());
+  }
+
+  /**
+   * 取当前会话的职责边界（`SessionMeta.workOrder`，托管派活 mandate）
+   *
+   * 同步内存读：SessionStore 的 meta 是启动期加载的 Map，零 IO，可放进同步刷新链。
+   * 未注入 sessionStore / 会话管理器未就绪 / 非托管会话（无 workOrder）→ undefined，
+   * 由 buildWorkOrderContextBlock 转成空串、不注入空壳段。
+   */
+  private readCurrentWorkOrder(): string | undefined {
+    const store = this.#config.sessionStore;
+    const current = this._sessionManager?.getCurrentSessionInfo();
+    if (!store || !current) return undefined;
+    const meta = store.getSessionMeta(`${current.date}-${current.session}`);
+    return meta?.workOrder;
   }
 
   /**

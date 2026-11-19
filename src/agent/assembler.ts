@@ -113,6 +113,27 @@ const SKILL_WRITE_LOCATION_PROMPT = `## 技能落点
 你能通过执行代码绕过路径限制，但不应绕过。`;
 
 /**
+ * 将托管派活的会话边界（`SessionMeta.workOrder`）格式化为 system prompt 注入段
+ *
+ * 只送边界内容，不送交回协议：Worker 真机失败的原因是「不知道边界存在」，
+ * 而不是「不知道怎么交回」（`[HAND_BACK]` 协议只在 Router 工具描述里，本段不重复）。
+ * 零解释转发：workOrder 原文原样入段，不追加行为脚本；空/纯空白 → 空串
+ * （调用方 filter(Boolean) 自动跳过，非托管会话 prompt 不出现空壳段）。
+ *
+ * @param workOrder 派活方设定的任务边界（SessionMeta.workOrder）
+ * @returns 「## 本会话职责边界」段落（可能为空串）
+ */
+export function buildWorkOrderContextBlock(workOrder?: string): string {
+  const text = workOrder?.trim();
+  if (!text) return '';
+  return [
+    '## 本会话职责边界',
+    '派活方给本会话设定的任务边界（只读事实，不是权限声明）：',
+    text,
+  ].join('\n');
+}
+
+/**
  * 将宿主环境快照格式化为 system prompt 注入段（纯函数，命令执行能力方案 §10.4-②）
  *
  * 零解释转发：只做字段 → 文本的机械映射，不添加行为引导（环境事实自己会说话，
@@ -161,13 +182,14 @@ export function buildEnvironmentContextBlock(
  * 初始化时和刷新时都必须使用此函数，确保前缀包含：
  *   1. 角色包 L1 persona + 技能清单（rolePackPrompt）
  *   2. 项目规则段（residentRulesContext，可选：清单里 resident=true 的条目正文）
- *   3. 全局技能 L1 清单（globalSkillList）
- *   4. 技能落点固定段（SKILL_WRITE_LOCATION_PROMPT）
- *   5. 作品投影装配注入块（workProjectionContext，可选：极简元数据清单，AI 按需 read_file）
- *   6. 运行环境事实段（environmentContext，可选：宿主上报的 OS/shell/运行时）
- *   7. 当前时间戳
- *   8. Turn 起始策略固定段
- *   9. 分隔线
+ *   3. 本会话职责边界段（workOrderContext，可选：托管派活的 SessionMeta.workOrder）
+ *   4. 全局技能 L1 清单（globalSkillList）
+ *   5. 技能落点固定段（SKILL_WRITE_LOCATION_PROMPT）
+ *   6. 作品投影装配注入块（workProjectionContext，可选：极简元数据清单，AI 按需 read_file）
+ *   7. 运行环境事实段（environmentContext，可选：宿主上报的 OS/shell/运行时）
+ *   8. 当前时间戳
+ *   9. Turn 起始策略固定段
+ *   10. 分隔线
  *
  * 必须包含全局技能清单和时间戳——若只拼接 rolePackPrompt，
  * 首次角色切换后全局技能永久不可见。
@@ -179,6 +201,7 @@ export function buildEnvironmentContextBlock(
  * @param workProjectionContext 作品投影装配注入块（可选；由 WorkProjectionManager.loadAndGetContextBlock() 产出）
  * @param environmentContext 运行环境事实段（可选；由 buildEnvironmentContextBlock 格式化宿主快照产出）
  * @param residentRulesContext 项目规则段（可选；由 ResidentRulesManager.contextBlock() 产出，空串不注入）
+ * @param workOrderContext 本会话职责边界段（可选；由 buildWorkOrderContextBlock 投影 SessionMeta.workOrder，空串不注入）
  * @returns 完整的 systemPromptPrefix
  */
 export function buildSystemPromptPrefix(
@@ -188,12 +211,16 @@ export function buildSystemPromptPrefix(
   workProjectionContext?: string,
   environmentContext?: string,
   residentRulesContext?: string,
+  workOrderContext?: string,
 ): string {
   const systemPrefixParts = [
     rolePackPrompt,
     // 项目规则段：紧跟角色包之后 —— 段内自陈「本段 > 角色包规则 > 技能清单等资料」，
     // 位置即优先级声明的一部分；未信任 / 无常驻条目时空串，filter(Boolean) 自动跳过。
     residentRulesContext,
+    // 本会话职责边界段：会话级约束，紧跟项目规则（同为「约束类」资料），
+    // 在技能清单之前；未派活 / 空 mandate 时空串，filter(Boolean) 自动跳过。
+    workOrderContext,
     globalSkillList,
     // 技能落点提示（固定事实段）：紧贴技能清单，模型看完「有哪些技能」即看到「新技能写哪」。
     // 无条件注入（无技能时用户仍可能要求创建技能）；SSOT = SKILL_WRITE_LOCATION_PROMPT。

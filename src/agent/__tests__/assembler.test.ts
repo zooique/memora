@@ -25,6 +25,7 @@ import {
   assembleComponents,
   buildSystemPromptPrefix,
   buildEnvironmentContextBlock,
+  buildWorkOrderContextBlock,
 } from '@/agent/assembler.js';
 import type { AssembleInput, AgentHooks } from '@/agent/assembler.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
@@ -1277,6 +1278,45 @@ describe('buildSystemPromptPrefix · 技能落点提示', () => {
     const end = prefix.indexOf('\n\n', start);
     const block = prefix.slice(start, end === -1 ? undefined : end);
     expect(block.split('\n').length).toBeLessThanOrEqual(5);
+  });
+});
+
+// ─── buildWorkOrderContextBlock · 托管派活边界段（HAND-BACK-UNREACHABLE-1 前半）──
+
+describe('buildWorkOrderContextBlock · 会话职责边界注入', () => {
+  it('空 / 纯空白 → 空串（非托管会话不注入空壳段）', () => {
+    expect(buildWorkOrderContextBlock(undefined)).toBe('');
+    expect(buildWorkOrderContextBlock('')).toBe('');
+    expect(buildWorkOrderContextBlock('   \n ')).toBe('');
+  });
+
+  it('原文入段：含标题与 mandate 文本，且不携带 [HAND_BACK] 协议符', () => {
+    const block = buildWorkOrderContextBlock('只盘点 docs，不改任何文件');
+    expect(block).toContain('## 本会话职责边界');
+    expect(block).toContain('只盘点 docs，不改任何文件');
+    // 本轮只送边界、不送交回格式：协议符仍只在 Router 工具描述里
+    expect(block).not.toContain('[HAND_BACK]');
+  });
+
+  it('经 buildSystemPromptPrefix 注入：位于项目规则之后、全局技能清单之前；无边界则整段缺席', () => {
+    const withOrder = buildSystemPromptPrefix(
+      'persona',
+      '## 可用技能\n- skill-a',
+      'zh-CN',
+      undefined,
+      undefined,
+      '## 项目规则\n- 规则一',
+      buildWorkOrderContextBlock('只盘点，不改文件'),
+    );
+    const rulesIdx = withOrder.indexOf('## 项目规则');
+    const orderIdx = withOrder.indexOf('## 本会话职责边界');
+    const skillsIdx = withOrder.indexOf('## 可用技能');
+    expect(rulesIdx).toBeGreaterThan(-1);
+    expect(orderIdx).toBeGreaterThan(rulesIdx);
+    expect(skillsIdx).toBeGreaterThan(orderIdx);
+
+    const withoutOrder = buildSystemPromptPrefix('persona', 'skills', 'zh-CN');
+    expect(withoutOrder).not.toContain('## 本会话职责边界');
   });
 });
 
