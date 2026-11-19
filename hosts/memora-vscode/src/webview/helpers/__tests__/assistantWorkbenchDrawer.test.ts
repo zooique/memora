@@ -8,7 +8,8 @@
  *   ③ 空态按 coverage 分档措辞：unreadable = 「历史读不到」，complete 才说「还没有」；
  *   ④ 点击「去这个会话」走注入的 openSession 回调（chatView 接 switch_session），零新增 type；
  *   ⑤ 顶部就地视图说明行点明两入口分工（就地 / 命令面板常驻）；
- *   ⑥ 抽屉关闭按钮点击走注入的 onClose 回调（chatView 置 drawer.hidden，零新状态/协议）。
+ *   ⑥ 抽屉关闭按钮点击走注入的 onClose 回调（chatView 置 drawer.hidden，零新状态/协议）；
+ *   ⑦ 副行明细复刻 describeStatus.detail：无徽记的 queued/unreadable 仍出状态语义，措辞同源。
  */
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -81,6 +82,29 @@ describe('INLINE-WORKBENCH-1 · 助手页内嵌工作台抽屉', () => {
       (li) => li.querySelector('.awb-badge')?.textContent ?? null,
     );
     expect(badges).toEqual(['Stopped', null, null]);
+  });
+
+  it('副行明细复刻 describeStatus.detail：无徽记的 queued/unreadable 仍出状态语义', () => {
+    const { drawer } = mount();
+    drawer.render(
+      snapshot({
+        jobs: [
+          job('s-running', { kind: 'running' }),
+          job('s-queued', { kind: 'queued' }),
+          job('s-bad', { kind: 'unreadable' }),
+          job('s-stopped', { kind: 'stopped', stop: { kind: 'user' } }),
+        ],
+      }),
+    );
+    const details = [...document.querySelectorAll('.awb-job')].map(
+      (li) => li.querySelector('.awb-job__detail')?.textContent ?? null,
+    );
+    expect(details).toEqual([
+      null,
+      'Handed over, not started yet',
+      'Status unavailable · The latest turn could not be read',
+      'Stopped by you',
+    ]);
   });
 
   it('空态按 coverage 分档：unreadable 说「历史读不到」，complete 才说「还没有」', () => {

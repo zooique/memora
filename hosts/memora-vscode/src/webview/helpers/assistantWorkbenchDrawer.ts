@@ -60,6 +60,14 @@ export function createAssistantWorkbenchDrawer(
       badge.textContent = described.badge.label;
       item.appendChild(badge);
     }
+    // 副行明细与徽记同源（describeStatus）：queued/unsettled/unreadable 无徽记时，
+    // detail 是唯一状态语义；stopped 徽记外的停手者也在这一行。与独立面板同口径，不另写文案。
+    if (described.detail) {
+      const detail = document.createElement('span');
+      detail.className = 'awb-job__detail';
+      detail.textContent = described.detail;
+      item.appendChild(detail);
+    }
 
     const open = document.createElement('button');
     open.type = 'button';

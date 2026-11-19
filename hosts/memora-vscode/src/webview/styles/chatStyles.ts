@@ -1720,14 +1720,28 @@ export const chatStyles = `
   body[data-form='assistant'] .awb-job {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: var(--sp-2, 6px);
   }
   body[data-form='assistant'] .awb-job__title { flex: 1 1 auto; min-width: 0; }
+  /* 副行明细：与独立面板 wb-job__detail 同口径（字号/弱化色/长词折行），
+     独立成行避免挤占标题；徽记颜色只表语义，明细文字恒在（色觉无障碍）。 */
+  body[data-form='assistant'] .awb-job__detail {
+    order: 1;
+    flex: 1 0 100%;
+    font-size: 0.9em;
+    color: var(--text-secondary);
+    word-break: break-word;
+  }
   body[data-form='assistant'] .awb-badge {
     flex: 0 0 auto;
     color: var(--text-secondary);
   }
   body[data-form='assistant'] .awb-badge--running { color: var(--accent); }
+  /* waiting/completed 补齐语义色（令牌沿用独立面板 wb-badge 同款），
+     不动 running/stopped 既有色——避免视觉回归需真机复验；四态文字标签恒在。 */
+  body[data-form='assistant'] .awb-badge--waiting { color: var(--warn); }
+  body[data-form='assistant'] .awb-badge--completed { color: var(--chart-green); }
   body[data-form='assistant'] .awb-badge--stopped { color: var(--text-error); }
   body[data-form='assistant'] .awb-job__open {
     flex: 0 0 auto;
