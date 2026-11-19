@@ -97,7 +97,7 @@ describe('助手形态输入区（ASSISTANT-FORM）', () => {
     expect(document.getElementById('emptyTitle')?.textContent).toContain('共鸣小说家');
   });
 
-  it('输入区减法口径（2026-11-16 拍板）：只去暂停键与徽章群，模型/skill/图片/占用圆环保留', () => {
+  it('输入区减法口径（2026-11-16 拍板）：只去暂停键与徽章群，模型/skill/图片保留（占用圆环见 2026-11-19 局部覆盖，本断言不覆盖圆环）', () => {
     // jsdom 不算样式 ⇒ 源码级守卫钉住减法边界，防回退到「一个不留」旧口径
     const css = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf8');
     /** 助手形态作用域的 display:none 规则（选择器串 + 规则体） */
