@@ -133,9 +133,15 @@ export class MemoraHostedPanel {
     panel.webview.onDidReceiveMessage((message: WebviewToExtensionMessage) => {
       if (this._panel !== panel) return;
       if (message.type === 'ready') {
-        // webview 监听器已注册：补发「添加到助手」缓冲的引用草稿（ADDED-TO-ASSISTANT-1）
+        // ADDED-TO-ASSISTANT-1 时序：ready 会触发宿主回放会话（clear_ok 重置 currentRefs）。
+        // 必须等回放完成后再补投引用草稿，否则先到的 addRef 被 clear_ok 冲掉——真机表现为
+        // 「首次右键只开页、引用不上屏，第二次才加」。routeHostedMessage 对 ready 返回回放
+        // Promise，回放（含空态 clear_ok）落地后再 flush，严格序列化「先清后种」。
         this._ready = true;
-        this.flushPendingRefs();
+        void Promise.resolve(this._chatProvider.routeHostedMessage(message)).then(() =>
+          this.flushPendingRefs(),
+        );
+        return;
       }
       // INLINE-WORKBENCH-1：助手页「工作台」按钮就地展开抽屉，不再开独立 editor tab。
       // 上行 type 不变（assistantFormView 判据锁「只上报意图、选座/取数在宿主」）；

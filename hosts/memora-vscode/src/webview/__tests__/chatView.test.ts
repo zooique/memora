@@ -12460,6 +12460,50 @@ describe('块类型标与折叠箭头（批次三）', () => {
     });
   });
 
+  it('工作台抽屉可关闭：× 按钮置 hidden；再点顶部按钮 toggle 折叠/展开，展开态真源=DOM', () => {
+    const { postMessage } = mountChatView('assistant');
+    const drawer = () => document.getElementById('assistantWorkbenchDrawer') as HTMLElement;
+    const btn = () => document.getElementById('assistantWorkbenchBtn') as HTMLButtonElement;
+    const snapshotMsg = {
+      type: 'workbench_snapshot' as const,
+      snapshot: {
+        orchestrator: { name: 'Memora', sessionId: 'agent-1', title: '代理会话', managed: true },
+        jobs: [],
+        seatSource: 'live' as const,
+        filteredCount: 0,
+        foreignDispatches: 0,
+        coverage: 'complete' as const,
+        missingCount: 0,
+        coverageReasons: [],
+        scan: { maxRounds: 60, totalRounds: 0, scannedRounds: 0 },
+      },
+    };
+
+    // 首次点顶部按钮 → 上行请求快照（此时抽屉隐藏）
+    expect(drawer().hidden).toBe(true);
+    btn().click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'assistant_open_workbench' });
+
+    // 快照到达 → 展开；× 关闭 → 置 hidden，不产生上行消息
+    dispatch(snapshotMsg);
+    expect(drawer().hidden).toBe(false);
+    postMessage.mockClear();
+    (drawer().querySelector('.awb-close') as HTMLButtonElement).click();
+    expect(drawer().hidden).toBe(true);
+    expect(postMessage).not.toHaveBeenCalled();
+
+    // 再点顶部按钮：抽屉隐藏 → 重新请求快照（不折叠）
+    btn().click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'assistant_open_workbench' });
+    // 快照到达 → 展开；再点顶部按钮：抽屉可见 → 直接折叠，不再上行
+    dispatch(snapshotMsg);
+    expect(drawer().hidden).toBe(false);
+    postMessage.mockClear();
+    btn().click();
+    expect(drawer().hidden).toBe(true);
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
   it('delegate 截断标注三态：字段 true/false 为权威，字段缺失退回旧长度兜底', () => {
     mountChatView();
     dispatch({ type: 'chunk', content: '派子任务' });

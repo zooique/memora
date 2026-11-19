@@ -7,7 +7,8 @@
  *      stopped 出「Stopped」，边缘态（queued/unreadable）不出徽记；
  *   ③ 空态按 coverage 分档措辞：unreadable = 「历史读不到」，complete 才说「还没有」；
  *   ④ 点击「去这个会话」走注入的 openSession 回调（chatView 接 switch_session），零新增 type；
- *   ⑤ 顶部就地视图说明行点明两入口分工（就地 / 命令面板常驻），且为首个节点，不硬编码命令标题。
+ *   ⑤ 顶部就地视图说明行点明两入口分工（就地 / 命令面板常驻）；
+ *   ⑥ 抽屉关闭按钮点击走注入的 onClose 回调（chatView 置 drawer.hidden，零新状态/协议）。
  */
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -45,8 +46,9 @@ function job(sessionId: string, status: WorkbenchJobStatus): WorkbenchJob {
 function mount() {
   document.body.innerHTML = '<section id="assistantWorkbenchDrawer"></section>';
   const openSession = vi.fn();
-  const drawer = createAssistantWorkbenchDrawer({ document, openSession });
-  return { drawer, openSession };
+  const onClose = vi.fn();
+  const drawer = createAssistantWorkbenchDrawer({ document, openSession, onClose });
+  return { drawer, openSession, onClose };
 }
 
 describe('INLINE-WORKBENCH-1 · 助手页内嵌工作台抽屉', () => {
@@ -116,10 +118,22 @@ describe('INLINE-WORKBENCH-1 · 助手页内嵌工作台抽屉', () => {
     expect(host.querySelector('.awb-hint')?.textContent).not.toContain('Memora:');
   });
 
+  it('关闭按钮点击走 onClose 回调（chatView 置 drawer.hidden，零新状态/协议）', () => {
+    const { drawer, onClose } = mount();
+    drawer.render(snapshot());
+    const host = document.getElementById('assistantWorkbenchDrawer') as HTMLElement;
+    const close = host.querySelector<HTMLButtonElement>('.awb-close');
+    expect(close).not.toBeNull();
+    expect(close?.type).toBe('button');
+    expect(close?.getAttribute('aria-label')).toBe('Close');
+    close?.click();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it('容器不存在时静默跳过（self 形态无该节点），不抛错', () => {
     document.body.innerHTML = '';
     const openSession = vi.fn();
-    const drawer = createAssistantWorkbenchDrawer({ document, openSession });
+    const drawer = createAssistantWorkbenchDrawer({ document, openSession, onClose: vi.fn() });
     expect(() => drawer.render(snapshot())).not.toThrow();
   });
 });

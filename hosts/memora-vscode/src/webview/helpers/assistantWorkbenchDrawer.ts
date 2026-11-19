@@ -23,6 +23,8 @@ export interface AssistantWorkbenchDrawerDeps {
   document: Document;
   /** 「去这个会话」回调（chatView 注入既有 switch_session 出口） */
   openSession: (sessionId: string) => void;
+  /** 关闭抽屉回调（chatView 注入：直接置 drawer.hidden，展开态真源 = DOM 属性，零 JS 状态） */
+  onClose: () => void;
 }
 
 /** 抽屉对外能力 */
@@ -74,6 +76,13 @@ export function createAssistantWorkbenchDrawer(
       const drawer = document.getElementById('assistantWorkbenchDrawer');
       if (!drawer) return;
 
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'awb-close';
+      close.textContent = l10n.t('Close');
+      close.setAttribute('aria-label', l10n.t('Close'));
+      close.addEventListener('click', () => deps.onClose());
+
       // 就地视图说明（两入口分工可见）：点身份条「工作台」看到的是助手页内嵌投影，
       // 常驻并排看板在命令面板。只指向命令面板、不硬编码命令标题——命令标题真源在
       // package.nls 的 command.openWorkbench.title，此处复述会产生第二份可漂移文案。
@@ -114,7 +123,8 @@ export function createAssistantWorkbenchDrawer(
         list.appendChild(empty);
       }
 
-      drawer.replaceChildren(hint, seat, list);
+      // close 置末（绝对定位不影响视觉），保住「说明行为首节点」的既有判据
+      drawer.replaceChildren(hint, seat, list, close);
     },
   };
 }

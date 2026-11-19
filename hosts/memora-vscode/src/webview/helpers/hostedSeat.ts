@@ -75,8 +75,11 @@ export interface HostedSeat {
   syncVisibility: () => void;
   /** 助手窗挂载状态（注册 / 注销时维护） */
   setHostedOpen: (open: boolean) => void;
-  /** 上行消息分流 */
-  handleMessage: (msg: WebviewToExtensionMessage) => void;
+  /**
+   * 上行消息分流；ready 返回回放完成的 Promise，供调用方在回放后补投引用草稿
+   * （ADDED-TO-ASSISTANT-1：回放会投 clear_ok 清引用，补投必须排在其后）
+   */
+  handleMessage: (msg: WebviewToExtensionMessage) => void | Promise<void>;
   /** 就绪回放 */
   handleReady: () => Promise<void>;
   /** 输入（首次发送可建会话） */
@@ -145,8 +148,8 @@ export function createHostedSeat(deps: HostedSeatDeps): HostedSeat {
     await deps.handleInput(msg, sid);
   };
 
-  const handleMessage = (msg: WebviewToExtensionMessage): void => {
-    if (msg.type === 'ready') return void handleReady();
+  const handleMessage = (msg: WebviewToExtensionMessage): void | Promise<void> => {
+    if (msg.type === 'ready') return handleReady();
     if (msg.type === 'assistant_open_workbench') return deps.openWorkbench();
     if (msg.type === 'input') return void handleInput(msg);
     if (msg.type === 'composer_state') {

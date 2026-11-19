@@ -659,7 +659,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // （2026-11-18，与工具行同款边框令牌，避免裸 px；机械实测同步）。
     // 91：助手页内嵌工作台抽屉（INLINE-WORKBENCH-1）底分隔引 var(--line-solid) +1
     // （2026-11-18，与身份条同款既有令牌，真实 UI 消费；机械实测同步）。
-    'line-': 91, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
+    // 92：助手页工作台按钮改描边胶囊（真机「与 UI 风格格格不入」反馈）——
+    // .assistant-mode-bar__link 的 border: var(--line-solid) 新增 1 处，实数经 count-token-refs.mjs 实锤。
+    'line-': 92, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
     //             var(--line-solid) +1 ⇒ 79→80（UI-STATUS-DIVIDE-1，与
     //             `.context-ring__injection` 同一既有令牌，未新造颜色）；
     //             实数经 scripts/count-token-refs.mjs 实锤同步。

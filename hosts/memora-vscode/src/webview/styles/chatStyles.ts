@@ -1636,21 +1636,23 @@ export const chatStyles = `
     flex: 0 0 auto;
     /* 标签改胶囊后不再有 __text 撑开剩余空间，右对齐由这里给（否则「工作台」会贴到标签后面） */
     margin-left: auto;
-    /* 点击热区：11px 下划线文字的可点面在真机上过小（验收里表现为「点了没反应」）。
-       用内距把热区抬到 24px 高、加宽两侧，再用负右外边距把文字视觉右缘拉回原位——
-       只放大可点面，不挪版、不新增元素。 */
+    /* 工作台入口与身份条胶囊同族：低调描边胶囊替掉原先的蓝色下划线链接（真机反馈
+       「和 UI 风格格格不入」）。描边复用 --line-solid、面色复用 --surface-card、圆角复用
+       --radius-sm，全部既有令牌零新色源；文字回 secondary，去掉下划线。 */
     display: inline-flex;
     align-items: center;
     min-height: var(--sp-8, 24px);
-    padding: var(--sp-0, 2px) var(--sp-2, 6px);
-    margin-right: calc(-1 * var(--sp-2, 6px));
-    border: none;
-    border-radius: var(--radius-sm, 2px);
-    background: transparent;
-    color: var(--text-link);
+    padding: var(--sp-0, 2px) var(--sp-3, 8px);
+    border: var(--line-solid);
+    border-radius: var(--radius-pill, 999px);
+    background: var(--surface-card);
+    color: var(--text-secondary);
     font: inherit;
     cursor: pointer;
-    text-decoration: underline;
+  }
+  body[data-form='assistant'] .assistant-mode-bar__link:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
   }
   /* 内嵌工作台抽屉（INLINE-WORKBENCH-1）：点身份条「工作台」就地展开，替掉独立 editor tab。
    * 仅 assistant 形态可见（self 形态恒隐藏，同身份条首帧纪律）；不在 #messages 滚动容器内。
@@ -1668,8 +1670,30 @@ export const chatStyles = `
     max-height: 40vh;
     overflow-y: auto;
   }
+  /* 抽屉关闭按钮：绝对定位到右上角，不占 flex 一行（说明/座位/任务列表版式不动）；
+     纯文字 × + aria-label，令牌全复用既有族，零新增色源。 */
+  body[data-form='assistant'] .assistant-workbench-drawer { position: relative; }
+  body[data-form='assistant'] .awb-close {
+    position: absolute;
+    top: var(--sp-1, 4px);
+    right: var(--sp-2, 6px);
+    border: none;
+    border-radius: var(--radius-sm, 2px);
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    cursor: pointer;
+    min-width: var(--sp-8, 24px);
+    min-height: var(--sp-8, 24px);
+  }
+  body[data-form='assistant'] .awb-close:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
   /* 就地视图说明行：复用既有次要文字令牌，零新增色源；不占交互、不参与座位/状态判据 */
   body[data-form='assistant'] .awb-hint { color: var(--text-secondary); }
+  /* 给右上角关闭按钮留出文字空间（说明行右侧留白，避免长文案顶到 ×） */
+  body[data-form='assistant'] .awb-hint { padding-right: var(--sp-8, 24px); }
   body[data-form='assistant'] .awb-seat {
     display: flex;
     align-items: center;

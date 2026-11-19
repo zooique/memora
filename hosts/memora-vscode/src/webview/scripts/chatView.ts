@@ -117,6 +117,7 @@ import {
   refreshDispatchSessionCards,
 } from '../helpers/dispatchSessionCard.js';
 import { createAssistantWorkbenchDrawer } from '../helpers/assistantWorkbenchDrawer.js';
+import { hideWorkbenchDrawer, shouldOpenWorkbench } from '../helpers/workbenchDrawerToggle.js';
 import {
   appendInterruptedRow,
   createProcessFlowCells,
@@ -423,6 +424,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const workbenchDrawer = createAssistantWorkbenchDrawer({
     document,
     openSession: (sessionId) => vscode.postMessage({ type: 'switch_session', sessionId }),
+    onClose: () => hideWorkbenchDrawer(document),
   });
   // 下拉选择器与问答回顾行（CHATVIEW-SLIM-3 首刀）：零状态 DOM 构造，deps 注入
   const pickerView = createPickerView({ document });
@@ -4045,9 +4047,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   newSessionBtn.addEventListener('click', () => vscode.postMessage({ type: 'new_session' }));
   // 助手形态标识条上的工作台入口：只转达点击——「看哪一条会话」的选座判据全在宿主
   // memora.openWorkbench（webview 不得自己挑会话，否则是第二真理源）
-  assistantWorkbenchBtn.addEventListener('click', () =>
-    vscode.postMessage({ type: 'assistant_open_workbench' }),
-  );
+  assistantWorkbenchBtn.addEventListener('click', () => {
+    if (shouldOpenWorkbench(document)) vscode.postMessage({ type: 'assistant_open_workbench' });
+  });
   // 历史按钮：开合由 treedd 管理（initDropdowns），本层只负责「打开时重置浏览态并请求最新列表」
   //（动作体收口于容器 openFresh；「视图重置挂打开时机、不挂数据下发」的论证见容器模块头 ②）
   historyBtn.addEventListener('click', () => {

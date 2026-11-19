@@ -1021,8 +1021,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 只做「来源标注 + 目标解析」，分流实现仍归 handleWebviewMessage / handleInput /
    * handleHostedReady 单点——不另起一套 agent、不复制确认代批逻辑。
    */
-  public routeHostedMessage(msg: WebviewToExtensionMessage): void {
-    this._seat.handleMessage(msg);
+  public routeHostedMessage(msg: WebviewToExtensionMessage): void | Promise<void> {
+    return this._seat.handleMessage(msg);
   }
 
   /** 当前广播器挂载的视图数（测试 / 诊断用） */
