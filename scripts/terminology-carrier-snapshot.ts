@@ -514,10 +514,8 @@ const BASELINE_CODE: readonly string[] = [
   'stepCount',
   'stepIndex',
   'step_boundary',
-  // 收回托管会话的英文 UI 文案「the assistant has stepped back; this session is yours again.」
-  // （`chatPanel.ts` l10n，`57e276a9` 引入）：`stepped` 是动词过去式，与 loop 迭代 / 任务表
-  // 语义无关（判据层面假阳性），2026-11-15 补基线
-  'stepped',
+  // `stepped` 曾因收回文案「the assistant has stepped back」在此补基线；该文案 2026-11-19
+  // 随收回整链作废，code 层已无载体 ⇒ 同步移除本层基线项（text 层因历史文档引用仍保留）。
   'steps',
   'toolIdsInStep',
   'toolStepLimit',
@@ -627,8 +625,9 @@ const BASELINE_TEXT: readonly string[] = [
   'stepUnreportedOutcomes',
   'step_boundary',
   'step_id',
-  // 巡检文档引用收回文案原文「the assistant has stepped back」（`57e276a9` 引入的 l10n），
-  // `stepped` 是动词过去式、非 step 语义；text 层为引用历史，2026-11-15 补基线
+  // 历史文档（巡检进度-托管巡检-20261112.md）仍引用旧文案「the assistant has stepped back」，
+  // `stepped` 是动词过去式、非 step 语义；text 层按「历史不改写」纪律保留该基线项。
+  // 对应 code 层项已随收回文案作废而移除——两层基线各自独立，勿同步增删。
   'stepped',
   'steps',
   'term-unify-turn-step-loop',

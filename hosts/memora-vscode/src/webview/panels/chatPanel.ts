@@ -212,7 +212,7 @@ import type { DispatchWriteLease } from '../helpers/hostedDispatchLock.js';
 import { createChatAnswerOps } from './chatAnswerOps.js';
 // 会话活跃度纯计算（与工作台共用同一份判据；外置防两处各写一套 Set 遍历）
 import { pushPanelSessionActivity } from '../helpers/sessionActivity.js';
-// 盖章会话列表（独立会话卡区数据源；本进程账本 ∪ 轮次反查，外置守面板行数上限）
+// 盖章会话列表（对话流内穿插会话卡的存在性真源；本进程账本 ∪ 轮次反查，外置守面板行数上限）
 import { collectDispatchedSessions } from '../helpers/dispatchedSessions.js';
 // 提示文案（快照降级 / 启动让位）：函数而非常量，l10n 必须在调用时刻取（见模块头）
 import {

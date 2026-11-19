@@ -1465,7 +1465,8 @@ export type ExtensionToWebviewMessage =
        */
       titleById: Record<string, string>;
       /**
-       * 被助手会话盖章启动的工作会话（独立会话卡区的唯一数据源，DISPATCH-CARD-ZONE-1）
+       * 被助手会话盖章启动的工作会话（对话流内穿插会话卡的存在性真源，DISPATCH-CARD-INLINE-1；
+       * 位置锚点不在此协议内，webview 现场从触发轮事件解析）
        *
        * 按助手会话算：`dispatchedBy.from === 助手会话` 的会话，本进程取创建者账本、
        * 重启后取轮次反查。名字逐条走宿主 sessionTitleFor 真源（不依赖 titleById 的遍历面，

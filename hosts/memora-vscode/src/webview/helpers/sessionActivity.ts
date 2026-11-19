@@ -40,7 +40,7 @@ export interface SessionActivitySnapshot {
   /** sid → 展示名（遍历面内会话；派活会话卡按此显示，未命中回落 sid） */
   titleById: Record<string, string>;
   /**
-   * 被助手会话盖章启动的工作会话（独立会话卡区数据源，DISPATCH-CARD-ZONE-1）
+   * 被助手会话盖章启动的工作会话（对话流内穿插会话卡的存在性真源，DISPATCH-CARD-INLINE-1）
    * 由宿主注入本进程账本 ∪ 轮次反查的并集（含真名），纯函数层只透传不改。
    */
   dispatchedSessions: Array<{ sid: string; title: string; via: 'delegate' | 'create' }>;

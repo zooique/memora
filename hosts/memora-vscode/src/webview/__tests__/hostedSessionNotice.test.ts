@@ -89,7 +89,8 @@ function harness(): {
   const wakeCreator = vi.fn(() => true);
   const metas = new Map<string, SessionMeta>();
   const managed = new Set<string>([CREATOR]);
-  // 当前由代理驱动的会话（生产 = SessionModeStore.agentDriven；子会话出生后默认在内）
+  // 当前由代理驱动的会话替身（生产判据 = 读盘 isAgentDrivenFailClosed，见 sessionStatus.ts；
+  // 子会话出生后默认由代理驱动，故初始在内）。这里用可变集合替身覆盖「用户接管中/非托管」分支。
   const driven = new Set<string>([CHILD]);
   const rounds = new Map<string, Round>();
   // 创建者实例单拎出来：`setCreatorAssembled` 要能摘掉再装回同一个对象
