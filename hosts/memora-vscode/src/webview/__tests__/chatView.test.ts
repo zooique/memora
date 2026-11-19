@@ -12330,7 +12330,8 @@ describe('块类型标与折叠箭头（批次三）', () => {
   });
 
   it('盖章会话卡：dispatchedSessions 驱动独立卡区，真名/旋转同源 + 点击切会话（DISPATCH-CARD-ZONE-1）', () => {
-    const { postMessage } = mountChatView();
+    // 卡区只归助手会话（hostedPanel = assistant form）；self 工作会话不投影
+    const { postMessage } = mountChatView('assistant');
     const zone = () => document.getElementById('dispatchSessionCardZone') as HTMLElement;
     const card = () => zone().querySelector<HTMLElement>('.dispatch-session-card');
     // 未盖章前卡区隐藏（空态不上屏）
@@ -12378,7 +12379,7 @@ describe('块类型标与折叠箭头（批次三）', () => {
   });
 
   it('create 会话同样盖章出卡（via=create），不等工具结果/replay · DISPATCH-CREATE-CARD-1', () => {
-    const { postMessage } = mountChatView();
+    const { postMessage } = mountChatView('assistant');
     const zone = () => document.getElementById('dispatchSessionCardZone') as HTMLElement;
     // 新建会话被盖章：dispatchedSessions 一到就出卡，真名由宿主下发，via 标 create
     dispatch({
@@ -12404,7 +12405,7 @@ describe('块类型标与折叠箭头（批次三）', () => {
   });
 
   it('失败的会话不进盖章列表 ⇒ 卡区不出卡（无盖章不编卡）', () => {
-    mountChatView();
+    mountChatView('assistant');
     dispatch({
       type: 'session_activity',
       runningIds: [],
@@ -12416,6 +12417,31 @@ describe('块类型标与折叠箭头（批次三）', () => {
     const zone = document.getElementById('dispatchSessionCardZone') as HTMLElement;
     expect(zone.querySelector('.dispatch-session-card')).toBeNull();
     expect(zone.hidden).toBe(true);
+  });
+
+  it('盖章会话卡只在助手会话投影，self 工作会话收到同一份广播也不出卡（DISPATCH-CARD-ZONE-1）', () => {
+    // session_activity 是全局广播：self 也收到 dispatchedSessions，但卡区归属助手会话。
+    // 回归护栏——曾因无条件渲染把卡漏到侧栏工作会话（截图实锤：标题栏 + 改名笔形态出卡）。
+    const snap = {
+      type: 'session_activity' as const,
+      runningIds: ['2026-11-18-target'],
+      pendingIds: [],
+      badgeCount: 0,
+      titleById: {},
+      dispatchedSessions: [
+        { sid: '2026-11-18-target', title: '统计目录文件数', via: 'delegate' as const },
+      ],
+    };
+    // 助手形态：出卡（对照基线，确认快照本身有效）
+    mountChatView('assistant');
+    dispatch(snap);
+    expect(document.querySelector('.dispatch-session-card')).not.toBeNull();
+    // 自助形态：同一份快照不投影卡区（骨架 hidden 保持，DOM 无卡）
+    mountChatView('self');
+    dispatch(snap);
+    const selfZone = document.getElementById('dispatchSessionCardZone') as HTMLElement;
+    expect(selfZone.querySelector('.dispatch-session-card')).toBeNull();
+    expect(selfZone.hidden).toBe(true);
   });
 
   it('助手形态卡区同样是 #messages 同级独立插槽，不被收起的 .round-block 连坐', () => {

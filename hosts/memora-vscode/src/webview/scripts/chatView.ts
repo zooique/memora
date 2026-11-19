@@ -3573,9 +3573,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'session_activity') {
       // 会话活跃度快照：列表条目 + 入口角标同一数据源，统一由历史菜单域投影
       historyMenuApi.setActivity(msg.runningIds, msg.pendingIds, msg.badgeCount);
-      // 盖章会话卡区（第三信息形态）：列表/标题/旋转全部来自本快照真源，全量重建。
-      // 与重放互斥——卡区是 #messages 同级固定插槽，不随 renderReplayFromRounds 清空。
-      if (dispatchCardZone) {
+      // 盖章会话卡区（第三信息形态）只归助手会话：self 收到的是同一份全局广播，但不是盖章主体，
+      // 不投影卡区（骨架初始 hidden ⇒ 恒不显示）。与重放互斥——卡区是 #messages 同级固定插槽。
+      if (dispatchCardZone && document.body.dataset.form === 'assistant') {
         renderDispatchCardZone(dispatchCardZone, msg.dispatchedSessions ?? [], msg.runningIds);
       }
     } else if (msg.type === 'workbench_snapshot') {
