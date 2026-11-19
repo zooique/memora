@@ -266,17 +266,17 @@ describe('HostedSessionNotifier', () => {
 
     // 暂停可续跑
     expect(h.notifier.noteSettledFlow(CHILD, 'r7', true, false)).toBe(false);
-    // 创建者被收回托管（现在是普通会话，不拿代理的事实打扰它）
+    // 创建者不再是助手会话（现在是普通会话，不拿代理的事实打扰它）
     h.managed.delete(CREATOR);
     expect(h.notifier.noteSettledFlow(CHILD, 'r7', false, true)).toBe(false);
     expect(h.creatorQueue).not.toHaveBeenCalled();
   });
 
-  it('子会话已被用户收回（当前不由代理驱动）→ 不通知创建者（出生账本不当权限用）', () => {
+  it('子会话当前不由代理驱动（用户接管中）→ 不通知创建者（出生账本不当权限用）', () => {
     const h = harness();
     h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
     h.rounds.set('r10', round('r10', 'interrupted', []));
-    // 出生记录仍记着创建者，但当前驱动权已归用户
+    // 出生记录仍记着创建者，但当前驱动权不在代理侧
     h.notifier.remember(CHILD, CREATOR);
     h.driven.delete(CHILD);
 
@@ -322,7 +322,7 @@ describe('HostedSessionNotifier', () => {
     // 不打断：此刻既不写创建者队列，也不起轮
     expect(h.creatorQueue).not.toHaveBeenCalled();
     expect(h.wakeCreator).not.toHaveBeenCalled();
-    // 收回托管要如实说「还有几条没送到」：待办条数就是那句事实的读数源
+    // 结果压着没送要如实说：待办条数就是那句事实的读数源
     expect(h.notifier.pendingReportCount(CREATOR)).toBe(1);
 
     // 本轮收场，创建者恢复空闲 → 补浮现

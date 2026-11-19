@@ -208,8 +208,6 @@ import { createHostedSessionWith } from '../helpers/hostedSessionCreate.js';
 import { dispatchHostedInputWith } from '../helpers/hostedDispatchRun.js';
 // 写权租约类型（租约与归还时机都在该模块，面板只存引用）
 import type { DispatchWriteLease } from '../helpers/hostedDispatchLock.js';
-// 收回本会话实现域（B9-D 拆法）：运行期归属交接 + 形态同步 + 「收不回什么」的如实说明
-import { createRevokeManagedSessionOps } from '../helpers/revokeManagedSessionOps.js';
 // 会话作答域（用户作答 + 主控代答）：两条入口共用同一条执行链，判据与回执形态在 helper
 import { createChatAnswerOps } from './chatAnswerOps.js';
 // 会话活跃度纯计算（与工作台共用同一份判据；外置防两处各写一套 Set 遍历）
@@ -226,6 +224,8 @@ import { createWorkbenchReadPorts } from '../helpers/workbenchReadPorts.js';
 import { requireAgent } from '../helpers/requireAgent.js';
 // 托管子会话中断通知器（第三切片）：只投系统事件队列，不写历史、不落盘
 import { HostedSessionNotifier, noteHandBackOrSettlement } from '../helpers/hostedSessionNotice.js';
+// 驱动权读盘判据（取代内存 agentDriven 集合，见 HOSTED-ROUND-ORIGIN-1）
+import { makeAgentDrivenCheck } from '../helpers/sessionDrivePorts.js';
 import {
   noteBlockedOnAsk,
   noteFlowSettled,
@@ -352,32 +352,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _pendingPrefill?: string;
   /** 右键「添加到对话」引用缓冲：对话视图未就绪时暂存，ready 后补发（与 _pendingPrefill 同构） */
   private _pendingRefs?: ChatRef[];
-  /**
-   * 收回本会话域（外置实现）：运行期归属交接 + 形态同步 + 「收不回什么」的如实说明
-   *
-   * 依赖同样全是**延迟闭包**（本字段初始化早于 `_hostedNotifier` / `workbench` 等成员可用）。
-   */
-  private readonly _revokeOps = createRevokeManagedSessionOps({
-    sessionModes: {
-      isAgentControlled: (sessionId) => this.sessionModes.isAgentControlled(sessionId),
-      set: (sessionId, mode) => this.sessionModes.set(sessionId, mode),
-      clearAgentDriven: (sessionId) => this.sessionModes.clearAgentDriven(sessionId),
-    },
-    // 只读运行态（peek 不建记录）：与既有「在跑就拒绝收回」判据同一份
-    isStreaming: (sessionId) => this._runtime.peek(sessionId)?.streaming === true,
-    currentSessionId: () => this._currentSessionId,
-    forgetAgent: (sessionId) => void this._sessionAgents.delete(sessionId),
-    releaseAgent: (sessionId) => this._releaseAgent?.(sessionId),
-    assemble: (sessionId) => this.agentForSession(sessionId),
-    bindAgent: (agent) => this.bindAgent(agent),
-    resetDisplayedAgent: () => {
-      this._agent = undefined;
-      this._agentReady = null;
-    },
-    post: (msg) => this.post(msg),
-    childrenOf: (sessionId) => this._hostedNotifier.childrenOf(sessionId),
-    pendingReportCount: (sessionId) => this._hostedNotifier.pendingReportCount(sessionId),
-    isChildStreaming: (sessionId) => this.workbench.isStreaming(sessionId),
+  /** 驱动权读盘判据（外置）：延迟闭包避开字段初始化顺序，盘异常折 false */
+  private readonly _agentDrivenCheck = makeAgentDrivenCheck({
+    peekActivity: () => (id: string) => ({
+      running: this.workbench.isStreaming(id),
+      waiting: this.workbench.isWaiting(id),
+    }),
+    readMeta: () => (id) => this.sessionStore.getSessionMeta(id),
+    readRoundIds: () => (id) => this.sessionStore.getRoundIds(id),
+    readRound: () => (id) => this._eventLogRoundStore?.getById(id) ?? undefined,
   });
   /**
    * @ 提及 QuickPick 的并发守卫随域外置（见 `chatRefOps.ts` 的 `mentionQuickPickOpen`），
@@ -490,8 +473,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     readSessionMeta: (sid) => this.sessionStore.getSessionMeta(sid),
     // 创建者必须仍有调度权（被收回后不再拿代理的事实打扰它）
     isManaged: (sid) => this.sessionModes.isManaged(sid),
-    // 目标当前是否仍由代理驱动（收回后不再替它通知创建者）：与停止 / 暂停 / 清单同一判据
-    isAgentDriven: (sid) => this.sessionModes.isAgentDriven(sid),
+    // 目标当前是否仍由代理驱动：读盘判据（与停止 / 暂停 / 清单共用一个函数），盘异常折 false
+    isAgentDriven: this._agentDrivenCheck,
     getAgent: (sid) => this._sessionAgents.get(sid),
     readRound: (roundId) => this._eventLogRoundStore?.getById(roundId) ?? undefined,
     // 主动浮现的前提：创建者空闲，且用户没在输入框里打字（不抢 / 不打断；宁晚不打断）
@@ -2926,19 +2909,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       declaredPaths,
       mandate,
     );
-  }
-
-  /**
-   * 收回本会话（撤销助手代理，回到「我自己聊」）
-   *
-   * 实现外置在 `helpers/revokeManagedSessionOps.ts`（只改运行期归属、不擦持久事实；
-   * 收回成功后同步侧栏形态并如实说明「还有什么不会再报回这里」），本处只留转发口。
-   *
-   * @param sessionId 目标会话（缺省 = 当前显示会话）
-   * @returns 是否真的撤销并重装（false = 草稿 / 本来就是用户自己的 / 正在运行 / 重装失败）
-   */
-  public async revokeManagedSession(sessionId?: string): Promise<boolean> {
-    return this._revokeOps.revoke(sessionId);
   }
 
   /**

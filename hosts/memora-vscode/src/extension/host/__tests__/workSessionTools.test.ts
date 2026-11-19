@@ -510,7 +510,7 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
     }
   }, 120_000);
 
-  it('目标当前不由代理驱动（用户自己建的 / 已收回）→ E_DENIED，不猜着停', async () => {
+  it('目标当前不由代理驱动（用户自己建的 / 用户接管中）→ E_DENIED，不猜着停', async () => {
     let stopped = false;
     const probe = await assembleProbe(true, {
       // 出生来源 hosted，但当前没有任何会话登记为「由代理驱动」⇒ 拒绝
@@ -532,10 +532,10 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
     }
   }, 120_000);
 
-  it('收回托管后：出生账本还记着也不放行（判据 = 当前驱动权，不是出生记录）', async () => {
+  it('当前判据为 false 时：出生账本还记着也不放行（判据 = 当前驱动权，不是出生记录）', async () => {
     let stopped = false;
     const probe = await assembleProbe(true, {
-      // 出生记录明确是代理开的，但已被用户收回（当前驱动权为 false）
+      // 出生记录明确是代理开的，但当前驱动权判据为 false
       agentCreated: () => [TARGET_SESSION_ID],
       isAgentDriven: () => false,
       readStatus: () => ({ kind: 'running' }),

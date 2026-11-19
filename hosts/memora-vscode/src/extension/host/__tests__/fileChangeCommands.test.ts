@@ -233,9 +233,8 @@ const REGISTER_SOURCES = [
   // 注册点七：commands/newSession.ts（2026-11-14 托管模式 v0：`memora.newSession` 注册随命令外置，
   // extension.ts 已贴 max-lines 上限；命令本身仍只有一处注册）
   resolve(PKG_ROOT, 'src/extension/commands/newSession.ts'),
-  // 注册点八：commands/revokeManagedSession.ts（2026-11-14 撤销并交还：`memora.revokeManagedSession`
-  // 注册随命令外置；命令本身仍只有一处注册）
-  resolve(PKG_ROOT, 'src/extension/commands/revokeManagedSession.ts'),
+  // 注册点八（2026-11-19 退役）：commands/revokeManagedSession.ts 曾注册 `memora.revokeManagedSession`；
+  // 收回随 A 方向作废（驱动权收敛到盘上轮级 origin），命令与文件一并删除，注册豁免同步撤销。
   // 注册点九（2026-11-16 退役）：commands/assistantForm.ts 曾注册两条侧栏形态命令；
   // 形态降为视图挂载常量后命令与文件一并删除，注册豁免同步撤销（僵尸登记会让本表 readFileSync 抛错）。
   // 注册点五（2026-11-09 退役）：host/workProjectionTree.ts 曾注册

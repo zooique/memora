@@ -45,7 +45,7 @@ interface DepsOptions {
   current?: string;
   /** 本进程托管座位表 */
   managed?: string[];
-  /** 本进程登记过装配模式的会话（收回会写 self，仍算登记过） */
+  /** 本进程登记过装配模式的会话（已写 self 或 managed 标签） */
   registered?: string[];
   /** 当前仍由代理驱动的会话 */
   driven?: string[];
@@ -74,7 +74,7 @@ function makeDeps(options: DepsOptions = {}): {
         // 本进程是否写过它的 mode：默认「没登记过」（= 重启后按历史重建）
         has: (sessionId: string) => (options.registered ?? []).includes(sessionId),
         isAgentDriven: (sessionId: string) => (options.driven ?? []).includes(sessionId),
-        // 恢复的座位同样「登记过」，但它是从磁盘恢复的、不是用户刚收回
+        // 恢复的座位同样「登记过」，但它是从磁盘恢复的，优先按 restored 档
         isRestored: (sessionId: string) => (options.restored ?? []).includes(sessionId),
       } as never,
       sessionStore: {
@@ -87,16 +87,14 @@ function makeDeps(options: DepsOptions = {}): {
 }
 
 describe('seatSourceForSession — 抽屉与工作台命令共用的座位档真源', () => {
-  it('四档判据：驱动中 live / 恢复 restored / 收回 revoked / 重建 history', () => {
+  it('三档判据：本进程建 / 接管 live / 恢复 restored / 重建 history', () => {
     const modes = {
       isAgentDriven: (id: string) => id === 'a',
       isRestored: (id: string) => id === 'b',
-      has: (id: string) => id === 'a' || id === 'b' || id === 'c',
     };
     expect(seatSourceForSession(modes, 'a')).toBe('live');
     expect(seatSourceForSession(modes, 'b')).toBe('restored');
-    expect(seatSourceForSession(modes, 'c')).toBe('revoked');
-    expect(seatSourceForSession(modes, 'd')).toBe('history');
+    expect(seatSourceForSession(modes, 'c')).toBe('history');
   });
 });
 
@@ -143,18 +141,7 @@ describe('openWorkbench — 座位解析', () => {
     expect(h.open).toHaveBeenCalledWith('session-current', { seatSource: 'history' });
   });
 
-  it('座位被收回（本进程登记过、当前无驱动方）：按 revoked 打开，不冒充「重启后重建」', async () => {
-    const h = makeDeps({
-      current: 'session-seat',
-      // 收回会写 mode = self 并清驱动权：登记过 ⇒ 不是重启后第一次见到它
-      registered: ['session-seat'],
-      metas: [meta('session-seat', 'hosted', '2026-11-14T00:00:00.000Z')],
-    });
-    await openWorkbench(h.deps);
-    expect(h.open).toHaveBeenCalledWith('session-seat', { seatSource: 'revoked' });
-  });
-
-  it('重启恢复的座位：按 restored 打开，不被说成「已收回」', async () => {
+  it('重启恢复的座位：按 restored 打开，不被说成「重启后重建」', async () => {
     const h = makeDeps({
       current: 'session-seat',
       // 恢复会先写 managed（登记过）再打 restored 标签：两者都为真时 restored 优先

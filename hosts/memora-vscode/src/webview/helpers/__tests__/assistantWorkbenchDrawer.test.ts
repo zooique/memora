@@ -93,19 +93,6 @@ describe('INLINE-WORKBENCH-1 · 助手页内嵌工作台抽屉', () => {
     );
   });
 
-  it('座位状态行复用 seatStateText：revoked 出「已从助手收回」', () => {
-    const { drawer } = mount();
-    drawer.render(
-      snapshot({
-        seatSource: 'revoked',
-        orchestrator: { ...snapshot().orchestrator, managed: false },
-      }),
-    );
-    expect(document.querySelector('.awb-seat__state')?.textContent).toBe(
-      'Taken back from the assistant; no live agent is driving it right now',
-    );
-  });
-
   it('顶部就地视图说明行点明两入口分工，且为首个节点', () => {
     const { drawer } = mount();
     drawer.render(snapshot({ jobs: [job('s-running', { kind: 'running' })] }));

@@ -319,37 +319,18 @@ describe('workbenchView — 空态：读不到 ≠ 没有', () => {
       'Seat restored after restart; it starts working when you send your first message',
     );
     // 不能把「恢复」说成另外两档事实
-    expect(seatState.textContent).not.toContain('Taken back from the assistant');
+    expect(seatState.textContent).not.toContain(
+      'This session is no longer a managed agent session',
+    );
     expect(seatState.textContent).not.toContain('Rebuilt from history after restart');
   });
 
-  it('座位被收回（没重启）：说「已从助手收回」，不说「重启后按历史重建」', () => {
-    const { view, seatState } = mount();
-    view.render(
-      snapshot({
-        seatSource: 'revoked',
-        orchestrator: {
-          name: 'Memora',
-          sessionId: 'session-agent',
-          title: '代理会话',
-          managed: false,
-        },
-      }),
-    );
-    expect(seatState.hidden).toBe(false);
-    expect(seatState.textContent).toBe(
-      'Taken back from the assistant; no live agent is driving it right now',
-    );
-    // 真机缺陷靶标：收回被错说成「重启后重建」
-    expect(seatState.textContent).not.toContain('Rebuilt from history after restart');
-  });
-
-  it('收回后又点「助手」重新接管：实时事实优先，状态行立刻消失（来源快照不再当屏）', () => {
+  it('重启重建后又点「助手」重新接管：实时事实优先，状态行立刻消失（来源快照不再当屏）', () => {
     const { view, seatState } = mount();
     view.render(
       snapshot({
         // 面板绑定的是打开时的来源；这一刻真实状态已是托管
-        seatSource: 'revoked',
+        seatSource: 'history',
         orchestrator: {
           name: 'Memora',
           sessionId: 'session-agent',

@@ -223,48 +223,29 @@ describe('buildWorkbenchSnapshot — 清单口径', () => {
     expect(snapshot.jobs[0].title).toBe('整理周报');
   });
 
-  it('用户收回后：账本 / 历史还记着也不进清单（判据 = 当前驱动权，不是出生记录）', () => {
+  it('用户接管中：账本 / 历史还记着也不进清单（判据 = 当前驱动权，不是出生记录）', () => {
     const snapshot = buildWorkbenchSnapshot(
       baseInputs({
-        childrenOf: () => ['session-revoked'],
-        // 出生记录明确是代理开的，但当前已归用户
+        childrenOf: () => ['session-user-takeover'],
+        // 出生记录明确是代理开的，但当前已由用户接管
         isAgentDriven: () => false,
         history: emptyHistory({
-          children: [{ sessionId: 'session-revoked', title: '旧任务', via: 'create' }],
+          children: [{ sessionId: 'session-user-takeover', title: '旧任务', via: 'create' }],
           totalRounds: 1,
           scannedRounds: 1,
         }),
       }),
     );
     expect(snapshot.jobs).toEqual([]);
-    // 主动收回不是数据缺失，不记 missingCount，也不把 coverage 拉成 partial；
+    // 用户接管不是数据缺失，不记 missingCount，也不把 coverage 拉成 partial；
     // 但必须留下「有记录、被驱动权过滤」的事实，界面据此说清而不是说「还没有」
     expect(snapshot.filteredCount).toBe(1);
     expect(snapshot.missingCount).toBe(0);
     expect(snapshot.coverage).toBe('complete');
   });
 
-  it('座位被收回（revoked）：仍按实时驱动权过滤，被收回的记录不计入在管清单', () => {
-    // 判据要点：收回发生在本进程里 ⇒ 驱动权是实时事实，不能像 history 那样整批放行
-    const snapshot = buildWorkbenchSnapshot(
-      baseInputs({
-        seatSource: 'revoked',
-        childrenOf: () => ['session-revoked'],
-        isAgentDriven: () => false,
-        history: emptyHistory({
-          children: [{ sessionId: 'session-revoked', title: '旧任务', via: 'create' }],
-          totalRounds: 1,
-          scannedRounds: 1,
-        }),
-      }),
-    );
-    expect(snapshot.jobs).toEqual([]);
-    expect(snapshot.filteredCount).toBe(1);
-    expect(snapshot.seatSource).toBe('revoked');
-  });
-
   it('恢复的座位（restored）：也没有实时驱动事实，历史记录照样进清单（真机：整片消失）', () => {
-    // 判据要点：恢复座位的驱动归属不落盘，进程内集合必空——照旧过滤会把「被派过活」的
+    // 判据要点：恢复座位没有实时事件标签，驱动归属不落盘——照旧过滤会把「被派过活」的
     // 历史记录全挡掉，真机表现 = 重启后工作台清单为空。判据统一在 filtersByLiveDriver。
     const snapshot = buildWorkbenchSnapshot(
       baseInputs({

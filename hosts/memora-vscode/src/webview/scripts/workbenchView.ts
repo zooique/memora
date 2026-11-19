@@ -115,7 +115,7 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
                 : coverage === 'partial'
                   ? l10n.t('Some history could not be read')
                   : filteredCount > 0
-                    ? // 记录存在、但当前不由代理驱动（多为用户已收回）：如实说过滤，不改口成「没有」
+                    ? // 记录存在、但当前不由代理驱动（多为用户接管中）：如实说过滤，不改口成「没有」
                       l10n.t(
                         '{0} record(s) exist, but no agent is driving them right now',
                         filteredCount,
@@ -176,20 +176,17 @@ export function createWorkbenchView(deps: WorkbenchViewDeps): WorkbenchView {
 /**
  * 座位状态行（按**事件来源**分档，不拿一句话套所有场景）
  *
- * 真机验收：只做了「收回托管」、没有重启，顶部却写着「重启后按历史重建」——
- * 来源档位被错说成了另一种事实。这里按四档各说各的：
- *   ① 仍按托管装配（实时事实）→ 不解释（空串）；
+ * 三档来源 + 非托管兜底各说各的：
+ *   ① 仍按托管装配且不是恢复来的（实时事实）→ 不解释（空串）；
  *   ② 重启后从持久化状态恢复了座位（有调度权、还没开始跑）→ 恢复说明；
  *   ③ 本进程从没见过这条会话（典型 = 重开窗口）→ 重启后按历史重建；
- *   ④ 本进程登记过、现在已不归代理（典型 = 刚收回）→ 已从助手收回；
- *   ⑤ 其余（仍归代理但没有调度权）→ 不再按托管运行。
+ *   ④ 其余（不再按托管装配）→ 如实说明它已不是助手会话。
  *
- * 为什么①要排在最前：面板绑定的是**打开时**的来源；用户收回后又点「助手」重新接管，
- * 来源快照仍是旧档，只有实时 `managed` 能立刻纠正这一行（否则会一直挂着「已收回」）。
+ * 为什么 `managed` 排在最前：面板绑定的是**打开时**的来源快照，实时身份更权威；
+ * 仍按助手装配时不解释，非托管时按最后一档说话。
  *
- * 第四档 `restored`（形态 + 座位成对恢复）：它有调度权、没有驱动方，与「收回」在事实上
- * **相反**。这句话只说「它是恢复来的、还没开始跑」，不给用户任何需要维护的入口——
- * 座位是内部判据，用户只认「我在跟助手说话」。
+ * `restored`（形态 + 座位成对恢复）有调度权、没有驱动方。这句话只说「它是恢复来的、
+ * 还没开始跑」，不给用户任何需要维护的入口——座位是内部判据，用户只认「我在跟助手说话」。
  *
  * @param snapshot 宿主投递的全量快照
  * @returns 要显示的句子（空串 = 隐藏该行）
@@ -204,9 +201,6 @@ export function seatStateText(snapshot: WorkbenchSnapshot): string {
   }
   if (snapshot.seatSource === 'history') {
     return l10n.t('Rebuilt from history after restart; no live agent is driving it right now');
-  }
-  if (snapshot.seatSource === 'revoked') {
-    return l10n.t('Taken back from the assistant; no live agent is driving it right now');
   }
   return l10n.t('This session is no longer a managed agent session');
 }

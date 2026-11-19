@@ -10,6 +10,8 @@
 import { describe, expect, it } from 'vitest';
 import type { ProcessEvent, Round, RoundStatus } from '@zooique/memora';
 import {
+  isAgentDrivenFailClosed,
+  isSessionAgentDriven,
   projectCreatedBy,
   projectSessionStatus,
   resolveListCoverage,
@@ -391,5 +393,88 @@ describe('resolveListCoverage — 空清单与读不到的区分', () => {
       coverage: 'complete',
       reasons: [],
     });
+  });
+});
+
+/**
+ * 造一条带 origin 的轮（驱动权判据按 `Round.origin` 轮戳判定）
+ */
+function originRound(origin: 'user' | 'hosted' | undefined, status: RoundStatus): Round {
+  return {
+    id: 'r1',
+    sessionId: 's1',
+    status,
+    processEvents: [],
+    startedAt: TS,
+    ...(origin ? { origin } : {}),
+  } as unknown as Round;
+}
+
+/** hosted 出生的会话元数据替身 */
+const hostedMeta = { origin: 'hosted' } as never;
+
+describe('isSessionAgentDriven — 会话级驱动权读盘判据', () => {
+  it('非 hosted 出生（用户自建 / 读不到 meta）→ false，不因轮记录扶正', () => {
+    expect(isSessionAgentDriven(ports({ readMeta: () => undefined }), 's1')).toBe(false);
+    expect(
+      isSessionAgentDriven(ports({ readMeta: () => ({ origin: 'user' }) as never }), 's1'),
+    ).toBe(false);
+  });
+
+  it('hosted 出生 + 首轮尚未落盘（轮 id 列表空）→ true，覆盖启动窗口', () => {
+    expect(isSessionAgentDriven(ports({ readMeta: () => hostedMeta }), 's1')).toBe(true);
+  });
+
+  it('hosted 出生 + 最近轮是 hosted 轮 → true', () => {
+    const p = ports({
+      readMeta: () => hostedMeta,
+      readRoundIds: () => ['r1'],
+      readRound: () => originRound('hosted', 'pending'),
+    });
+    expect(isSessionAgentDriven(p, 's1')).toBe(true);
+  });
+
+  it('hosted 出生 + 用户亲手发的轮仍在跑（未收场）→ false，代理此刻不驱动', () => {
+    const p = ports({
+      readMeta: () => hostedMeta,
+      readRoundIds: () => ['r1'],
+      readRound: () => originRound('user', 'pending'),
+    });
+    expect(isSessionAgentDriven(p, 's1')).toBe(false);
+  });
+
+  it('hosted 出生 + 用户轮已收场 → true，身份自动恢复（与 B4 投影同口径）', () => {
+    const p = ports({
+      readMeta: () => hostedMeta,
+      readRoundIds: () => ['r1'],
+      readRound: () => originRound('user', 'complete'),
+    });
+    expect(isSessionAgentDriven(p, 's1')).toBe(true);
+  });
+
+  it('hosted 出生但最近轮整轮读不到 → undefined，门禁须 fail-closed 拒绝（不得当驱动中）', () => {
+    const p = ports({
+      readMeta: () => hostedMeta,
+      readRoundIds: () => ['r1'],
+      readRound: () => undefined,
+    });
+    expect(isSessionAgentDriven(p, 's1')).toBeUndefined();
+  });
+});
+
+describe('isAgentDrivenFailClosed — 三态折布尔的门禁适配', () => {
+  it('盘读异常（三态 undefined）折成 false——停止 / 暂停 / 通知门禁 fail-closed 拒绝', () => {
+    const p = ports({
+      readMeta: () => hostedMeta,
+      readRoundIds: () => ['r1'],
+      readRound: () => undefined, // hosted 出生但整轮读不到 ⇒ 三态 undefined
+    });
+    expect(isSessionAgentDriven(p, 's1')).toBeUndefined();
+    expect(isAgentDrivenFailClosed(p, 's1')).toBe(false);
+  });
+
+  it('确定驱动折 true、明确非驱动折 false——不过度拒绝也不放宽', () => {
+    expect(isAgentDrivenFailClosed(ports({ readMeta: () => hostedMeta }), 's1')).toBe(true);
+    expect(isAgentDrivenFailClosed(ports({ readMeta: () => undefined }), 's1')).toBe(false);
   });
 });

@@ -4,14 +4,15 @@
  * 职责边界：
  * - **身份真源 = `assistantSession.ts` 的工作区指针**：`isManaged(sid)` 只回答「这条是不是助手
  *   会话」。指针持久（workspaceState），故重启后侧栏先打开助手会话、助手窗没开，它照样按助手装配。
- * - **当前驱动权真源 = `agentDriven` 集合**：只回答「这条会话现在是否由代理驱动」，
- *   与身份分开——代理开出的工作会话不是助手，但当前仍归代理驱动；用户收回后从集合移除。
- *   确认代批判据不是这里（按轮读 `origin`，见 `HOSTED-CONFIRM-SOFT-1`）。
- * - `labels` 只作**事件来源标签**（工作台要说「这条被收回过 / 本进程登记过」），不承担身份判定；
+ * - **当前驱动权真源 = 盘上轮记录**：`isAgentDrivenFailClosed` 按 `SessionMeta.origin` +
+ *   最近轮 `Round.origin` 判，重启仍在；停止 / 清单 / 通知三处注入点共用。
+ * - `agentDriven` 只作**本进程事件标签**（本进程代理建 / 派活的会话 ⇒ 工作台座位档 `live`），
+ *   不承担身份或驱动权判定；不落盘，重启回落空集 = 「重启后按历史重建」的语义。
+ * - `labels` 只作**事件来源标签**（工作台要说「本进程登记过」），不承担身份判定；
  *   未知 sid 一律回落 `'self'`。
  *
  * ⚠️ 设计允许的张力（不要当 bug 修）：
- * `agentDriven` 不落盘，重启回落空集；而 `SessionMeta.origin` / `Round.origin` 是**持久事实**。
+ * 事件标签不落盘，重启回落空集；而 `SessionMeta.origin` / `Round.origin` 是**持久事实**。
  * 装配期身份（指针）与出生归属（origin）是两回事，刻意不同步。
  */
 
@@ -40,16 +41,12 @@ export class SessionModeStore {
   /**
    * 身份的事件来源标签（**不承担身份判定**，身份只看指针）
    *
-   * 用途：工作台区分「本进程登记过 / 用户收回过」与「本进程第一次见」的文案分档。
+   * 用途：区分「本进程显式登记过」与「本进程第一次见」的事件分档。
    * 身份判据一律 `isManaged`（读指针），不从本表反推。
    */
   private readonly labels = new Map<string, SessionMode>();
 
-  /**
-   * 当前由代理驱动的会话 id（代理开出的工作会话；收回即移除）
-   *
-   * 出生来源（`SessionMeta.origin` / 创建者账本）只做出生记录，不当权限用。
-   */
+  /** 本进程内代理建立 / 接管的会话 id（工作台座位档 `live` 的事件标签；非驱动权判据） */
   private readonly agentDriven = new Set<string>();
 
   /**
@@ -80,41 +77,14 @@ export class SessionModeStore {
     return sessionId.length > 0 && readAssistantSessionId(this.workspaceState) === sessionId;
   }
 
-  /**
-   * 该会话当前是否由代理驱动（停止 / 暂停 / 恢复、工作台清单、中断通知的唯一判据）
-   *
-   * @param sessionId 目标会话
-   * @returns true = 代理现在可以操作它；false = 用户自己建的或已被用户收回
-   */
+  /** 本进程内该会话是否由代理建立 / 派活（工作台座位档事件标签；驱动权判据在 `sessionStatus`） */
   isAgentDriven(sessionId: string): boolean {
     return this.agentDriven.has(sessionId);
   }
 
-  /**
-   * 该会话当前是否归代理（= 助手会话（有调度权）或由代理驱动）
-   *
-   * 组合判据只此一处，避免各消费点手写 `||` 后漂移。
-   * 边界：停止 / 暂停 / 恢复的目标判据仍是 `isAgentDriven`——助手会话是用户自己开的，
-   * 不因为「归代理」就允许别的代理去停它。
-   */
-  isAgentControlled(sessionId: string): boolean {
-    return this.isManaged(sessionId) || this.isAgentDriven(sessionId);
-  }
-
-  /**
-   * 登记「代理创建了这条工作会话 ⇒ 当前由代理驱动」
-   *
-   * 必须在首轮流启动之前调用（首轮可能立即失败 / 被停，晚登记会漏掉中断通知）。
-   *
-   * @param sessionId 代理开的工作会话
-   */
+  /** 登记「本进程内代理建立 / 派活了这条会话」（工作台座位档事件标签；驱动权另读盘） */
   markAgentDriven(sessionId: string): void {
     this.agentDriven.add(sessionId);
-  }
-
-  /** 收回驱动权（用户点「收回托管」后当前归用户；出生来源不变） */
-  clearAgentDriven(sessionId: string): void {
-    this.agentDriven.delete(sessionId);
   }
 
   /**
@@ -130,8 +100,8 @@ export class SessionModeStore {
   /**
    * 本进程是否**登记过**这条会话的身份标签（只读 `labels`，不新增状态）
    *
-   * 与 `get()` 的差别：`get()` 对未知会话回落 `'self'`，无法区分「用户收回成 self」与
-   * 「本进程从没见过它」。工作台据此按**事件来源**分档说话。
+   * 与 `get()` 的差别：`get()` 对未知会话回落 `'self'`，无法区分「本进程显式改成 self」与
+   * 「本进程从没见过它」。事件分档据此说话。
    */
   has(sessionId: string): boolean {
     return this.labels.has(sessionId);
@@ -159,7 +129,7 @@ export class SessionModeStore {
     return this.restored.has(sessionId);
   }
 
-  /** 会话删除时清理：标签 / 驱动权 / 恢复标记，以及指向它的助手指针 */
+  /** 会话删除时清理：标签 / 事件标签 / 恢复标记，以及指向它的助手指针 */
   delete(sessionId: string): void {
     this.labels.delete(sessionId);
     this.agentDriven.delete(sessionId);

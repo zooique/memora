@@ -70,7 +70,7 @@ export class MemoraWorkbenchPanel {
   private _panel: vscode.WebviewPanel | undefined;
   /** 当前绑定的座位会话 id */
   private _orchestratorId = '';
-  /** 当前座位的来源（live = 实时托管；history = 重启后按历史重建；revoked = 座位被收回） */
+  /** 当前座位的来源（live = 实时托管；history = 重启后按历史重建；restored = 从盘恢复） */
   private _seatSource: WorkbenchSeatSource = 'live';
   /** 当前座位的「打开时历史重建」缓存（undefined = 尚未 open / 需重建） */
   private _history: WorkbenchHistoryResult | undefined;

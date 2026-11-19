@@ -80,6 +80,55 @@ function isWorkerIdentitySuspended(ports: SessionStatusReadPorts, sessionId: str
 }
 
 /**
+ * 「这条会话现在是否由代理驱动」——会话级驱动权的**读盘判据**（取代内存 `agentDriven` 集合）
+ *
+ * 唯一真源 = `SessionMeta.origin`（出生事实，持久）+ 最近一轮 `Round.origin`（轮戳，持久）。
+ * 11-17 定案后助手唯一 / 入口唯一 ⇒ `origin === 'hosted'` 只由代理创建会话写入，侧栏自建恒
+ * `self`，故它可精确代替「代理创建时 mark」。不再有「收回」这个可变动作：出生事实不可撤，
+ * 用户要代理别动就**停那一轮**（轮级动作，一直都有）。
+ *
+ * 三态返回值刻意区分「明确否」与「不确定」，让各消费点按自身安全等级解释：
+ * - `true`  = 代理驱动（hosted 出生 + 无用户接管中）；
+ * - `false` = 明确非代理驱动（非 hosted 出生 / 用户正在这条会话里亲手发轮且未收场）；
+ * - `undefined` = 不确定（hosted 出生但最近轮读不到盘）——停止 / 暂停 / 恢复门禁必须据此
+ *   **拒绝**（fail-closed），不得复用 `isWorkerIdentitySuspended` 的「读不到当未触发」把它
+ *   解释成驱动中，那是把 fail-closed 改成 fail-open。
+ *
+ * 边界：最近一轮 = 轮 id 列表末项；列表为空 = 首轮尚未落盘 = 仍由代理驱动（覆盖台账
+ * `agentDriven` 必须在首轮启动前登记的窗口）。轮 id 存在但整轮读不到 = 盘读异常 ⇒ undefined。
+ * 用户接手的轮已收场 ⇒ 自动恢复驱动（与 `isWorkerIdentitySuspended` 的投影恢复同一口径）。
+ */
+export function isSessionAgentDriven(
+  ports: SessionStatusReadPorts,
+  sessionId: string,
+): boolean | undefined {
+  const meta = ports.readMeta?.(sessionId);
+  // 出生事实读不到 / 非 hosted ⇒ 明确非代理驱动（不猜、不因轮记录而扶正）
+  if (!meta || meta.origin !== 'hosted') return false;
+  const lastRoundId = ports.readRoundIds(sessionId).at(-1);
+  // 首轮尚未落盘：代理刚创建、首轮还在启动窗口内 ⇒ 仍由代理驱动
+  if (!lastRoundId) return true;
+  const round = ports.readRound(lastRoundId);
+  // hosted 出生但最近轮整轮读不到 = 盘读异常 ⇒ 不确定，门禁须拒绝
+  if (!round) return undefined;
+  const status = ports.readRoundStatus(lastRoundId) ?? round.status;
+  // 最近轮是用户亲手发的且未收场 ⇒ 用户接管中，代理此刻不驱动
+  if (round.origin !== 'hosted' && status !== undefined && !isRoundSettled(status)) return false;
+  return true;
+}
+
+/**
+ * 驱动权判据的 fail-closed 布尔适配（停止 / 暂停 / 恢复 / 通知 / 工作台清单共用注入闭包）
+ *
+ * `isSessionAgentDriven` 的三态里 `undefined`（盘读异常）在此**折成 false**——门禁据此拒绝，
+ * 绝不因读不到盘就放行。各消费点的 `isAgentDriven: (sid) => boolean` 一律接本函数，
+ * 不各自写 `=== true`，避免 fail-open 散点。
+ */
+export function isAgentDrivenFailClosed(ports: SessionStatusReadPorts, sessionId: string): boolean {
+  return isSessionAgentDriven(ports, sessionId) === true;
+}
+
+/**
  * 单会话状态投影（优先级：等你 > 在跑 > 终态）
  *
  * 为什么「等你」优先：会话在等用户拍板时才是可行动的；此时即使运行态表还残留

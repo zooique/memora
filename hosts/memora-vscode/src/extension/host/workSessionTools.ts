@@ -92,8 +92,8 @@ export const CREATE_SESSION_TOOL_NAME = 'create_session';
 /**
  * 停止会话工具名（台账 HOST-MANAGED-MODE-V0-1 判据 6 的「停止」半）
  *
- * 只允许停「当前仍由代理驱动」的活（判据 = `sessionModes.isAgentDriven`，与工作台清单 /
- * 中断通知同一处）；用户自己建的、或已被用户收回的一律 E_DENIED。
+ * 只允许停「当前仍由代理驱动」的活（判据 = 注入的读盘闭包，与工作台清单 / 中断通知
+ * 同一处）；用户自己建的、用户接管中或盘读异常的一律 E_DENIED。
  * 停止复用用户停止的同一条实现，终态与原因仍由既有轮投影给出，不新增通知类型。
  */
 export const STOP_WORK_SESSION_TOOL_NAME = 'stop_work_session';
@@ -247,7 +247,7 @@ export interface WorkSessionToolDeps {
   /**
    * 当前是否由代理驱动的唯一判据（停止 / 暂停 / 恢复的目标归属）
    *
-   * 与出生账本分开：账本只回答「谁开的」；用户收回后本读口即为 false，一律拒绝。
+   * 与出生账本分开：账本只回答「谁开的」；用户接管中或盘读异常时本读口即为 false，一律拒绝。
    * 缺省按「不可确认 ⇒ 拒绝」处理——宁可不给操作，也不拿出生记录当权限。
    */
   isAgentDriven?: (sessionId: string) => boolean;
@@ -637,7 +637,7 @@ const STOP_WORK_SESSION_DEFINITION: ToolDefinition = {
   name: STOP_WORK_SESSION_TOOL_NAME,
   description:
     '停止一条**当前仍由代理驱动**的会话正在跑的活（复用用户停止的同一条路径）。' +
-    '目标已被用户收回、或本来就是用户自己建的，返回 E_DENIED（判据是当前驱动权，不是出生记录）；' +
+    '目标正由用户接管、或本来就是用户自己建的，返回 E_DENIED（判据是当前驱动权，不是出生记录）；' +
     '状态读不到（unreadable）时返回 E_UNREADABLE，不猜着停。' +
     '返回 stopped=true 表示停止信号已发出；stopped=false 表示目标已收场 / 本来没跑。' +
     '终态与原因用 list_work_sessions 再看（completed / stopped + stop）。',
@@ -667,7 +667,7 @@ const PAUSE_WORK_SESSION_DEFINITION: ToolDefinition = {
   name: PAUSE_WORK_SESSION_TOOL_NAME,
   description:
     '暂停一条**当前仍由代理驱动**的会话（软暂停：当前步骤结束后生效，历史保留，可再恢复）。' +
-    '目标已被用户收回、或本来就是用户自己建的，返回 E_DENIED（判据是当前驱动权，不是出生记录）；' +
+    '目标正由用户接管、或本来就是用户自己建的，返回 E_DENIED（判据是当前驱动权，不是出生记录）；' +
     '状态读不到（unreadable）时返回 E_UNREADABLE，不猜着暂停。' +
     'paused=true 表示已在暂停态 / 申请已被受理；paused=false 表示目标已收场或本来没跑。' +
     '恢复用 resume_work_session（同一套归属门禁）。',
@@ -696,7 +696,7 @@ const RESUME_WORK_SESSION_DEFINITION: ToolDefinition = {
   name: RESUME_WORK_SESSION_TOOL_NAME,
   description:
     '恢复一条**当前仍由代理驱动**的会话（复用宿主既有续跑路径，不新造流）。' +
-    '目标已被用户收回、或本来就是用户自己建的，返回 E_DENIED（判据是当前驱动权，不是出生记录）；' +
+    '目标正由用户接管、或本来就是用户自己建的，返回 E_DENIED（判据是当前驱动权，不是出生记录）；' +
     '状态读不到（unreadable）时返回 E_UNREADABLE，不猜着恢复。' +
     'resumed=true 表示续跑已启动；resumed=false 表示目标不在暂停态' +
     '（可能在等用户回答 / 已收场），没有可恢复的活。',
@@ -1048,14 +1048,14 @@ function readHostedCreatedFacts(deps: WorkSessionToolDeps | undefined): {
 /**
  * 归属门禁的统一话术（stop / pause / resume 三条入口同一套，语义不放宽）
  *
- * 判据是「当前是否由代理驱动」，不是出生记录：用户自己建的、或已被用户收回的会话
- * 都不再由代理驱动，拒绝理由相同（不再区分「账本没记」这类内部推导）。
+ * 判据是「当前是否由代理驱动」，不是出生记录：用户自己建的、用户接管中或盘读异常的会话
+ * 都不由代理驱动，拒绝理由相同（不再区分「账本没记」这类内部推导）。
  *
  * @param verb 被拒的动作（停 / 暂停 / 恢复），只影响文案
  * @returns 给模型看的拒绝原因
  */
 function agentDrivenDeniedMessage(verb: string): string {
-  return `该会话当前不由代理驱动（用户自己建的，或已被用户收回），代理不许${verb}。`;
+  return `该会话当前不由代理驱动（用户自己建的、用户接管中或盘读异常），代理不许${verb}。`;
 }
 
 /**

@@ -83,22 +83,16 @@ describe('SessionModeStore · 助手会话身份容器', () => {
     expect(store.listManagedSessionIds()).toEqual(['assistant-1']);
   });
 
-  it('「当前归代理」= 助手会话 ∪ 代理驱动；收回 / 删除后都不算', () => {
+  it('代理建立 / 接管登记为本进程事件标签；删除会话一并清理', () => {
     const store = makeStore(makeMemento());
-    store.set('s-assistant', 'managed');
     store.set('s-child', 'self');
     store.markAgentDriven('s-child');
 
-    // 助手（有调度权）与代理开着的工作会话（无调度权但归代理驱动）都归代理
-    expect(store.isAgentControlled('s-assistant')).toBe(true);
-    expect(store.isAgentControlled('s-child')).toBe(true);
-    expect(store.isAgentControlled('s-user')).toBe(false);
+    expect(store.isAgentDriven('s-child')).toBe(true);
+    expect(store.isAgentDriven('s-user')).toBe(false);
 
-    // 收回驱动权：工作会话当前归用户；删除助手会话：指针一并清
-    store.clearAgentDriven('s-child');
-    expect(store.isAgentControlled('s-child')).toBe(false);
-    store.delete('s-assistant');
-    expect(store.isAgentControlled('s-assistant')).toBe(false);
+    store.delete('s-child');
+    expect(store.isAgentDriven('s-child')).toBe(false);
   });
 
   it('启动时从指针恢复的助手会话带「恢复」事件标签；显式登记后标签清除', () => {

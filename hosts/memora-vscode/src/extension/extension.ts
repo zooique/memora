@@ -61,7 +61,7 @@ import {
   type WorkbenchHistoryResult,
 } from '../webview/helpers/workbenchHistory.js';
 // 会话状态投影（工作台与主控工具共用同一份判断，防两处漂移）
-import { projectSessionStatus } from '../shared/sessionStatus.js';
+import { isAgentDrivenFailClosed, projectSessionStatus } from '../shared/sessionStatus.js';
 import type { WorkbenchJobStatus } from '../shared/workbenchDto.js';
 // 「打开工作台」命令（命令面板 + 助手形态输入区按钮共用；标题栏不再提供按钮，自助形态无此入口）
 import { registerOpenWorkbenchCommand, seatSourceForSession } from './commands/openWorkbench.js';
@@ -70,8 +70,6 @@ import { registerOpenWorkbenchCommand, seatSourceForSession } from './commands/o
 import type { SettingsTab } from '../shared/settingsTabs.js';
 import { openChatCommand } from './commands/openChat.js';
 import { registerNewSessionCommand } from './commands/newSession.js';
-// 收回本会话（撤销助手代理）：与「新建会话选模式」对称的退出入口
-import { registerRevokeManagedSessionCommand } from './commands/revokeManagedSession.js';
 import type {
   HostedInputDispatcher,
   HostedSessionCreator,
@@ -269,7 +267,7 @@ interface AssemblyDeps {
   /**
    * 当前是否由代理驱动的唯一判据（停止 / 暂停 / 恢复、工作台清单、中断通知共用）
    *
-   * 与出生账本分开：账本只回答「谁开的」；用户收回后本读口即为 false，代理不得再操作。
+   * 与出生账本分开：账本只回答「谁开的」；用户接管中或盘读异常时本读口即为 false，代理不得再操作。
    */
   readHostedAgentDriven: (sessionId: string) => boolean;
   /** 主控清单的历史重建读口（重启后补归属；读盘有 60 轮上限） */
@@ -655,6 +653,25 @@ export function activate(context: vscode.ExtensionContext): void {
       sessionId,
     );
 
+  /**
+   * 当前驱动权的唯一读盘闭包（取代内存 `agentDriven` 集合；见 HOSTED-ROUND-ORIGIN-1）
+   *
+   * 真源 = `SessionMeta.origin`（出生事实）+ 最近轮 `Round.origin`，三态折 false fail-closed。
+   * 停止 / 暂停 / 恢复（`readHostedAgentDriven`）、工作台清单两处共用这一个闭包，零散点。
+   */
+  const readAgentDriven = (sessionId: string): boolean =>
+    isAgentDrivenFailClosed(
+      {
+        peekActivity: (id) => chatProvider.workbench.peekActivity(id),
+        readRoundIds: (id) => sessionStore.getRoundIds(id),
+        readRoundStatus: (roundId) =>
+          hasRoundStatusIndex(roundStore) ? roundStore.getStatus(roundId) : undefined,
+        readRound: (roundId) => roundStore.getById(roundId) ?? undefined,
+        readMeta: (id) => sessionStore.getSessionMeta(id),
+      },
+      sessionId,
+    );
+
   const assemblyDeps: AssemblyDeps = {
     providerStore,
     sessionStore,
@@ -691,8 +708,8 @@ export function activate(context: vscode.ExtensionContext): void {
     readHostedStatus,
     // 归属真源 = 与工作台同一个创建者账本（仅本进程；重启后由历史重建补）
     hostedAgentCreated: (orchestratorId) => chatProvider.workbench.childrenOf(orchestratorId),
-    // 当前驱动权：与工作台清单 / 中断通知 / 停止暂停恢复同一判据（收回后即 false）
-    readHostedAgentDriven: (sessionId) => sessionModes.isAgentDriven(sessionId),
+    // 当前驱动权：与工作台清单 / 中断通知 / 停止暂停恢复共用同一读盘闭包（三态折 false）
+    readHostedAgentDriven: readAgentDriven,
     readHostedHistory: rebuildWorkbenchHistory,
   };
 
@@ -868,8 +885,8 @@ export function activate(context: vscode.ExtensionContext): void {
             ?.rolePackManager?.listMeta()
             .find((meta) => meta.name === name)?.displayName,
         isManaged: (sessionId) => sessionModes.isManaged(sessionId),
-        // 当前驱动权：收回后即使创建者账本还记着，也不再把这条会话列进清单
-        isAgentDriven: (sessionId) => sessionModes.isAgentDriven(sessionId),
+        // 当前驱动权：读盘判据（与停止 / 通知 / 恢复共用同一闭包），非代理驱动不再列进清单
+        isAgentDriven: readAgentDriven,
         // 清单真源 = 中断通知器的创建者账本（origin 反推会把用户自己选的托管新建算错）
         childrenOf: (creatorSessionId) => chatProvider.workbench.childrenOf(creatorSessionId),
         // 打开时那次历史重建的缓存结果（重启后账本为空时由它兜底；每次 push 不重读）
@@ -941,8 +958,6 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('memora.open', () => openChatCommand(getAgent, chatProvider)),
   );
   registerNewSessionCommand(context, getAgent, chatProvider); // 新建会话（恒为普通会话）
-  // 收回本会话：撤销助手代理（mode → self，强制按自助重装；历史标记不动）
-  registerRevokeManagedSessionCommand(context, chatProvider);
   // 命令：添加图片到对话（IMG-2 Q3）：拾取编排（开框/读盘/落盘/回执）全归 chatPanel.pickAndAttachImages 单点
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.attachImage', () => chatProvider.pickAndAttachImages()),

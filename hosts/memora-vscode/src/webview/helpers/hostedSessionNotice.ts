@@ -58,12 +58,12 @@ import {
 export interface HostedSessionNoticeDeps {
   /** 按会话读元数据（真源 = 宿主 SessionStore） */
   readSessionMeta: (sessionId: string) => SessionMeta | undefined;
-  /** 该会话当前是否仍是托管装配（创建者被收回后不再打扰它） */
+  /** 该会话当前是否仍是助手会话（创建者不再是助手会话时不打扰它） */
   isManaged: (sessionId: string) => boolean;
   /**
    * 目标会话当前是否仍由代理驱动（唯一的「现在归谁」判据）
    *
-   * 与创建者账本（出生记录）分开：用户收回后，即使账本还记着「代理开的」也不再通知。
+   * 与创建者账本（出生记录）分开：用户接管中或盘读异常时，即使账本还记着「代理开的」也不通知。
    */
   isAgentDriven: (sessionId: string) => boolean;
   /** 同步取已绑定实例（不 await 装配：取不到就如实不投） */
@@ -286,9 +286,9 @@ export class HostedSessionNotifier {
   /**
    * 列出「压在这个创建者名下、尚未浮现的落定汇报」条数
    *
-   * 只读待办队列，不触发投递：收回托管时用它如实告知「还有几条结果不会再送到这条会话」。
-   * 创建者被收回后 `resolveTarget` 的 `isManaged` 判据不再成立 ⇒ 待办不会再浮现，
-   * 这条事实必须在收回当口说清，否则用户以为结果还会来。
+   * 只读待办队列，不触发投递：用于如实读出「还有几条结果尚未浮现到这条会话」。
+   * 创建者不再是助手会话时 `resolveTarget` 的 `isManaged` 判据不成立 ⇒ 待办不会再浮现；
+   * 这条事实必须能被读出，否则容易把「压着没送」误说成「没有结果」。
    *
    * @param creatorSessionId 主控会话 id
    * @returns 待浮现条数（无待办 = 0）
@@ -439,9 +439,9 @@ export class HostedSessionNotifier {
     if (!meta) return undefined;
     const creator = this.childToCreator.get(sessionId);
     if (!creator) return undefined;
-    // 当前驱动权判据（与停止 / 暂停 / 工作台清单同一判断）：用户收回后当前归用户，不再通知
+    // 当前驱动权判据（与停止 / 暂停 / 工作台清单同一判断）：用户接管中 / 非托管来源不通知
     if (!this.deps.isAgentDriven(sessionId)) return undefined;
-    // 创建者已被收回托管（或已关窗）：它现在是普通会话，不拿代理的事实打扰它
+    // 创建者已不是助手会话（或已关窗）：不拿代理的事实打扰它
     if (!this.deps.isManaged(creator)) return undefined;
     return { creator, title: getSessionDisplayName(meta) || sessionId };
   }

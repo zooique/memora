@@ -8,9 +8,9 @@
  *
  * 本进程一条托管会话都没有时（多为重启后：mode 不落盘、装配表为空），**不再直接拒绝**：
  * 改读持久历史里的托管来源会话（`SessionMeta.origin === 'hosted'`），以只读方式重建工作台。
- * 这一档还要按**事件来源**再分一次（真机：只收回托管、没重启，却被写成「重启后按历史重建」）：
- *   - 当前仍有代理在驱动它 ⇒ 有实时事实，按 `live`；
- *   - 本进程登记过这条会话、它现在又不归代理 ⇒ 座位是被**收回**的；
+ * 这一档还要按**事件来源**再分一次（真机：重启后不能说成「实时」）：
+ *   - 本进程代理建 / 接管的会话 ⇒ 有实时事实，按 `live`（事件标签在集合里）；
+ *   - 本进程从磁盘恢复了座位 ⇒ 按 `restored`，说清「恢复过」；
  *   - 本进程从没登记过 ⇒ 才是「重开窗口后按历史重建」。
  * 后两种都说「当前没有实时驱动方」，但来源不同，不能共用一句话。这仍是读既有事实，
  * 不新增持久化、不猜一个实时座位出来。
@@ -136,19 +136,16 @@ function liveSeatSource(deps: OpenWorkbenchDeps, sessionId: string): WorkbenchSe
 }
 
 /**
- * 给「历史档」的候选再判一次事件来源（实时驱动 / 恢复 / 收回 / 重启重建）
+ * 给「历史档」的候选再判一次事件来源（实时驱动 / 恢复 / 重启重建）
  *
  * 判据全部读既有容器，不新增状态：
- *   - `isAgentDriven(sid)` = 现在仍有代理在驱动它（这类有**实时事实**，按 `live` 处理：
- *     它没被收回，也就不能说「当前没有实时驱动方」）；
- *   - `isRestored(sid)` = 本进程从持久化状态恢复了这条座位（有调度权、无驱动方）。
- *     它与「用户刚收回」在 `has()` 上无法区分，必须单独一档；
- *   - `has(sid)` = 本进程写过这条会话的 mode（收回会写 `'self'`；重启后 Map 为空）；
+ *   - `isAgentDriven(sid)` = 本进程代理建 / 派活的会话（有实时事件标签，按 `live`）；
+ *   - `isRestored(sid)` = 本进程从持久化状态恢复了这条座位（有调度权、无驱动方）；
  *   - 都没命中 = 本进程第一次见到它 ⇒ 重开窗口后按历史重建。
  *
  * @param deps 既有单例依赖
  * @param sessionId 候选会话
- * @returns 座位来源档（`live` / `restored` / `revoked` / `history`）
+ * @returns 座位来源档（`live` / `restored` / `history`）
  */
 function historicalSeatSource(deps: OpenWorkbenchDeps, sessionId: string): WorkbenchSeatSource {
   return seatSourceForSession(deps.sessionModes, sessionId);
@@ -158,10 +155,8 @@ function historicalSeatSource(deps: OpenWorkbenchDeps, sessionId: string): Workb
  * 座位来源档 resolver（工作台命令与助手页内嵌抽屉共用的唯一判据）
  *
  * 判据全部读既有容器，不新增状态：
- *   - `isAgentDriven(sid)` = 现在仍有代理在驱动它（有实时事实 ⇒ live）；
- *   - `isRestored(sid)` = 本进程从持久化状态恢复了这条座位（有调度权、无驱动方，
- *     必须排在 has() 之前，否则被说成「已收回」）；
- *   - `has(sid)` = 本进程写过 mode（用户刚收回 ⇒ revoked）；
+ *   - `isAgentDriven(sid)` = 本进程代理建 / 派活（有实时事件标签 ⇒ live）；
+ *   - `isRestored(sid)` = 本进程从持久化状态恢复了这条座位（有调度权、无驱动方）；
  *   - 都没命中 = 本进程第一次见到 ⇒ 重开窗口后按历史重建（history）。
  *
  * 抽屉曾固定传 `live`（INLINE-WORKBENCH-1），`filtersByLiveDriver('live')` 会滤掉
@@ -169,12 +164,11 @@ function historicalSeatSource(deps: OpenWorkbenchDeps, sessionId: string): Workb
  * 两条入口同档，杜绝第二套座位判据。
  */
 export function seatSourceForSession(
-  sessionModes: Pick<SessionModeStore, 'isAgentDriven' | 'isRestored' | 'has'>,
+  sessionModes: Pick<SessionModeStore, 'isAgentDriven' | 'isRestored'>,
   sessionId: string,
 ): WorkbenchSeatSource {
   if (sessionModes.isAgentDriven(sessionId)) return 'live';
   if (sessionModes.isRestored(sessionId)) return 'restored';
-  if (sessionModes.has(sessionId)) return 'revoked';
   return 'history';
 }
 
