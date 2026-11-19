@@ -2849,6 +2849,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         markAgentDriven: (sessionId) => this.sessionModes.markAgentDriven(sessionId),
         rememberCreator: (sessionId, creator) => this._hostedNotifier.remember(sessionId, creator),
         trackLease: (sessionId, lease) => this._dispatchLeases.set(sessionId, lease),
+        postUserEcho: (sessionId, echo) => this.postToSession(sessionId, echo),
         startFlow: (sessionId, factory, seed) => void this.runFlow(factory, seed, sessionId),
       },
       callingSessionId,

@@ -20,6 +20,7 @@ import * as vscode from 'vscode';
 import { logger } from '@zooique/memora';
 import type { Agent, AgentChunk } from '@zooique/memora';
 import type { HostedDispatchResult } from '../../extension/host/workSessionTools.js';
+import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { acquireDispatchWriteLease, type DispatchWriteLease } from './hostedDispatchLock.js';
 import type { FlowSeed } from './sessionRuntime.js';
 
@@ -48,6 +49,17 @@ export interface HostedDispatchDeps {
   rememberCreator: (sessionId: string, creator: string) => void;
   /** 把写权租约挂到该会话（流收尾统一归还，异常路径同样走那里） */
   trackLease: (sessionId: string, lease: DispatchWriteLease) => void;
+  /**
+   * 把这条派发输入即时上屏到目标会话（真机 DISPATCH-USER-ECHO-1）
+   *
+   * 与用户自己发消息的 `post({type:'user'})` 同一时机：只靠 seed 落盘 + 收场 turn_update
+   * 是**实时不可见**的——收场投影 replay=false，webview 不重建气泡，只有切会话/重启触发
+   * replay 才从落盘补出。派发代用户输入，理应在目标会话即时看到那条提示词气泡。
+   */
+  postUserEcho: (
+    sessionId: string,
+    echo: Extract<ExtensionToWebviewMessage, { type: 'user' }>,
+  ) => void;
   /** 走既有流通路（不另造流）：`void` 语义——受理即返回，不等目标轮跑完 */
   startFlow: (
     sessionId: string,
@@ -141,6 +153,16 @@ export async function dispatchHostedInputWith(
     deps.markAgentDriven(targetSessionId);
     deps.rememberCreator(targetSessionId, callingSessionId);
     deps.trackLease(targetSessionId, lease);
+    // ⑤.5 即时上屏这条代发输入（与 sendInput 同序：先 user 回声、再起流）：
+    //     text 用裸输入（与 seed.content / 落盘原文同值），ts 与 seed 同源；origin+senderName
+    //     让 webview 画「Sent by Memora」标签。缺这一步 = 实时无气泡、切会话才补出（真机实锤）。
+    deps.postUserEcho(targetSessionId, {
+      type: 'user',
+      text,
+      ts: now,
+      origin: 'hosted',
+      senderName,
+    });
     // ⑥ 走既有流通路：attachments 不传（派发通道不收图）；opts 让内核把本轮 origin 落 'hosted'、
     //    消息名落 senderName，并把「谁派来」记到 Round.dispatchedBy（重启后工作台靠它反查）
     deps.startFlow(
