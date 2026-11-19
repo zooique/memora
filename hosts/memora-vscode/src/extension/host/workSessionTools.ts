@@ -163,14 +163,15 @@ export const ORCHESTRATOR_ALLOWED_TOOLS: readonly string[] = [
 /**
  * 派发回调可产生的业务结果（**唯一**真源 = `chatPanel.dispatchHostedInput` 的返回面）
  *
- * 只含派发层真实会判的三档：调用方非托管 `E_DENIED`、目标会话在跑 `E_BUSY`、
- * 目标会话被另一个窗口占用（拿不到写锁）`E_LOCKED`。
+ * 只含派发层真实会判的四档：调用方非托管 `E_DENIED`、目标会话在跑 `E_BUSY`、
+ * 目标会话被另一个窗口占用（拿不到写锁）`E_LOCKED`、目标会话引用的轮文件在盘上缺失
+ * 或读不全 `E_UNREADABLE`（存在但历史残缺，拒绝再追加、不落新轮）。
  * 参数校验（`E_ARGS`）、会话存在性（`E_NOT_FOUND`）、宿主异常兜底（`E_HOST`）都在
  * 工具层产生，**不属于**派发契约——写进这里就等于让实现承诺一个永远不会返回的码。
  */
 export type HostedDispatchResult =
   | { ok: true; accepted: true }
-  | { ok: false; code: 'E_DENIED' | 'E_BUSY' | 'E_LOCKED'; message: string };
+  | { ok: false; code: 'E_DENIED' | 'E_BUSY' | 'E_LOCKED' | 'E_UNREADABLE'; message: string };
 
 /**
  * `send_to_session` 的返回信封（业务失败一律 `{ ok:false }`，不 throw）

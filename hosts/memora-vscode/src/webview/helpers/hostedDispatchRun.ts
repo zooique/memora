@@ -18,8 +18,9 @@
  */
 import * as vscode from 'vscode';
 import { logger } from '@zooique/memora';
-import type { Agent, AgentChunk } from '@zooique/memora';
+import type { Agent, AgentChunk, IRoundStore } from '@zooique/memora';
 import type { HostedDispatchResult } from '../../extension/host/workSessionTools.js';
+import { hasRoundPresenceProbe } from '../../extension/host/workspaceRoundStore.js';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { acquireDispatchWriteLease, type DispatchWriteLease } from './hostedDispatchLock.js';
 import type { FlowSeed } from './sessionRuntime.js';
@@ -51,6 +52,15 @@ export interface HostedDispatchDeps {
   releaseLock: (sessionId: string) => void;
   /** 取（或建）目标会话实例（装配可能在途） */
   getAgent: (sessionId: string) => Promise<Agent>;
+  /**
+   * 目标会话引用的轮 ID（会话文件真源；拿锁重读之后才是本窗口最新值）
+   *
+   * 单独给读口而不是直接给 `findMissingRounds`：核对逻辑在存储侧（结构化能力探测），
+   * 面板只注入两个既有事实来源，不把目录扫描搬进 max-lines 贴顶的面板。
+   */
+  roundIds: (sessionId: string) => string[];
+  /** 当前 Round 存储（延迟读：装配注入晚于构造；不具备探针能力时自检跳过，不阻断派发） */
+  roundStore: () => IRoundStore | undefined;
   /** 受理即登记「该会话由代理驱动」（停止 / 暂停 / 恢复、中断通知、工作台共用判据） */
   markAgentDriven: (sessionId: string) => void;
   /** 记下「谁派来」（落定汇报的收件人） */
@@ -152,6 +162,54 @@ export async function dispatchHostedInputWith(
     return lease.refusal;
   }
   try {
+    // ③.5 轮引用完整性自检（D1）：拿锁已重读会话文件（roundIds 为最新引用真源），
+    //     接着核对「引用的轮文件在不在盘上」。外部移走轮文件 = 会话历史已残缺，
+    //     此时再 append 会留下永久悬空引用（重启后该轮永久失踪）⇒ 拒收，不落任何新轮。
+    //     判据是盘上目录列举（同一 WorkspaceRoundStore 真源），不读正文缓存/状态索引。
+    /** 缺失的轮 ID（空数组 = 引用完整；存储无探针能力 = 跳过自检） */
+    let missingRounds: string[] = [];
+    try {
+      const roundStore = deps.roundStore();
+      missingRounds =
+        roundStore && hasRoundPresenceProbe(roundStore)
+          ? roundStore.findMissingRounds(deps.roundIds(targetSessionId))
+          : [];
+    } catch (err) {
+      // 目录存在但读不了：区分于「缺失」，同样拒收（fail-closed，不猜可用）
+      lease.releaseIfIdle();
+      logger.warn(
+        { from: callingSessionId, to: targetSessionId, code: 'E_UNREADABLE', err },
+        '派发被拒：rounds 目录不可读',
+      );
+      return {
+        ok: false,
+        code: 'E_UNREADABLE',
+        message: l10n.t(
+          "Memora: the target session's round files cannot be read; the input was not sent. Check the rounds directory and retry.",
+        ),
+      };
+    }
+    if (missingRounds.length > 0) {
+      lease.releaseIfIdle();
+      logger.warn(
+        {
+          from: callingSessionId,
+          to: targetSessionId,
+          code: 'E_UNREADABLE',
+          missing: missingRounds.length,
+        },
+        '派发被拒：目标会话轮文件缺失',
+      );
+      return {
+        ok: false,
+        code: 'E_UNREADABLE',
+        message: l10n.t(
+          'Memora: the target session is missing {0} round file(s) ({1}); the input was not sent. Restore them from the rounds trash or start a new session, then retry.',
+          String(missingRounds.length),
+          missingRounds.slice(0, 3).join(', '),
+        ),
+      };
+    }
     // ④ 取（或建）目标会话实例：装配可能在途，期间目标会话或已被别的入口开跑 ⇒ 落地前再判一次
     const agent = await deps.getAgent(targetSessionId);
     // 与 sendInput 同一对齐判据：内核 appendUser 写的是 agent 当前会话，错位会写进别的会话；

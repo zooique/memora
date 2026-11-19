@@ -82,6 +82,8 @@
   "Memora: the target session is running; the input was not sent.": "",
   "Memora: the target session is being handled by you right now; the input was not sent. Finish or stop your turn first.": "",
   "Memora: another window is using the target session; the input was not sent. Send it later, or switch to another session.": "",
+  "Memora: the target session is missing {0} round file(s) ({1}); the input was not sent. Restore them from the rounds trash or start a new session, then retry.": "",
+  "Memora: the target session's round files cannot be read; the input was not sent. Check the rounds directory and retry.": "",
   "Memora: only managed sessions can create sessions.": "",
   "Memora: role pack not found or unavailable: {0}": "",
   "Memora: could not create the session.": "",

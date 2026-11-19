@@ -42,6 +42,9 @@ function makeDeps(overrides: Partial<HostedDispatchDeps> = {}): {
     holdsLock: () => false,
     releaseLock: () => {},
     getAgent: async () => ({}) as never,
+    // D1：默认引用完整（探针返回空数组）；缺轮 / 读不全的负例在下方用例里单独覆盖
+    roundIds: () => [],
+    roundStore: () => ({ findMissingRounds: () => [] }) as never,
     markAgentDriven: () => {},
     rememberCreator: () => {},
     trackLease: () => {},
@@ -164,5 +167,73 @@ describe('dispatchHostedInputWith · 用户接管态派活门禁', () => {
     });
     const result = await dispatchHostedInputWith(deps, 'assistant', 'target', '任务', 'Memora');
     expect(result).toMatchObject({ ok: false, code: 'E_DENIED' });
+  });
+});
+
+/**
+ * D1（ROUND-CACHE-NOINVALIDATE-1）：派发受理前的轮引用完整性自检
+ *
+ * 真机复现：盘上移走目标会话引用的轮文件后，派发仍 accepted:true 并落新轮，
+ * 留下永久悬空引用。闸必须是「拿锁并重读会话文件之后」的盘上目录核对，
+ * 且拒收时不上屏、不起流、当场归还租约。
+ */
+describe('dispatchHostedInputWith · 轮引用完整性自检（D1）', () => {
+  it('引用缺轮 ⇒ E_UNREADABLE，不上屏、不起流、不登记驱动、归还租约', async () => {
+    /** 被归还的会话（断言租约没有漏在本面板） */
+    const released: string[] = [];
+    /** 被登记驱动的会话（拒收路径必须为空） */
+    const marked: string[] = [];
+    const { deps, echoes, starts } = makeDeps({
+      roundIds: (sid) => (sid === 'target-session' ? ['round-ok', 'round-gone'] : []),
+      roundStore: () => ({ findMissingRounds: () => ['round-gone'] }) as never,
+      releaseLock: (sid) => released.push(sid),
+      markAgentDriven: (sid) => marked.push(sid),
+    });
+
+    const result = await dispatchHostedInputWith(
+      deps,
+      'assistant',
+      'target-session',
+      '任务',
+      'Memora',
+    );
+
+    expect(result).toMatchObject({ ok: false, code: 'E_UNREADABLE' });
+    expect(result.ok === false && result.message).toContain('round-gone');
+    expect(echoes).toHaveLength(0);
+    expect(starts).toHaveLength(0);
+    expect(marked).toHaveLength(0);
+    expect(released).toEqual(['target-session']);
+  });
+
+  it('rounds 目录不可读（探针抛错）⇒ 同样 E_UNREADABLE，不当成无缺失', async () => {
+    const { deps, echoes, starts } = makeDeps({
+      roundIds: () => ['round-x'],
+      roundStore: () =>
+        ({
+          findMissingRounds: () => {
+            throw new Error('EACCES: rounds');
+          },
+        }) as never,
+    });
+
+    const result = await dispatchHostedInputWith(deps, 'assistant', 'target', '任务', 'Memora');
+
+    expect(result).toMatchObject({ ok: false, code: 'E_UNREADABLE' });
+    expect(echoes).toHaveLength(0);
+    expect(starts).toHaveLength(0);
+  });
+
+  it('引用完整（探针无缺失）⇒ 正常受理（自检不误伤）', async () => {
+    const { deps, echoes, starts } = makeDeps({
+      roundIds: () => ['round-ok'],
+      roundStore: () => ({ findMissingRounds: () => [] }) as never,
+    });
+
+    const result = await dispatchHostedInputWith(deps, 'assistant', 'target', '任务', 'Memora');
+
+    expect(result.ok).toBe(true);
+    expect(echoes).toHaveLength(1);
+    expect(starts).toHaveLength(1);
   });
 });

@@ -14,7 +14,7 @@
  * 把 `getDispatch` 改成 `this.getById(roundId)?.dispatchedBy` ⇒ 用例④ 的「只读索引」段转红。
  */
 import { describe, it, expect } from 'vitest';
-import { writeFileSync, unlinkSync } from 'node:fs';
+import { writeFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { IRoundStore, Round } from '@zooique/memora';
 import { WorkspaceRoundStore, hasRoundStatusIndex } from '../workspaceRoundStore.js';
@@ -121,5 +121,45 @@ describe('WorkspaceRoundStore 索引态读取（P1 会话终态投影）', () =>
     expect(rebuilt.getDispatch('round-cache')).toEqual({ from: 'session-creator', via: 'create' });
     expect(rebuilt.getStatus('round-cache')).toBe('complete');
     expect(rebuilt.getDispatch('round-plain')).toBeUndefined();
+  });
+});
+
+/**
+ * D1（ROUND-CACHE-NOINVALIDATE-1）：派发前的「引用完整性」核对
+ *
+ * 锁定不变式：判据是**盘上直系 `*.json` 目录列举**，不是正文 cache / 状态 index
+ * （那两者对外部删文件不失效）；`.trash` 与 index.json 都不是活轮；
+ * 目录整体不存在时所有引用都算缺失（fail-closed，不臆造可用）。
+ */
+describe('WorkspaceRoundStore.findMissingRounds（D1 引用完整性）', () => {
+  it('缺文件 / 移入 .trash 均报缺失；index.json 与空引用不算', () => {
+    const dir = makeTempDir('memora-round-presence-test-');
+    const store = new WorkspaceRoundStore(dir);
+    store.load();
+    store.save(makeRound('round-a', 'complete'));
+    store.save(makeRound('round-b', 'complete'));
+    const roundsDir = join(resolveProjectDataDir(dir), 'rounds');
+
+    // 引用齐全：磁盘目录列举能证明两者都在（此时正文 cache 也在，但判据不依赖它）
+    expect(store.findMissingRounds(['round-a', 'round-b'])).toEqual([]);
+
+    // 真机复现动作：把轮文件从盘上移走（addRoundId 仍引用它）
+    unlinkSync(join(roundsDir, 'round-a.json'));
+    expect(store.findMissingRounds(['round-a', 'round-b'])).toEqual(['round-a']);
+
+    // 移入回收站 = 不在活轮集合（.trash 是目录，不是直系 *.json）
+    mkdirSync(join(roundsDir, '.trash'), { recursive: true });
+    writeFileSync(join(roundsDir, '.trash', 'round-b.json'), '{}', 'utf-8');
+    unlinkSync(join(roundsDir, 'round-b.json'));
+    expect(store.findMissingRounds(['round-a', 'round-b'])).toEqual(['round-a', 'round-b']);
+
+    // 无引用 = 无缺失（新建会话首轮派发不列举）
+    expect(store.findMissingRounds([])).toEqual([]);
+  });
+
+  it('rounds 目录整体不存在 ⇒ 所有引用都报缺失（不把「读不到」当完整）', () => {
+    const dir = makeTempDir('memora-round-presence-nodir-');
+    const store = new WorkspaceRoundStore(dir);
+    expect(store.findMissingRounds(['round-x', 'round-y'])).toEqual(['round-x', 'round-y']);
   });
 });

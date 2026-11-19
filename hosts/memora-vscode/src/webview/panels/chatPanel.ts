@@ -2875,6 +2875,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         holdsLock: (sessionId) => this._lockFinalizer.holds(sessionId),
         releaseLock: (sessionId) => this._lockFinalizer.releaseOne(sessionId),
         getAgent: (sessionId) => this.agentForSession(sessionId),
+        // D1 自检读口：roundIds 来自会话文件真源，存储延迟读（装配注入晚于构造）
+        roundIds: (sessionId) => this.sessionStore.getRoundIds(sessionId),
+        roundStore: () => this._eventLogRoundStore,
         markAgentDriven: (sessionId) => this.sessionModes.markAgentDriven(sessionId),
         rememberCreator: (sessionId, creator) => this._hostedNotifier.remember(sessionId, creator),
         trackLease: (sessionId, lease) => this._dispatchLeases.set(sessionId, lease),

@@ -89,6 +89,23 @@ export function hasRoundStatusIndex(
   return typeof (store as Partial<RoundStatusIndexReadable>).getStatus === 'function';
 }
 
+/**
+ * 「轮引用完整性核对」能力（`WorkspaceRoundStore.findMissingRounds` 提供，不在内核 IRoundStore 契约内）
+ *
+ * 派发受理前的写闸自检用：只回答「会话 roundIds 引用的轮文件在不在盘上」，判据是盘上目录列举；
+ * 不读正文 cache / 状态 index——那两者对外部删文件不失效，会把已删轮当成存在。
+ */
+export interface RoundPresenceProbe {
+  findMissingRounds(ids: readonly string[]): string[];
+}
+
+/** 判断某 roundStore 是否具备「轮引用完整性核对」能力 */
+export function hasRoundPresenceProbe(
+  store: IRoundStore,
+): store is IRoundStore & RoundPresenceProbe {
+  return typeof (store as Partial<RoundPresenceProbe>).findMissingRounds === 'function';
+}
+
 /** 回收站保留期（7 天）：到期由 load() 清理，删除后仍可人工找回 */
 export const ROUND_TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -262,6 +279,45 @@ export class WorkspaceRoundStore implements IRoundStore {
 
     // 预热缓存：加载最近的 Round（可选，避免一次性加载全部）
     // 生产环境可以按需加载，这里保持简单
+  }
+
+  /**
+   * 列出「会话引用但盘上不存在」的轮 ID（D1：派发受理前的引用完整性自检）
+   *
+   * 判据 = 一次 `readdirSync(rounds)` 的直系 `*.json` 文件集合，与
+   * {@link reconcileIndexWithRoundFiles} 同一真源（盘上目录列举），**不读轮内容**。
+   * 为什么不读正文 cache / 状态 index：那两个是派生缓存（见 getStatus 注释），
+   * 外部移走文件不会让它们失效；用它们做「文件在不在」的判据会把已删除的轮当存在。
+   *
+   * `roundIds` 是会话文件里的引用真源（由 `WorkspaceSessionStore` 提供），本方法只做
+   * 「引用集合 − 盘上集合」的差集，不新增第二份真相源、不写盘、不动任何缓存。
+   *
+   * @param ids 目标会话的 `roundIds`（调用方须在拿到跨进程写锁并重读会话文件之后取）
+   * @returns 缺失的轮 ID（保持入参顺序；空数组 = 引用完整）
+   * @throws rounds 目录存在但不可读时抛错——调用方必须按「读不全」拒收，不得当作无缺失
+   */
+  findMissingRounds(ids: readonly string[]): string[] {
+    // 无引用：无需列举（大多是新建会话的首轮派发）
+    if (ids.length === 0) return [];
+    // 目录不存在 = 所有引用都读不到（会话文件还在、轮目录被整体移走/未挂载）
+    if (!existsSync(this.roundsDir)) return [...ids];
+    /** 盘上真实存在的轮 ID 集合（与 reconcile 同款：只认直系 `*.json`，排除 index / .trash / *.tmp） */
+    let names: string[];
+    try {
+      names = readdirSync(this.roundsDir);
+    } catch (err) {
+      // 目录在但读不了：不能返回 []（那等于宣称「引用完整」）——交给调用方 fail-closed
+      logger.warn({ err }, 'rounds 目录不可读，无法核对轮引用完整性');
+      throw err instanceof Error ? err : new Error(String(err));
+    }
+    const onDisk = new Set<string>();
+    for (const name of names) {
+      if (!name.endsWith('.json') || name === 'index.json') continue;
+      const roundId = name.slice(0, -'.json'.length);
+      if (roundId) onDisk.add(roundId);
+    }
+    // 保持入参顺序（报错文案与诊断都按会话历史顺序读）
+    return ids.filter((id) => !onDisk.has(id));
   }
 
   /**
