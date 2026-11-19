@@ -1473,6 +1473,7 @@
   "Memora: failed to resume the session.": "",
   "Failed to open the workbench: {0}": "",
   "Failed to open the assistant panel: {0}": "",
+  "Failed to attach to the panel: {0}": "",
   "A managed session has just settled. Read the settlement notice in context, then report to me: which session it was, how it ended (one sentence), and whether you suggest a next step or need my decision.": "",
   "View progress": "View progress",
   "Hide progress": "Hide progress",

@@ -135,6 +135,15 @@ describe('助手形态输入区（ASSISTANT-FORM）', () => {
     expect(selfSend.title).toContain('Stop');
   });
 
+  it('助手形态隐藏待发送插话条（ASSISTANT-QUEUE-DEADKEY-1：无队列管理入口，不留死键）', () => {
+    // jsdom 不算样式 ⇒ 源码级守卫钉住这条 display:none；漏掉则助手窗出现
+    // 清空/删除按钮但 hostedSeat 对上行显式忽略 = 点了没反应的死键。
+    const css = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf8');
+    expect(css).toMatch(
+      /body\[data-form='assistant'\]\s+\.pending-queue-bar\s*\{[^}]*display:\s*none/,
+    );
+  });
+
   it('顶部状态签：助手座位运行中显形、自助视图不显示（微信「正在输入…」对应物）', () => {
     mountChatView('assistant');
     const state = document.getElementById('assistantState') as HTMLElement;

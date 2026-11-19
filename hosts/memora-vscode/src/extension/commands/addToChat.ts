@@ -24,6 +24,7 @@ import { hasInboundImageExtension } from '../host/imageExts.js';
 import { isRefTargetImage } from '../host/refImageGuard.js';
 import { resolveCommandTitle } from '../host/manifestNls.js';
 import { selectionToRefRange } from '../host/selectionRange.js';
+import { toNoticeText } from '../host/noticeText.js';
 
 /** 图片嗅探所需的头部字节数（最短合法格式 12 字节，此处留余量） */
 const SNIFF_HEAD_BYTES = 64;
@@ -158,9 +159,18 @@ export async function addToChatCommand(
   if (refs.length === 0 && imagePaths.length === 0) return; // 全部被拒：不聚焦面板、不产空操作
   // 先确保目标面板可见：引用侧未聚焦时目标投递器缓冲到 ready 补发（与 prefillInput 同构）；
   // 图片侧的面板闸归 chatPanel / imagePick（聚焦后仍未解析 → 引导文案，不落盘造 G9 孤儿）
-  await vscode.commands.executeCommand(delivery.focusCommand);
-  if (imagePaths.length > 0) delivery.attachImages(imagePaths);
-  if (refs.length > 0) delivery.attachRefs(refs);
+  // ADD-TO-CHAT-FOCUS-FAIL-1：聚焦命令抛错时，注册 handler 的 async Promise 无人 catch ⇒
+  // 用户只看到「点了没反应」。在此单点兜底（addToChat / addToAssistant 共用本函数，零复制），
+  // 主路径的预期拒挂（uri 为空 / 超根）已提前 return + showWarningMessage，不进这里。
+  try {
+    await vscode.commands.executeCommand(delivery.focusCommand);
+    if (imagePaths.length > 0) delivery.attachImages(imagePaths);
+    if (refs.length > 0) delivery.attachRefs(refs);
+  } catch (err) {
+    void vscode.window.showErrorMessage(
+      vscode.l10n.t('Failed to attach to the panel: {0}', toNoticeText(err)),
+    );
+  }
 }
 
 /**

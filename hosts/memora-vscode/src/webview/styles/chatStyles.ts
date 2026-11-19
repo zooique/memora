@@ -1792,6 +1792,11 @@ export const chatStyles = `
   body[data-form='assistant'] .process-flow,
   body[data-form='assistant'] .msg-body[data-status]::after,
   body[data-form='assistant'] .msg-body[data-terminus]::after { display: none !important; }
+  /* ASSISTANT-QUEUE-DEADKEY-1：待发送插话条随过程轨迹一并收起。助手形态是「发送即脱手」，
+   * 连发的补充走 interjection 排队（数据链照常、补充被消费后仍上屏），但不给用户队列管理
+   * 入口——hostedSeat 对 clear/remove 上行显式忽略（助手窗不渲染插话区的既有定案），若让
+   * 这条 bar 显形，按钮就成了点了没反应的死键。仅隐藏、不删 DOM，self 形态逐字不变。 */
+  body[data-form='assistant'] .pending-queue-bar { display: none !important; }
   /* ASSISTANT-WECHAT-UX-1：微信气泡不标来源——「由 X 发送」是工作会话的代理语义，
    * 助手窗里用户只跟助手对话，标签会让「谁说的」产生歧义。仅隐藏、不删 DOM。 */
   body[data-form='assistant'] .msg-origin-tag { display: none !important; }

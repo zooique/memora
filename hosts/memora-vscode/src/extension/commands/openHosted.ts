@@ -6,6 +6,7 @@
  * 用户第一次发送才建会话并写指针（见 chatPanel `handleHostedInput`）。
  */
 import * as vscode from 'vscode';
+import { toNoticeText } from '../host/noticeText.js';
 import type { MemoraHostedPanel } from '../../webview/panels/hostedPanel.js';
 
 /** 注册命令（extension.ts 只留一行接线） */
@@ -18,8 +19,10 @@ export function registerOpenHostedCommand(
       try {
         panel.open();
       } catch (err) {
+        // 与 openWorkbench 同口径：走宿主错误文本唯一出口（MemoraError 的成因/建议
+        // 不在这里被 String() 吞掉），失败原因如实告诉用户。
         void vscode.window.showErrorMessage(
-          vscode.l10n.t('Failed to open the assistant panel: {0}', String(err)),
+          vscode.l10n.t('Failed to open the assistant panel: {0}', toNoticeText(err)),
         );
       }
     }),
