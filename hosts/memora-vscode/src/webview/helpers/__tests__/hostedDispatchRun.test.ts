@@ -1,12 +1,13 @@
 /**
- * 托管派发即时上屏测试（2026-11-19 真机 DISPATCH-USER-ECHO-1）
+ * 托管派发受理测试（DISPATCH-USER-ECHO-1 后的分工）
  *
  * 真机缺陷：memora 宝往「正在看的工作会话」追加任务，任务正常开跑，但那条代发的提示词
- * **没有用户输入气泡**——直到切会话 / 重启触发 replay 才从落盘补出。根因：派发受理只把
- * userMessage 塞进 seed 落盘，缺了正常 sendInput 里的 `post({type:'user'})` 即时上屏；收场
- * turn_update 是 replay=false，webview 不重建气泡。
+ * **没有用户输入气泡**——直到切会话 / 重启触发 replay 才从落盘补出。根因不是发送端漏推：
+ * 回声发生在轮建立之前，没有 roundId 归属，ready 重放（resetChatView）天然带不上它。
  *
- * 本测试钉住修复：受理成功即 post 一条 user 回声，text 取裸输入、带 origin/senderName。
+ * 修复分工：
+ *  - 本文件（派发层）：只钉「受理即把原文与 origin/senderName 放进 seed」，不再自行上屏；
+ *  - 上屏时机在 consumeFlow 首个带 roundId 的 chunk（面板用例钉住，与轮同生）。
  */
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
@@ -20,18 +21,14 @@ vi.mock('vscode', () => ({
   },
 }));
 
-import type { ExtensionToWebviewMessage } from '../../../shared/protocol.js';
 import { dispatchHostedInputWith, type HostedDispatchDeps } from '../hostedDispatchRun.js';
-
-type UserEcho = Extract<ExtensionToWebviewMessage, { type: 'user' }>;
+import type { FlowSeed } from '../sessionRuntime.js';
 
 function makeDeps(overrides: Partial<HostedDispatchDeps> = {}): {
   deps: HostedDispatchDeps;
-  echoes: UserEcho[];
-  starts: Array<{ sid: string; seed: { userMessage: { content: string } } }>;
+  starts: Array<{ sid: string; seed: FlowSeed }>;
 } {
-  const echoes: UserEcho[] = [];
-  const starts: Array<{ sid: string; seed: { userMessage: { content: string } } }> = [];
+  const starts: Array<{ sid: string; seed: FlowSeed }> = [];
   const deps: HostedDispatchDeps = {
     isManaged: () => true,
     isStreaming: () => false,
@@ -48,17 +45,15 @@ function makeDeps(overrides: Partial<HostedDispatchDeps> = {}): {
     markAgentDriven: () => {},
     rememberCreator: () => {},
     trackLease: () => {},
-    postUserEcho: (_sid, echo) => echoes.push(echo),
-    startFlow: (sid, _factory, seed) =>
-      starts.push({ sid, seed: seed as { userMessage: { content: string } } }),
+    startFlow: (sid, _factory, seed) => starts.push({ sid, seed }),
     ...overrides,
   };
-  return { deps, echoes, starts };
+  return { deps, starts };
 }
 
-describe('dispatchHostedInputWith · 代发输入即时上屏', () => {
-  it('受理成功 → post 一条 user 回声，text=裸输入、origin=hosted、senderName=Memora', async () => {
-    const { deps, echoes } = makeDeps();
+describe('dispatchHostedInputWith · 派发受理与 seed 事实', () => {
+  it('受理成功 → seed 带裸输入、origin=hosted、senderName；派发层不自行上屏', async () => {
+    const { deps, starts } = makeDeps();
 
     const result = await dispatchHostedInputWith(
       deps,
@@ -69,33 +64,26 @@ describe('dispatchHostedInputWith · 代发输入即时上屏', () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(echoes).toHaveLength(1);
-    expect(echoes[0]).toMatchObject({
-      type: 'user',
-      text: '接着刚才的会话，追加任务 X',
-      origin: 'hosted',
-      senderName: 'Memora',
-    });
-    expect(echoes[0]?.ts).toBeTypeOf('string');
+    expect(starts).toHaveLength(1);
+    expect(starts[0]?.sid).toBe('target-session');
+    // 上屏与 live 投影共用的那一份事实：原文逐字、来源与发送者名随 seed 落地
+    expect(starts[0]?.seed.userMessage?.content).toBe('接着刚才的会话，追加任务 X');
+    expect(starts[0]?.seed.userMessage?.name).toBe('Memora');
+    expect(starts[0]?.seed.origin).toBe('hosted');
   });
 
-  it('user 回声投递到目标会话、text 与起流 seed.userMessage.content 逐字同值', async () => {
-    const echoesBySid: Array<{ sid: string; echo: UserEcho }> = [];
-    const { deps, starts } = makeDeps({
-      postUserEcho: (sid, echo) => echoesBySid.push({ sid, echo }),
-    });
+  it('user 回声不再由派发层提前推（轮建立前无归属，改由 consumeFlow 随轮上屏）', async () => {
+    const { deps, starts } = makeDeps();
 
     await dispatchHostedInputWith(deps, 'assistant', 'target', '裸输入原文', 'Memora');
 
-    const seed = starts[0]?.seed;
-    expect(echoesBySid).toHaveLength(1);
-    expect(echoesBySid[0]?.sid).toBe('target');
-    expect(echoesBySid[0]?.echo.text).toBe(seed?.userMessage.content);
-    expect(echoesBySid[0]?.echo.text).toBe('裸输入原文');
+    // 派发层唯一副作用 = 起流；UI 上屏发生在流的首个 roundId 上（面板用例断言）
+    expect(starts).toHaveLength(1);
+    expect(starts[0]?.seed.userMessage?.content).toBe('裸输入原文');
   });
 
-  it('被拒（目标在跑）→ 不上屏、不起流（不留假气泡）', async () => {
-    const { deps, echoes, starts } = makeDeps({
+  it('被拒（目标在跑）→ 不起流（不留假气泡）', async () => {
+    const { deps, starts } = makeDeps({
       isStreaming: (sid) => sid === 'target-session',
     });
 
@@ -108,7 +96,6 @@ describe('dispatchHostedInputWith · 代发输入即时上屏', () => {
     );
 
     expect(result.ok).toBe(false);
-    expect(echoes).toHaveLength(0);
     expect(starts).toHaveLength(0);
   });
 });
@@ -124,7 +111,7 @@ describe('dispatchHostedInputWith · 用户接管态派活门禁', () => {
   it('目标用户接管中 ⇒ E_DENIED，不上屏、不起流、不拿锁、不登记驱动', async () => {
     const acquired: string[] = [];
     const marked: string[] = [];
-    const { deps, echoes, starts } = makeDeps({
+    const { deps, starts } = makeDeps({
       isTargetTakenOver: (sid) => sid === 'target-session',
       acquireLock: async (sid) => {
         acquired.push(sid);
@@ -142,21 +129,19 @@ describe('dispatchHostedInputWith · 用户接管态派活门禁', () => {
     );
 
     expect(result).toMatchObject({ ok: false, code: 'E_DENIED' });
-    expect(echoes).toHaveLength(0);
     expect(starts).toHaveLength(0);
     expect(acquired).toHaveLength(0);
     expect(marked).toHaveLength(0);
   });
 
   it('目标非接管（自建会话 / 已收场）⇒ 正常受理，门禁不误伤设计内派发', async () => {
-    const { deps, echoes, starts } = makeDeps({
+    const { deps, starts } = makeDeps({
       isTargetTakenOver: () => false,
     });
 
     const result = await dispatchHostedInputWith(deps, 'assistant', 'self-built', '任务', 'Memora');
 
     expect(result.ok).toBe(true);
-    expect(echoes).toHaveLength(1);
     expect(starts).toHaveLength(1);
   });
 
@@ -183,7 +168,7 @@ describe('dispatchHostedInputWith · 轮引用完整性自检（D1）', () => {
     const released: string[] = [];
     /** 被登记驱动的会话（拒收路径必须为空） */
     const marked: string[] = [];
-    const { deps, echoes, starts } = makeDeps({
+    const { deps, starts } = makeDeps({
       roundIds: (sid) => (sid === 'target-session' ? ['round-ok', 'round-gone'] : []),
       roundStore: () => ({ findMissingRounds: () => ['round-gone'] }) as never,
       releaseLock: (sid) => released.push(sid),
@@ -200,14 +185,13 @@ describe('dispatchHostedInputWith · 轮引用完整性自检（D1）', () => {
 
     expect(result).toMatchObject({ ok: false, code: 'E_UNREADABLE' });
     expect(result.ok === false && result.message).toContain('round-gone');
-    expect(echoes).toHaveLength(0);
     expect(starts).toHaveLength(0);
     expect(marked).toHaveLength(0);
     expect(released).toEqual(['target-session']);
   });
 
   it('rounds 目录不可读（探针抛错）⇒ 同样 E_UNREADABLE，不当成无缺失', async () => {
-    const { deps, echoes, starts } = makeDeps({
+    const { deps, starts } = makeDeps({
       roundIds: () => ['round-x'],
       roundStore: () =>
         ({
@@ -220,12 +204,11 @@ describe('dispatchHostedInputWith · 轮引用完整性自检（D1）', () => {
     const result = await dispatchHostedInputWith(deps, 'assistant', 'target', '任务', 'Memora');
 
     expect(result).toMatchObject({ ok: false, code: 'E_UNREADABLE' });
-    expect(echoes).toHaveLength(0);
     expect(starts).toHaveLength(0);
   });
 
   it('引用完整（探针无缺失）⇒ 正常受理（自检不误伤）', async () => {
-    const { deps, echoes, starts } = makeDeps({
+    const { deps, starts } = makeDeps({
       roundIds: () => ['round-ok'],
       roundStore: () => ({ findMissingRounds: () => [] }) as never,
     });
@@ -233,7 +216,6 @@ describe('dispatchHostedInputWith · 轮引用完整性自检（D1）', () => {
     const result = await dispatchHostedInputWith(deps, 'assistant', 'target', '任务', 'Memora');
 
     expect(result.ok).toBe(true);
-    expect(echoes).toHaveLength(1);
     expect(starts).toHaveLength(1);
   });
 });

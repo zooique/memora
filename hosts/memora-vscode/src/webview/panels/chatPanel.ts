@@ -187,6 +187,7 @@ import { buildChatRolePacks } from '../helpers/rolePackListView.js';
 import {
   SessionRuntimeStates,
   BackgroundFlowGate,
+  advanceTurnBoundary,
   type FlowSeed,
   type LiveFlowBuffer,
   type SessionRuntimeState,
@@ -2881,7 +2882,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         markAgentDriven: (sessionId) => this.sessionModes.markAgentDriven(sessionId),
         rememberCreator: (sessionId, creator) => this._hostedNotifier.remember(sessionId, creator),
         trackLease: (sessionId, lease) => this._dispatchLeases.set(sessionId, lease),
-        postUserEcho: (sessionId, echo) => this.postToSession(sessionId, echo),
         startFlow: (sessionId, factory, seed) => void this.runFlow(factory, seed, sessionId),
       },
       callingSessionId,
@@ -3471,11 +3471,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 此刻从内核读队列（已变空）→ 长度变化 → post 空 items → webview 隐藏待发送区。
         // 普通插话（thinking 态 interject）不触发 sessionResumed，此处是它的唯一清空时机。
         this.syncPendingQueue();
-        // turn 边界检测：roundId 变化 = 新 turn 开始（多 turn 任务编排多 turn 各自独立 roundId）
-        if (chunk.roundId && chunk.roundId !== liveBuffer.currentRoundKey) {
-          liveBuffer.currentRoundKey = chunk.roundId;
-          metaEmittedForRound = false;
-        }
+        // turn 边界检测 + 托管开轮输入随轮上屏（逻辑外置在 sessionRuntime，panel 只接线）
+        const turnBoundary = advanceTurnBoundary(liveBuffer, chunk.roundId);
+        if (turnBoundary.began) metaEmittedForRound = false;
+        if (turnBoundary.echo) this.postToSession(sessionId, turnBoundary.echo);
         // 每 turn 段首条补 meta（身份，SSOT 与消息标签同源）；处理当前 chunk 前先补，保证 meta 为段内首条
         if (liveBuffer.currentRoundKey && !metaEmittedForRound) {
           metaEmittedForRound = true;

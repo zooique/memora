@@ -12,7 +12,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { ProcessEvent } from '@zooique/memora';
-import type { RoundView } from '../../shared/protocol.js';
+import type { ExtensionToWebviewMessage, RoundView } from '../../shared/protocol.js';
 
 /**
  * 本流 live 缓冲：consumeFlow 运行期间的过程事件/流式正文/当前轮归属（会话级）。
@@ -39,6 +39,13 @@ export interface LiveFlowBuffer {
   seedUserMessage?: RoundView['userMessage'];
   /** 开轮输入来源标记（与 seedUserMessage 同生命周期；resume 轮缺省） */
   seedOrigin?: RoundView['origin'];
+  /**
+   * 开轮托管回声是否已随轮上屏（DISPATCH-USER-ECHO-1）
+   *
+   * 只有「轮建立后」才允许上屏一次：轮建立前的孤立气泡没有归属，ready 重放带不上它。
+   * 多 turn 任务只在首轮上屏，后续 turn 复用同一 seed 不再重复。
+   */
+  seedEchoed?: boolean;
 }
 
 /**
@@ -161,4 +168,41 @@ export class BackgroundFlowGate {
     const ctx = this.storage.getStore();
     return ctx !== undefined && ctx.sessionId !== currentSessionId;
   }
+}
+
+/**
+ * 推进 turn 边界，并在「托管派发的首轮」产出随轮上屏的用户气泡（DISPATCH-USER-ECHO-1）
+ *
+ * 为什么上屏必须发生在这里：回声若在轮建立前推，就没有 roundId 归属——webview 的 ready 重放
+ * （`resetChatView` + `buildLiveTurn` 以 roundId 为界）带不上它，会被整屏清掉且流尾不补偿，
+ * 表现为「目标会话在跑、侧栏始终没有 Sent by Memora 气泡」（真机 80ms 窗口）。
+ * 本函数把 `seedUserMessage` 与 `roundId` 绑在同一时刻产出，之后的重放从 seed / 落盘轮天然带出，
+ * 不需要投递缓冲、不需要第二次推送。
+ *
+ * @param liveBuffer 本流 live 缓冲（就地推进 `currentRoundKey` / `seedEchoed`）
+ * @param roundId 内核 chunk 携带的轮归属（同一 turn 内不变；无 chunk 前为 undefined）
+ * @returns `began` = 进入新 turn（调用方重置 meta 标记）；`echo` 非空 = 本次需上屏的用户气泡
+ */
+export function advanceTurnBoundary(
+  liveBuffer: LiveFlowBuffer,
+  roundId: string | undefined,
+): { began: boolean; echo?: Extract<ExtensionToWebviewMessage, { type: 'user' }> } {
+  // 同一 turn 的后续 chunk：不重复推进、不重复上屏
+  if (!roundId || roundId === liveBuffer.currentRoundKey) return { began: false };
+  liveBuffer.currentRoundKey = roundId;
+  const seed = liveBuffer.seedUserMessage;
+  // 只对「托管派发的开轮输入」上屏一次；resume / 用户自输（webview 已本地追加）不回声
+  if (liveBuffer.seedEchoed || liveBuffer.seedOrigin !== 'hosted' || !seed) return { began: true };
+  liveBuffer.seedEchoed = true;
+  return {
+    began: true,
+    echo: {
+      type: 'user',
+      text: seed.content,
+      ts: seed.timestamp,
+      origin: 'hosted',
+      senderName: seed.name,
+      roundId,
+    },
+  };
 }

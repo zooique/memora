@@ -1871,6 +1871,71 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
     });
   });
 
+  it('目标会话正被用户看着 ⇒ 开轮输入随首个 roundId 上屏（不是轮建立前的孤立回声）', async () => {
+    // 门闩流：首个 thinking 已带 roundId（= 轮已建立），停在 gate 上便于断言上屏时机
+    let reachedGate!: () => void;
+    const atGate = new Promise<void>((resolve) => {
+      reachedGate = resolve;
+    });
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    const roundId = 'round-hosted-echo';
+    const flow = (): AsyncGenerator<Chunk> => {
+      return (async function* () {
+        yield { type: 'thinking', phase: 'processing', roundId };
+        reachedGate();
+        await gate;
+        yield { type: 'text', content: '目标会话在干活', roundId };
+        yield { type: 'step_boundary', roundId };
+      })();
+    };
+    const target = sessionAgent('2026-11-06-b', flow);
+
+    const modes = createEphemeralSessionModeStore();
+    modes.set('2026-11-06-a', 'managed');
+    const { provider, cast, posted } = setupPanel({ '2026-11-06-b': target }, [], modes);
+    // 目标已在投影表里，工厂不会被调用；注入只为满足 dispatch 的前置依赖
+    provider.setAgentFactory(async (_projectPath, sessionId) => sessionAgent(sessionId));
+    // 本用例的前提：用户正看着目标会话（主视图 = 目标，回声才会走主视图投递）
+    cast._currentSessionId = '2026-11-06-b';
+
+    await provider.dispatchHostedInput('2026-11-06-a', '2026-11-06-b', '原始需求', '派发探针');
+    await atGate;
+
+    const userEchoes = posted.filter(
+      (
+        m,
+      ): m is {
+        type: 'user';
+        text: string;
+        origin?: string;
+        senderName?: string;
+        roundId?: string;
+      } => m.type === 'user',
+    );
+    expect(userEchoes).toHaveLength(1);
+    expect(userEchoes[0]).toMatchObject({
+      type: 'user',
+      text: '原始需求',
+      origin: 'hosted',
+      senderName: '派发探针',
+      // 归属与轮同生：重放读 round 时天然带出这条气泡，不靠额外缓冲
+      roundId,
+    });
+    // 顺序：用户气泡先于本轮其余消息（found first user before any assistant 段首）
+    const userIdx = posted.findIndex((m) => m.type === 'user');
+    const textIdx = posted.findIndex((m) => m.type === 'text');
+    expect(userIdx).toBeGreaterThan(-1);
+    if (textIdx > -1) expect(userIdx).toBeLessThan(textIdx);
+
+    releaseGate();
+    await vi.waitFor(() => expect(cast.runtimeFor('2026-11-06-b').streaming).toBe(false), {
+      timeout: 5000,
+    });
+  });
+
   it('目标会话真在跑 ⇒ E_BUSY（真实运行态判据，不排队、不双开流）', async () => {
     let reachedGate!: () => void;
     const atGate = new Promise<void>((resolve) => {
