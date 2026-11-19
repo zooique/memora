@@ -46,6 +46,14 @@ export interface ChatRefOpsDeps {
 /** 引用入口域对外方法（面板只做转发） */
 export interface ChatRefOps {
   openRefInEditor(ref: ChatRef): Promise<void>;
+  /**
+   * 文件改动条展开清单 → 点单行打开原文件（OPEN-CHANGED-FILE-1）
+   *
+   * 与 `openRefInEditor` 共用越界守卫 / 打开 / 失败 notice 单点（本域唯一「上行路径 → 编辑器」
+   * 执行面）；多出的一步是**清单对拍**：`path` 必须命中宿主当前未确认改动清单，防 webview 被
+   * 篡改后借这条上行通道打开任意文件。对拍真源由调用方（面板）注入，本域不缓存副本。
+   */
+  openChangedFile(path: string, changedFiles: readonly string[]): Promise<void>;
   openMentionQuickPick(): Promise<void>;
 }
 
@@ -62,7 +70,7 @@ export function createChatRefOps(deps: ChatRefOpsDeps): ChatRefOps {
    */
   let mentionQuickPickOpen = false;
 
-  return {
+  const ops: ChatRefOps = {
     /**
      * 引用 chip 点击 → 在编辑器打开并定位（open_ref，W→E 分支）
      *
@@ -156,6 +164,29 @@ export function createChatRefOps(deps: ChatRefOpsDeps): ChatRefOps {
         });
         console.warn(`Memora open_ref 失败 [${ref.path}]`, err);
       }
+    },
+
+    /**
+     * 文件改动条展开清单 → 点单行打开原文件（OPEN-CHANGED-FILE-1）
+     *
+     * 对拍（本方法独有）+ 打开（委托 `ops.openRefInEditor`，复用其越界守卫 / openTextDocument /
+     * 失败 notice 单点，零第二份打开实现）。`path` 从 `file_changes.files` 原样回传，命中当前
+     * 改动清单才开——防 webview 被篡改后借这条上行通道打开任意文件（同 workProjectionBridge
+     * 的「先与清单对拍、再 resolveUnderPrimaryRoot」契约）。
+     */
+    async openChangedFile(path: string, changedFiles: readonly string[]): Promise<void> {
+      if (!changedFiles.includes(path)) {
+        deps.post({
+          type: 'notice',
+          level: 'error',
+          message: vscode.l10n.t(
+            'Cannot open changed file: {0} is no longer in the change list',
+            path,
+          ),
+        });
+        return;
+      }
+      await ops.openRefInEditor({ path, kind: 'file' });
     },
 
     /**
@@ -296,4 +327,5 @@ export function createChatRefOps(deps: ChatRefOpsDeps): ChatRefOps {
       }
     },
   };
+  return ops;
 }

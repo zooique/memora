@@ -71,9 +71,11 @@ export type IconName =
 const ICON_PATHS: Record<IconName, string> = {
   // 复制：两个重叠矩形轮廓
   copy: '<rect x="4" y="5" width="7" height="7" rx="1.5"/><rect x="7" y="3" width="7" height="7" rx="1.5"/>',
-  // 引用整条消息：左向对话框（尖角在左下）+ 内部两道引号短线，语义=把这条内容引到输入区
+  // 引用整条消息：左向对话框（尖角在左下）+ 内部两道引号短线，语义=把这条内容引到输入区。
+  // 几何锚点与 copy/thought 同族（主框 x3–13 宽 10）——曾误画到 x1.5–14.5 宽 13，
+  // 与同排 copy（x4–14 宽 10）并列时明显大一圈（BUBBLE-QUOTE-SIZE-1）。
   quote:
-    '<path d="M13.5 3.5h-11a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1H6l3 2.5v-2.5h4.5a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1z"/><path d="M5.5 6.5h.01"/><path d="M8.5 6.5h.01"/><path d="M5.5 9.5h3"/>',
+    '<path d="M12 3.5H4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2l2 2.5v-2.5h4a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1z"/><path d="M5.5 6.5h.01"/><path d="M8.5 6.5h.01"/><path d="M5.5 9.5h3"/>',
   // 删除：垃圾桶轮廓
   delete:
     '<path d="M5.5 3.5h5"/><path d="M4 3.5h8l-.5 9a1 1 0 0 1-1 .95H5.5a1 1 0 0 1-1-.95L4 3.5z"/><path d="M6 6.5v5"/><path d="M8 6.5v5"/><path d="M10 6.5v5"/>',

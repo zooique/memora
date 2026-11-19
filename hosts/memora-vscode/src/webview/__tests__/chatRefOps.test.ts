@@ -151,3 +151,44 @@ describe('chatRefOps.openRefInEditor · 行范围越界守卫', () => {
     expect(range.end.line).toBe(11);
   });
 });
+
+describe('chatRefOps.openChangedFile · 清单对拍（OPEN-CHANGED-FILE-1）', () => {
+  let post: Mock<(msg: ExtensionToWebviewMessage) => void>;
+  let ops: ReturnType<typeof createChatRefOps>;
+
+  beforeEach(() => {
+    post = vi.fn<(msg: ExtensionToWebviewMessage) => void>();
+    vscodeStub.workspace.openTextDocument.mockReset();
+    vscodeStub.window.showTextDocument.mockReset();
+    ops = createChatRefOps({ post, pushRefs: vi.fn(), hasView: () => true });
+  });
+
+  it('命中当前改动清单 → 委托 openRefInEditor 打开（无区间、零 notice）', async () => {
+    const editor = { selection: undefined as unknown, revealRange: vi.fn() };
+    vscodeStub.workspace.openTextDocument.mockResolvedValue(makeDoc(90));
+    vscodeStub.window.showTextDocument.mockResolvedValue(editor);
+
+    await ops.openChangedFile('src/a.ts', ['src/a.ts', 'src/b.ts']);
+
+    expect(vscodeStub.workspace.openTextDocument).toHaveBeenCalledTimes(1);
+    expect(vscodeStub.window.showTextDocument).toHaveBeenCalledTimes(1);
+    expect(post).not.toHaveBeenCalled(); // 无区间引用不提示、不选中
+  });
+
+  it('未命中清单（伪造/已确认的路径）→ 发 error notice，零打开', async () => {
+    await ops.openChangedFile('/etc/passwd', ['src/a.ts']);
+
+    expect(vscodeStub.workspace.openTextDocument).not.toHaveBeenCalled();
+    expect(post).toHaveBeenCalledTimes(1);
+    const msg = post.mock.calls[0][0];
+    expect(msg.type).toBe('notice');
+    expect(msg.type === 'notice' && msg.level).toBe('error');
+    expect(JSON.stringify(msg)).toContain('/etc/passwd');
+  });
+
+  it('清单为空（改动已被全部确认）→ 同样拒开，不发空通知以外的副作用', async () => {
+    await ops.openChangedFile('src/a.ts', []);
+    expect(vscodeStub.workspace.openTextDocument).not.toHaveBeenCalled();
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+});

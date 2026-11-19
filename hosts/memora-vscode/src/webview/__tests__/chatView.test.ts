@@ -1643,6 +1643,81 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(postMessage).toHaveBeenCalledWith({ type: 'revert_all_file_changes' });
   });
 
+  it('常驻条标题行 = 展开开关：点一下展开清单、再点收起（aria-expanded 与 hidden 同步）', () => {
+    mountChatView();
+    dispatch({ type: 'file_changes', count: 2, files: ['src/a.md', 'src/b.ts'] });
+    const toggle = document.querySelector('.file-changes-bar__toggle') as HTMLButtonElement;
+    const list = document.querySelector('.file-changes-bar__list') as HTMLElement;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(list.hidden).toBe(true);
+    toggle.click();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(list.hidden).toBe(false);
+    // 清单每行 = 一条原样相对路径，可点
+    expect(
+      Array.from(list.querySelectorAll('.file-changes-bar__file')).map((r) => r.textContent),
+    ).toEqual(['src/a.md', 'src/b.ts']);
+    toggle.click();
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(list.hidden).toBe(true);
+  });
+
+  it('展开态：Esc / 点面板外部收起（点清单内部不误收，aria 与 hidden 同步）', () => {
+    mountChatView();
+    dispatch({ type: 'file_changes', count: 2, files: ['src/a.md', 'src/b.ts'] });
+    const toggle = document.querySelector('.file-changes-bar__toggle') as HTMLButtonElement;
+    const list = document.querySelector('.file-changes-bar__list') as HTMLElement;
+    toggle.click(); // 展开
+    expect(list.hidden).toBe(false);
+    // 点清单内部的文件行 → 不收起（外部点击委托用 contains 排除内部）
+    (list.querySelector('.file-changes-bar__file') as HTMLButtonElement).click();
+    expect(list.hidden).toBe(false);
+    // Esc 收起
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(list.hidden).toBe(true);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    // 再展开，点面板外部（body）收起
+    toggle.click();
+    expect(list.hidden).toBe(false);
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(list.hidden).toBe(true);
+  });
+
+  it('展开清单的 toggle 无 title 遮蔽：hover 命中 bar 的清单兜底（子 title 不再盖父 title）', () => {
+    mountChatView();
+    dispatch({ type: 'file_changes', count: 1, files: ['a.md'] });
+    const toggle = document.querySelector('.file-changes-bar__toggle') as HTMLButtonElement;
+    const bar = document.querySelector('.file-changes-bar') as HTMLElement;
+    expect(toggle.hasAttribute('title')).toBe(false);
+    expect(bar.title).toBe('a.md');
+  });
+
+  it('点展开清单的某一行 → post open_changed_file（路径原样回传，webview 不解析）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'file_changes', count: 2, files: ['src/a.md', 'src/b.ts'] });
+    const list = document.querySelector('.file-changes-bar__list') as HTMLElement;
+    const rows = list.querySelectorAll('.file-changes-bar__file');
+    (rows[1] as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'open_changed_file', path: 'src/b.ts' });
+  });
+
+  it('清单随新快照全量重建 + 保留 title 兜底（展开态不被重渲染关掉）', () => {
+    mountChatView();
+    dispatch({ type: 'file_changes', count: 1, files: ['a.md'] });
+    const toggle = document.querySelector('.file-changes-bar__toggle') as HTMLButtonElement;
+    const bar = document.querySelector('.file-changes-bar') as HTMLElement;
+    toggle.click(); // 展开
+    dispatch({ type: 'file_changes', count: 2, files: ['a.md', 'b.ts'] }); // 新快照
+    const list = document.querySelector('.file-changes-bar__list') as HTMLElement;
+    // 行数随快照更新、展开态保持、hover 清单仍在（不带伤：hover 是补充入口）
+    expect(list.querySelectorAll('.file-changes-bar__file').length).toBe(2);
+    expect(list.hidden).toBe(false);
+    expect(bar.title).toBe('a.md\nb.ts');
+    // 归零 → 收起（下次有改动不残留旧展开面板）
+    dispatch({ type: 'file_changes', count: 0, files: [] });
+    expect(list.hidden).toBe(true);
+  });
+
   // ─── send click 路由统一（验证宿主路由契约） ───
 
   it('thinking + 空输入点击 send → post stop（停止）', () => {
@@ -5586,6 +5661,35 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
       const text = rows()[0]?.querySelector('.background-tasks-bar__text') as HTMLElement;
       expect(text.textContent).toBe(`${'x'.repeat(100)}…`);
       expect(text.title).toBe(long);
+    });
+
+    it('状态色：running/completed/timedOut/killed 映射到 is-running/is-completed/is-ended（文案仍用下发 statusLabel）', () => {
+      mountChatView();
+      const statusClass = () =>
+        (rows()[0]?.querySelector('.background-tasks-bar__status') as HTMLElement).className;
+      const label = () =>
+        (rows()[0]?.querySelector('.background-tasks-bar__status') as HTMLElement).textContent;
+      dispatch({
+        type: 'background_tasks',
+        items: [bgTask({ status: 'running', statusLabel: '运行中' })],
+      });
+      expect(statusClass()).toContain('is-running');
+      expect(label()).toBe('运行中');
+      dispatch({
+        type: 'background_tasks',
+        items: [bgTask({ status: 'completed', statusLabel: '已完成' })],
+      });
+      expect(statusClass()).toContain('is-completed');
+      dispatch({
+        type: 'background_tasks',
+        items: [bgTask({ status: 'timedOut', statusLabel: '超时' })],
+      });
+      expect(statusClass()).toContain('is-ended');
+      dispatch({
+        type: 'background_tasks',
+        items: [bgTask({ status: 'killed', statusLabel: '已终止' })],
+      });
+      expect(statusClass()).toContain('is-ended');
     });
 
     it('优先级垫底：不顶掉 activity 主状态条，后台条收进抽屉控件段（chip = +1）', () => {

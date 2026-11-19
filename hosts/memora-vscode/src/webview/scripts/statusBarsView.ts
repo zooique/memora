@@ -179,10 +179,35 @@ export function createStatusBarsView(deps: StatusBarsViewDeps): StatusBarsView {
 
   // ─── 文件改动常驻条（DIFF-1）───
   let _fileChangesBar: HTMLElement | null = null;
+  /** 展开态：点标题行切换的行列表面板是否可见（视图级 UI 态，不进协议、不跨会话） */
+  let _fileChangesExpanded = false;
+  /** 展开态唯一写入点：布尔 + aria + DOM hidden 三处同写，禁散写（散写 = 三态漂移） */
+  function setFileChangesExpanded(expanded: boolean): void {
+    _fileChangesExpanded = expanded;
+    if (!_fileChangesBar) return;
+    const toggle = _fileChangesBar.querySelector('.file-changes-bar__toggle');
+    const list = _fileChangesBar.querySelector('.file-changes-bar__list');
+    toggle?.setAttribute('aria-expanded', String(expanded));
+    // 鸭子判面：node + 显式 JSDOM 用例未把 HTMLElement 构造器挂到全局，不用 instanceof
+    if (list && 'hidden' in list) list.hidden = !expanded;
+  }
+  /** document 委托：点面板之外 / Esc 收起。handler 存引用供 dispose 解绑（防跨用例残留）。 */
+  const onDocClickOutside = (e: Event): void => {
+    if (!_fileChangesExpanded || !_fileChangesBar) return;
+    if (e.target && !_fileChangesBar.contains(e.target as Node)) setFileChangesExpanded(false);
+  };
+  const onDocEscape = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape' && _fileChangesExpanded) setFileChangesExpanded(false);
+  };
   /**
    * 未确认文件改动常驻条（懒创建，与 pending-queue-bar 同范式：插在输入栏之前）
    *
-   * 两个动作按钮**不自己实现逻辑**，只 postMessage 给宿主 → 宿主 executeCommand 复用已注册命令
+   * 标题行的 badge + label 是**展开开关**：点一下展开/收起完整文件清单（OPEN-CHANGED-FILE-1），
+   * 清单每行是 `open_changed_file` 上行按钮——webview 只把宿主下发的相对路径原样回传，
+   * 不解析、不拼接；对拍与越界守卫全落宿主（与 workProjectionBridge 同构）。
+   * 保留 `title = files.join('\n')` 作为 hover 兜底（展开态只是更快、可点击的入口，非替代）。
+   *
+   * 两个处置按钮**不自己实现逻辑**，只 postMessage 给宿主 → 宿主 executeCommand 复用已注册命令
    * （与文件内 CodeLens / 状态栏 QuickPick / 命令面板同一实现，SSOT，无第二份清理逻辑）。
    * 「全部回退」是破坏性操作，宿主侧必弹模态二次确认——webview 不做前置拦截（拦截逻辑只能落 host）。
    * 计数只在宿主推来 file_changes 时更新：**webview 不自维护副本**（真源 = 宿主 tracker）。
@@ -190,20 +215,32 @@ export function createStatusBarsView(deps: StatusBarsViewDeps): StatusBarsView {
   function updateFileChanges(files: readonly string[]): void {
     if (files.length === 0) {
       if (_fileChangesBar) deps.setDockActive('fileChanges', false); // 显隐裁决归 StatusDock（SSOT）
+      // 空态立即收起 DOM（不只是布尔）：bar 此刻被 dock 收纳，重开时不闪旧面板
+      setFileChangesExpanded(false);
       return;
     }
     if (!_fileChangesBar) {
       _fileChangesBar = deps.document.createElement('div');
       _fileChangesBar.className = 'file-changes-bar';
       _fileChangesBar.innerHTML = `
-        <span class="file-changes-bar__badge"></span>
-        <span class="file-changes-bar__label">${l10n.t('file(s) with unconfirmed changes')}</span>
+        <button class="file-changes-bar__toggle" type="button" aria-expanded="false" aria-controls="file-changes-list">
+          <span class="file-changes-bar__badge"></span>
+          <span class="file-changes-bar__label">${l10n.t('file(s) with unconfirmed changes')}</span>
+        </button>
         <span class="file-changes-bar__spacer"></span>
         <button class="file-changes-bar__confirm" type="button" title="${l10n.t('Confirm all changes (clears this notice only; files are not modified)')}">${l10n.t('Confirm all')}</button>
         <button class="file-changes-bar__revert" type="button" title="${l10n.t('Revert all changes to before the agent ran (irreversible; asks for confirmation)')}">${l10n.t('Revert all')}</button>
+        <div class="file-changes-bar__list" id="file-changes-list" hidden></div>
       `;
       deps.inputBar.parentNode?.insertBefore(_fileChangesBar, deps.inputBar);
       deps.registerDockEntry('fileChanges', _fileChangesBar);
+      // document 委托只挂一次（懒创建）：Esc / 点面板外收起，dispose 时统一解绑
+      deps.document.addEventListener('click', onDocClickOutside);
+      deps.document.addEventListener('keydown', onDocEscape);
+      // 标题行 = 展开开关（toggle 只切布尔，三态写入收敛到 setFileChangesExpanded）
+      _fileChangesBar.querySelector('.file-changes-bar__toggle')?.addEventListener('click', () => {
+        setFileChangesExpanded(!_fileChangesExpanded);
+      });
       _fileChangesBar.querySelector('.file-changes-bar__confirm')?.addEventListener('click', () => {
         deps.postMessage({ type: 'confirm_all_file_changes' });
       });
@@ -213,8 +250,25 @@ export function createStatusBarsView(deps: StatusBarsViewDeps): StatusBarsView {
     }
     const badge = _fileChangesBar.querySelector('.file-changes-bar__badge');
     if (badge) badge.textContent = String(files.length);
-    // 悬停看完整文件清单（相对路径由宿主下发，webview 只展示不解析）
+    // 悬停看完整文件清单（相对路径由宿主下发，webview 只展示不解析）——展开态的补充兜底，不删
     _fileChangesBar.title = files.join('\n');
+    // 清单每行 = 打开原文件的上行按钮；每次快照全量重建（路径是宿主真源，webview 不缓存）
+    const list = _fileChangesBar.querySelector('.file-changes-bar__list');
+    if (list && 'hidden' in list) {
+      list.innerHTML = '';
+      for (const file of files) {
+        const row = deps.document.createElement('button');
+        row.className = 'file-changes-bar__file';
+        row.type = 'button';
+        row.title = file;
+        row.textContent = file;
+        row.addEventListener('click', () => {
+          deps.postMessage({ type: 'open_changed_file', path: file });
+        });
+        list.appendChild(row);
+      }
+      list.hidden = !_fileChangesExpanded;
+    }
     deps.setDockActive('fileChanges', true); // 显隐裁决归 StatusDock（SSOT）
   }
 
@@ -265,7 +319,14 @@ export function createStatusBarsView(deps: StatusBarsViewDeps): StatusBarsView {
         task.command.length > 100 ? `${task.command.slice(0, 100)}…` : task.command;
       text.title = task.command;
       const status = deps.document.createElement('span');
-      status.className = 'background-tasks-bar__status';
+      // 状态色按内核值域映射（running/completed/其余终态），文案仍用 extension 下发的 statusLabel
+      const statusClass =
+        task.status === 'running'
+          ? 'is-running'
+          : task.status === 'completed'
+            ? 'is-completed'
+            : 'is-ended';
+      status.className = `background-tasks-bar__status ${statusClass}`;
       status.textContent = task.statusLabel;
       row.append(text, status);
       // 终态行不给「终止」按钮：已结束的任务点终止 → 宿主 kill 返回 null（按「已终结」处理），
@@ -324,9 +385,14 @@ export function createStatusBarsView(deps: StatusBarsViewDeps): StatusBarsView {
     reset: () => {
       _pendingQueueItems = [];
       _pendingDiscardedBuffer = [];
+      // 展开态是视图级 UI 态、不跨会话：下次 update 会按此值重建列表 hidden。
+      // 这里只归零布尔不碰 DOM——bar 本身由下次 update 或会话 DOM 重建接管（与原 reset 同范式）。
+      _fileChangesExpanded = false;
     },
     /** 清理三条 bar DOM（chatView.dispose 统一调用；原域内状态随域收口清理面） */
     dispose: () => {
+      deps.document.removeEventListener('click', onDocClickOutside);
+      deps.document.removeEventListener('keydown', onDocEscape);
       for (const bar of [_pendingQueueBar, _fileChangesBar, _backgroundBar]) {
         bar?.parentNode?.removeChild(bar);
       }
@@ -335,6 +401,7 @@ export function createStatusBarsView(deps: StatusBarsViewDeps): StatusBarsView {
       _backgroundBar = null;
       _pendingQueueItems = [];
       _pendingDiscardedBuffer = [];
+      _fileChangesExpanded = false;
     },
   };
 }

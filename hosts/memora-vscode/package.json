@@ -72,7 +72,7 @@
       {
         "command": "memora.openHosted",
         "title": "%command.openHosted.title%",
-        "icon": "$(comment-discussion)"
+        "icon": "$(robot)"
       },
       {
         "command": "memora.attachImage",

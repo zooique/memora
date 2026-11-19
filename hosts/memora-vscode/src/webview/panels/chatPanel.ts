@@ -1446,6 +1446,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     } else if (msg.type === 'revert_all_file_changes') {
       // 对话区常驻条「全部回退」：命令内部含模态二次确认（破坏性操作，勿绕过）
       void vscode.commands.executeCommand(REVERT_ALL_FILE_CHANGES_COMMAND);
+    } else if (msg.type === 'open_changed_file') {
+      // 对话区常驻条展开清单 → 点单行打开原文件（OPEN-CHANGED-FILE-1）：
+      // 清单对拍 + 越界守卫 + 打开 + 失败 notice 全在 chatRefOps 同域（与 open_ref 共执行面）
+      void this._refOps.openChangedFile(msg.path, this._fileChangesProvider?.() ?? []);
     } else if (msg.type === 'background_kill') {
       // 两种语义共用一个通道（方案 §5.2.4）：`terminate` 真终止进程 / `dismiss` 仅收起这一行。
       // 缺省按 terminate（兼容旧 webview 发出的无 reason 消息）。

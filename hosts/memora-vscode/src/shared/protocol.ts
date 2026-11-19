@@ -917,6 +917,21 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'revert_all_file_changes' }
   /**
+   * 打开单个改动文件（对话区常驻条展开清单 → 点某一行 → 在编辑器打开原文件）
+   *
+   * 与 `confirm_all_file_changes` / `revert_all_file_changes` 的差别：那两条是**处置**改动
+   * （清装饰 / 写盘回退），本条是**查看**改动——只把文件在原生文本编辑器打开，不改任何内容、
+   * 不动 tracker 记录。宿主 `showChangeList` 的 compare 打开的是 diff（旧 vs 新），与本条
+   * 的「打开工作区里的当前文件」是两种意图，互不替代。
+   *
+   * `path` 是 webview 从 `file_changes.files` 清单里**原样回传**的相对路径，webview 不解析、
+   * 不拼接。宿主侧须先与当前清单对拍（防伪造路径打开任意文件），再走
+   * `refPath.resolveUnderPrimaryRoot` 单点解析 + `openTextDocument`——与 workProjectionBridge
+   * 的 `open` 同构（同一条上行通道安全契约，不新造第二套字符串守卫）。对拍失败/路径越界
+   * 一律走 notice 拒开，不静默改开别的文件。
+   */
+  | { type: 'open_changed_file'; path: string }
+  /**
    * 后台任务条的动作（见 `docs/方案-后台任务跨轮存活-20261004.md` §5.2.4）
    *
    * `reason` 决定**两件完全不同**的事，靠单通道区分而非开第二条：

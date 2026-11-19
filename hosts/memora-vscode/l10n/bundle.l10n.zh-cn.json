@@ -1486,5 +1486,6 @@
   "Awaiting your answer": "等待你的回答",
   "Quote this message": "引用此条消息",
   "Quote this answer": "引用此条回答",
-  "Inline view. To keep a workbench open side by side, use the Command Palette.": "这里是就地视图；若需并排常驻的工作台，请用命令面板打开。"
+  "Inline view. To keep a workbench open side by side, use the Command Palette.": "这里是就地视图；若需并排常驻的工作台，请用命令面板打开。",
+  "Cannot open changed file: {0} is no longer in the change list": "无法打开改动文件：{0} 已不在改动清单中"
 }

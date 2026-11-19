@@ -85,8 +85,13 @@ import { join } from 'node:path';
  *  `auth_closed`——带戳轮改内联代批后宿主不再产生 `deferred`，三协议零生产消费；
  *  授权卡 / `ConfirmAuthFlow` 同批删除（`HOSTED-CLEANUP-1` ①），不留并行的第二套确认判据。
  *  实测 144，阈值同口径重算 145。
+ *  2026-11-19 单文件改动打开（`OPEN-CHANGED-FILE-1`）+1：新增 `open_changed_file`（W→E）——
+ *  常驻条从 hover 清单升级为「点开 → 展开文件列表 → 点单行打开原文件」；与 compare（diff）
+ *  是查看意图的两种形态，不复用同一通道。path 由 webview 原样回传，宿主先与改动清单对拍、
+ *  再走 refPath 单点解析，见 workProjectionBridge 同构契约。
+ *  实测 145，阈值同口径重算 146。
  */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 145;
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 146;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {

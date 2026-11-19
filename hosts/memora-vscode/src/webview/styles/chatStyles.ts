@@ -1123,6 +1123,7 @@ export const chatStyles = `
      数字用 warn 色 + 粗体（不设底色，避免浅/深主题下底字对比度失控）。 */
   .file-changes-bar {
     display: flex;
+    flex-wrap: wrap; /* 展开清单整行铺开（__list  flex-basis:100%），不挤压首行 */
     align-items: center;
     gap: var(--sp-1, 4px);
     margin: 0 var(--sp-4, 10px) var(--sp-2, 6px);
@@ -1132,6 +1133,31 @@ export const chatStyles = `
     font-size: var(--font-md);
     line-height: var(--lh-tight);
     color: var(--text-secondary, #9aa0a6);
+  }
+  /* 标题行 = 展开开关：整块可点、带 hover/focus 反馈，复用 badge + label 两子元素（不造新文案） */
+  .file-changes-bar__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1, 4px);
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: inherit;
+    cursor: pointer;
+  }
+  .file-changes-bar__toggle:hover .file-changes-bar__label,
+  .file-changes-bar__toggle:focus-visible .file-changes-bar__label {
+    color: var(--accent, #0e639c);
+  }
+  .file-changes-bar__toggle::after {
+    content: '▸';
+    font-size: 0.85em;
+    color: var(--text-secondary);
+  }
+  .file-changes-bar__toggle[aria-expanded='true']::after {
+    content: '▾';
   }
   .file-changes-bar__badge {
     font-weight: 700;
@@ -1143,6 +1169,35 @@ export const chatStyles = `
   /* 占位撑开：把两个按钮推到行尾 */
   .file-changes-bar__spacer {
     flex: 1 1 auto;
+  }
+  /* 展开清单：整行铺开（改动文件通常个位数，不设滚动上限，避免裸 px 债务） */
+  .file-changes-bar__list {
+    flex: 1 0 100%;
+    display: flex;
+    flex-direction: column;
+    margin-top: var(--sp-1, 4px);
+    padding-top: var(--sp-1, 4px);
+  }
+  .file-changes-bar__file {
+    display: block;
+    width: 100%;
+    padding: var(--sp-0, 2px) var(--sp-1, 4px);
+    border: none;
+    border-radius: var(--radius-sm, 2px);
+    background: transparent;
+    color: var(--text-secondary, #9aa0a6);
+    font-family: inherit;
+    font-size: var(--font-sm, 11px);
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+  }
+  .file-changes-bar__file:hover,
+  .file-changes-bar__file:focus-visible {
+    background: var(--surface-hover);
+    color: var(--text-primary);
   }
   .file-changes-bar__confirm,
   .file-changes-bar__revert {
@@ -1270,6 +1325,11 @@ export const chatStyles = `
   .pending-queue-bar__item:hover .pending-queue-bar__item-del {
     opacity: 1;
   }
+  /* KEYBOARD-FOCUS-1：删除键 hover-only 会让键盘用户 Tab 到隐形按钮（WCAG 2.4.7）。
+   * focus-visible 与 hover 同权显示——只补可见性，不改尺寸/颜色，令牌零新增。 */
+  .pending-queue-bar__item-del:focus-visible {
+    opacity: 1;
+  }
   .pending-queue-bar__item-del:hover {
     background: var(--feedback-error-bg, #442726);
     color: var(--status-fail, #f14c4c);
@@ -1359,6 +1419,11 @@ export const chatStyles = `
     color: var(--text-secondary, #9aa0a6);
     font-size: var(--font-xs, 10px);
   }
+  /* 状态色（BG-STATUS-COLOR-1）：与工作台抽屉 awb-badge 同族 token，扫视可辨。
+   * 只着色不改文案（statusLabel 仍是 extension 自持词表的真源），复用既有 token 零裸值。 */
+  .background-tasks-bar__status.is-running { color: var(--accent); }
+  .background-tasks-bar__status.is-completed { color: var(--chart-green); }
+  .background-tasks-bar__status.is-ended { color: var(--text-error); }
   .background-tasks-bar__kill {
     flex-shrink: 0;
     padding: 0 var(--sp-2, 6px);

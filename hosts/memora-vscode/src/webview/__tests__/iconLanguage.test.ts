@@ -240,6 +240,27 @@ describe('UI 图标语言 = icons.ts 的 SVG（字符图标守卫）', () => {
     ).toEqual([]);
   });
 
+  it('quote 与 copy 视觉盒同族（BUBBLE-QUOTE-SIZE-1：防引用图标比复制图标大一圈）', () => {
+    // 两者同排出现在 hover 操作栏（msg-quote-icon / msg-copy-icon），视觉宽度须同量级。
+    // 判据取 path 主框命令的 x 端点（非写死整条 path）：左端对齐 + 主框跨度同族，
+    // 左边界或右边界任一被重新画大都红——比写死整条 path 更抗无害重绘。
+    const quote = getIconSvg('quote');
+    const copy = getIconSvg('copy');
+    // quote 主框首命令 M12 3.5H4（圆角各 1 ⇒ 视觉 x3–13 宽 10）；
+    // copy 两矩形 x4–11 / x7–14（视觉 x4–14 宽 10）
+    const quoteStart = quote.match(/M([\d.]+)\s+[\d.]+H([\d.]+)/);
+    const copyStart = copy.match(/<rect x="([\d.]+)"/);
+    expect(quoteStart, 'quote 主框形态变化，重估视觉盒对齐判据').not.toBeNull();
+    expect(copyStart, 'copy 矩形形态变化，重估视觉盒对齐判据').not.toBeNull();
+    const quoteLeft = Number(quoteStart![2]); // H 终点 = 4
+    const quoteSpan = Number(quoteStart![1]) - quoteLeft; // M 起点 12 − H 终点 4 = 8
+    // 左端对齐：quote 主框左端与 copy 首矩形 x 差 < 2px（路径命令值比较，4 vs 4）
+    expect(Math.abs(quoteLeft - Number(copyStart![1]))).toBeLessThan(2);
+    // 跨度同族：quote 主框跨度 8±1（含圆角 ⇒ 视觉宽 10），防把右边界重新画大却仍左对齐
+    expect(quoteSpan).toBeGreaterThanOrEqual(7);
+    expect(quoteSpan).toBeLessThanOrEqual(9);
+  });
+
   it('getIconSvg 产物可在 jsdom 下解析为 SVG 元素（所有 innerHTML 接入点的前提）', () => {
     // 接入面大量依赖 `el.innerHTML = getIconSvg(...)`——若 jsdom 不把字符串解析为 SVG
     // 元素，所有接入点会**静默变空**（tsc/守卫都不会报）。此断言锁死该前提。
