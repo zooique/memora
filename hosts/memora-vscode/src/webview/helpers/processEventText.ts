@@ -202,6 +202,26 @@ export function parseToolArgs(raw: string | undefined): Readonly<Record<string, 
 }
 
 /**
+ * 从 `create_session` 的 `tool_result.summary` 里解析新会话 sid（DISPATCH-CREATE-CARD-1）
+ *
+ * 🔒 与产生点互锁（WORKBENCH-SID-1）：摘要文本由宿主
+ * `extension/host/workSessionTools.ts` 的 `serializeCreateSessionResult` 唯一产生，
+ * 本解析是同一份文本契约的消费侧；键序 / 缩进 / sid 位置变了必须同步，由
+ * `__tests__/workbenchSidContract.test.ts` 钉住。解析不到返回 undefined（不编 sid）。
+ *
+ * 落点在此（webview 纯函数集，零宿主依赖）：`workbenchHistory` 的派活卡刷新与
+ * `processFlowCells` 的工具行挂卡共用同一实现——后者是 webview bundle，不能
+ * import 顶层依赖宿主模块的 `workbenchHistory`，故解析真源下沉到本层，上方 re-export。
+ *
+ * @param summary 工具结果摘要文本（可能被内核截到 100 字符，sid 在前部窗口内）
+ * @returns sid；解析不到返回 undefined
+ */
+export function parseCreateSessionSid(summary: string): string | undefined {
+  const match = /["']?sid["']?\s*:\s*["']([^"']+)["']/.exec(summary);
+  return match?.[1];
+}
+
+/**
  * 工具行动叙述：命中映射且参数齐备 → 人话描述；否则回退工具显示名（再回退原生工具名）
  *
  * 兜底走 toolNameMap.getToolDisplayName（**工具展示名的唯一真源**，值为英文源键）——

@@ -21,6 +21,7 @@ import {
   argStr,
   fmtDuration,
   isPlanItemBoundaryEvent,
+  parseCreateSessionSid,
   parseToolArgs,
   toolActionLabel,
   toolSummaryText,
@@ -47,6 +48,14 @@ import { getIconSvg } from './icons.js';
  * 为避免为单个判断扩表，这里用字面量并注释真源（改名时两边同步，与 workbenchHistory 的契约同型）。
  */
 const SEND_TO_SESSION_TOOL_NAME = 'send_to_session';
+
+/**
+ * 建会话工具名（字面量锚点，同上理由不 import 宿主模块）。
+ * 真源 = extension/host/workSessionTools.ts 的 CREATE_SESSION_TOOL_NAME。
+ * 建的会话与派活的会话都该有「打开目标会话」卡（DISPATCH-CREATE-CARD-1）：
+ * 差别只在 sid 来源——派活在 args，建会话在 tool_result.summary。
+ */
+const CREATE_SESSION_TOOL_NAME = 'create_session';
 import type { MemoryHitsBlock } from './memoryHitsBlock.js';
 
 /** 派活会话卡构造器（由 helper 注入；本工厂不 import 卡片实现，保持域边界） */
@@ -842,17 +851,24 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
     // 前导空格：span 间空白不折叠，显式补「叙述 (状态)」间距；delegate 用定稿的角括号徽标
     statusSpan.textContent = delegateUi ? delegateBadgeText(status) : ` (${status})`;
     summary.append(iconSpan, labelSpan, statusSpan);
-    // 派活会话卡（DISPATCH-SESSION-CARD-1）：sid 来自本行 args，与这次派活一一绑定。
+    // 派活会话卡（DISPATCH-SESSION-CARD-1 / DISPATCH-CREATE-CARD-1）：与这一次工具调用
+    // 一一绑定。两类工具都出卡，sid 来源不同（单一真源见各分支注释）：
+    //   - send_to_session：sid 在本行 args（派发目标）；
+    //   - create_session：sid 在 tool_result.summary（新建会话只在返回值里给 sid）。
     // 挂载点交给注入方决定（self = summary 常显区；助手形态 = 轮级可见容器）——
     // 助手窗把 .round-block 整段 CSS 收起，卡片挂在工具行里会被连坐隐藏。
-    if (dispatchCard && start.payload.name === SEND_TO_SESSION_TOOL_NAME) {
-      const sid = argStr(parseToolArgs(start.payload.args), 'sid');
-      if (sid) {
-        const card = dispatchCard.build(document, sid);
-        if (card) {
-          if (dispatchCard.mount) dispatchCard.mount(document, card, summary);
-          else summary.appendChild(card);
-        }
+    // 时序：实时增量期 result 未到 → create 卡不出；收场/重放全量重建（result 在场）时补挂。
+    const cardSid =
+      start.payload.name === SEND_TO_SESSION_TOOL_NAME
+        ? argStr(parseToolArgs(start.payload.args), 'sid')
+        : start.payload.name === CREATE_SESSION_TOOL_NAME && result?.payload.ok
+          ? parseCreateSessionSid(result.payload.summary ?? '')
+          : undefined;
+    if (dispatchCard && cardSid) {
+      const card = dispatchCard.build(document, cardSid);
+      if (card) {
+        if (dispatchCard.mount) dispatchCard.mount(document, card, summary);
+        else summary.appendChild(card);
       }
     }
     row.appendChild(summary);

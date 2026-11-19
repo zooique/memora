@@ -12395,6 +12395,84 @@ describe('块类型标与折叠箭头（批次三）', () => {
     expect((row() as HTMLElement).dataset.userToggled).toBeUndefined();
   });
 
+  it('create_session 工具行也挂派活会话卡：sid 从结果摘要解析（args 无 sid）· DISPATCH-CREATE-CARD-1', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'chunk', content: '已开会话' });
+    dispatchEv({
+      type: 'tool_start',
+      seq: 2,
+      ts: 'T1',
+      payload: {
+        toolCallId: 'create-1',
+        name: 'create_session',
+        // 建会话的入参只有 title/text/paths——sid 由宿主生成，不在 args 里
+        args: JSON.stringify({ title: '补 README', text: '加一条 Node 22 要求', paths: ['.'] }),
+        stepIndex: 1,
+      },
+    });
+    // 增量期 result 未到 ⇒ 卡不出（sid 还不可知）
+    const row = () => document.querySelector('.round-block__tool[data-tool-call-id="create-1"]')!;
+    expect(row().querySelector('.dispatch-session-card')).toBeNull();
+    dispatchEv({
+      type: 'tool_result',
+      seq: 3,
+      ts: 'T2',
+      payload: {
+        toolCallId: 'create-1',
+        name: 'create_session',
+        ok: true,
+        // 真源 serializeCreateSessionResult 的形态；内核会截到 100 字符但 sid 在前部
+        summary:
+          '{\n  "ok": true,\n  "sid": "2026-11-19-readme-node22",\n  "title": "补 README"\n}',
+      },
+    });
+    // 收场 → finalize 全量重建工具行（真机「任务完成报告结论」必经此路）
+    dispatch({ type: 'done' });
+    const card = () => row().querySelector<HTMLElement>('.dispatch-session-card');
+    // 收场全量重建后卡挂出：sid 锚点来自结果摘要，而非 args
+    expect(card()).not.toBeNull();
+    expect(card()!.getAttribute('data-dispatch-session')).toBe('2026-11-19-readme-node22');
+    expect(card()!.querySelector('.dispatch-session-card__name')?.textContent).toBe(
+      '2026-11-19-readme-node22',
+    );
+    // 点击出口与 send_to_session 同款 → switch_session 切到新建会话
+    postMessage.mockClear();
+    card()!.click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'switch_session',
+      sessionId: '2026-11-19-readme-node22',
+    });
+  });
+
+  it('create_session 失败结果不出派活卡（无 sid 不编卡）', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '开会话失败' });
+    dispatchEv({
+      type: 'tool_start',
+      seq: 2,
+      ts: 'T1',
+      payload: {
+        toolCallId: 'create-fail',
+        name: 'create_session',
+        args: JSON.stringify({ title: '补 README', text: 'x', paths: ['.'] }),
+        stepIndex: 1,
+      },
+    });
+    dispatchEv({
+      type: 'tool_result',
+      seq: 3,
+      ts: 'T2',
+      payload: {
+        toolCallId: 'create-fail',
+        name: 'create_session',
+        ok: false,
+        summary: '{\n  "ok": false,\n  "code": "E_ROLE_PACK",\n  "message": "角色包不可用"\n}',
+      },
+    });
+    const row = document.querySelector('.round-block__tool[data-tool-call-id="create-fail"]')!;
+    expect(row.querySelector('.dispatch-session-card')).toBeNull();
+  });
+
   it('助手形态派活卡挂在轮级可见容器，不被收起的 .round-block 连坐', () => {
     mountChatView('assistant');
     dispatch({ type: 'chunk', content: '已派活' });

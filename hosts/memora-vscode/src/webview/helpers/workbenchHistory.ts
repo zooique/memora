@@ -33,6 +33,10 @@ import {
   CREATE_SESSION_TOOL_NAME,
   SEND_TO_SESSION_TOOL_NAME,
 } from '../../extension/host/workSessionTools.js';
+// DISPATCH-CREATE-CARD-1：解析真源下沉到 webview 纯 helper processEventText（零宿主依赖），
+// 本模块仍调用并对外 re-export——契约测试 workbenchSidContract 的 import 路径保持不变。
+import { parseCreateSessionSid } from './processEventText.js';
+export { parseCreateSessionSid } from './processEventText.js';
 import {
   WORKBENCH_DISPATCH_LOOKBACK_ROUNDS,
   type WorkbenchCoverage,
@@ -386,26 +390,9 @@ function excerptOf(text: string): string {
     : text;
 }
 
-/**
- * 从 `tool_result.summary`（可能被截断）里提取 sid
- *
- * 🔒 互锁（WORKBENCH-SID-1）：本解析**假设**文本由
- * `extension/host/workSessionTools.ts` 的 `serializeCreateSessionResult` 产出——
- * `{\n  "ok": true,\n  "sid": "<sid>", …`，且 sid 落在内核 100 字符摘要窗口内。
- * 改那边的缩进 / 键序 / 字段名，必须同步改这里与互锁测试
- * `src/webview/__tests__/workbenchSidContract.test.ts`。解析不出来时调用方会计入
- * 「读不到」（不静默丢、不当成没有）。
- *
- * 结果 JSON 形如 `{ "ok": true, "sid": "2026-11-14-session-xxx", ... }`；
- * sid 在前部，100 字符足够完整出现。容忍空格 / 单双引号差异。
- *
- * @param summary 工具结果摘要（截断后的 JSON 文本）
- * @returns sid；解析不到返回 undefined
- */
-export function parseCreateSessionSid(summary: string): string | undefined {
-  const match = /["']?sid["']?\s*:\s*["']([^"']+)["']/.exec(summary);
-  return match?.[1];
-}
+// parseCreateSessionSid 的实现已下沉至 processEventText（DISPATCH-CREATE-CARD-1）：
+// 派活卡工具行（processFlowCells，webview bundle）与工作台重建（本模块）共用同一解析真源。
+// 本模块在文件头 import + re-export，保留原有调用点与契约测试 import 路径，行为逐字不变。
 
 /**
  * 从 `tool_start.args` 里提取创建时给的标题
