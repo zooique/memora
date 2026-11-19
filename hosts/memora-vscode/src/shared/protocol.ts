@@ -1464,6 +1464,14 @@ export type ExtensionToWebviewMessage =
        * 随本快照投影下发。只收遍历面内的会话（与 runningIds 同源），改名后随下次快照刷新。
        */
       titleById: Record<string, string>;
+      /**
+       * 被助手会话盖章启动的工作会话（独立会话卡区的唯一数据源，DISPATCH-CARD-ZONE-1）
+       *
+       * 按助手会话算：`dispatchedBy.from === 助手会话` 的会话，本进程取创建者账本、
+       * 重启后取轮次反查。名字逐条走宿主 sessionTitleFor 真源（不依赖 titleById 的遍历面，
+       * 后台会话未装配时也能取到真名）；via 区分派活/新建。sid 去重，天然会话维度一张卡。
+       */
+      dispatchedSessions: Array<{ sid: string; title: string; via: 'delegate' | 'create' }>;
     }
   /**
    * Chat Panel Provider 列表同步（底部模型下拉框的数据）

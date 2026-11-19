@@ -41,6 +41,7 @@ function push(
     isStreaming: (id) => id === 's1',
     isWaiting: () => false,
     titleFor: overrides.titleFor ?? ((id) => TITLES[id] ?? id),
+    dispatchedSessions: [],
     lastSerialized: undefined,
     force: true,
     post: (snapshot) => {

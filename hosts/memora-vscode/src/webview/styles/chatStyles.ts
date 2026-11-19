@@ -3049,12 +3049,17 @@ export const chatStyles = `
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
   }
   .round-block__tool summary:focus-visible { box-shadow: 0 0 0 1px var(--border-focus); }
-  /* 派活会话卡（DISPATCH-SESSION-CARD-1）：嵌在工具行 summary 内的常显按钮，点它切到目标会话。
-     名字由 session_activity.titleById 刷新；running 时前置旋转环（复用工具行的 toolSpinner 动画，
-     不新建 keyframes、不引新令牌）。环即状态，无需额外文字。 */
+  /* 盖章会话卡区（DISPATCH-CARD-ZONE-1）：#messages 同级固定插槽，第三种信息形态。
+     卡区自身左对齐、纵向排列；卡片宽度随内容自适应（fit-content），不再被 flex 拉伸填满。 */
+  .dispatch-card-zone {
+    display: flex; flex-direction: column; align-items: flex-start;
+    gap: var(--sp-1, 4px); padding: 0 var(--sp-3, 8px);
+  }
+  /* 会话卡：被宝盖章启动的会话入口，点它切到目标会话。名字取 session_activity 真源；
+     running 时前置旋转环（复用 toolSpinner 动画，不新建 keyframes、不引新令牌）。环即状态。 */
   .dispatch-session-card {
     display: inline-flex; align-items: center; gap: var(--sp-2, 6px);
-    margin-left: var(--sp-3, 8px); padding: var(--sp-1, 4px) var(--sp-2, 6px);
+    width: fit-content; max-width: 100%; padding: var(--sp-1, 4px) var(--sp-2, 6px);
     border: var(--line-solid);
     border-radius: var(--radius, 6px);
     background: var(--surface-thought, #252526);
@@ -3065,7 +3070,7 @@ export const chatStyles = `
   .dispatch-session-card:hover { border-color: var(--accent, #0e639c); }
   .dispatch-session-card:focus-visible { box-shadow: 0 0 0 1px var(--border-focus); }
   .dispatch-session-card__icon { display: inline-flex; align-items: center; }
-  .dispatch-session-card__name { max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dispatch-session-card__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dispatch-session-card.is-running .dispatch-session-card__icon::before {
     content: ''; display: inline-block; width: var(--dot-lg); height: var(--dot-lg);
     margin-right: var(--sp-1, 4px); vertical-align: -1px;

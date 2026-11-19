@@ -1,26 +1,27 @@
 /**
- * dispatchSessionCard 派活会话卡判据（DISPATCH-SESSION-CARD-1）
+ * 盖章会话卡区判据（DISPATCH-CARD-ZONE-1）
  *
- * 卡片 = 派活工具行里的「打开目标会话」按钮：sid 锚点来自工具 args，标题/旋转由
- * session_activity 快照刷新。这里测纯 DOM 层（锚点 + 刷新），点击 post 在 chatView 测试里验。
+ * 会话卡 = 第三种信息形态：「被宝盖章启动的会话」独立站在卡区，不嵌工具行。
+ * 这里测纯 DOM 层（锚点 + 全量重建 + 去重 + 旋转），点击 post 在 chatView 测试里验。
  *
  * 变异靶标：
  *   - 卡片不打 data-dispatch-session 锚点 ⇒ 锚点用例红（点击委托也失去目标）；
- *   - refresh 不写 titleById ⇒ 标题用例红；
- *   - refresh 不切 is-running ⇒ 旋转用例红；
- *   - 标题缺失时写空串而非保留 sid ⇒ 兜底用例红。
+ *   - 渲染不写真名 ⇒ 名字用例红；
+ *   - 不写 is-running ⇒ 旋转用例红；
+ *   - 不去重 ⇒ 重复卡用例红；
+ *   - 空列表不隐藏卡区 ⇒ 空态用例红；
+ *   - 真名为空不回落 sid ⇒ 兜底用例红。
  */
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import {
   buildDispatchSessionCard,
-  createDispatchCardMounter,
   DISPATCH_SESSION_ATTR,
-  refreshDispatchSessionCards,
+  renderDispatchCardZone,
 } from '../dispatchSessionCard.js';
 
 describe('buildDispatchSessionCard 卡片骨架', () => {
-  it('带 sid 锚点与名字节点；未刷新前名字显示 sid（不空着）', () => {
+  it('带 sid 锚点与名字节点；未渲染前名字显示 sid（不空着）', () => {
     const card = buildDispatchSessionCard(document, '2026-11-18-abc');
     expect(card.tagName).toBe('BUTTON');
     expect(card.getAttribute(DISPATCH_SESSION_ATTR)).toBe('2026-11-18-abc');
@@ -28,94 +29,69 @@ describe('buildDispatchSessionCard 卡片骨架', () => {
   });
 });
 
-describe('createDispatchCardMounter 形态挂载（助手窗过程块被 CSS 收起）', () => {
-  it('self 形态仍挂工具行 summary 常显区（不带伤）', () => {
-    document.body.dataset.form = 'self';
-    const summary = document.createElement('summary');
-    const card = buildDispatchSessionCard(document, 's1');
-    const group = document.createElement('div');
-    group.className = 'round-group';
+describe('renderDispatchCardZone 独立卡区全量重建', () => {
+  it('按盖章列表建卡：真名 + running 旋转 + via 标签同源', () => {
+    const zone = document.createElement('div');
+    renderDispatchCardZone(
+      zone,
+      [
+        { sid: 's1', title: '统计目录文件数', via: 'delegate' },
+        { sid: 's2', title: '空白页草稿', via: 'create' },
+      ],
+      ['s1'],
+    );
 
-    createDispatchCardMounter(() => group)(document, card, summary);
-
-    expect(card.parentElement).toBe(summary);
-    expect(group.contains(card)).toBe(false);
-  });
-
-  it('助手形态挂当前轮可见容器，且插在底栏之前（不被隐藏的 round-block 连坐）', () => {
-    document.body.dataset.form = 'assistant';
-    const summary = document.createElement('summary');
-    const hiddenBlock = document.createElement('div');
-    hiddenBlock.className = 'round-block';
-    hiddenBlock.appendChild(summary);
-    const group = document.createElement('div');
-    group.className = 'round-group';
-    const foot = document.createElement('div');
-    foot.className = 'round-group__footer';
-    group.appendChild(foot);
-    document.body.appendChild(group);
-    const card = buildDispatchSessionCard(document, 's2');
-
-    createDispatchCardMounter(() => group)(document, card, summary);
-
-    expect(card.parentElement).toBe(group);
-    expect(card.nextElementSibling).toBe(foot);
-    expect(hiddenBlock.contains(card)).toBe(false);
-    group.remove();
-  });
-
-  it('助手形态轮容器尚未建立时落消息流可见终位（不暂存、不丢卡）', () => {
-    document.body.dataset.form = 'assistant';
-    const messages = document.createElement('div');
-    messages.id = 'messages';
-    document.body.appendChild(messages);
-    const summary = document.createElement('summary');
-    const card = buildDispatchSessionCard(document, 's3');
-
-    createDispatchCardMounter(() => null)(document, card, summary);
-
-    expect(card.parentElement).toBe(messages);
-    messages.remove();
-  });
-});
-
-describe('refreshDispatchSessionCards 快照刷新', () => {
-  it('按 titleById 写展示名，按 runningIds 切 is-running', () => {
-    const running = buildDispatchSessionCard(document, 's1');
-    const idle = buildDispatchSessionCard(document, 's2');
-    const root = document.createElement('div');
-    root.append(running, idle);
-
-    refreshDispatchSessionCards(root, { s1: '统计目录文件数', s2: '空白页草稿' }, ['s1']);
-
-    expect(running.querySelector('.dispatch-session-card__name')?.textContent).toBe(
+    const cards = zone.querySelectorAll<HTMLElement>(`[${DISPATCH_SESSION_ATTR}]`);
+    expect(cards).toHaveLength(2);
+    const [running, idle] = Array.from(cards);
+    expect(running?.querySelector('.dispatch-session-card__name')?.textContent).toBe(
       '统计目录文件数',
     );
-    expect(running.classList.contains('is-running')).toBe(true);
-    expect(running.title).toBe('统计目录文件数');
-    expect(idle.querySelector('.dispatch-session-card__name')?.textContent).toBe('空白页草稿');
-    expect(idle.classList.contains('is-running')).toBe(false);
+    expect(running?.classList.contains('is-running')).toBe(true);
+    expect(running?.dataset.via).toBe('delegate');
+    expect(idle?.querySelector('.dispatch-session-card__name')?.textContent).toBe('空白页草稿');
+    expect(idle?.classList.contains('is-running')).toBe(false);
+    expect(idle?.dataset.via).toBe('create');
+    expect(zone.hidden).toBe(false);
   });
 
-  it('标题未命中时保留 sid，不写空串冒充', () => {
-    const card = buildDispatchSessionCard(document, 's9');
-    const root = document.createElement('div');
-    root.append(card);
-
-    refreshDispatchSessionCards(root, {}, []);
-
-    expect(card.querySelector('.dispatch-session-card__name')?.textContent).toBe('s9');
-    expect(card.title).toBe('s9');
+  it('sid 去重：同一会话被派多次活只出一张卡（会话维度）', () => {
+    const zone = document.createElement('div');
+    renderDispatchCardZone(
+      zone,
+      [
+        { sid: 's1', title: '第一次', via: 'delegate' },
+        { sid: 's1', title: '第二次', via: 'delegate' },
+      ],
+      [],
+    );
+    expect(zone.querySelectorAll(`[${DISPATCH_SESSION_ATTR}]`)).toHaveLength(1);
   });
 
-  it('运行态可反转：先前 running 的会话本次不在集合 ⇒ 熄灭旋转', () => {
-    const card = buildDispatchSessionCard(document, 's1');
-    card.classList.add('is-running');
-    const root = document.createElement('div');
-    root.append(card);
+  it('跑完卡还在：runningIds 变空后卡片保留、只熄灭旋转', () => {
+    const zone = document.createElement('div');
+    renderDispatchCardZone(zone, [{ sid: 's1', title: 'X', via: 'delegate' }], ['s1']);
+    renderDispatchCardZone(zone, [{ sid: 's1', title: 'X', via: 'delegate' }], []);
+    const card = zone.querySelector<HTMLElement>(`[${DISPATCH_SESSION_ATTR}]`);
+    expect(card).not.toBeNull();
+    expect(card?.classList.contains('is-running')).toBe(false);
+  });
 
-    refreshDispatchSessionCards(root, { s1: 'X' }, []);
+  it('空列表隐藏卡区，且不残留旧卡（全量重建）', () => {
+    const zone = document.createElement('div');
+    renderDispatchCardZone(zone, [{ sid: 's1', title: 'X', via: 'delegate' }], []);
+    expect(zone.querySelectorAll(`[${DISPATCH_SESSION_ATTR}]`)).toHaveLength(1);
 
-    expect(card.classList.contains('is-running')).toBe(false);
+    renderDispatchCardZone(zone, [], []);
+    expect(zone.querySelectorAll(`[${DISPATCH_SESSION_ATTR}]`)).toHaveLength(0);
+    expect(zone.hidden).toBe(true);
+  });
+
+  it('真名为空回落 sid，不写空串冒充', () => {
+    const zone = document.createElement('div');
+    renderDispatchCardZone(zone, [{ sid: 's9', title: '', via: 'delegate' }], []);
+    const card = zone.querySelector<HTMLElement>(`[${DISPATCH_SESSION_ATTR}]`);
+    expect(card?.querySelector('.dispatch-session-card__name')?.textContent).toBe('s9');
+    expect(card?.title).toBe('s9');
   });
 });

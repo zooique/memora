@@ -25,6 +25,8 @@ export interface SessionActivityInputs {
   isWaiting: (sessionId: string) => boolean;
   /** 会话展示名（真源 = sessionTitleFor / getSessionDisplayName，宿主注入） */
   titleFor: (sessionId: string) => string;
+  /** 盖章会话列表（宿主注入：本进程账本 ∪ 轮次反查，含真名；纯函数层零 I/O 只透传） */
+  dispatchedSessions: SessionActivitySnapshot['dispatchedSessions'];
 }
 
 /** 活跃度快照（字段与 `session_activity` 协议载荷同构） */
@@ -37,6 +39,11 @@ export interface SessionActivitySnapshot {
   badgeCount: number;
   /** sid → 展示名（遍历面内会话；派活会话卡按此显示，未命中回落 sid） */
   titleById: Record<string, string>;
+  /**
+   * 被助手会话盖章启动的工作会话（独立会话卡区数据源，DISPATCH-CARD-ZONE-1）
+   * 由宿主注入本进程账本 ∪ 轮次反查的并集（含真名），纯函数层只透传不改。
+   */
+  dispatchedSessions: Array<{ sid: string; title: string; via: 'delegate' | 'create' }>;
 }
 
 /**
@@ -62,6 +69,7 @@ function collectSessionActivity(input: SessionActivityInputs): SessionActivitySn
     pendingIds,
     badgeCount: pendingIds.filter((id) => id !== input.currentSessionId).length,
     titleById,
+    dispatchedSessions: input.dispatchedSessions,
   };
 }
 
@@ -120,6 +128,7 @@ export function pushPanelSessionActivity(deps: PanelSessionActivityDeps): string
     isStreaming: deps.isStreaming,
     isWaiting: deps.isWaiting,
     titleFor: deps.titleFor,
+    dispatchedSessions: deps.dispatchedSessions,
     lastSerialized: deps.lastSerialized,
     force: deps.force,
     post: deps.post,

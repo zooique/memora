@@ -212,6 +212,8 @@ import type { DispatchWriteLease } from '../helpers/hostedDispatchLock.js';
 import { createChatAnswerOps } from './chatAnswerOps.js';
 // 会话活跃度纯计算（与工作台共用同一份判据；外置防两处各写一套 Set 遍历）
 import { pushPanelSessionActivity } from '../helpers/sessionActivity.js';
+// 盖章会话列表（独立会话卡区数据源；本进程账本 ∪ 轮次反查，外置守面板行数上限）
+import { collectDispatchedSessions } from '../helpers/dispatchedSessions.js';
 // 提示文案（快照降级 / 启动让位）：函数而非常量，l10n 必须在调用时刻取（见模块头）
 import {
   sessionDisplacedNewNotice,
@@ -2652,15 +2654,29 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * @param force true = 忽略去重强制重发（视图重建 / webview ready 时必须：新 webview 内存无旧快照）
    */
   private refreshSessionActivity(force = false): void {
+    const assistantId = this.getAssistantSessionId();
+    // 盖章会话列表：本进程账本（实时）∪ 轮次反查（重启后）。助手会话未建时无归属锚点 ⇒ 空。
+    // 逐条取 sessionTitleFor 真名（不依赖遍历面，后台/已收场会话也有真名）。
+    const dispatchedSessions = assistantId
+      ? collectDispatchedSessions({
+          orchestratorId: assistantId,
+          childrenOf: (id) => this._hostedNotifier.childrenOf(id),
+          readRoundIds: (id) => this.sessionStore.getRoundIds(id),
+          readRound: (rid) => this._eventLogRoundStore?.getById(rid) ?? undefined,
+          listSessionIds: () => this.sessionStore.listSessions(),
+          titleFor: (sid) => sessionTitleFor(this.sessionStore, sid, vscode.l10n),
+        })
+      : [];
     // 遍历面拼装 + 排除项 + 判据 + 去重全部外置（sessionActivity 单点）
     this._lastSessionActivity = pushPanelSessionActivity({
       currentSessionId: this._currentSessionId,
       agentSessionIds: this._sessionAgents.keys(),
       askSessionIds: this._asks.keys(),
-      excludeSessionIds: [this.getAssistantSessionId()],
+      excludeSessionIds: [assistantId],
       isStreaming: this.workbench.isStreaming,
       isWaiting: this.workbench.isWaiting,
       titleFor: (sid) => sessionTitleFor(this.sessionStore, sid, vscode.l10n),
+      dispatchedSessions,
       lastSerialized: this._lastSessionActivity,
       force,
       // 跨会话全局信号：刻意绕过 `post()`（不进任何单流的界面投影）；多视图走 postRaw 扇出

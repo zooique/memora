@@ -110,12 +110,7 @@ import {
   type MemoryHitEntry,
 } from '../helpers/processFlowModel.js';
 import { createMemoryHitsBlock } from './memoryHitsBlock.js';
-import {
-  buildDispatchSessionCard,
-  createDispatchCardMounter,
-  DISPATCH_SESSION_ATTR,
-  refreshDispatchSessionCards,
-} from '../helpers/dispatchSessionCard.js';
+import { DISPATCH_SESSION_ATTR, renderDispatchCardZone } from '../helpers/dispatchSessionCard.js';
 import { createAssistantWorkbenchDrawer } from '../helpers/assistantWorkbenchDrawer.js';
 import { hideWorkbenchDrawer, shouldOpenWorkbench } from '../helpers/workbenchDrawerToggle.js';
 import {
@@ -189,6 +184,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   populateIcons(document.body);
 
   const messages = document.getElementById('messages') as HTMLElement;
+  // 盖章会话卡区（第三信息形态）：与 #messages 同级，独立渲染不被重放清空
+  const dispatchCardZone = document.getElementById('dispatchSessionCardZone') as HTMLElement;
   const emptyState = document.getElementById('emptyState') as HTMLElement;
   // 空状态标题/提示（空状态角色化）：随激活角色包动态生成，切换角色不产生定位错位
   const emptyTitle = document.getElementById('emptyTitle') as HTMLElement;
@@ -410,16 +407,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const planBar = createPlanBarView({ document });
   // 过程流单元格与记忆命中块（CHATVIEW-SLIM-2 第 5 刀）：零状态 DOM 构造，deps 注入
   const memoryHitsBlock = createMemoryHitsBlock({ document, vscode });
-  const cells = createProcessFlowCells({
-    document,
-    memoryHits: memoryHitsBlock,
-    dispatchCard: {
-      build: (doc, sid) => buildDispatchSessionCard(doc, sid),
-      // 助手形态把卡片挂到当前轮可见容器（.round-block 在助手窗被 CSS 收起，
-      // 挂工具行里会被连坐隐藏）；读口由 chatView 持有，helper 不碰视图状态。
-      mount: createDispatchCardMounter(() => roundGroupEl),
-    },
-  });
+  const cells = createProcessFlowCells({ document, memoryHits: memoryHitsBlock });
   // 助手页内嵌工作台抽屉：点击出口复用既有 switch_session（与派活会话卡同款，零新 type）
   const workbenchDrawer = createAssistantWorkbenchDrawer({
     document,
@@ -3585,8 +3573,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'session_activity') {
       // 会话活跃度快照：列表条目 + 入口角标同一数据源，统一由历史菜单域投影
       historyMenuApi.setActivity(msg.runningIds, msg.pendingIds, msg.badgeCount);
-      // 派活会话卡同消费本快照（标题/旋转同源，零新建通道）；卡片由工具行渲染时建好，此处只刷新
-      refreshDispatchSessionCards(document, msg.titleById ?? {}, msg.runningIds);
+      // 盖章会话卡区（第三信息形态）：列表/标题/旋转全部来自本快照真源，全量重建。
+      // 与重放互斥——卡区是 #messages 同级固定插槽，不随 renderReplayFromRounds 清空。
+      if (dispatchCardZone) {
+        renderDispatchCardZone(dispatchCardZone, msg.dispatchedSessions ?? [], msg.runningIds);
+      }
     } else if (msg.type === 'workbench_snapshot') {
       // 助手页内嵌工作台抽屉（INLINE-WORKBENCH-1）：宿主按当前助手会话现场构建的快照，
       // 渲染并就地展开；self 形态不渲染该容器（CSS 恒隐藏），零副作用。
