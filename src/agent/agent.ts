@@ -1689,10 +1689,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 由 buildWorkOrderContextBlock 转成空串、不注入空壳段。
    */
   private readCurrentWorkOrder(): string | undefined {
-    const store = this.#config.sessionStore;
-    const current = this._sessionManager?.getCurrentSessionInfo();
-    if (!store || !current) return undefined;
-    const meta = store.getSessionMeta(`${current.date}-${current.session}`);
+    const manager = this._sessionManager;
+    const current = manager?.getCurrentSessionInfo();
+    if (!manager || !current) return undefined;
+    // 复用 SessionManager 的可选元数据读口：轻量测试替身未实现 getSessionMeta 时
+    // 与改动前一样按「无职责边界」降级，不让提示词刷新链因辅助能力缺失而中断。
+    const meta = manager.getSessionMeta(`${current.date}-${current.session}`);
     return meta?.workOrder;
   }
 

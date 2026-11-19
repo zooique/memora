@@ -156,6 +156,8 @@ function createMockSessionStore(overrides: Partial<ISessionStore> = {}): ISessio
   return {
     loadMessages: vi.fn().mockReturnValue([]),
     listSessions: vi.fn().mockReturnValue([]),
+    // 默认无元数据：与真实会话不存在时的读取结果一致，调用方应自然降级为空边界
+    getSessionMeta: vi.fn().mockReturnValue(undefined),
     ...overrides,
   } as unknown as ISessionStore;
 }
