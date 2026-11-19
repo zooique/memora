@@ -38,6 +38,13 @@ export interface DispatchedSessionsSources {
   listSessionIds: () => readonly string[];
   /** 会话展示名真源（注入 sessionTitleFor） */
   titleFor: (sessionId: string) => string;
+  /**
+   * 会话最近 turn 时间（真源 = SessionMeta.updatedAt，与会话列表排序同源）
+   *
+   * 卡区按此降序排（最近有动静的在前）——用户 2026-11-19 真机诉求「按 turn 时间自然排序」。
+   * 读不到元数据的会话返回空串（排末尾，不编时间）。
+   */
+  lastTurnAt: (sessionId: string) => string;
 }
 
 /**
@@ -45,6 +52,9 @@ export interface DispatchedSessionsSources {
  *
  * 优先级：轮次反查带准确 via，作基底；本进程账本补其未覆盖项（via 缺省按 delegate，
  * 仅用于标签，不影响「显示与否」）。名字一律现场取真源，改名随下次快照刷新。
+ *
+ * 排序：sid 并集后按 `lastTurnAt` 降序（最近有动静的在前），时间相同 / 读不到时保持发现顺序
+ * （稳定排序）——只重排卡片先后，不改「哪些会话出卡」的判据。
  */
 export function collectDispatchedSessions(sources: DispatchedSessionsSources): DispatchedSession[] {
   const history = rebuildWorkbenchChildren(sources.orchestratorId, {
@@ -69,5 +79,13 @@ export function collectDispatchedSessions(sources: DispatchedSessionsSources): D
     if (bySid.has(sid)) continue;
     bySid.set(sid, { sid, title: sources.titleFor(sid), via: 'delegate' });
   }
-  return [...bySid.values()];
+  // 按最近 turn 时间降序（稳定：时间相同 / 读不到保持发现顺序），只重排不改成员
+  return [...bySid.values()].sort((a, b) => {
+    const ta = sources.lastTurnAt(a.sid);
+    const tb = sources.lastTurnAt(b.sid);
+    if (ta === tb) return 0;
+    if (!ta) return 1; // 读不到时间的沉底，不编造
+    if (!tb) return -1;
+    return ta < tb ? 1 : -1;
+  });
 }

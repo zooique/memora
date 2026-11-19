@@ -63,6 +63,14 @@ export interface HostedSeatDeps {
   setAdditionalForeground: (sessionId: string | undefined) => void;
   /** 在途确认卡补推（助手窗重建后没有旧卡） */
   repostConfirm: (sessionId: string) => void;
+  /**
+   * 会话活跃度 force 补推（DISPATCH-CARD-HOSTED-READY-1）
+   *
+   * 快照去重基线是面板级单一串，助手窗后开 / 重启时新 webview 内存无旧快照；
+   * 不 force 补推则活跃度变化被去重吞掉 ⇒ 卡区 / 角标恒 hidden。侧栏
+   * `handleWebviewReady` 第⑧步已有同款机制，此处对称补齐，不另起通道。
+   */
+  refreshActivity: () => void;
   /** 打开工作台（命令归属仍在宿主） */
   openWorkbench: () => void;
 }
@@ -112,6 +120,10 @@ export function createHostedSeat(deps: HostedSeatDeps): HostedSeat {
   const handleReady = async (): Promise<void> => {
     const sid = resolveSessionId();
     syncVisibility();
+    // 新 webview 无旧快照 ⇒ 不 force 补推则首份 session_activity 被面板级去重吞掉，
+    // 助手窗卡区 / 角标永远不亮（侧栏 handleWebviewReady 第⑧步同款，DISPATCH-CARD-HOSTED-READY-1）。
+    // 空态也要推：dispatchedSessions 按助手会话算，无会话即空列表（无害）。
+    deps.refreshActivity();
     if (!sid) {
       // 空态只投助手窗（此时还没有会话 id 可路由）：清消息区 + 中性标题 + 模型清单
       deps.postToExtras({ type: 'clear_ok' });

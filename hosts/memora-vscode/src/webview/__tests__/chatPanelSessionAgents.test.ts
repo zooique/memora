@@ -2583,6 +2583,23 @@ describe('多视图广播 · 托管页与侧栏共享同一状态机（HOSTED-UI
     unregister.dispose();
   });
 
+  it('助手窗 ready ⇒ 首份 session_activity 被 force 补推到附加视图（DISPATCH-CARD-HOSTED-READY-1）', async () => {
+    const h = setupPanel({}, ['2026-11-16-seat']);
+    const extra = makeExtraView();
+    const unregister = h.provider.registerAdditionalView(extra.webview, {
+      sessionId: () => '2026-11-16-seat',
+    });
+    extra.posted.length = 0;
+    (
+      h.provider as unknown as { routeHostedMessage: (msg: { type: string }) => void }
+    ).routeHostedMessage({ type: 'ready' });
+    await Promise.resolve();
+    // 面板级快照是全局广播（postRaw fanout）：助手窗后开也必须收到首份快照，
+    // 否则卡区 / 角标因新 webview 无旧快照而恒 hidden（侧栏同款机制第⑧步）。
+    expect(extra.posted.some((m) => m.type === 'session_activity')).toBe(true);
+    unregister.dispose();
+  });
+
   it('助手窗空态走 postToExtras：只到附加视图，不打扰侧栏', () => {
     const h = setupPanel({}, ['2026-11-16-seat']);
     const extra = makeExtraView();

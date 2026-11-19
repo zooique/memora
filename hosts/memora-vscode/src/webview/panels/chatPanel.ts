@@ -343,6 +343,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     pushProviders: () => this.pushProviders(),
     setAdditionalForeground: (sessionId) => this._confirm.setAdditionalForeground(sessionId),
     repostConfirm: (sessionId) => this._confirm.repostFor(sessionId),
+    // 助手窗后开 / 重建时 force 补推首份快照（侧栏同款机制，DISPATCH-CARD-HOSTED-READY-1）
+    refreshActivity: () => this.refreshSessionActivity(true),
     openWorkbench: () => void vscode.commands.executeCommand('memora.openWorkbench'),
   });
   /**
@@ -2665,6 +2667,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           readRound: (rid) => this._eventLogRoundStore?.getById(rid) ?? undefined,
           listSessionIds: () => this.sessionStore.listSessions(),
           titleFor: (sid) => sessionTitleFor(this.sessionStore, sid, vscode.l10n),
+          // 会话列表同源时间真源：最近 turn 时间 = SessionMeta.updatedAt（DISPATCH-CARD-SORT-1）
+          lastTurnAt: (sid) => this.sessionStore.getSessionMeta(sid)?.updatedAt ?? '',
         })
       : [];
     // 遍历面拼装 + 排除项 + 判据 + 去重全部外置（sessionActivity 单点）

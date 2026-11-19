@@ -20,9 +20,13 @@ import { createHostedSeat, type HostedSeatDeps } from '../hostedSeat.js';
 /** 替身：只记录调用目标，不碰真实会话 / webview */
 function makeDeps(assistantSid: string | undefined = 'assistant-1'): {
   deps: HostedSeatDeps;
-  calls: { attach: unknown[][]; forward: unknown[][] };
+  calls: { attach: unknown[][]; forward: unknown[][]; refreshActivity: number };
 } {
-  const calls = { attach: [] as unknown[][], forward: [] as unknown[][] };
+  const calls = {
+    attach: [] as unknown[][],
+    forward: [] as unknown[][],
+    refreshActivity: 0,
+  };
   const deps: HostedSeatDeps = {
     assistantSessionId: () => assistantSid,
     dropAssistantSession: () => {},
@@ -42,6 +46,9 @@ function makeDeps(assistantSid: string | undefined = 'assistant-1'): {
     pushProviders: () => {},
     setAdditionalForeground: () => {},
     repostConfirm: () => {},
+    refreshActivity: () => {
+      calls.refreshActivity += 1;
+    },
     openWorkbench: () => {},
   };
   return { deps, calls };
@@ -57,6 +64,22 @@ const ingest = {
   height: 1,
   sha256: 'x',
 } as const;
+
+describe('DISPATCH-CARD-HOSTED-READY-1 · 助手窗 ready 必 force 补推首份活跃度快照', () => {
+  it('有助手会话：handleReady 调 refreshActivity（快照去重基线是面板级单一串，不补则卡区恒 hidden）', async () => {
+    const { deps, calls } = makeDeps();
+    const seat = createHostedSeat(deps);
+    await seat.handleReady();
+    expect(calls.refreshActivity).toBe(1);
+  });
+
+  it('空态（无助手会话）：handleReady 同样补推（无会话即空列表，零副作用）', async () => {
+    const { deps, calls } = makeDeps(undefined);
+    const seat = createHostedSeat(deps);
+    await seat.handleReady();
+    expect(calls.refreshActivity).toBe(1);
+  });
+});
 
 describe('HOSTED-IMAGE-TARGET-1 · 助手窗图片上行按来源会话定向', () => {
   it('image_pick_request → attachImagesFrom(助手会话)，绝不 forward', () => {

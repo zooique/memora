@@ -59,6 +59,7 @@ function sources(overrides: Partial<DispatchedSessionsSources> = {}): Dispatched
     readRound: () => undefined,
     listSessionIds: () => [],
     titleFor: (sid) => TITLES[sid] ?? sid,
+    lastTurnAt: () => '',
     ...overrides,
   };
 }
@@ -109,5 +110,30 @@ describe('collectDispatchedSessions 盖章列表', () => {
 
   it('空账本 + 空历史 ⇒ 空列表（不上屏）', () => {
     expect(collectDispatchedSessions(sources())).toEqual([]);
+  });
+
+  it('按最近 turn 时间降序排（最新在前），读不到时间的沉底、稳定序 · DISPATCH-CARD-SORT-1', () => {
+    const times: Record<string, string> = {
+      'worker-a': '2026-11-19T08:00:00.000Z',
+      'worker-b': '2026-11-19T10:00:00.000Z',
+      'worker-c': '2026-11-19T09:00:00.000Z',
+    };
+    const list = collectDispatchedSessions(
+      sources({
+        childrenOf: () => ['worker-a', 'worker-b', 'worker-c', 'no-meta'],
+        lastTurnAt: (sid) => times[sid] ?? '',
+      }),
+    );
+    expect(list.map((s) => s.sid)).toEqual(['worker-b', 'worker-c', 'worker-a', 'no-meta']);
+  });
+
+  it('时间相同时保持发现顺序（稳定排序，不暗中重排）· DISPATCH-CARD-SORT-1', () => {
+    const list = collectDispatchedSessions(
+      sources({
+        childrenOf: () => ['worker-a', 'worker-b', 'worker-c'],
+        lastTurnAt: () => '2026-11-19T08:00:00.000Z',
+      }),
+    );
+    expect(list.map((s) => s.sid)).toEqual(['worker-a', 'worker-b', 'worker-c']);
   });
 });
