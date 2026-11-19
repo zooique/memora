@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   argStr,
+  dispatchedSidsFromEvents,
   fmtDuration,
   parseToolArgs,
   toDateKey,
@@ -15,6 +16,7 @@ import {
   toolActionType,
   toolSummaryText,
 } from '../processEventText.js';
+import type { ProcessEvent } from '@zooique/memora';
 
 describe('toDateKey（内核 formatDateKey 镜像）', () => {
   it('本地时区格式化 YYYY-MM-DD（非 UTC 切日）', () => {
@@ -100,5 +102,85 @@ describe('fmtDuration', () => {
   it('阈值边界：59.9s 与 60s 分属两种形态', () => {
     expect(fmtDuration(59_900)).toBe('59.9s');
     expect(fmtDuration(60_000)).toBe('1m 0s');
+  });
+});
+
+describe('dispatchedSidsFromEvents（DISPATCH-CARD-INLINE-1 触发轮解析）', () => {
+  const ev = (e: unknown): ProcessEvent => e as ProcessEvent;
+
+  it('create_session 成功 → 结果 summary 里的 sid 入集合', () => {
+    const sids = dispatchedSidsFromEvents([
+      ev({
+        type: 'tool_result',
+        seq: 1,
+        ts: '2026-11-19T09:00:01.000Z',
+        payload: {
+          toolCallId: 'c1',
+          name: 'create_session',
+          ok: true,
+          summary: '{"ok":true,"sid":"worker-a","title":"统计目录文件数"}',
+        },
+      }),
+    ]);
+    expect([...sids]).toEqual(['worker-a']);
+  });
+
+  it('send_to_session 成功 → 入参 sid 入集合（回执无 sid）', () => {
+    const sids = dispatchedSidsFromEvents([
+      ev({
+        type: 'tool_start',
+        seq: 0,
+        ts: '2026-11-19T09:00:00.000Z',
+        payload: {
+          toolCallId: 'c2',
+          name: 'send_to_session',
+          args: JSON.stringify({ sid: 'worker-b', text: '继续' }),
+        },
+      }),
+      ev({
+        type: 'tool_result',
+        seq: 1,
+        ts: '2026-11-19T09:00:01.000Z',
+        payload: { toolCallId: 'c2', name: 'send_to_session', ok: true, summary: '{}' },
+      }),
+    ]);
+    expect([...sids]).toEqual(['worker-b']);
+  });
+
+  it('失败（ok:false）不盖章；无 sid 不编造', () => {
+    const sids = dispatchedSidsFromEvents([
+      ev({
+        type: 'tool_result',
+        seq: 1,
+        ts: '2026-11-19T09:00:01.000Z',
+        payload: {
+          toolCallId: 'c3',
+          name: 'create_session',
+          ok: false,
+          summary: '{"ok":false,"sid":"nope"}',
+        },
+      }),
+      ev({
+        type: 'tool_start',
+        seq: 0,
+        ts: '2026-11-19T09:00:00.000Z',
+        payload: { toolCallId: 'c4', name: 'send_to_session', args: '{"text":"无sid"}' },
+      }),
+    ]);
+    expect(sids.size).toBe(0);
+  });
+
+  it('空事件 / 无关事件 → 空集合', () => {
+    expect(dispatchedSidsFromEvents([]).size).toBe(0);
+    expect(
+      dispatchedSidsFromEvents([
+        ev({
+          type: 'tool_start',
+          seq: 0,
+          ts: '2026-11-19T09:00:00.000Z',
+          payload: { toolCallId: 'c5', name: 'read_file', args: '{}' },
+        }),
+      ]).size,
+    ).toBe(0);
   });
 });

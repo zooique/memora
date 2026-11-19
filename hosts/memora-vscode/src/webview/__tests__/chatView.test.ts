@@ -12329,15 +12329,15 @@ describe('块类型标与折叠箭头（批次三）', () => {
     expect(row().querySelector('.round-block__tool-summary')).toBeNull();
   });
 
-  it('盖章会话卡：dispatchedSessions 驱动独立卡区，真名/旋转同源 + 点击切会话（DISPATCH-CARD-ZONE-1）', () => {
-    // 卡区只归助手会话（hostedPanel = assistant form）；self 工作会话不投影
+  it('盖章会话卡：dispatchedSessions 驱动消息流内插卡，真名/旋转同源 + 点击切会话（DISPATCH-CARD-INLINE-1）', () => {
+    // 卡只归助手会话（hostedPanel = assistant form）；self 工作会话不投影
     const { postMessage } = mountChatView('assistant');
-    const zone = () => document.getElementById('dispatchSessionCardZone') as HTMLElement;
-    const card = () => zone().querySelector<HTMLElement>('.dispatch-session-card');
-    // 未盖章前卡区隐藏（空态不上屏）
-    expect(zone().hidden).toBe(true);
+    const messages = () => document.getElementById('messages') as HTMLElement;
+    const card = () => messages().querySelector<HTMLElement>('.dispatch-session-card');
+    // 未盖章前无卡（空态不上屏）
+    expect(card()).toBeNull();
 
-    // 派活受理快照到达：盖章列表（真名由宿主下发）⇒ 卡区立即出卡，不等工具行/重启
+    // 派活受理快照到达：盖章列表（真名由宿主下发）⇒ 立即出卡，无锚点落流尾（当下对话即流尾）
     dispatch({
       type: 'session_activity',
       runningIds: ['2026-11-18-target'],
@@ -12346,15 +12346,16 @@ describe('块类型标与折叠箭头（批次三）', () => {
       titleById: {},
       dispatchedSessions: [{ sid: '2026-11-18-target', title: '统计目录文件数', via: 'delegate' }],
     });
-    expect(zone().hidden).toBe(false);
     expect(card()).not.toBeNull();
     expect(card()!.getAttribute('data-dispatch-session')).toBe('2026-11-18-target');
+    expect(messages().lastElementChild).toBe(card()); // 无锚点 → 流尾
     // 名字取宿主真源（不依赖 titleById 遍历面）
     expect(card()!.querySelector('.dispatch-session-card__name')?.textContent).toBe(
       '统计目录文件数',
     );
     expect(card()!.classList.contains('is-running')).toBe(true);
-    // 卡片是第三形态：不在工具行、不在 .round-block 内
+    // 第三形态：在 #messages 内、不在工具行 / .round-block 内
+    expect(card()!.closest('#messages')).not.toBeNull();
     expect(card()!.closest('.round-block')).toBeNull();
 
     // 目标跑完 ⇒ 卡仍在，只熄旋转（跑完卡还在）
@@ -12380,7 +12381,7 @@ describe('块类型标与折叠箭头（批次三）', () => {
 
   it('create 会话同样盖章出卡（via=create），不等工具结果/replay · DISPATCH-CREATE-CARD-1', () => {
     const { postMessage } = mountChatView('assistant');
-    const zone = () => document.getElementById('dispatchSessionCardZone') as HTMLElement;
+    const messages = () => document.getElementById('messages') as HTMLElement;
     // 新建会话被盖章：dispatchedSessions 一到就出卡，真名由宿主下发，via 标 create
     dispatch({
       type: 'session_activity',
@@ -12390,7 +12391,7 @@ describe('块类型标与折叠箭头（批次三）', () => {
       titleById: {},
       dispatchedSessions: [{ sid: '2026-11-19-readme-node22', title: '补 README', via: 'create' }],
     });
-    const card = zone().querySelector<HTMLElement>('.dispatch-session-card');
+    const card = messages().querySelector<HTMLElement>('.dispatch-session-card');
     expect(card).not.toBeNull();
     expect(card!.getAttribute('data-dispatch-session')).toBe('2026-11-19-readme-node22');
     expect(card!.querySelector('.dispatch-session-card__name')?.textContent).toBe('补 README');
@@ -12414,9 +12415,8 @@ describe('块类型标与折叠箭头（批次三）', () => {
       titleById: {},
       dispatchedSessions: [], // 受理失败 → 宿主不登记账本、无 dispatchedBy ⇒ 列表为空
     });
-    const zone = document.getElementById('dispatchSessionCardZone') as HTMLElement;
-    expect(zone.querySelector('.dispatch-session-card')).toBeNull();
-    expect(zone.hidden).toBe(true);
+    const messages = document.getElementById('messages') as HTMLElement;
+    expect(messages.querySelector('.dispatch-session-card')).toBeNull();
   });
 
   it('盖章会话卡只在助手会话投影，self 工作会话收到同一份广播也不出卡（DISPATCH-CARD-ZONE-1）', () => {
@@ -12436,29 +12436,86 @@ describe('块类型标与折叠箭头（批次三）', () => {
     mountChatView('assistant');
     dispatch(snap);
     expect(document.querySelector('.dispatch-session-card')).not.toBeNull();
-    // 自助形态：同一份快照不投影卡区（骨架 hidden 保持，DOM 无卡）
+    // 自助形态：同一份快照不投影卡片（DOM 无卡）
     mountChatView('self');
     dispatch(snap);
-    const selfZone = document.getElementById('dispatchSessionCardZone') as HTMLElement;
-    expect(selfZone.querySelector('.dispatch-session-card')).toBeNull();
-    expect(selfZone.hidden).toBe(true);
+    const selfMessages = document.getElementById('messages') as HTMLElement;
+    expect(selfMessages.querySelector('.dispatch-session-card')).toBeNull();
   });
 
-  it('助手形态卡区同样是 #messages 同级独立插槽，不被收起的 .round-block 连坐', () => {
+  it('replay 后按触发轮事件归位：卡插在盖章轮之后，不在别轮、不在 .round-block（DISPATCH-CARD-INLINE-1）', () => {
     mountChatView('assistant');
+    // 先到快照：两张盖章会话（存在性 + 真名）
     dispatch({
       type: 'session_activity',
       runningIds: [],
       pendingIds: [],
       badgeCount: 0,
       titleById: {},
-      dispatchedSessions: [{ sid: '2026-11-18-visible', title: '可见会话', via: 'delegate' }],
+      dispatchedSessions: [
+        { sid: 'worker-x', title: '派活的会话', via: 'delegate' },
+        { sid: 'worker-y', title: '新建的会话', via: 'create' },
+      ],
     });
-    const card = document.querySelector<HTMLElement>('.dispatch-session-card')!;
-    expect(card).not.toBeNull();
-    expect(card.closest('.round-block')).toBeNull();
-    // 第三形态：卡片在独立卡区，不在消息流、也不在工具行内
-    expect(card.parentElement?.id).toBe('dispatchSessionCardZone');
+    // 再 replay：r1 含 send_to_session 成功盖章 worker-x、create_session 成功盖章 worker-y；
+    // r2 无关。两轮都带 user + assistant 正文，便于定位锚点。
+    dispatchReplayMany([
+      makeRound({
+        id: 'trigger-round',
+        user: { content: '去派活', ts: '2026-11-19T09:00:00.000Z' },
+        assistantMessage: { content: '已派活', ts: '2026-11-19T09:00:02.000Z' },
+        processEvents: [
+          {
+            type: 'tool_start',
+            seq: 0,
+            ts: '2026-11-19T09:00:00.000Z',
+            payload: {
+              toolCallId: 'c1',
+              name: 'send_to_session',
+              args: JSON.stringify({ sid: 'worker-x', text: '继续' }),
+            },
+          },
+          {
+            type: 'tool_result',
+            seq: 1,
+            ts: '2026-11-19T09:00:01.000Z',
+            payload: { toolCallId: 'c1', name: 'send_to_session', ok: true, summary: '{}' },
+          },
+          {
+            type: 'tool_result',
+            seq: 2,
+            ts: '2026-11-19T09:00:01.500Z',
+            payload: {
+              toolCallId: 'c2',
+              name: 'create_session',
+              ok: true,
+              summary: '{"ok":true,"sid":"worker-y","title":"新建的会话"}',
+            },
+          },
+        ],
+      }),
+      makeRound({
+        id: 'later-round',
+        user: { content: '后续对话', ts: '2026-11-19T10:00:00.000Z' },
+        assistantMessage: { content: '收到', ts: '2026-11-19T10:00:02.000Z' },
+      }),
+    ]);
+
+    const messages = document.getElementById('messages') as HTMLElement;
+    const cards = messages.querySelectorAll<HTMLElement>('.dispatch-session-card');
+    expect(cards).toHaveLength(2);
+    // 两张卡都锚到 trigger-round 轮容器之后（按快照顺序：x 然后 y，同轮接龙不打乱）
+    const triggerGroup = messages.querySelector<HTMLElement>(
+      '.round-group[data-round-id="trigger-round"]',
+    );
+    expect(triggerGroup).not.toBeNull();
+    let node = triggerGroup!.nextElementSibling;
+    expect(node?.getAttribute('data-dispatch-session')).toBe('worker-x');
+    node = node!.nextElementSibling;
+    expect(node?.getAttribute('data-dispatch-session')).toBe('worker-y');
+    // 第三形态：卡在 #messages 内、不在 .round-block
+    expect(cards[0]!.closest('.round-block')).toBeNull();
+    expect(cards[0]!.closest('#messages')).not.toBeNull();
   });
 
   it('assistant 页收到 workbench_snapshot → 内嵌抽屉渲染并就地展开；点会话复用 switch_session', () => {

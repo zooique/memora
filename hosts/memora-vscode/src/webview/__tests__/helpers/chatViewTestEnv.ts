@@ -53,7 +53,6 @@ const HTML = `
     </button>
     <div id="planBarPanel" class="plan-bar__panel" hidden></div>
   </div>
-  <div id="dispatchSessionCardZone" class="dispatch-card-zone" hidden></div>
   <div id="activityBar" class="activity-bar" hidden></div>
   <div id="messages">
     <div id="emptyState" class="empty-state" hidden>

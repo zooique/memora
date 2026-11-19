@@ -3049,17 +3049,14 @@ export const chatStyles = `
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
   }
   .round-block__tool summary:focus-visible { box-shadow: 0 0 0 1px var(--border-focus); }
-  /* 盖章会话卡区（DISPATCH-CARD-ZONE-1）：#messages 同级固定插槽，第三种信息形态。
-     卡区自身左对齐、纵向排列；卡片宽度随内容自适应（fit-content），不再被 flex 拉伸填满。 */
-  .dispatch-card-zone {
-    display: flex; flex-direction: column; align-items: flex-start;
-    gap: var(--sp-1, 4px); padding: 0 var(--sp-3, 8px);
-  }
-  /* 会话卡：被宝盖章启动的会话入口，点它切到目标会话。名字取 session_activity 真源；
-     running 时前置旋转环（复用 toolSpinner 动画，不新建 keyframes、不引新令牌）。环即状态。 */
+  /* 盖章会话卡（DISPATCH-CARD-INLINE-1）：第三种信息形态，按触发轮穿插在 #messages 对话气泡之间。
+     作为流内独立块级条目自然平铺（不是顶部固定卡区）；左对齐、宽度随内容自适应（fit-content），
+     纵向留白与气泡一致。旧 .dispatch-card-zone 固定插槽已删（脱离对话内容，真机否决）。 */
   .dispatch-session-card {
-    display: inline-flex; align-items: center; gap: var(--sp-2, 6px);
-    width: fit-content; max-width: 100%; padding: var(--sp-1, 4px) var(--sp-2, 6px);
+    display: flex; align-items: center; gap: var(--sp-2, 6px);
+    width: fit-content; max-width: 100%;
+    margin: var(--sp-2, 6px) var(--sp-3, 8px);
+    padding: var(--sp-1, 4px) var(--sp-2, 6px);
     border: var(--line-solid);
     border-radius: var(--radius, 6px);
     background: var(--surface-thought, #252526);

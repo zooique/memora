@@ -110,7 +110,8 @@ import {
   type MemoryHitEntry,
 } from '../helpers/processFlowModel.js';
 import { createMemoryHitsBlock } from './memoryHitsBlock.js';
-import { DISPATCH_SESSION_ATTR, renderDispatchCardZone } from '../helpers/dispatchSessionCard.js';
+import { DISPATCH_SESSION_ATTR, removeDispatchCards } from '../helpers/dispatchSessionCard.js';
+import { createDispatchCardProjection } from '../helpers/dispatchCardProjection.js';
 import { createAssistantWorkbenchDrawer } from '../helpers/assistantWorkbenchDrawer.js';
 import { hideWorkbenchDrawer, shouldOpenWorkbench } from '../helpers/workbenchDrawerToggle.js';
 import {
@@ -184,8 +185,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   populateIcons(document.body);
 
   const messages = document.getElementById('messages') as HTMLElement;
-  // 盖章会话卡区（第三信息形态）：与 #messages 同级，独立渲染不被重放清空
-  const dispatchCardZone = document.getElementById('dispatchSessionCardZone') as HTMLElement;
+  // 盖章会话卡（DISPATCH-CARD-INLINE-1）：状态与投影外置到 helpers/dispatchCardProjection，
+  // 按触发轮穿插进 #messages（非顶部固定卡区）。快照/锚点/投影 4 个接线点见下方调用。
+  const dispatchCards = createDispatchCardProjection(
+    () => document.body.dataset.form === 'assistant',
+  );
   const emptyState = document.getElementById('emptyState') as HTMLElement;
   // 空状态标题/提示（空状态角色化）：随激活角色包动态生成，切换角色不产生定位错位
   const emptyTitle = document.getElementById('emptyTitle') as HTMLElement;
@@ -2827,6 +2831,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         '.msg, .msg-wrapper, .round-block, .date-divider, .followup, .interrupt-divider, .ask-inline, .round-group, .process-flow',
       )
       .forEach((el) => el.remove());
+    // 盖章会话卡随消息流清空（DISPATCH-CARD-INLINE-1）：卡插在 #messages 内，
+    // 不在上面选择器中 ⇒ 显式撤掉，防重放投影前短暂闪现旧卡（与 renderDispatchCards 幂等双保险）
+    removeDispatchCards(messages);
     // H4：清空/切换会话时移除任务看板（global + inline 双轨 + 缓存，避免旧计划残留污染新会话）
     planBar.removeAll();
     // 引用回复快照（COPY-2 形态优化）随会话语境清：引用挂在对话上，不跨清空/切换残留
@@ -3023,6 +3030,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       streamingActive = true;
       beginStreaming(r.assistantMessage?.timestamp, r.id);
     }
+    // 5) 盖章卡锚点（DISPATCH-CARD-INLINE-1）：仅登记，全轮渲染完后统一投影一次（避免逐轮 O(n²)）
+    dispatchCards.noteRound(r.id, events);
   }
 
   /**
@@ -3032,9 +3041,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    */
   function renderReplayFromRounds(rounds: RoundView[]): void {
     resetChatView();
+    dispatchCards.reset(); // 锚点跨会话/重建失效（DISPATCH-CARD-INLINE-1）
     for (const r of rounds) {
       renderReplayRound(r);
     }
+    dispatchCards.project(messages); // 全轮渲染完后统一投影一次（触发轮归位 / 无锚点落流尾）
     emptyStateView.update();
     scrollToBottom(messages);
   }
@@ -3573,11 +3584,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'session_activity') {
       // 会话活跃度快照：列表条目 + 入口角标同一数据源，统一由历史菜单域投影
       historyMenuApi.setActivity(msg.runningIds, msg.pendingIds, msg.badgeCount);
-      // 盖章会话卡区（第三信息形态）只归助手会话：self 收到的是同一份全局广播，但不是盖章主体，
-      // 不投影卡区（骨架初始 hidden ⇒ 恒不显示）。与重放互斥——卡区是 #messages 同级固定插槽。
-      if (dispatchCardZone && document.body.dataset.form === 'assistant') {
-        renderDispatchCardZone(dispatchCardZone, msg.dispatchedSessions ?? [], msg.runningIds);
-      }
+      // 盖章会话卡（第三信息形态）只归助手会话：self 收到的是同一份全局广播，但不是盖章主体。
+      // 缓存快照后按已解析的锚点重投影——卡片穿插在对话气泡之间，不再用顶部固定卡区。
+      dispatchCards.setSnapshot(msg.dispatchedSessions, msg.runningIds);
+      dispatchCards.project(messages);
     } else if (msg.type === 'workbench_snapshot') {
       // 助手页内嵌工作台抽屉（INLINE-WORKBENCH-1）：宿主按当前助手会话现场构建的快照，
       // 渲染并就地展开；self 形态不渲染该容器（CSS 恒隐藏），零副作用。

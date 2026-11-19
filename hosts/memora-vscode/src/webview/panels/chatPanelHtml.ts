@@ -113,11 +113,8 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string, form: UiForm
     </button>
     <div id="planBarPanel" class="plan-bar__panel" hidden></div>
   </div>
-  <!-- 盖章会话卡区（DISPATCH-CARD-ZONE-1）：与 #messages **同级**的固定插槽。
-       会话卡是第三种信息形态（既非用户输入也非助手回复）——「被宝盖章启动的会话」
-       独立存在此处，不嵌工具行。与 #messages 同级 ⇒ 不受重放 resetChatView 清空影响、
-       不随对话滚动消失。渲染与显隐由 chatView 依据 session_activity.dispatchedSessions 驱动。 -->
-  <div id="dispatchSessionCardZone" class="dispatch-card-zone" hidden></div>
+  <!-- 盖章会话卡（DISPATCH-CARD-INLINE-1）：第三种信息形态，按触发轮插在 #messages 内对话气泡之间，
+       不再用独立固定插槽（旧形态堆在顶部、脱离对话内容，用户 2026-11-19 真机否决）。 -->
   <div id="messages">
     <!-- 空状态引导：标题 + 提示 + 示例提问 chips（点击填入输入框，主动引导新用户）。
          标题/提示加 id：由 chatView 随激活角色包动态更新，

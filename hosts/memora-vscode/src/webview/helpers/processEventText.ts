@@ -222,6 +222,50 @@ export function parseCreateSessionSid(summary: string): string | undefined {
 }
 
 /**
+ * 从一轮过程事件里解析「本轮盖章启动了哪些工作会话」（DISPATCH-CARD-INLINE-1）
+ *
+ * 两种盖章动作，sid 来源不同（与 workbenchHistory.collectFromRound 同一契约）：
+ *   - `create_session` 成功：sid 在 `tool_result.summary`（parseCreateSessionSid）；
+ *   - `send_to_session` 成功：sid 在 `tool_start.args.sid`（回执无 sid，只能从入参取）。
+ *
+ * 🔒 工具名字面量 'create_session' / 'send_to_session' 与宿主
+ * `extension/host/workSessionTools.ts` 的 CREATE_SESSION_TOOL_NAME / SEND_TO_SESSION_TOOL_NAME
+ * 是同一契约：webview bundle 不能 import 宿主模块（见文件头沙箱约束），故此处镜像字面量，
+ * 常量值变更须两侧同步（workbenchSidContract 测试钉宿主侧，本函数由 knot 测试钉）。
+ * 只有 `tool_result.ok === true` 才算盖章成功——受理失败不编卡。
+ *
+ * 用途：replay 每轮渲染时，判定该轮是否是某张会话卡的触发轮，把卡插到该轮消息之后
+ * （按时间自然平铺）。纯函数、零 DOM、零宿主依赖，webview bundle 可直接用。
+ *
+ * @param events 本轮过程事件
+ * @returns 本轮成功盖章的 sid 集合（可能为空；不编造）
+ */
+export function dispatchedSidsFromEvents(events: readonly ProcessEvent[]): Set<string> {
+  const sids = new Set<string>();
+  const sendSidByCall = new Map<string, string>();
+  for (const ev of events) {
+    if (ev.type === 'tool_start') {
+      if (ev.payload.name === 'create_session') continue; // create 的 sid 只在结果里
+      if (ev.payload.name === 'send_to_session') {
+        const args = parseToolArgs(ev.payload.args);
+        if (typeof args.sid === 'string' && args.sid)
+          sendSidByCall.set(ev.payload.toolCallId, args.sid);
+      }
+      continue;
+    }
+    if (ev.type !== 'tool_result' || !ev.payload.ok) continue;
+    if (ev.payload.name === 'create_session') {
+      const sid = parseCreateSessionSid(ev.payload.summary ?? '');
+      if (sid) sids.add(sid);
+    } else if (ev.payload.name === 'send_to_session') {
+      const sid = sendSidByCall.get(ev.payload.toolCallId);
+      if (sid) sids.add(sid);
+    }
+  }
+  return sids;
+}
+
+/**
  * 工具行动叙述：命中映射且参数齐备 → 人话描述；否则回退工具显示名（再回退原生工具名）
  *
  * 兜底走 toolNameMap.getToolDisplayName（**工具展示名的唯一真源**，值为英文源键）——
