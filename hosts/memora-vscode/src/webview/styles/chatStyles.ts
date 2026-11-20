@@ -3153,17 +3153,19 @@ export const chatStyles = `
   .round-block__tool summary:focus-visible { box-shadow: 0 0 0 1px var(--border-focus); }
   /* 盖章会话卡（DISPATCH-CARD-INLINE-1）：第三种信息形态，按触发轮穿插在 #messages 对话气泡之间。
      作为流内独立块级条目自然平铺（不是顶部固定卡区）；左对齐、宽度随内容自适应（fit-content），
-     纵向留白与气泡一致。旧 .dispatch-card-zone 固定插槽已删（脱离对话内容，真机否决）。 */
+     纵向留白与气泡一致。旧 .dispatch-card-zone 固定插槽已删（脱离对话内容，真机否决）。
+     DISPATCH-CARD-SIZE-1（2026-11-20 真机反馈）：按钮字号与内距过小，改走既有 font-md 与
+     sp-2/sp-4 档撑大点击区，不新造刻度、不触碰消息气泡样式。 */
   .dispatch-session-card {
     display: flex; align-items: center; gap: var(--sp-2, 6px);
     width: fit-content; max-width: 100%;
     margin: var(--sp-2, 6px) var(--sp-3, 8px);
-    padding: var(--sp-1, 4px) var(--sp-2, 6px);
+    padding: var(--sp-2, 6px) var(--sp-4, 10px);
     border: var(--line-solid);
     border-radius: var(--radius, 6px);
     background: var(--surface-thought, #252526);
     color: var(--text-primary, #cccccc);
-    font: inherit; font-size: var(--font-xs, 10px); cursor: pointer;
+    font: inherit; font-size: var(--font-md, 12px); cursor: pointer;
     vertical-align: middle;
   }
   .dispatch-session-card:hover { border-color: var(--accent, #0e639c); }

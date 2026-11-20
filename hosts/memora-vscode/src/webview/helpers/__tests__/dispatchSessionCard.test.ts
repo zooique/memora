@@ -10,9 +10,13 @@
  *   - 无锚点不落流尾 ⇒ 落尾用例红；
  *   - 卡片不打 data-dispatch-session ⇒ 锚点用例红（点击委托也失去目标）；
  *   - 渲染不写真名 ⇒ 名字用例红；不写 is-running ⇒ 旋转用例红；
- *   - sid 不去重 ⇒ 重复卡用例红；撤卡失效 ⇒ 幂等用例红。
+ *   - sid 不去重 ⇒ 重复卡用例红；撤卡失效 ⇒ 幂等用例红；
+ *   - 按钮字号/内距回落旧档 ⇒ 尺寸守卫红。
  */
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import {
   buildDispatchSessionCard,
@@ -20,6 +24,8 @@ import {
   removeDispatchCards,
   renderDispatchCards,
 } from '../dispatchSessionCard.js';
+
+const HOST_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 
 function flow(): HTMLElement {
   const messages = document.createElement('div');
@@ -47,6 +53,16 @@ describe('buildDispatchSessionCard 卡片骨架', () => {
     expect(card.tagName).toBe('BUTTON');
     expect(card.getAttribute(DISPATCH_SESSION_ATTR)).toBe('2026-11-18-abc');
     expect(card.querySelector('.dispatch-session-card__name')?.textContent).toBe('2026-11-18-abc');
+  });
+
+  it('DISPATCH-CARD-SIZE-1：字号/内距走既有令牌升档，作用域只在卡片本体', () => {
+    const styles = readFileSync(join(HOST_ROOT, 'src/webview/styles/chatStyles.ts'), 'utf8');
+    const start = styles.indexOf('.dispatch-session-card {');
+    const rule = styles.slice(start, styles.indexOf('}', start));
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(rule).toContain('padding: var(--sp-2, 6px) var(--sp-4, 10px)');
+    expect(rule).toContain('font-size: var(--font-md, 12px)');
+    expect(rule).not.toContain('font-size: var(--font-xs, 10px)');
   });
 });
 
