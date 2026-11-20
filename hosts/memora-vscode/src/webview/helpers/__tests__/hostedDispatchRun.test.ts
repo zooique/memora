@@ -21,6 +21,7 @@ vi.mock('vscode', () => ({
   },
 }));
 
+import { HOSTED_SENDER_NAME } from '../../../shared/constants.js';
 import { dispatchHostedInputWith, type HostedDispatchDeps } from '../hostedDispatchRun.js';
 import type { FlowSeed } from '../sessionRuntime.js';
 
@@ -63,7 +64,7 @@ describe('dispatchHostedInputWith · 派发受理与 seed 事实', () => {
       callingSessionId: 'assistant-session',
       targetSessionId: 'target-session',
       text: '接着刚才的会话，追加任务 X',
-      senderName: 'Memora',
+      senderName: HOSTED_SENDER_NAME,
       targetTitle: '目录统计',
     });
 
@@ -72,7 +73,7 @@ describe('dispatchHostedInputWith · 派发受理与 seed 事实', () => {
     expect(starts[0]?.sid).toBe('target-session');
     // 上屏与 live 投影共用的那一份事实：原文逐字、来源与发送者名随 seed 落地
     expect(starts[0]?.seed.userMessage?.content).toBe('接着刚才的会话，追加任务 X');
-    expect(starts[0]?.seed.userMessage?.name).toBe('Memora');
+    expect(starts[0]?.seed.userMessage?.name).toBe(HOSTED_SENDER_NAME);
     expect(starts[0]?.seed.origin).toBe('hosted');
     // 派发交代：真值只来自会话标题 + 原文，不生成、不润色
     expect(notes[0]).toContain('派给《目录统计》');
@@ -86,7 +87,7 @@ describe('dispatchHostedInputWith · 派发受理与 seed 事实', () => {
       callingSessionId: 'assistant',
       targetSessionId: 'target',
       text: '裸输入原文',
-      senderName: 'Memora',
+      senderName: HOSTED_SENDER_NAME,
       targetTitle: '目标会话',
     });
 
@@ -104,7 +105,7 @@ describe('dispatchHostedInputWith · 派发受理与 seed 事实', () => {
       callingSessionId: 'assistant',
       targetSessionId: 'target-session',
       text: '任务',
-      senderName: 'Memora',
+      senderName: HOSTED_SENDER_NAME,
       targetTitle: '目标会话',
     });
 
@@ -140,7 +141,7 @@ describe('dispatchHostedInputWith · 用户接管态派活门禁', () => {
       callingSessionId: 'assistant',
       targetSessionId: 'target-session',
       text: '任务',
-      senderName: 'Memora',
+      senderName: HOSTED_SENDER_NAME,
       targetTitle: '目标会话',
     });
 
@@ -159,7 +160,7 @@ describe('dispatchHostedInputWith · 用户接管态派活门禁', () => {
       callingSessionId: 'assistant',
       targetSessionId: 'self-built',
       text: '任务',
-      senderName: 'Memora',
+      senderName: HOSTED_SENDER_NAME,
       targetTitle: '自建会话',
     });
 
@@ -176,7 +177,7 @@ describe('dispatchHostedInputWith · 用户接管态派活门禁', () => {
       callingSessionId: 'assistant',
       targetSessionId: 'target',
       text: '任务',
-      senderName: 'Memora',
+      senderName: HOSTED_SENDER_NAME,
       targetTitle: '目标会话',
     });
     expect(result).toMatchObject({ ok: false, code: 'E_DENIED' });
@@ -207,7 +208,7 @@ describe('dispatchHostedInputWith · 轮引用完整性自检（D1）', () => {
       callingSessionId: 'assistant',
       targetSessionId: 'target-session',
       text: '任务',
-      senderName: 'Memora',
+      senderName: HOSTED_SENDER_NAME,
       targetTitle: '目标会话',
     });
 
@@ -233,7 +234,7 @@ describe('dispatchHostedInputWith · 轮引用完整性自检（D1）', () => {
       callingSessionId: 'assistant',
       targetSessionId: 'target',
       text: '任务',
-      senderName: 'Memora',
+      senderName: HOSTED_SENDER_NAME,
       targetTitle: '目标会话',
     });
 
@@ -251,7 +252,7 @@ describe('dispatchHostedInputWith · 轮引用完整性自检（D1）', () => {
       callingSessionId: 'assistant',
       targetSessionId: 'target',
       text: '任务',
-      senderName: 'Memora',
+      senderName: HOSTED_SENDER_NAME,
       targetTitle: '目标会话',
     });
 

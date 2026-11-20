@@ -25,7 +25,7 @@ import { resolveProjectDataDir } from './host/projectDataDir.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
 import { SessionModeStore } from './host/sessionModeStore.js';
 import { readSessionRolePackName } from './host/sessionRolePack.js';
-// 托管发送者名（单一真源下沉 host 层：授权叫醒与装配共用，见 hostedSenderName.ts）
+// 托管发送者名（单一真源 = shared/constants 的 HOSTED_SENDER_NAME：授权叫醒与装配共用）
 import { HOSTED_SENDER_NAME } from '../shared/constants.js';
 // 会话标题口径（与历史列表 / 标题条同一回落链：工作台不另写一套）
 import { sessionDisplayTitle } from './host/sessionTitle.js';
@@ -273,13 +273,6 @@ interface AssemblyDeps {
   /** 主控清单的历史重建读口（重启后补归属；读盘有 60 轮上限） */
   readHostedHistory: (orchestratorId: string) => WorkbenchHistoryResult;
 }
-
-/**
- * 托管输入的发送者名（v0 唯一注入点）
- *
- * 已下沉到 `host/hostedSenderName.ts`：装配侧与托管派发共用同一个名字，
- * 而 chatPanel 不得反向 import 本文件（循环依赖）⇒ 常量移到 host 层无依赖文件，本处只 import。
- */
 
 /**
  * 唯一的装配选项构建点

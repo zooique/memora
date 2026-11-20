@@ -2864,10 +2864,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * @returns `{ok:true,accepted:true}` = 已受理；业务失败带错误码与可操作下一步
    */
   public async dispatchHostedInput(input: HostedDispatchInput): Promise<HostedDispatchResult> {
-    const { callingSessionId, targetSessionId } = input;
-    // 交代标题：会话元数据现值（真源 = SessionStore）；查不到回落 id，不编造、不润色
-    const targetTitle =
-      this.sessionStore.getSessionMeta(targetSessionId)?.displayName ?? targetSessionId;
+    const { callingSessionId } = input;
+    // 交代标题由工具层按会话元数据单点算好（input.targetTitle），面板只透传不重算
     return dispatchHostedInputWith(
       {
         isManaged: (sessionId) => this.sessionModes.isManaged(sessionId),
@@ -2888,7 +2886,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 派发交代上屏：与流式正文同一通道、同一消息形状（面板只做投递）
         note: (msg) => this.postToSession(callingSessionId, msg),
       },
-      { ...input, targetTitle },
+      input,
     );
   }
 

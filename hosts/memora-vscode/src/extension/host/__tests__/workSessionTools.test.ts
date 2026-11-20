@@ -747,10 +747,12 @@ describe('托管 v0 · send_to_session 最小闭环（工具层）', () => {
       expect(dispatch).toHaveBeenCalledTimes(1);
       // 发送者名必须是装配期注入值：工具内写死字面量会让本断言转红
       expect(dispatch).toHaveBeenCalledWith(
-        SESSION_ID,
-        TARGET_SESSION_ID,
-        '请看这个任务',
-        SENDER_NAME,
+        expect.objectContaining({
+          callingSessionId: SESSION_ID,
+          targetSessionId: TARGET_SESSION_ID,
+          text: '请看这个任务',
+          senderName: SENDER_NAME,
+        }),
       );
     } finally {
       await disposeProbe(probe);

@@ -1206,8 +1206,8 @@ export function registerWorkSessionTools(
             targetSessionId: parsed.sid,
             text: parsed.text,
             senderName: deps.senderName,
-            // 交代文案的真值之一：会话展示名（与清单同一口径，不做生成/润色）
-            targetTitle: getSessionDisplayName(targetMeta),
+            // 交代文案的真值：与会话清单同一回落链（展示名 → 会话 id），不另写一套
+            targetTitle: getSessionDisplayName(targetMeta) || targetMeta.sessionId,
           });
           return JSON.stringify(result, null, 2);
         } catch (err) {

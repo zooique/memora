@@ -3274,7 +3274,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         try {
           append('user', msg.text, msg.ts, msg.roundId, msg, {
             // 实时路径：protocol user 事件已平铺 origin / senderName
-            // （托管输入的 senderName 由宿主在受理时解析成派发方会话展示名）
+            // （托管输入的 senderName 恒为 HOSTED_SENDER_NAME：统一助手身份盖章，来源会话名不参与）
             origin: msg.origin,
             senderName: msg.senderName,
           });
