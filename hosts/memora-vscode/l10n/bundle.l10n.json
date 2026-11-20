@@ -1477,7 +1477,7 @@
   "Failed to open the workbench: {0}": "",
   "Failed to open the assistant panel: {0}": "",
   "Failed to attach to the panel: {0}": "",
-  "A managed session has just settled. Read the settlement notice in context, then report to me: which session it was, how it ended (one sentence), and whether you suggest a next step or need my decision.": "",
+  "A managed session has just settled. The settlement notice in context includes an excerpt of what it actually delivered. Report what it delivered (quote the excerpt or summarize its key points — do not answer with which session, round id, or \"success\"), then one sentence on the outcome, and the next step or what you need me to decide.": "",
   "View progress": "View progress",
   "Hide progress": "Hide progress",
   "No round has started yet": "No round has started yet",

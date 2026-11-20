@@ -27,6 +27,8 @@ import {
   type ListCoverageResult,
   type SessionActivity,
 } from '../../shared/sessionStatus.js';
+// 摘要截断与落定通知共用同一口径（阈值唯一定义在 textClip，禁止第二份）
+import { clipSummaryText as clip } from './textClip.js';
 import {
   filtersByLiveDriver,
   type WorkbenchAgentIdentity,
@@ -172,15 +174,6 @@ export function buildWorkbenchSnapshot(inputs: WorkbenchSnapshotInputs): Workben
       scannedRounds: inputs.history.scannedRounds,
     },
   };
-}
-
-/** 摘要文本上限（防止一轮长文把工作台列表撑爆；超出用省略号，不截断事实来源） */
-const LATEST_TEXT_LIMIT = 280;
-
-/** 摘要截断：保留开头（用户输入/回答的起首最说明问题），超出加省略号 */
-function clip(text: string): string {
-  const trimmed = text.trim();
-  return trimmed.length > LATEST_TEXT_LIMIT ? `${trimmed.slice(0, LATEST_TEXT_LIMIT)}…` : trimmed;
 }
 
 /**

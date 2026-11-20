@@ -14604,12 +14604,14 @@ describe('内部汇报种子轮不上屏（HOSTED-INTERNAL-SEED-1）', () => {
     expect(messages.querySelector('.msg.user .msg-origin-tag')?.textContent).toBe('Sent by Memora');
   });
 
-  it('源码守卫：重放路径按 INTERNAL_SEED_SENDER 判种子，且跳渲染不跳复位', () => {
+  it('源码守卫：重放路径按共享谓词判种子（不再裸比较），且跳渲染不跳复位', () => {
     const src = readFileSync(join(process.cwd(), 'src/webview/scripts/chatView.ts'), 'utf8');
-    expect(src).toMatch(/r\.userMessage\.name === INTERNAL_SEED_SENDER/);
+    // 判据单点：与实时回声共用 isInternalSeedSender，禁止再出现裸比较（第二份判据）
+    expect(src).toMatch(/const isInternalSeed = isInternalSeedSender\(r\.userMessage\.name\);/);
+    expect(src).not.toMatch(/r\.userMessage\.name === INTERNAL_SEED_SENDER/);
     // 复位必须在 if 之外（跳过气泡后轮锚点仍复位，否则跨轮挂载串位）
     const seedCheck = src.indexOf(
-      'const isInternalSeed = r.userMessage.name === INTERNAL_SEED_SENDER',
+      'const isInternalSeed = isInternalSeedSender(r.userMessage.name)',
     );
     const skipBlock = src.indexOf('if (!isInternalSeed) {', seedCheck);
     const reset = src.indexOf('resetForNewClosedLoop();', skipBlock);

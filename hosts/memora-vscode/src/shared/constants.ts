@@ -110,3 +110,19 @@ export const L10N_BUNDLE_ELEMENT_ID = 'memora-l10n-bundle';
  * 真源唯一：宿主写端（chatRunControlOps 的 seed）与 webview 读端（chatView 重放）均 import 本常量。
  */
 export const INTERNAL_SEED_SENDER = '__internal_settlement_seed__';
+
+/**
+ * 这条 user 输入的发送者是否为「内部种子」——**「该不该画成用户气泡」的唯一判据**
+ *
+ * 为什么必须收成一个函数：同一事实有两个展示消费者——实时（`advanceTurnBoundary` 产回声）
+ * 与重放（`renderReplayRound` 跳过 user 气泡）。2026-11-20 真机的「内部提示词上屏」正是
+ * 因为实时消费者只判了 origin、没继承这条排除判据；两处各写一次 `name === 常量` 迟早再漂。
+ *
+ * 判据输入用的是**落盘/协议同一份**的 `RoundMessage.name`（实时 seed.name / 重放
+ * `RoundView.userMessage.name`），不新增协议字段、不新增内部标记。
+ *
+ * @param senderName 该条 user 输入的发送者名（缺省 = 普通用户输入，不命中）
+ */
+export function isInternalSeedSender(senderName: string | undefined): boolean {
+  return senderName === INTERNAL_SEED_SENDER;
+}

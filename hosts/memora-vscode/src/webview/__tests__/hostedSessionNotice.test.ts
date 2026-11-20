@@ -51,8 +51,14 @@ function meta(sessionId: string, origin: SessionMeta['origin'], displayName?: st
  * @param id 轮 id
  * @param status 轮状态
  * @param events 过程事件（原因真源）
+ * @param assistantContent 助手正文（成功轮的交付摘录来源；缺省 = 无正文）
  */
-function round(id: string, status: RoundStatus, events: ProcessEvent[] = []): Round {
+function round(
+  id: string,
+  status: RoundStatus,
+  events: ProcessEvent[] = [],
+  assistantContent?: string,
+): Round {
   return {
     id,
     userMessage: { id: `${id}-u`, role: 'user', content: '派发内容', timestamp: TS },
@@ -60,6 +66,16 @@ function round(id: string, status: RoundStatus, events: ProcessEvent[] = []): Ro
     createdAt: TS,
     completedAt: TS,
     processEvents: events,
+    ...(assistantContent
+      ? {
+          assistantMessage: {
+            id: `${id}-a`,
+            role: 'assistant' as const,
+            content: assistantContent,
+            timestamp: TS,
+          },
+        }
+      : {}),
   };
 }
 
@@ -184,6 +200,58 @@ describe('HostedSessionNotifier', () => {
     // 成功不是「中断」，不能把结论写成失败 / 中断
     expect(text).not.toContain('失败');
     expect(text).not.toContain('中断');
+  });
+
+  it('成功轮带交付摘录：主控据此汇报「交付了什么」，而不是只报状态', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    h.rounds.set(
+      'r-deliver',
+      round(
+        'r-deliver',
+        'complete',
+        [],
+        '我完成了 100 字自我介绍：大家好，我是负责目录统计的助手。',
+      ),
+    );
+    h.notifier.remember(CHILD, CREATOR);
+
+    expect(h.notifier.noteSettledFlow(CHILD, 'r-deliver', false, false)).toBe(true);
+    const text = h.creatorQueue.mock.calls[0][0] as string;
+    expect(text).toContain('交付摘录：我完成了 100 字自我介绍：大家好');
+  });
+
+  it('交付摘录按共用上限 280 截断（与工作台末轮摘要同一口径）', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '长文任务'));
+    const long = '甲'.repeat(300);
+    h.rounds.set('r-long', round('r-long', 'complete', [], long));
+    h.notifier.remember(CHILD, CREATOR);
+
+    expect(h.notifier.noteSettledFlow(CHILD, 'r-long', false, false)).toBe(true);
+    const text = h.creatorQueue.mock.calls[0][0] as string;
+    expect(text).toContain(`${'甲'.repeat(280)}…`);
+    expect(text).not.toContain('甲'.repeat(281));
+  });
+
+  it('中断轮即使有半截正文也不带交付摘录（半截回答不冒充交付）', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '被停的任务'));
+    h.rounds.set(
+      'r-half',
+      round(
+        'r-half',
+        'interrupted',
+        [{ type: 'aborted', seq: 1, ts: TS, payload: { reason: 'cancelled', stopReason: 'user' } }],
+        '半截回答：我刚写到一半就被停',
+      ),
+    );
+    h.notifier.remember(CHILD, CREATOR);
+
+    expect(h.notifier.noteSettledFlow(CHILD, 'r-half', false, true)).toBe(true);
+    const text = h.creatorQueue.mock.calls[0][0] as string;
+    expect(text).not.toContain('交付摘录');
+    expect(text).not.toContain('半截回答');
   });
 
   it('用户自己的会话当前不归代理 → 不产生通知（判据是驱动权，不看出生来源）', () => {

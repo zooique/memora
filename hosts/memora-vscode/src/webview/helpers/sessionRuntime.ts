@@ -12,6 +12,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { ProcessEvent } from '@zooique/memora';
+import { isInternalSeedSender } from '../../shared/constants.js';
 import type { ExtensionToWebviewMessage, RoundView } from '../../shared/protocol.js';
 
 /**
@@ -193,6 +194,12 @@ export function advanceTurnBoundary(
   const seed = liveBuffer.seedUserMessage;
   // 只对「托管派发的开轮输入」上屏一次；resume / 用户自输（webview 已本地追加）不回声
   if (liveBuffer.seedEchoed || liveBuffer.seedOrigin !== 'hosted' || !seed) return { began: true };
+  // 内部种子（落定唤醒汇报的触发指令）不上屏：与重放共用同一判据（isInternalSeedSender）。
+  // 先标「已处理」再返回：它与「不该显示」是两件事——不标记会让后续 turn 每轮重试。
+  if (isInternalSeedSender(seed.name)) {
+    liveBuffer.seedEchoed = true;
+    return { began: true };
+  }
   liveBuffer.seedEchoed = true;
   return {
     began: true,

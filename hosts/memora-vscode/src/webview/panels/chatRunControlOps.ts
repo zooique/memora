@@ -383,9 +383,10 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
     wakeSettlementReport(creator: string): boolean {
       const agent = deps.getAgent(creator);
       if (!agent || !ops.isSessionIdle(creator)) return false;
-      // 汇报口径进种子：哪条会话 / 结果如何 / 一句话结论 / 下一步建议或需用户决定
+      // 汇报口径进种子：**讲交付物**（通知里带成功轮的交付摘录）→ 结果 → 下一步或需用户决定。
+      // 不许答「哪条会话 / round / 成功」这类元信息：那些通知里已有，主控答它们等于零信息。
       const seedText = vscode.l10n.t(
-        'A managed session has just settled. Read the settlement notice in context, then report to me: which session it was, how it ended (one sentence), and whether you suggest a next step or need my decision.',
+        'A managed session has just settled. The settlement notice in context includes an excerpt of what it actually delivered. Report what it delivered (quote the excerpt or summarize its key points — do not answer with which session, round id, or "success"), then one sentence on the outcome, and the next step or what you need me to decide.',
       );
       const now = new Date().toISOString();
       const seed: FlowSeed = {

@@ -23,8 +23,9 @@
  *   - 同一会话同一轮只写一条（成功 / 失败 / 中断共用同一去重键，重复信号不再打扰主控）；
  *   - 宁晚不打断：创建者正在跑流、挂着待答提问、暂停中，或用户正在输入框里打字时，
  *     不立刻唤醒——把事实压进内存待办，等创建者本轮收场后由 `flushPending` 合并成一轮浮现；
- *   - 事件只带身份 + 结论（+ 失败 / 中断原因），**不带正文**：结论细节由主控按需调
- *     `list_work_sessions` / `read_memory_summary` 读，不在通知里另造一份摘要。
+ *   - 事件带身份 + 结论（+ 失败 / 中断原因），成功轮另带**落盘原文的截断投影**（交付摘录，
+ *     上限与工作台末轮摘要共用 `textClip`）；**不带重新生成的摘要**——摘录只剪不改写，
+ *     失败 / 中断轮不带（半截回答不能冒充交付）。
  *
  * 第六切片（HOSTED-ASK-ROUTE-1）：除落定外再发一档「等你拍板」（`needs-answer`）——
  * 托管子会话挂上 ask_user 提问时，同样走本投递器叫醒创建者（题面 + 选项随事实带出），
@@ -47,6 +48,8 @@ import {
 } from '@zooique/memora';
 import { deriveInterruptReason } from '../../shared/interruptReason.js';
 import type { PendingQuestionDto } from '../../shared/protocol.js';
+// 交付摘录与工作台末轮摘要同一截断口径（阈值只定义一次）
+import { clipSummaryText } from './textClip.js';
 import {
   formatHandBackMessage,
   isHandBackMessage,
@@ -157,16 +160,20 @@ function deriveSettlement(round: Round, hostAborted: boolean): string {
 }
 
 /**
- * 拼一条通知正文（会话标题 + 落定结论 + sid/round，人不能只靠 id 认会话）
+ * 拼一条通知正文（会话标题 + 落定结论 + 交付摘录 + sid/round，人不能只靠 id 认会话）
+ *
+ * @param delivered 成功轮的交付摘录（已截断；缺省 = 失败 / 中断 / 无正文，不拼该段）
  */
 function formatNotice(
   title: string,
   sessionId: string,
   roundId: string | undefined,
   detail: string,
+  delivered?: string,
 ): string {
   const roundSuffix = roundId ? `，round=${roundId}` : '';
-  return `[托管会话已落定] 会话《${title}》（sid=${sessionId}${roundSuffix}）：${detail}`;
+  const excerpt = delivered ? ` 交付摘录：${delivered}` : '';
+  return `[托管会话已落定] 会话《${title}》（sid=${sessionId}${roundSuffix}）：${detail}${excerpt}`;
 }
 
 /**
@@ -318,7 +325,18 @@ export class HostedSessionNotifier {
     const key = `${input.sessionId}:${round.id}`;
     if (this.notified.has(key)) return false;
     const detail = deriveSettlement(round, input.hostAborted);
-    const text = formatNotice(target.title, input.sessionId, round.id, detail);
+    // 交付摘录：只在成功轮取盘上已定型的 assistantMessage（判据调内核单点）；
+    // 失败 / 中断不取——半截回答不是交付物。截断口径与工作台末轮摘要共用 textClip。
+    const delivered = isRoundSuccessful(round.status)
+      ? clipSummaryText(round.assistantMessage?.content ?? '')
+      : '';
+    const text = formatNotice(
+      target.title,
+      input.sessionId,
+      round.id,
+      detail,
+      delivered || undefined,
+    );
     return this.deliver(target.creator, text, key);
   }
 

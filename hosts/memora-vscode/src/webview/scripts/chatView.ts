@@ -28,7 +28,7 @@ import type { ProcessEvent } from '@zooique/memora';
 // 错误文案映射单一真理源（与 Node 侧 chatPanel 实时提示条共用，防文案双源漂移）
 // 输入长度上限（INPUT-LIMIT-1）：值真源 = shared/constants.ts，两侧输入口同源消费
 import {
-  INTERNAL_SEED_SENDER,
+  isInternalSeedSender,
   MAX_ASK_ANSWER_CHARS,
   MAX_INPUT_CHARS,
   MAX_PENDING_INTERJECTIONS,
@@ -2897,7 +2897,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // "请读通知并汇报"这条系统内部指令伪装成用户输入（真机实锤）。文本/落盘/上下文全不动，
       // 只跳渲染；轮锚点复位与 ts 回填照旧，避免轮结构断裂。真正用户托管输入 name=HOSTED_SENDER_NAME，
       // 不撞本标记。
-      const isInternalSeed = r.userMessage.name === INTERNAL_SEED_SENDER;
+      // 判据单点 = isInternalSeedSender（实时回声走同一函数，见 sessionRuntime.advanceTurnBoundary）：
+      // 两处各写一次裸比较就是第二次漂移的起点。
+      const isInternalSeed = isInternalSeedSender(r.userMessage.name);
       if (!isInternalSeed) {
         try {
           const att = { attachments: r.userMessage.attachments, attachmentUris: r.attachmentUris };
