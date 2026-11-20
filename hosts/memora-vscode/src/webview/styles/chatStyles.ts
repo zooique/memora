@@ -1992,19 +1992,25 @@ export const chatStyles = `
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     border-radius: var(--radius-lg, 8px) var(--radius-lg, 8px) var(--radius-lg, 8px) var(--radius-sm, 2px);
   }
-  /* BUBBLE-MERGE-1（2026-11-20 用户拍板）：同轮多段在助手窗并成一个气泡。
+  /* BUBBLE-MERGE-1（2026-11-20 用户拍板 · 11-21 真机订正补宽度）：同轮多段在助手窗并成一个气泡。
    * 段级数据/锚点/底栏逐字不动——复制与引用本就按整轮合并，段级操作面已退役；
    * 这里只让相邻 assistant 段的背景与圆角连续，保留一处可读段距。
+   * 【11-21 真机根因】首版只抹圆角+压内距，未对齐宽度：气泡 align-self:flex-start，
+   *   宽度随内容走 ⇒ 前段 239px / 后段 821px，右边界错开 582px，圆角虽平仍是两块。
+   *   补 align-self:stretch：两段在 flex 列容器内同撑到 max-width:85%（同一 .round-group
+   *   为参照）⇒ 左右边界都对齐，轮廓真正成单矩形。单段轮不匹配这两条规则，宽度形态不变。
    * 段间若夹入会话卡/交互块，相邻兄弟选择器不命中，自然不跨卡片合并。 */
   body[data-form='assistant'] .round-group > .msg.assistant:has(+ .msg.assistant) {
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
     padding-bottom: 0;
+    align-self: stretch;
   }
   body[data-form='assistant'] .round-group > .msg.assistant + .msg.assistant {
     border-top-left-radius: 0;
     border-top-right-radius: 0;
     padding-top: var(--sp-2, 6px);
+    align-self: stretch;
   }
   /* 顶部状态签：微信「正在输入…」的对应物，文案由 hostedStatusView 域写入 */
   body[data-form='assistant'] .assistant-mode-bar__state {

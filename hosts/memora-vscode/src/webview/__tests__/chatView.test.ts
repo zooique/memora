@@ -7733,6 +7733,41 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect((blocks2[2] as HTMLElement).classList.contains('is-continued')).toBe(false);
   });
 
+  it('BUBBLE-MERGE-1 DOM 因果链：助手形态同轮两段同容器、相邻、都是直接子 assistant 段（CSS 选择器能命中）', () => {
+    // 11-21 真机订正：首版只验 CSS 文本（圆角/内距）⇒ 宽度变量未被覆盖，真机仍两块。
+    // 本测试锁 DOM 侧因果链：只有「.round-group > .msg.assistant + .msg.assistant」结构成立，
+    // assistantFormView 里的 stretch 规则才真实命中。jsdom 不算样式 ⇒ 几何等宽由规则链守卫
+    // （圆角+内距+stretch+同一 85% 上限）与本结构断言共同保证，真机仍为最终判据。
+    mountChatView('assistant');
+    dispatchReplayMany([
+      makeRound({
+        id: 'round-merge',
+        user: { content: '继续追加：用100字介绍你自己', ts: 't1' },
+        assistantLog: [
+          { content: '派给《5+9加法计算》：继续追加：用100字左右介绍你自己。', ts: 't2' },
+        ],
+        assistantMessage: {
+          content: '追问已完成，它交付的自我介绍要点是：自称是基于 memora。',
+          ts: 't3',
+        },
+        status: 'complete',
+      }),
+    ]);
+    const groups = document.querySelectorAll('.round-group');
+    expect(groups).toHaveLength(1);
+    const direct = [...groups[0].children].filter(
+      (el) =>
+        (el as HTMLElement).classList.contains('msg') &&
+        (el as HTMLElement).classList.contains('assistant'),
+    ) as HTMLElement[];
+    expect(direct).toHaveLength(2);
+    // 相邻：第一段 nextElementSibling 就是第二段（中间无会话卡/交互行插入）
+    expect(direct[0].nextElementSibling).toBe(direct[1]);
+    // 两段文本 = 前序段 + final（复制链仍读这两段原文，本测试不改数据）
+    expect(direct[0].dataset.rawText).toContain('派给');
+    expect(direct[1].dataset.rawText).toContain('追问已完成');
+  });
+
   it('UX-9 C：question-answer 渲染为过程条目行（运行时进 process-flow，即时可见，2026-09-17 形态甲）', () => {
     mountChatView();
     beginRound(); // meta + chunk：骨架建块并挂载过程平铺容器（process-flow）

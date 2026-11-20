@@ -276,16 +276,25 @@ describe('助手形态样式作用域守卫（漏前缀 = 漏到自助形态）'
     expect(stray).toEqual([]);
   });
 
-  it('同轮多段视觉合并（BUBBLE-MERGE-1）：只连相邻 assistant 段的圆角与内距，不碰底栏/数据', () => {
-    // 前段：后面还紧跟 assistant 段时抹掉下圆角与下内距
+  it('同轮多段视觉合并（BUBBLE-MERGE-1）：圆角/内距连 + 两段等宽（stretch + 同一 85% 上限），不碰底栏/数据', () => {
+    // 前段：后面还紧跟 assistant 段时抹掉下圆角与下内距，并 stretch 到容器宽度
     expect(css).toMatch(
-      /body\[data-form='assistant'\] \.round-group > \.msg\.assistant:has\(\+ \.msg\.assistant\)\s*\{[^}]*border-bottom-left-radius:\s*0[^}]*border-bottom-right-radius:\s*0[^}]*padding-bottom:\s*0/,
+      /body\[data-form='assistant'\] \.round-group > \.msg\.assistant:has\(\+ \.msg\.assistant\)\s*\{[^}]*border-bottom-left-radius:\s*0[^}]*border-bottom-right-radius:\s*0[^}]*padding-bottom:\s*0[^}]*align-self:\s*stretch/,
     );
-    // 后段：紧跟 assistant 段时抹掉上圆角、压缩上内距（保留可读段距）
+    // 后段：紧跟 assistant 段时抹掉上圆角、压缩上内距、同样 stretch（保留可读段距）
     expect(css).toMatch(
-      /body\[data-form='assistant'\] \.round-group > \.msg\.assistant \+ \.msg\.assistant\s*\{[^}]*border-top-left-radius:\s*0[^}]*border-top-right-radius:\s*0[^}]*padding-top:\s*var\(--sp-2/,
+      /body\[data-form='assistant'\] \.round-group > \.msg\.assistant \+ \.msg\.assistant\s*\{[^}]*border-top-left-radius:\s*0[^}]*border-top-right-radius:\s*0[^}]*padding-top:\s*var\(--sp-2[^}]*align-self:\s*stretch/,
     );
-    // 反向守卫：圆角归零规则不得漏形态前缀（漏 = 泄漏到 self 形态的透明段）
+    // 等宽的第二个支点：基础助手气泡规则给 .msg.assistant 一个统一的 max-width:85%，
+    // 两条 stretch 规则不自带第二宽度源 ⇒ 两段撑到同一上限、左右边界都对齐。
+    // 若哪天有人给单段单独写 max-width，这段断言不会红——所以下面用 DOM 因果链再锁一层。
+    const baseAssistant = css.match(
+      /body\[data-form='assistant'\] \.msg\.assistant\s*\{[^}]*\}/,
+    )?.[0] as string | undefined;
+    expect(baseAssistant).toMatch(/max-width:\s*85%/);
+    expect(baseAssistant).toMatch(/align-self:\s*flex-start/); // 仅单段保持内容宽，相邻段由上面两条覆盖为 stretch
+
+    // 反向守卫①：圆角归零规则不得漏形态前缀（漏 = 泄漏到 self 形态的透明段）
     const stray = [
       ...css.matchAll(
         /([^\n{}]*\.msg\.assistant[^\n{}]*)\{[^}]*border-(?:top|bottom)-(?:left|right)-radius:\s*0/g,
@@ -294,5 +303,16 @@ describe('助手形态样式作用域守卫（漏前缀 = 漏到自助形态）'
       .map((m) => m[1] as string)
       .filter((sel) => !sel.includes("body[data-form='assistant']"));
     expect(stray).toEqual([]);
+    // 反向守卫②：本次新增的 stretch 规则不得漏形态前缀（漏 = self 形态所有回复气泡被拉满宽）。
+    // 注意基础规则 `.msg.assistant { align-self:stretch }` 本就是 self 形态既定铺满设计，
+    // 不能一刀切禁掉——只锁「带 round-group 段选择器」的相邻段规则必须带形态前缀。
+    const stretchStray = [
+      ...css.matchAll(
+        /([^\n{}]*\.round-group[^\n{}]*\.msg\.assistant[^\n{}]*)\{[^}]*align-self:\s*stretch/g,
+      ),
+    ]
+      .map((m) => m[1] as string)
+      .filter((sel) => !sel.includes("body[data-form='assistant']"));
+    expect(stretchStray).toEqual([]);
   });
 });
