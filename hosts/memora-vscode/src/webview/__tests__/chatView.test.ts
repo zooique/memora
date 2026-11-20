@@ -860,6 +860,44 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(tags[1]?.textContent).toBe('Sent by Memora');
   });
 
+  it('主动汇报带身份：内部种子轮的助手气泡标 memora宝，普通轮不标（判据单点）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+
+    dispatchReplayMany([
+      // 主动汇报轮：用户输入是内部种子（不画），助手气泡必须有身份
+      makeRound({
+        id: 'round-proactive',
+        user: { content: '内部触发指令', ts: '2026-11-20T01:00:00.000Z' },
+        origin: 'hosted',
+        senderName: INTERNAL_SEED_SENDER,
+        assistantMessage: {
+          content: '它交付了：目录统计脚本已生成。',
+          ts: '2026-11-20T01:00:05.000Z',
+        },
+        status: 'complete',
+      }),
+      // 普通问答轮：身份标签仍按 2026-11-16 定案隐藏，不因本改动放出来
+      makeRound({
+        id: 'round-normal',
+        user: { content: '普通提问', ts: '2026-11-20T01:05:00.000Z' },
+        assistantMessage: { content: '普通回答', ts: '2026-11-20T01:05:05.000Z' },
+        status: 'complete',
+      }),
+    ]);
+
+    // 内部种子仍不上屏（回归 ②）
+    expect(messages.querySelectorAll('.msg.user').length).toBe(1);
+
+    const proactive = messages.querySelector<HTMLElement>('.msg.assistant.msg-ai--proactive');
+    expect(proactive).not.toBeNull();
+    expect(proactive?.querySelector('.msg-ai-label__role')?.textContent).toBe('memora宝');
+
+    // 普通回答没有主动标注（事实验证：不是所有助手消息都被加类）
+    const assistants = Array.from(messages.querySelectorAll<HTMLElement>('.msg.assistant'));
+    expect(assistants.filter((el) => !el.classList.contains('msg-ai--proactive')).length).toBe(1);
+  });
+
   it('历史重放同样渲染托管标签：origin + userMessage.name（重开窗口不消失）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
@@ -14602,13 +14640,13 @@ describe('内部汇报种子轮不上屏（HOSTED-INTERNAL-SEED-1）', () => {
   it('源码守卫：重放路径按共享谓词判种子（不再裸比较），且跳渲染不跳复位', () => {
     const src = readFileSync(join(process.cwd(), 'src/webview/scripts/chatView.ts'), 'utf8');
     // 判据单点：与实时回声共用 isInternalSeedSender，禁止再出现裸比较（第二份判据）
-    expect(src).toMatch(/const isInternalSeed = isInternalSeedSender\(r\.userMessage\.name\);/);
+    expect(src).toMatch(
+      /const isProactiveReport = isInternalSeedSender\(r\.userMessage\?\.name\);/,
+    );
     expect(src).not.toMatch(/r\.userMessage\.name === INTERNAL_SEED_SENDER/);
     // 复位必须在 if 之外（跳过气泡后轮锚点仍复位，否则跨轮挂载串位）
-    const seedCheck = src.indexOf(
-      'const isInternalSeed = isInternalSeedSender(r.userMessage.name)',
-    );
-    const skipBlock = src.indexOf('if (!isInternalSeed) {', seedCheck);
+    const seedCheck = src.indexOf('const isProactiveReport = isInternalSeedSender');
+    const skipBlock = src.indexOf('if (!isProactiveReport) {', seedCheck);
     const reset = src.indexOf('resetForNewClosedLoop();', skipBlock);
     const skipBlockEnd = src.indexOf('\n      }', skipBlock);
     expect(reset).toBeGreaterThan(skipBlockEnd);

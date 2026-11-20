@@ -105,11 +105,22 @@ export const L10N_BUNDLE_ELEMENT_ID = 'memora-l10n-bundle';
  *
  * 落点 = `RoundMessage.name`（既有字段，`RoundView.userMessage.name` 原样透出，实时 / 重放
  * 同一份），零协议 type / 零内核 / 零存储迁移。真正的用户托管输入 senderName =
- * `HOSTED_SENDER_NAME`（'Memora'），与本值不同，故不误伤。
+ * `HOSTED_SENDER_NAME`（'memora宝'），与本值不同，故不误伤。
  *
  * 真源唯一：宿主写端（chatRunControlOps 的 seed）与 webview 读端（chatView 重放）均 import 本常量。
  */
 export const INTERNAL_SEED_SENDER = '__internal_settlement_seed__';
+
+/**
+ * 助手对外身份名 —— **全仓唯一取值点**（2026-11-20 用户拍板「盖章要叫 memora宝」）
+ *
+ * 消费面：托管轮落盘 `RoundMessage.name`、实时回声发送者名、装配侧 `orchestratorSenderName`
+ * / `agentName`、以及 webview 侧「助手主动开口」的身份标注。任何 UI、任何模块都不得再写
+ * 第二份名字字面量（写死一处散文就是第二真相源）。
+ *
+ * 放在 shared：扩展宿主与 webview 两个 bundle 都要读它（原在 extension/host，webview 无法 import）。
+ */
+export const HOSTED_SENDER_NAME = 'memora宝';
 
 /**
  * 这条 user 输入的发送者是否为「内部种子」——**「该不该画成用户气泡」的唯一判据**

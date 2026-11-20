@@ -34,6 +34,10 @@ import {
   MAX_PENDING_INTERJECTIONS,
 } from '../../shared/constants.js';
 import { bindSingleTrackRow, syncRowEdges } from '../helpers/chipRow.js';
+// 主动汇报的身份标注（PROACTIVE-REPORT-1；外置守 max-lines，判据仍由调用方单点算）
+import { markProactiveReport } from '../helpers/proactiveReportMark.js';
+// 托管气泡的来源标签（盖章呈现单点；外置守 max-lines）
+import { appendHostedOriginTag } from '../helpers/originTag.js';
 import { createQuoteDraft } from '../helpers/quoteDraft.js';
 // 附件行（活动文件 chip / 注入 chip / 引用回复胶囊 + 引用 chip 编排 + 注入回执）渲染域外置：
 // 本文件只传状态快照与回流回调，附件状态真源仍在本闭包（边界见 attachmentRowView.ts 模块头）
@@ -2023,15 +2027,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (roundId) div.dataset.roundId = roundId;
       // 托管输入来源标签：气泡右上角（flex 行首 + align-self:flex-end），不参与正文排版。
       // 仅 hosted 渲染；用户输入与旧数据（undefined）零标记——不造「用户」第二语义。
-      if (originMeta?.origin === 'hosted') {
-        const tag = document.createElement('span');
-        tag.className = 'msg-origin-tag';
-        // 盖章取值单点 = 消息携带的发送者名（托管轮 = 助手身份名）；不再有第二分支
-        tag.textContent = originMeta.senderName
-          ? l10n.t('Sent by {0}', originMeta.senderName)
-          : l10n.t('Sent by the assistant');
-        div.appendChild(tag);
-      }
+      appendHostedOriginTag(div, originMeta);
       const body = document.createElement('div');
       body.className = 'msg-body';
       body.textContent = text;
@@ -2891,6 +2887,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 重放与运行时共用同一渲染函数；两路轮级语义对拍（4 字段）由 runtimeReplayParity §2 守卫。
    */
   function renderReplayRound(r: RoundView): void {
+    // 判据单点（PROACTIVE-REPORT-1）：本轮用户输入是内部种子 ⇒ 这是助手「主动开口」而非回应用户。
+    // 一处算、三处用：不画用户气泡 / 助手气泡带身份标注 / 实时与重放同值（同一 r.userMessage）。
+    const isProactiveReport = isInternalSeedSender(r.userMessage?.name);
     // 1) 主用户输入：先落气泡，再复位新闭环锚点
     if (r.userMessage?.content) {
       // HOSTED-INTERNAL-SEED-1：内部汇报种子（落定→唤醒助手汇报的触发指令）不画 user 气泡。
@@ -2900,8 +2899,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 不撞本标记。
       // 判据单点 = isInternalSeedSender（实时回声走同一函数，见 sessionRuntime.advanceTurnBoundary）：
       // 两处各写一次裸比较就是第二次漂移的起点。
-      const isInternalSeed = isInternalSeedSender(r.userMessage.name);
-      if (!isInternalSeed) {
+      if (!isProactiveReport) {
         try {
           const att = { attachments: r.userMessage.attachments, attachmentUris: r.attachmentUris };
           append('user', r.userMessage.content, r.userMessage.timestamp, r.id, att, {
@@ -2948,7 +2946,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (!item.content) continue;
       if (item.kind === 'seg') {
         // 正文块建立后补挂任务过程折叠区 + 回收同轮 fallback 残留（live 轮统一在第 4 步挂到进行中块）
-        append('assistant', item.content, item.ts, r.id);
+        const segEl = append('assistant', item.content, item.ts, r.id);
+        // 主动汇报的前序段同样带身份（同一判据，不按段另判）
+        if (isProactiveReport) markProactiveReport(segEl);
         if (!r.live) renderRoundBlock(currentEvents, true, runtimeInteractiveInputs, r.evidence);
         // ASSISTANT-WECHAT-UX-1：助手形态下消息流里的交互行是「上屏终位」（renderRoundBlock
         // 不再往隐藏 details 建副本），删掉就真丢——故只在 self 形态回收 fallback 残留。
@@ -3006,9 +3006,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         streamingActive = true;
         streamingRaw = r.assistantMessage.content;
         beginStreaming(r.assistantMessage.timestamp, r.id);
+        // 主动汇报正在进行中也要有身份（实时与重放同一判据）
+        if (isProactiveReport && activeAssistantEl) markProactiveReport(activeAssistantEl);
         renderStreamBody();
       } else {
-        append('assistant', r.assistantMessage.content, r.assistantMessage.timestamp, r.id);
+        const finalEl = append(
+          'assistant',
+          r.assistantMessage.content,
+          r.assistantMessage.timestamp,
+          r.id,
+        );
+        // 主动汇报的最终回答带身份（同一判据）
+        if (isProactiveReport) markProactiveReport(finalEl);
         // 重放终态：complete 轮直接落「已完成」（与实时 done 收尾同一函数、同一形态）；
         // 变量化判据 = 渲染分流（怎么画光标，非收场判定），isRoundSettled 守卫按此片段豁免
         const settledReplay = r.status === 'complete';

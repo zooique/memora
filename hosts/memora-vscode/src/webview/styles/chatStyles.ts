@@ -1887,6 +1887,10 @@ export const chatStyles = `
   /* ASSISTANT-WECHAT-UX-1：微信气泡不标来源——「由 X 发送」是工作会话的代理语义，
    * 助手窗里用户只跟助手对话，标签会让「谁说的」产生歧义。仅隐藏、不删 DOM。 */
   body[data-form='assistant'] .msg-origin-tag { display: none !important; }
+  /* PROACTIVE-REPORT-1（2026-11-20 用户拍板）：助手「主动开口」（落定汇报，回的是内部种子）
+   * 前面没有用户气泡自证归属，必须露出身份。只解除这一类消息的标签隐藏；普通回答的隐藏
+   * 仍是 2026-11-16 定案，逐字不动。选择器比上面三条更具体，同 !important 下由特异性取胜。 */
+  body[data-form='assistant'] .msg-ai--proactive .msg-ai-label { display: flex !important; }
   /* ASSISTANT-WECHAT-UX-1 · C 类升档（2026-11-18 排雷后唯一安全项）：代码块复制条
    * 是工作会话的工程工具条——微信式对话里代码块只留正文与语言标签，复制仍可手动
    * 选中。仅隐藏、不删 DOM；self 形态基础规则逐字不变。 */

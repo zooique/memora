@@ -26,7 +26,7 @@ import { WorkspaceSessionStore } from './host/sessionStore.js';
 import { SessionModeStore } from './host/sessionModeStore.js';
 import { readSessionRolePackName } from './host/sessionRolePack.js';
 // 托管发送者名（单一真源下沉 host 层：授权叫醒与装配共用，见 hostedSenderName.ts）
-import { HOSTED_SENDER_NAME } from './host/hostedSenderName.js';
+import { HOSTED_SENDER_NAME } from '../shared/constants.js';
 // 会话标题口径（与历史列表 / 标题条同一回落链：工作台不另写一套）
 import { sessionDisplayTitle } from './host/sessionTitle.js';
 import {
