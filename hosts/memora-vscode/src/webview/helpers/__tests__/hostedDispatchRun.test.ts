@@ -78,6 +78,9 @@ describe('dispatchHostedInputWith · 派发受理与 seed 事实', () => {
     // 派发交代：真值只来自会话标题 + 原文，不生成、不润色
     expect(notes[0]).toContain('派给《目录统计》');
     expect(notes[0]).toContain('接着刚才的会话，追加任务 X');
+    // 成功收尾：只认受理、不冒充落盘；与失败收尾「没派出去」两态可辨
+    expect(notes.join(' ')).toContain('已接单');
+    expect(notes.join(' ')).not.toContain('没派出去');
   });
 
   it('user 回声不再由派发层提前推（轮建立前无归属，改由 consumeFlow 随轮上屏）', async () => {
@@ -114,6 +117,8 @@ describe('dispatchHostedInputWith · 派发受理与 seed 事实', () => {
     // 失败收尾：同一气泡先说「要派给谁」，再补一句为什么没派成（两句连读像人话，只含既有文案）
     expect(notes[0]).toContain('派给《目标会话》');
     expect(notes[1]).toContain('没派出去：');
+    // 反向：失败路径不得混入受理话术（两态必须可辨）
+    expect(notes.join(' ')).not.toContain('已接单');
   });
 });
 
@@ -153,6 +158,8 @@ describe('dispatchHostedInputWith · 用户接管态派活门禁', () => {
     // 漏掉这句 = 助手窗留下「派给《X》」却无下文的假交代（审查真伤）。
     expect(notes[0]).toContain('派给《目标会话》');
     expect(notes[1]).toContain('没派出去：');
+    // 反向：失败路径不得混入受理话术（两态必须可辨）
+    expect(notes.join(' ')).not.toContain('已接单');
   });
 
   it('调用方非托管 ⇒ E_DENIED 也补失败收尾（不留半句假交代）', async () => {

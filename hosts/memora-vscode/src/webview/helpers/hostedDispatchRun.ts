@@ -142,6 +142,14 @@ export async function dispatchHostedInputWith(
   const noteText = `派给《${targetTitle}》：\n\n${text}`;
   /** 失败收尾：在同一气泡补一句为什么没派成（既有错误文案原文，不新造） */
   const noteFail = (message: string): void => noteCaller(`没派出去：${message}`);
+  /**
+   * 成功收尾：明确本次只到「受理」，落盘与结果看目标会话（与失败收尾对仗）
+   *
+   * 为什么必须有：成功路径原本无收尾，静默丢弃时界面只留「派给《X》」无下文，
+   * 用户分不清「还在跑」和「根本没送出去」。这句不承诺落盘——派发的成功口径
+   * 到起流受理为止，目标会话是否出活由它自己的气泡与时间证明。
+   */
+  const noteAccepted = (): void => noteCaller('已接单，等目标会话回话');
   logger.info({ from: callingSessionId, to: targetSessionId }, '宝派发活');
   // 派发前先把交代写上屏（机制保证）：拒绝路径也会在同一气泡里补一句收尾
   noteCaller(noteText);
@@ -319,6 +327,7 @@ export async function dispatchHostedInputWith(
       },
     );
     logger.info({ from: callingSessionId, to: targetSessionId }, '派发受理成功');
+    noteAccepted();
     return { ok: true, accepted: true };
   } catch (err) {
     // 起流前就失败（装配 / 切会话抛错）：租约当场归还，不把临时锁漏在本面板
