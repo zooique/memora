@@ -12,6 +12,8 @@
  *   ⑦ 副行明细复刻 describeStatus.detail：无徽记的 queued/unreadable 仍出状态语义，措辞同源。
  */
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createAssistantWorkbenchDrawer } from '../assistantWorkbenchDrawer.js';
 import type {
@@ -146,5 +148,68 @@ describe('INLINE-WORKBENCH-1 · 助手页内嵌工作台抽屉', () => {
     const openSession = vi.fn();
     const drawer = createAssistantWorkbenchDrawer({ document, openSession, onClose: vi.fn() });
     expect(() => drawer.render(snapshot())).not.toThrow();
+  });
+});
+
+describe('AWB-JOB-CARD-1 · 一行一卡片与实体按钮（源码级机检）', () => {
+  /** 去注释的样式原文：注释里会出现示例选择器，干扰逐块比对 */
+  const css = (): string =>
+    readFileSync(join(__dirname, '..', '..', 'styles', 'chatStyles.ts'), 'utf8').replace(
+      /\/\*[\s\S]*?\*\//g,
+      '',
+    );
+  /** 精确取 `selector {` 到第一个 `}`（本层规则无嵌套） */
+  const blockOf = (selector: string): string => {
+    const text = css();
+    const start = text.indexOf(`${selector} {`);
+    expect(start, `样式块 ${selector} 未找到（选择器改名？同步本守卫）`).toBeGreaterThan(-1);
+    return text.slice(start, text.indexOf('}', start));
+  };
+
+  it('DOM：一条会话 = 一个 li 卡片，去会话控件是原生 button[type=button]', () => {
+    const { drawer } = mount();
+    drawer.render(
+      snapshot({ jobs: [job('s1', { kind: 'running' }), job('s2', { kind: 'queued' })] }),
+    );
+    const items = [...document.querySelectorAll('li.awb-job')];
+    expect(items).toHaveLength(2);
+    for (const item of items) {
+      expect(item.querySelector('.awb-job__title')).not.toBeNull();
+      const open = item.querySelector('.awb-job__open');
+      expect(open?.tagName).toBe('BUTTON');
+      expect(open?.getAttribute('type')).toBe('button');
+    }
+  });
+
+  it('CSS：卡片纵向排列 + 描边/内距/面色，且行间距可辨、形态前缀不漏', () => {
+    const block = blockOf("body[data-form='assistant'] .awb-job");
+    expect(block).toMatch(/flex-direction:\s*column/);
+    expect(block).toContain('border: var(--line-solid)');
+    expect(block).toMatch(/border-radius:\s*var\(--radius/);
+    expect(block).toMatch(/padding:\s*var\(--sp-3/);
+    expect(block).toContain('background: var(--surface-card)');
+    // 反向：退回旧的裸行（居中 + wrap）会让卡片边界再次糊掉
+    expect(block).not.toMatch(/align-items:\s*center/);
+    expect(block).not.toMatch(/flex-wrap:\s*wrap/);
+    // 卡片间距取 sp-2（大于卡内 sp-1），逐卡可辨
+    expect(blockOf("body[data-form='assistant'] .awb-jobs")).toContain('gap: var(--sp-2, 6px)');
+    // 反向：无前缀的同名卡片规则会泄漏到 self 形态
+    const stray = [...css().matchAll(/([^\n{}]*\.awb-job[^\n{}]*)\{[^}]*border:/g)]
+      .map((m) => m[1] as string)
+      .filter((sel) => !sel.includes("body[data-form='assistant']"));
+    expect(stray).toEqual([]);
+  });
+
+  it('CSS：去会话按钮是实体描边胶囊，不再是下划线文字（含焦点可见）', () => {
+    const block = blockOf("body[data-form='assistant'] .awb-job__open");
+    expect(block).toContain('border: var(--line-solid)');
+    expect(block).toMatch(/border-radius:\s*var\(--radius-pill/);
+    expect(block).toContain('background: var(--surface-card)');
+    // 反向：这三条正是「看起来像一行字」的旧形态
+    expect(block).not.toMatch(/text-decoration:\s*underline/);
+    expect(block).not.toMatch(/border:\s*none/);
+    expect(block).not.toMatch(/background:\s*transparent/);
+    // 卡片化不得丢掉键盘可达的焦点环
+    expect(css()).toContain("body[data-form='assistant'] .awb-job__open:focus-visible");
   });
 });

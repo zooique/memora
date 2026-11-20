@@ -1782,20 +1782,31 @@ export const chatStyles = `
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--sp-1, 4px);
-  }
-  body[data-form='assistant'] .awb-job {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
     gap: var(--sp-2, 6px);
   }
-  body[data-form='assistant'] .awb-job__title { flex: 1 1 auto; min-width: 0; }
-  /* 副行明细：与独立面板 wb-job__detail 同口径（字号/弱化色/长词折行），
-     独立成行避免挤占标题；徽记颜色只表语义，明细文字恒在（色觉无障碍）。 */
+  /* 一行一卡片（AWB-JOB-CARD-1）：原先是无边框的 flex 裸行，多条连排糊成一片。
+   * 纵向排列 + 描边/内距/面色三件套与独立面板 .wb-job 同族；令牌全复用既有，
+   * 作用域锁在助手形态，self 形态与独立面板逐字不变。 */
+  body[data-form='assistant'] .awb-job {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sp-1, 4px);
+    padding: var(--sp-3, 8px) var(--sp-4, 10px);
+    border: var(--line-solid);
+    border-radius: var(--radius-sm, 2px);
+    background: var(--surface-card);
+  }
+  body[data-form='assistant'] .awb-job__title {
+    flex: 0 0 auto;
+    min-width: 0;
+    word-break: break-word;
+  }
+  /* 副行明细：与独立面板 wb-job__detail 同口径（字号/弱化色/长词折行）。
+   * 卡片改纵向后不再需要 order + flex-basis:100% 抢行，DOM 顺序天然是明细独立一行；
+   * 徽记颜色只表语义，明细文字恒在（色觉无障碍）。 */
   body[data-form='assistant'] .awb-job__detail {
-    order: 1;
-    flex: 1 0 100%;
+    flex: 0 0 auto;
     font-size: 0.9em;
     color: var(--text-secondary);
     word-break: break-word;
@@ -1810,14 +1821,28 @@ export const chatStyles = `
   body[data-form='assistant'] .awb-badge--waiting { color: var(--warn); }
   body[data-form='assistant'] .awb-badge--completed { color: var(--chart-green); }
   body[data-form='assistant'] .awb-badge--stopped { color: var(--text-error); }
+  /* 「去这个会话」从下划线文字改为实体描边胶囊（AWB-JOB-CARD-1）：
+   * DOM 一直是原生 button，但旧 CSS 把它画成一行蓝字，看起来不可点；
+   * 形态与身份条「工作台」入口同族。文案 / aria-label / openSession 回调逐字不动。 */
   body[data-form='assistant'] .awb-job__open {
     flex: 0 0 auto;
-    border: none;
-    background: transparent;
-    color: var(--text-link);
+    align-self: flex-start;
+    min-height: var(--sp-8, 24px);
+    padding: var(--sp-0, 2px) var(--sp-3, 8px);
+    border: var(--line-solid);
+    border-radius: var(--radius-pill, 999px);
+    background: var(--surface-card);
+    color: var(--text-secondary);
     font: inherit;
     cursor: pointer;
-    text-decoration: underline;
+  }
+  body[data-form='assistant'] .awb-job__open:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
+  body[data-form='assistant'] .awb-job__open:focus-visible {
+    outline: var(--sp-hair, 1px) solid var(--border-focus);
+    outline-offset: var(--sp-hair, 1px);
   }
   body[data-form='assistant'] .awb-empty { color: var(--text-secondary); }
   /* 卡片本体：形态差异由**左缘强调条**承担，整圈描边保留给聚焦态
