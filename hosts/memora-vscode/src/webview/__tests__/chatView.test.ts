@@ -25,6 +25,7 @@ import {
 import { fmtTime } from '../helpers/fmtTime.js';
 // 断言与真源同源：上限值消费 shared/constants.ts（非字面量复制）
 import {
+  HOSTED_SENDER_NAME,
   INTERNAL_SEED_SENDER,
   MAX_ASK_ANSWER_CHARS,
   MAX_INPUT_CHARS,
@@ -845,7 +846,7 @@ describe('chatView clear_ok 消息区清理', () => {
         id: 'round-dispatched',
         user: { content: '派给我的活', ts: '2026-11-17T09:00:00.000Z' },
         origin: 'hosted',
-        senderName: 'memora宝',
+        senderName: HOSTED_SENDER_NAME,
         status: 'complete',
       }),
       // 旧数据：盘上留着 name='Memora' 的历史轮不追改，如实展示
@@ -859,8 +860,8 @@ describe('chatView clear_ok 消息区清理', () => {
     ]);
 
     const tags = messages.querySelectorAll('.msg-origin-tag');
-    expect(tags[0]?.textContent).toBe('Sent by memora宝');
-    expect(tags[1]?.textContent).toBe('Sent by Memora');
+    expect(tags[0]?.textContent).toBe(`Sent by ${HOSTED_SENDER_NAME}`);
+    expect(tags[1]?.textContent).toBe('Sent by Memora'); // 旧数据逐字展示，不因常量改名追改
   });
 
   it('主动汇报带身份：内部种子轮的助手气泡标 memora宝，普通轮不标（判据单点）', () => {
@@ -894,7 +895,7 @@ describe('chatView clear_ok 消息区清理', () => {
 
     const proactive = messages.querySelector<HTMLElement>('.msg.assistant.msg-ai--proactive');
     expect(proactive).not.toBeNull();
-    expect(proactive?.querySelector('.msg-ai-label__role')?.textContent).toBe('memora宝');
+    expect(proactive?.querySelector('.msg-ai-label__role')?.textContent).toBe(HOSTED_SENDER_NAME);
 
     // 普通回答没有主动标注（事实验证：不是所有助手消息都被加类）
     const assistants = Array.from(messages.querySelectorAll<HTMLElement>('.msg.assistant'));
@@ -929,7 +930,7 @@ describe('chatView clear_ok 消息区清理', () => {
 
     const marked = document.querySelector<HTMLElement>('.msg.assistant.msg-ai--proactive');
     expect(marked).not.toBeNull();
-    expect(marked?.querySelector('.msg-ai-label__role')?.textContent).toBe('memora宝');
+    expect(marked?.querySelector('.msg-ai-label__role')?.textContent).toBe(HOSTED_SENDER_NAME);
     // 内部种子仍不上屏（回归 ①）
     expect(document.querySelectorAll('.msg.user').length).toBe(0);
   });

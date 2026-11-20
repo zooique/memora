@@ -9,7 +9,8 @@
  *   - sid / via / title：来自 `session_activity.dispatchedSessions`（真名由宿主 sessionTitleFor 取）；
  *   - 运行中旋转：来自 `session_activity.runningIds`（真源 = 运行态表）；
  *   - 触发轮锚点：webview 侧现场解析——replay 用每轮 processEvents（dispatchedSidsFromEvents），
- *     实时用当前渲染轮 id。宿主无需下发 roundId（派发受理时触发轮尚未落盘，宿主拿不到）。
+ *     后到覆盖 = 该 sid 最新盖章轮（DISPATCH-CARD-POS-1）；实时不登记锚点，卡落当下对话流尾
+ *     （当下即最新轮，重启 replay 再精确归位）。宿主无需下发 roundId（派发受理时触发轮尚未落盘，宿主拿不到）。
  *
  * 本模块是纯 DOM 投影：先撤旧卡（幂等），再按锚点插卡，不持状态、不注册监听。
  * 生命周期：跑完卡仍在（盖章是既成事实）；只有会话从盖章列表移除才撤卡。
@@ -70,7 +71,7 @@ export function removeDispatchCards(messages: HTMLElement): number {
 /**
  * 把盖章卡按触发轮锚点插进消息流（全量重建：先撤旧卡再逐张插，天然幂等）。
  *
- * 锚点规则（sid → roundId）：
+ * 锚点规则（sid → roundId，锚点 = 最新盖章轮，见 dispatchCardProjection）：
  *   - 有锚点且消息流里存在 `[data-round-id=锚点]` 的消息/轮容器 ⇒ 卡插到该轮**最后一条**相关节点之后
  *     （同一轮可能有多条 .msg：user + 若干 assistant；取最后一条，卡落在轮尾、时间顺序正确）；
  *   - 无锚点 / 锚点节点已不在流里（如被删除）⇒ 卡落**流尾**兜底（仍属对话内容，不脱离）。

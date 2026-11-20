@@ -6,7 +6,7 @@
  *
  * 变异靶标：
  *   - setSnapshot 不更新 ⇒ 投影用的还是旧快照；
- *   - noteRound 用后到覆盖（去掉 !has）⇒ 触发轮定位到最后盖章轮；
+ *   - noteRound 用首次盖章（加回 !has）⇒ 卡跳回最早触发轮（真机置顶 bug），后到覆盖用例红；
  *   - reset 不清 ⇒ 跨会话锚点残留；
  *   - project 去 form 门 ⇒ self 形态也出卡。
  */
@@ -59,7 +59,7 @@ describe('createDispatchCardProjection 盖章卡投影状态', () => {
     expect(card!.classList.contains('is-running')).toBe(true);
   });
 
-  it('noteRound 登记首次盖章轮为锚点，卡插在该轮之后', () => {
+  it('noteRound 登记盖章轮为锚点，卡插在该轮之后', () => {
     const p = createDispatchCardProjection(() => true);
     const m = messages();
     p.setSnapshot([{ sid: 's1', title: '会话一', via: 'delegate' }], []);
@@ -69,7 +69,7 @@ describe('createDispatchCardProjection 盖章卡投影状态', () => {
     expect(group.nextElementSibling?.getAttribute('data-dispatch-session')).toBe('s1');
   });
 
-  it('首次盖章 = 触发轮：后到的同 sid 轮不覆盖锚点', () => {
+  it('后到覆盖 = 最新盖章轮：同 sid 续派时锚点跟到最新轮（不跳回首次）', () => {
     const p = createDispatchCardProjection(() => true);
     const m = messages();
     const later = document.createElement('div');
@@ -77,11 +77,35 @@ describe('createDispatchCardProjection 盖章卡投影状态', () => {
     later.dataset.roundId = 'r2';
     m.append(later);
     p.setSnapshot([{ sid: 's1', title: '会话一', via: 'delegate' }], []);
-    p.noteRound('r1', sendEvents('s1')); // 首次盖章在 r1
-    p.noteRound('r2', sendEvents('s1')); // 后到同 sid（如续派）不覆盖
+    p.noteRound('r1', sendEvents('s1')); // 首次派发在 r1
+    p.noteRound('r2', sendEvents('s1')); // 追加问题再次派发：锚点应跟到 r2
     p.project(m);
-    const group = m.querySelector<HTMLElement>('.round-group[data-round-id="r1"]')!;
+    const group = m.querySelector<HTMLElement>('.round-group[data-round-id="r2"]')!;
     expect(group.nextElementSibling?.getAttribute('data-dispatch-session')).toBe('s1');
+    // 首次轮后不再是该卡（真机「跳回第一个位置」的反证）
+    const first = m.querySelector<HTMLElement>('.round-group[data-round-id="r1"]')!;
+    expect(first.nextElementSibling?.getAttribute('data-dispatch-session')).not.toBe('s1');
+  });
+
+  it('最新轮无盖章（直接回答）⇒ 锚点停在最近盖章轮，卡不置顶', () => {
+    const p = createDispatchCardProjection(() => true);
+    const m = messages();
+    const r2 = document.createElement('div');
+    r2.className = 'round-group';
+    r2.dataset.roundId = 'r2';
+    const r3 = document.createElement('div');
+    r3.className = 'round-group';
+    r3.dataset.roundId = 'r3';
+    m.append(r2, r3);
+    p.setSnapshot([{ sid: 's1', title: '会话一', via: 'delegate' }], []);
+    p.noteRound('r1', sendEvents('s1')); // r1 派发
+    p.noteRound('r2', sendEvents('s1')); // r2 追加问题（最新盖章）
+    p.noteRound('r3', []); // r3 直接回答、不派活 ⇒ 无盖章事件，锚点不变
+    p.project(m);
+    const later = m.querySelector<HTMLElement>('.round-group[data-round-id="r2"]')!;
+    expect(later.nextElementSibling?.getAttribute('data-dispatch-session')).toBe('s1');
+    const first = m.querySelector<HTMLElement>('.round-group[data-round-id="r1"]')!;
+    expect(first.nextElementSibling?.getAttribute('data-dispatch-session')).not.toBe('s1');
   });
 
   it('reset 清锚点：复位后卡落流尾（跨会话不残留旧锚点）', () => {
