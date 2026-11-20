@@ -1945,6 +1945,20 @@ export const chatStyles = `
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     border-radius: var(--radius-lg, 8px) var(--radius-lg, 8px) var(--radius-lg, 8px) var(--radius-sm, 2px);
   }
+  /* BUBBLE-MERGE-1（2026-11-20 用户拍板）：同轮多段在助手窗并成一个气泡。
+   * 段级数据/锚点/底栏逐字不动——复制与引用本就按整轮合并，段级操作面已退役；
+   * 这里只让相邻 assistant 段的背景与圆角连续，保留一处可读段距。
+   * 段间若夹入会话卡/交互块，相邻兄弟选择器不命中，自然不跨卡片合并。 */
+  body[data-form='assistant'] .round-group > .msg.assistant:has(+ .msg.assistant) {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    padding-bottom: 0;
+  }
+  body[data-form='assistant'] .round-group > .msg.assistant + .msg.assistant {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    padding-top: var(--sp-2, 6px);
+  }
   /* 顶部状态签：微信「正在输入…」的对应物，文案由 hostedStatusView 域写入 */
   body[data-form='assistant'] .assistant-mode-bar__state {
     color: var(--text-secondary);

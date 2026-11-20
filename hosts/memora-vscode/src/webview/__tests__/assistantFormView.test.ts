@@ -256,4 +256,24 @@ describe('助手形态样式作用域守卫（漏前缀 = 漏到自助形态）'
       /body\[data-form='assistant'\] \.msg\.assistant\s*\{[^}]*background:\s*var\(--surface-card\)/,
     );
   });
+
+  it('同轮多段视觉合并（BUBBLE-MERGE-1）：只连相邻 assistant 段的圆角与内距，不碰底栏/数据', () => {
+    // 前段：后面还紧跟 assistant 段时抹掉下圆角与下内距
+    expect(css).toMatch(
+      /body\[data-form='assistant'\] \.round-group > \.msg\.assistant:has\(\+ \.msg\.assistant\)\s*\{[^}]*border-bottom-left-radius:\s*0[^}]*border-bottom-right-radius:\s*0[^}]*padding-bottom:\s*0/,
+    );
+    // 后段：紧跟 assistant 段时抹掉上圆角、压缩上内距（保留可读段距）
+    expect(css).toMatch(
+      /body\[data-form='assistant'\] \.round-group > \.msg\.assistant \+ \.msg\.assistant\s*\{[^}]*border-top-left-radius:\s*0[^}]*border-top-right-radius:\s*0[^}]*padding-top:\s*var\(--sp-2/,
+    );
+    // 反向守卫：圆角归零规则不得漏形态前缀（漏 = 泄漏到 self 形态的透明段）
+    const stray = [
+      ...css.matchAll(
+        /([^\n{}]*\.msg\.assistant[^\n{}]*)\{[^}]*border-(?:top|bottom)-(?:left|right)-radius:\s*0/g,
+      ),
+    ]
+      .map((m) => m[1] as string)
+      .filter((sel) => !sel.includes("body[data-form='assistant']"));
+    expect(stray).toEqual([]);
+  });
 });
