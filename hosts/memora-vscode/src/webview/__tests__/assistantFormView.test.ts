@@ -97,27 +97,49 @@ describe('助手形态输入区（ASSISTANT-FORM）', () => {
     expect(document.getElementById('emptyTitle')?.textContent).toContain('共鸣小说家');
   });
 
-  it('输入区减法口径（2026-11-16 拍板）：只去暂停键与徽章群，模型/skill/图片保留（占用圆环见 2026-11-19 局部覆盖，本断言不覆盖圆环）', () => {
+  it('输入区减法口径：功能群保留、暂停键与状态行整行隐藏（11-16 拍板，11-19 圆环隐藏 + 11-20 整行隐藏两次收敛后的现行判据）', () => {
     // jsdom 不算样式 ⇒ 源码级守卫钉住减法边界，防回退到「一个不留」旧口径
     const css = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf8');
     /** 助手形态作用域的 display:none 规则（选择器串 + 规则体） */
     const hiddenRules = [
       ...css.matchAll(/body\[data-form='assistant'\][^{}]*\{[^}]*display:\s*none/g),
     ].map((m) => m[0] as string);
-    // 恢复面：功能群（skill/模型/润色/图片）与状态行整行不得在助手作用域隐藏
-    const restored = hiddenRules.filter(
-      (r) => r.includes('.composer-left') || r.includes('.composer-row--status'),
-    );
+    // 恢复面：功能群（skill/模型/润色/图片）不得在助手作用域隐藏
+    const restored = hiddenRules.filter((r) => r.includes('.composer-left'));
     expect(restored).toEqual([]);
-    // 减法面：暂停键（运行控制）与徽章群（角色/能力）必须隐藏（同一规则的选择器组）
+    // 减法面 ①：暂停键（运行控制）与状态行整行必须隐藏（同一规则的选择器组）。
+    // 11-19 起左右两块（徽章群 / 占用圆环）已各自隐藏，行内无内容 ⇒ 11-20 收敛为整行隐藏；
+    // 断言从「.composer-status」改为「.composer-row--status」是判据随形态演进，非放宽。
     const keptRule = hiddenRules.find(
-      (r) => r.includes('#pauseBtn') && r.includes('.composer-status'),
+      (r) => r.includes('#pauseBtn') && r.includes('.composer-row--status'),
     );
     expect(keptRule).toBeDefined();
+    // 反向守卫：占用圆环自身仍须单独隐藏（整行隐藏的依据之一，撤销整行规则时它得兜住）
+    expect(hiddenRules.some((r) => r.includes('#contextOccupancy'))).toBe(true);
     // 右对齐补偿已退役：左块恢复 ⇒ composer-row--main 回两端分布（不得再有 flex-end 覆盖）
     expect(css).not.toMatch(
       /body\[data-form='assistant'\][^{}]*\.composer-row--main[^{}]*flex-end/,
     );
+  });
+
+  it('助手形态轮次导航整条收起（2026-11-20 拍板）：与运行过程同规则组，self 形态不受影响', () => {
+    // 源码级守卫：助手作用域的运行过程收起规则组须含 .round-nav；jsdom 无样式故读原文
+    const css = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf8');
+    const processHide = [
+      ...css.matchAll(/body\[data-form='assistant'\][^{}]*\{[^}]*display:\s*none\s*!important/g),
+    ].map((m) => m[0] as string);
+    const roundNavRule = processHide.find(
+      (r) => r.includes('.round-nav') && r.includes('.process-flow'),
+    );
+    expect(roundNavRule).toBeDefined();
+    // 反向守卫：裸 .round-nav（非后代、非 [hidden] 兜底）的隐藏规则必须带形态前缀——
+    // 漏前缀 = 泄漏到 self 工作会话。排除 __track/__bar/__panel 等后代与 [hidden] 兜底。
+    const stray = [...css.matchAll(/(?:^|\n)\s*([^\n]*\.round-nav[^\n{]*)\{[^}]*display:\s*none/g)]
+      .map((m) => m[1] as string)
+      .filter((sel) => /\.round-nav(?=\s|,|$|\[)/.test(sel))
+      .filter((sel) => !sel.includes('[hidden]'))
+      .filter((sel) => !sel.includes("body[data-form='assistant']"));
+    expect(stray).toEqual([]);
   });
 
   it('助手形态生成中发送键恒为发送态（脱手模型，无停止■）', () => {

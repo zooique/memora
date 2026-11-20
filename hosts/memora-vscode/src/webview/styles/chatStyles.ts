@@ -1869,16 +1869,25 @@ export const chatStyles = `
   /* 输入区减法（2026-11-16 用户拍板「自助输入框做减法」）：复用自助输入框全部能力——
    * skill / 模型 / 润色 / 图片（.composer-left）与附件气泡行照常显示（host 链路无形态
    * 判据，恢复显示即恢复功能）；只去两样：暂停键（运行控制）与状态行左侧徽章群
-   * （角色/能力徽章是自助会话语义，助手座位无角色）。占用圆环跟模型配套，保留。 */
+   * （角色/能力徽章是自助会话语义，助手座位无角色）。占用圆环原定「跟模型配套保留」，
+   * 2026-11-19 改为隐藏（见下方圆环规则）。
+   * 2026-11-20 用户真机：左右两块都已隐藏后状态行只剩空壳（分隔线 + 行高 + 顶距），
+   * 输入区底部空一行 ⇒ 整行一并隐藏（两块全空即无信息可承载，隐藏是自然收敛）。
+   * 自审前提：此刻左右两块确已各自隐藏——徽章群本规则、占用圆环见下方同作用域规则；
+   * 将来任一恢复显形必须先撤本条，否则又把有内容的行藏掉。DOM 不删，形态切换逐字恢复。 */
   body[data-form='assistant'] #pauseBtn,
-  body[data-form='assistant'] .composer-status { display: none !important; }
+  body[data-form='assistant'] .composer-row--status { display: none !important; }
   /* 托管会话 = 微信气泡流（2026-11-16 用户拍板）：消息区只留两类气泡与顶部状态。
    * 运行过程不在链路上露面——工具折叠行、相位行、叙述行、正文尾状态字一并收起；
    * 交互卡（提问 .ask-inline / 写确认 / 授权）是独立 DOM，不受本段影响。
-   * 显隐仍走 CSS 随 body[data-form] 同帧生效（首帧纪律，不回退到 hidden 翻转）。 */
+   * 轮次导航（2026-11-20 用户拍板）并入本组：助手窗只有一个一直累加的对话，轮次
+   * 导航随轮增长会越积越密，与「只留两类气泡」的微信流口径冲突 ⇒ 整条收起。
+   * 逻辑照常跑（DOM 不删、sync 不撤），只是不显形——与圆环同款首帧纪律，
+   * 切回 self 形态逐字恢复；self 工作会话的多会话切换场景不受本规则影响。 */
   body[data-form='assistant'] .msg-ai-label,
   body[data-form='assistant'] .round-block,
   body[data-form='assistant'] .process-flow,
+  body[data-form='assistant'] .round-nav,
   body[data-form='assistant'] .msg-body[data-status]::after,
   body[data-form='assistant'] .msg-body[data-terminus]::after { display: none !important; }
   /* ASSISTANT-QUEUE-DEADKEY-1：待发送插话条随过程轨迹一并收起。助手形态是「发送即脱手」，
