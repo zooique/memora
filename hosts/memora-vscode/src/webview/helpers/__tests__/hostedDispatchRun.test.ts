@@ -27,8 +27,10 @@ import type { FlowSeed } from '../sessionRuntime.js';
 function makeDeps(overrides: Partial<HostedDispatchDeps> = {}): {
   deps: HostedDispatchDeps;
   starts: Array<{ sid: string; seed: FlowSeed }>;
+  notes: string[];
 } {
   const starts: Array<{ sid: string; seed: FlowSeed }> = [];
+  const notes: string[] = [];
   const deps: HostedDispatchDeps = {
     isManaged: () => true,
     isStreaming: () => false,
@@ -46,22 +48,24 @@ function makeDeps(overrides: Partial<HostedDispatchDeps> = {}): {
     rememberCreator: () => {},
     trackLease: () => {},
     startFlow: (sid, _factory, seed) => starts.push({ sid, seed }),
+    // 派发交代上屏通道：默认收集正文，供断言文案真值
+    note: (msg) => notes.push(msg.content),
     ...overrides,
   };
-  return { deps, starts };
+  return { deps, starts, notes };
 }
 
 describe('dispatchHostedInputWith · 派发受理与 seed 事实', () => {
   it('受理成功 → seed 带裸输入、origin=hosted、senderName；派发层不自行上屏', async () => {
-    const { deps, starts } = makeDeps();
+    const { deps, starts, notes } = makeDeps();
 
-    const result = await dispatchHostedInputWith(
-      deps,
-      'assistant-session',
-      'target-session',
-      '接着刚才的会话，追加任务 X',
-      'Memora',
-    );
+    const result = await dispatchHostedInputWith(deps, {
+      callingSessionId: 'assistant-session',
+      targetSessionId: 'target-session',
+      text: '接着刚才的会话，追加任务 X',
+      senderName: 'Memora',
+      targetTitle: '目录统计',
+    });
 
     expect(result.ok).toBe(true);
     expect(starts).toHaveLength(1);
@@ -70,12 +74,21 @@ describe('dispatchHostedInputWith · 派发受理与 seed 事实', () => {
     expect(starts[0]?.seed.userMessage?.content).toBe('接着刚才的会话，追加任务 X');
     expect(starts[0]?.seed.userMessage?.name).toBe('Memora');
     expect(starts[0]?.seed.origin).toBe('hosted');
+    // 派发交代：真值只来自会话标题 + 原文，不生成、不润色
+    expect(notes[0]).toContain('派给《目录统计》');
+    expect(notes[0]).toContain('接着刚才的会话，追加任务 X');
   });
 
   it('user 回声不再由派发层提前推（轮建立前无归属，改由 consumeFlow 随轮上屏）', async () => {
     const { deps, starts } = makeDeps();
 
-    await dispatchHostedInputWith(deps, 'assistant', 'target', '裸输入原文', 'Memora');
+    await dispatchHostedInputWith(deps, {
+      callingSessionId: 'assistant',
+      targetSessionId: 'target',
+      text: '裸输入原文',
+      senderName: 'Memora',
+      targetTitle: '目标会话',
+    });
 
     // 派发层唯一副作用 = 起流；UI 上屏发生在流的首个 roundId 上（面板用例断言）
     expect(starts).toHaveLength(1);
@@ -83,20 +96,23 @@ describe('dispatchHostedInputWith · 派发受理与 seed 事实', () => {
   });
 
   it('被拒（目标在跑）→ 不起流（不留假气泡）', async () => {
-    const { deps, starts } = makeDeps({
+    const { deps, starts, notes } = makeDeps({
       isStreaming: (sid) => sid === 'target-session',
     });
 
-    const result = await dispatchHostedInputWith(
-      deps,
-      'assistant',
-      'target-session',
-      '任务',
-      'Memora',
-    );
+    const result = await dispatchHostedInputWith(deps, {
+      callingSessionId: 'assistant',
+      targetSessionId: 'target-session',
+      text: '任务',
+      senderName: 'Memora',
+      targetTitle: '目标会话',
+    });
 
     expect(result.ok).toBe(false);
     expect(starts).toHaveLength(0);
+    // 失败收尾：同一气泡先说「要派给谁」，再补一句为什么没派成（两句连读像人话，只含既有文案）
+    expect(notes[0]).toContain('派给《目标会话》');
+    expect(notes[1]).toContain('没派出去：');
   });
 });
 
@@ -120,13 +136,13 @@ describe('dispatchHostedInputWith · 用户接管态派活门禁', () => {
       markAgentDriven: (sid) => marked.push(sid),
     });
 
-    const result = await dispatchHostedInputWith(
-      deps,
-      'assistant',
-      'target-session',
-      '任务',
-      'Memora',
-    );
+    const result = await dispatchHostedInputWith(deps, {
+      callingSessionId: 'assistant',
+      targetSessionId: 'target-session',
+      text: '任务',
+      senderName: 'Memora',
+      targetTitle: '目标会话',
+    });
 
     expect(result).toMatchObject({ ok: false, code: 'E_DENIED' });
     expect(starts).toHaveLength(0);
@@ -139,7 +155,13 @@ describe('dispatchHostedInputWith · 用户接管态派活门禁', () => {
       isTargetTakenOver: () => false,
     });
 
-    const result = await dispatchHostedInputWith(deps, 'assistant', 'self-built', '任务', 'Memora');
+    const result = await dispatchHostedInputWith(deps, {
+      callingSessionId: 'assistant',
+      targetSessionId: 'self-built',
+      text: '任务',
+      senderName: 'Memora',
+      targetTitle: '自建会话',
+    });
 
     expect(result.ok).toBe(true);
     expect(starts).toHaveLength(1);
@@ -150,7 +172,13 @@ describe('dispatchHostedInputWith · 用户接管态派活门禁', () => {
       isTargetTakenOver: () => true,
       isStreaming: () => false,
     });
-    const result = await dispatchHostedInputWith(deps, 'assistant', 'target', '任务', 'Memora');
+    const result = await dispatchHostedInputWith(deps, {
+      callingSessionId: 'assistant',
+      targetSessionId: 'target',
+      text: '任务',
+      senderName: 'Memora',
+      targetTitle: '目标会话',
+    });
     expect(result).toMatchObject({ ok: false, code: 'E_DENIED' });
   });
 });
@@ -175,13 +203,13 @@ describe('dispatchHostedInputWith · 轮引用完整性自检（D1）', () => {
       markAgentDriven: (sid) => marked.push(sid),
     });
 
-    const result = await dispatchHostedInputWith(
-      deps,
-      'assistant',
-      'target-session',
-      '任务',
-      'Memora',
-    );
+    const result = await dispatchHostedInputWith(deps, {
+      callingSessionId: 'assistant',
+      targetSessionId: 'target-session',
+      text: '任务',
+      senderName: 'Memora',
+      targetTitle: '目标会话',
+    });
 
     expect(result).toMatchObject({ ok: false, code: 'E_UNREADABLE' });
     expect(result.ok === false && result.message).toContain('round-gone');
@@ -201,7 +229,13 @@ describe('dispatchHostedInputWith · 轮引用完整性自检（D1）', () => {
         }) as never,
     });
 
-    const result = await dispatchHostedInputWith(deps, 'assistant', 'target', '任务', 'Memora');
+    const result = await dispatchHostedInputWith(deps, {
+      callingSessionId: 'assistant',
+      targetSessionId: 'target',
+      text: '任务',
+      senderName: 'Memora',
+      targetTitle: '目标会话',
+    });
 
     expect(result).toMatchObject({ ok: false, code: 'E_UNREADABLE' });
     expect(starts).toHaveLength(0);
@@ -213,7 +247,13 @@ describe('dispatchHostedInputWith · 轮引用完整性自检（D1）', () => {
       roundStore: () => ({ findMissingRounds: () => [] }) as never,
     });
 
-    const result = await dispatchHostedInputWith(deps, 'assistant', 'target', '任务', 'Memora');
+    const result = await dispatchHostedInputWith(deps, {
+      callingSessionId: 'assistant',
+      targetSessionId: 'target',
+      text: '任务',
+      senderName: 'Memora',
+      targetTitle: '目标会话',
+    });
 
     expect(result.ok).toBe(true);
     expect(starts).toHaveLength(1);

@@ -19,7 +19,12 @@
 import * as vscode from 'vscode';
 import { logger } from '@zooique/memora';
 import type { Agent, AgentChunk, IRoundStore } from '@zooique/memora';
-import type { HostedDispatchResult } from '../../extension/host/workSessionTools.js';
+import type {
+  HostedDispatchInput,
+  HostedDispatchResult,
+} from '../../extension/host/workSessionTools.js';
+// 交代消息与流式正文同构（复用既有 chunk 渲染，不新造消息类型）
+import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { hasRoundPresenceProbe } from '../../extension/host/workspaceRoundStore.js';
 import { acquireDispatchWriteLease, type DispatchWriteLease } from './hostedDispatchLock.js';
 import type { FlowSeed } from './sessionRuntime.js';
@@ -72,7 +77,16 @@ export interface HostedDispatchDeps {
     factory: (signal: AbortSignal) => AsyncGenerator<AgentChunk, void, unknown>,
     seed: FlowSeed,
   ) => void;
+  /**
+   * 把一条正文段推进调用方会话并上屏（派发交代用）
+   *
+   * 消息形态与流式 chunk 完全同构，复用既有渲染路径；面板实现只做投递
+   * （`postToSession(callingSessionId, msg)`）。
+   */
+  note: (msg: Extract<ExtensionToWebviewMessage, { type: 'chunk' }>) => void;
 }
+
+/** 派发执行域入参（形状与工具层同一份类型，防两处各写一份） */
 
 /**
  * 向目标会话派发一条输入
@@ -86,12 +100,50 @@ export interface HostedDispatchDeps {
  */
 export async function dispatchHostedInputWith(
   deps: HostedDispatchDeps,
-  callingSessionId: string,
-  targetSessionId: string,
-  text: string,
-  senderName: string,
+  input: HostedDispatchInput,
 ): Promise<HostedDispatchResult> {
+  const { callingSessionId, targetSessionId, text, senderName, targetTitle } = input;
+  /**
+   * 派发交代（机制保证）：把「派给谁 + 派什么活（原文）」写进**调用方当前轮**并上屏。
+   *
+   * 为什么由宿主写：模型自己的交代常落在 `narrate` 过程事件里（助手形态隐藏过程流，
+   * reload 后消失）；宿主写入的是 `assistantLog` 的正文段，重放天然带出。
+   * 失败一律静默降级——交代写不进去不能连累派发（主次不能颠倒）。
+   *
+   * @param content 已拼好的交代正文（真值只来自会话标题与派发原文）
+   */
+  const noteCaller = (content: string): void => {
+    try {
+      const roundId = deps.roundIds(callingSessionId).at(-1);
+      const store = deps.roundStore();
+      const round = roundId && store ? store.getById(roundId) : undefined;
+      const ts = new Date().toISOString();
+      if (roundId && store && round) {
+        store.save({
+          ...round,
+          assistantLog: [
+            ...(round.assistantLog ?? []),
+            {
+              id: `msg-${roundId}-dispatch-note-${Date.now()}`,
+              role: 'assistant',
+              content,
+              timestamp: ts,
+            },
+          ],
+        });
+      }
+      deps.note({ type: 'chunk', content: `\n\n${content}\n`, ts, roundId: roundId ?? '' });
+    } catch (err) {
+      logger.warn({ err }, '派发交代写入失败（不影响派发）');
+    }
+  };
+  /** 派给谁 / 派什么活的唯一文案来源（标题 + 原文，不生成、不润色） */
+  const noteText = `派给《${targetTitle}》：\n\n${text}`;
+  /** 失败收尾：在同一气泡补一句为什么没派成（既有错误文案原文，不新造） */
+  const noteFail = (message: string): void => noteCaller(`没派出去：${message}`);
   logger.info({ from: callingSessionId, to: targetSessionId }, '宝派发活');
+  // 派发前先把交代写上屏（机制保证）：拒绝路径也会在同一气泡里补一句收尾
+  noteCaller(noteText);
   // ① 调用方身份
   if (!deps.isManaged(callingSessionId)) {
     logger.warn({ from: callingSessionId, code: 'E_DENIED' }, '派发被拒：调用方非托管');
@@ -129,6 +181,7 @@ export async function dispatchHostedInputWith(
       { from: callingSessionId, to: targetSessionId, code: 'E_BUSY' },
       '派发被拒：目标在跑',
     );
+    noteFail(busy.message);
     return busy;
   }
   // ③ 目标会话写权（判据与归还时机都在 hostedDispatchLock）：拿不到 = 另一个窗口在用 ⇒ 如实拒收
@@ -147,6 +200,7 @@ export async function dispatchHostedInputWith(
       { from: callingSessionId, to: targetSessionId, code: lease.refusal.code },
       '派发被拒：写租约不可得',
     );
+    noteFail(lease.refusal.message);
     return lease.refusal;
   }
   try {
@@ -172,9 +226,13 @@ export async function dispatchHostedInputWith(
       return {
         ok: false,
         code: 'E_UNREADABLE',
-        message: l10n.t(
-          "Memora: the target session's round files cannot be read; the input was not sent. Check the rounds directory and retry.",
-        ),
+        message: (() => {
+          const message = l10n.t(
+            "Memora: the target session's round files cannot be read; the input was not sent. Check the rounds directory and retry.",
+          );
+          noteFail(message);
+          return message;
+        })(),
       };
     }
     if (missingRounds.length > 0) {
@@ -191,11 +249,15 @@ export async function dispatchHostedInputWith(
       return {
         ok: false,
         code: 'E_UNREADABLE',
-        message: l10n.t(
-          'Memora: the target session is missing {0} round file(s) ({1}); the input was not sent. Restore them from the rounds trash or start a new session, then retry.',
-          String(missingRounds.length),
-          missingRounds.slice(0, 3).join(', '),
-        ),
+        message: (() => {
+          const message = l10n.t(
+            'Memora: the target session is missing {0} round file(s) ({1}); the input was not sent. Restore them from the rounds trash or start a new session, then retry.',
+            String(missingRounds.length),
+            missingRounds.slice(0, 3).join(', '),
+          );
+          noteFail(message);
+          return message;
+        })(),
       };
     }
     // ④ 取（或建）目标会话实例：装配可能在途，期间目标会话或已被别的入口开跑 ⇒ 落地前再判一次
@@ -215,6 +277,7 @@ export async function dispatchHostedInputWith(
         { from: callingSessionId, to: targetSessionId, code: 'E_BUSY' },
         '派发被拒：二次判忙',
       );
+      noteFail(busy.message);
       return busy;
     }
     const now = new Date().toISOString();

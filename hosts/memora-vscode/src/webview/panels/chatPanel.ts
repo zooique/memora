@@ -161,7 +161,10 @@ import {
 // 引用发送前存在性核实（HOST-CTX-9 发送侧）：解析器复用 refPath（首根 SSOT），不由本文件另写
 import { collectMissingFileRefPaths } from '../../extension/host/refProbe.js';
 // 托管派发结果信封：工具面（workSessionTools）与面板实现共用同一联合类型，避免各写一套码集
-import type { HostedDispatchResult } from '../../extension/host/workSessionTools.js';
+import type {
+  HostedDispatchInput,
+  HostedDispatchResult,
+} from '../../extension/host/workSessionTools.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createProvider } from '../../extension/host/llmConfig.js';
 import {
@@ -2860,12 +2863,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * @param senderName 落 `RoundMessage.name` 的发送者名（装配期传入）
    * @returns `{ok:true,accepted:true}` = 已受理；业务失败带错误码与可操作下一步
    */
-  public async dispatchHostedInput(
-    callingSessionId: string,
-    targetSessionId: string,
-    text: string,
-    senderName: string,
-  ): Promise<HostedDispatchResult> {
+  public async dispatchHostedInput(input: HostedDispatchInput): Promise<HostedDispatchResult> {
+    const { callingSessionId, targetSessionId } = input;
+    // 交代标题：会话元数据现值（真源 = SessionStore）；查不到回落 id，不编造、不润色
+    const targetTitle =
+      this.sessionStore.getSessionMeta(targetSessionId)?.displayName ?? targetSessionId;
     return dispatchHostedInputWith(
       {
         isManaged: (sessionId) => this.sessionModes.isManaged(sessionId),
@@ -2883,11 +2885,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         rememberCreator: (sessionId, creator) => this._hostedNotifier.remember(sessionId, creator),
         trackLease: (sessionId, lease) => this._dispatchLeases.set(sessionId, lease),
         startFlow: (sessionId, factory, seed) => void this.runFlow(factory, seed, sessionId),
+        // 派发交代上屏：与流式正文同一通道、同一消息形状（面板只做投递）
+        note: (msg) => this.postToSession(callingSessionId, msg),
       },
-      callingSessionId,
-      targetSessionId,
-      text,
-      senderName,
+      { ...input, targetTitle },
     );
   }
 

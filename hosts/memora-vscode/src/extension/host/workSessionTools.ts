@@ -196,19 +196,25 @@ export type SendToSessionResult =
     };
 
 /**
- * 派发回调（装配期注入，工具 handler 不持有面板实例）
- *
- * @param callingSessionId 发起派发的会话（E_DENIED 判据）
- * @param targetSessionId 目标会话
- * @param text 要投递的用户输入（不注入任何宿主上下文）
- * @param senderName 落 `RoundMessage.name` 的发送者名（装配期传入，handler 不自带字面量）
+ * 派发入参（对象化：四个同型 string 分明参易错位；形状变更由编译器兜底找全调用点）
  */
-export type HostedInputDispatcher = (
-  callingSessionId: string,
-  targetSessionId: string,
-  text: string,
-  senderName: string,
-) => Promise<HostedDispatchResult>;
+export interface HostedDispatchInput {
+  /** 发起派发的会话（E_DENIED 判据） */
+  callingSessionId: string;
+  /** 目标会话 */
+  targetSessionId: string;
+  /** 要投递的用户输入（不注入任何宿主上下文） */
+  text: string;
+  /** 落 `RoundMessage.name` 的发送者名 */
+  senderName: string;
+  /** 目标会话标题（交代文案用；真值 = 会话元数据） */
+  targetTitle: string;
+}
+
+/**
+ * 派发回调（装配期注入，工具 handler 不持有面板实例）
+ */
+export type HostedInputDispatcher = (input: HostedDispatchInput) => Promise<HostedDispatchResult>;
 
 /** 派发工具的运行期依赖（缺省 ⇒ 只注册 list 工具；装配层负责在缺失时记警告） */
 export interface WorkSessionToolDeps {
@@ -1183,7 +1189,10 @@ export function registerWorkSessionTools(
           );
         }
         // 存在性用会话清单判（含老数据占位补全），不用 getSessionMeta——后者对未写 meta 的旧会话会误判缺失
-        if (!sessionStore.listSessionMetas().some((meta) => meta.sessionId === parsed.sid)) {
+        const targetMeta = sessionStore
+          .listSessionMetas()
+          .find((meta) => meta.sessionId === parsed.sid);
+        if (!targetMeta) {
           return JSON.stringify(
             { ok: false, code: 'E_NOT_FOUND', message: `未知会话：${parsed.sid}` },
             null,
@@ -1192,12 +1201,14 @@ export function registerWorkSessionTools(
         }
         try {
           // E_DENIED / E_BUSY 由派发回调按真实运行态与调用方身份判；工具层不自造判据
-          const result = await dispatch(
-            deps.callingSessionId,
-            parsed.sid,
-            parsed.text,
-            deps.senderName,
-          );
+          const result = await dispatch({
+            callingSessionId: deps.callingSessionId,
+            targetSessionId: parsed.sid,
+            text: parsed.text,
+            senderName: deps.senderName,
+            // 交代文案的真值之一：会话展示名（与清单同一口径，不做生成/润色）
+            targetTitle: getSessionDisplayName(targetMeta),
+          });
           return JSON.stringify(result, null, 2);
         } catch (err) {
           // 业务契约：不 throw（throw 会让模型只看到工具失败，读不到可判读的错误码）。

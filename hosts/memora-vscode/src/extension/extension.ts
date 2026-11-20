@@ -689,8 +689,8 @@ export function activate(context: vscode.ExtensionContext): void {
     storage: getMemoryStorage,
     orchestratorSenderName: HOSTED_SENDER_NAME,
     // 面板在 deps 之后创建（与 peekAgent 同一手法）：闭包延迟取，调用时面板必已就绪
-    dispatchHostedInput: (calling, target, text, sender) =>
-      chatProvider.dispatchHostedInput(calling, target, text, sender),
+    // 入参对象直传（不手抄形参表：签名变更由类型兜底，防两个独立缺陷面）
+    dispatchHostedInput: (input) => chatProvider.dispatchHostedInput(input),
     // 建会话同法：工具 handler → 面板既有新建路径（角色包校验、标题与范围声明落盘都在面板内）
     // ⚠️ 必须经 lazyHostedSessionCreator 装配：它保留 owner 对象上下文以绑定 class 方法的 this，
     // 同时参数表由类型派生（禁手抄形参表）。裸方法引用或手抄签名 = 两个独立的已知缺陷。

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * E4 批 2 · 面板侧「按会话取实例 / 流中切换隔离 / 后台投影闸」验收测试
  *
  * 批 2 把「一个面板一台 Agent」改成「每会话一台实例，切换 = 换绑显示源」，本文件钉住五条
@@ -1788,12 +1788,13 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
     );
     provider.setAgentFactory(factory);
 
-    const result = await provider.dispatchHostedInput(
-      '2026-11-06-a',
-      '2026-11-06-b',
-      'hi',
-      '派发探针',
-    );
+    const result = await provider.dispatchHostedInput({
+      callingSessionId: '2026-11-06-a',
+      targetSessionId: '2026-11-06-b',
+      text: 'hi',
+      senderName: '派发探针',
+      targetTitle: '2026-11-06-b',
+    });
     expect(result).toMatchObject({ ok: false, code: 'E_DENIED' });
     // 身份判不过就止步：不为一次注定被拒的派发付装配成本
     expect(factory).not.toHaveBeenCalled();
@@ -1833,12 +1834,13 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
     );
     provider.setAgentFactory(factory);
 
-    const result = await provider.dispatchHostedInput(
-      '2026-11-06-a',
-      '2026-11-06-b',
-      '原始需求',
-      '派发探针',
-    );
+    const result = await provider.dispatchHostedInput({
+      callingSessionId: '2026-11-06-a',
+      targetSessionId: '2026-11-06-b',
+      text: '原始需求',
+      senderName: '派发探针',
+      targetTitle: '2026-11-06-b',
+    });
     expect(result).toEqual({ ok: true, accepted: true });
     await atGate;
 
@@ -1901,7 +1903,13 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
     // 本用例的前提：用户正看着目标会话（主视图 = 目标，回声才会走主视图投递）
     cast._currentSessionId = '2026-11-06-b';
 
-    await provider.dispatchHostedInput('2026-11-06-a', '2026-11-06-b', '原始需求', '派发探针');
+    await provider.dispatchHostedInput({
+      callingSessionId: '2026-11-06-a',
+      targetSessionId: '2026-11-06-b',
+      text: '原始需求',
+      senderName: '派发探针',
+      targetTitle: '2026-11-06-b',
+    });
     await atGate;
 
     const userEchoes = posted.filter(
@@ -1973,12 +1981,13 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
     await atGate;
     expect(cast.runtimeFor('2026-11-06-b').streaming).toBe(true);
 
-    const result = await provider.dispatchHostedInput(
-      '2026-11-06-a',
-      '2026-11-06-b',
-      '再来一条',
-      '派发探针',
-    );
+    const result = await provider.dispatchHostedInput({
+      callingSessionId: '2026-11-06-a',
+      targetSessionId: '2026-11-06-b',
+      text: '再来一条',
+      senderName: '派发探针',
+      targetTitle: '2026-11-06-b',
+    });
     expect(result).toMatchObject({ ok: false, code: 'E_BUSY' });
     // 判忙先于取实例：既没有第二次 chat，也没有为派发重新装配
     expect(chatSpy).not.toHaveBeenCalled();
@@ -2028,12 +2037,13 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
       }),
     );
 
-    const result = await provider.dispatchHostedInput(
-      '2026-11-06-a',
-      '2026-11-06-b',
-      '撞车输入',
-      '派发探针',
-    );
+    const result = await provider.dispatchHostedInput({
+      callingSessionId: '2026-11-06-a',
+      targetSessionId: '2026-11-06-b',
+      text: '撞车输入',
+      senderName: '派发探针',
+      targetTitle: '2026-11-06-b',
+    });
     expect(result).toMatchObject({ ok: false, code: 'E_BUSY' });
     // 复判拦住了第二条流：派发通道一次 chat 都没发
     expect(chatSpy).not.toHaveBeenCalled();
@@ -2065,12 +2075,13 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
     const acquireSpy = vi.spyOn(store, 'acquireSessionLock');
     const releaseSpy = vi.spyOn(store, 'releaseSessionLock');
 
-    const result = await provider.dispatchHostedInput(
-      '2026-11-06-a',
-      '2026-11-06-b',
-      '派发原文',
-      '派发探针',
-    );
+    const result = await provider.dispatchHostedInput({
+      callingSessionId: '2026-11-06-a',
+      targetSessionId: '2026-11-06-b',
+      text: '派发原文',
+      senderName: '派发探针',
+      targetTitle: '2026-11-06-b',
+    });
     expect(result).toEqual({ ok: true, accepted: true });
     expect(acquireSpy).toHaveBeenCalledWith('2026-11-06-b');
     await vi.waitFor(() => expect(cast.runtimeFor('2026-11-06-b').streaming).toBe(false), {
@@ -2103,7 +2114,13 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
     // 流期间用户把界面切到目标会话（派发不得把锁在用户眼皮底下放掉）
     cast._currentSessionId = '2026-11-06-b';
 
-    await provider.dispatchHostedInput('2026-11-06-a', '2026-11-06-b', '派发原文', '派发探针');
+    await provider.dispatchHostedInput({
+      callingSessionId: '2026-11-06-a',
+      targetSessionId: '2026-11-06-b',
+      text: '派发原文',
+      senderName: '派发探针',
+      targetTitle: '2026-11-06-b',
+    });
     await vi.waitFor(() => expect(cast.runtimeFor('2026-11-06-b').streaming).toBe(false), {
       timeout: 5000,
     });
@@ -2122,12 +2139,13 @@ describe('托管派发 · send_to_session 的宿主派发口', () => {
     // 另一个进程持有该会话锁：本进程拿不到
     vi.spyOn(store, 'acquireSessionLock').mockResolvedValue(false);
 
-    const result = await provider.dispatchHostedInput(
-      '2026-11-06-a',
-      '2026-11-06-b',
-      '不该落地',
-      '派发探针',
-    );
+    const result = await provider.dispatchHostedInput({
+      callingSessionId: '2026-11-06-a',
+      targetSessionId: '2026-11-06-b',
+      text: '不该落地',
+      senderName: '派发探针',
+      targetTitle: '2026-11-06-b',
+    });
     // 不假装受理：回执如实说「另一个窗口在用」，且没有起流、没有登记归属
     expect(result).toMatchObject({ ok: false, code: 'E_LOCKED' });
     // 回执必须带可操作的下一步（换会话 / 稍后重试），不能只丢一个码让模型去猜
