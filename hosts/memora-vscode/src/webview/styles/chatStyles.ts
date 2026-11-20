@@ -316,8 +316,10 @@ export const chatStyles = `
     /* 窄宽度兜底：min 与 max 必须共用同一安全边距。边距不同会出现 min > max，
        而层叠规范里 min 胜出 ⇒ 溢出照旧（面板 264 以下即触发，2026-10-29 实测算得）。 */
     min-width: min(240px, calc(100vw - var(--sp-6)));
-    max-width: min(var(--dim-xl), calc(100vw - var(--sp-6)));
-    max-height: var(--dim-xl);
+    /* 专属放大档（HIST-MENU-SIZE-1）：不引 --dim-xl（它另被设置面板等 5+ 处复用）。
+       宽度仍带 min() 视口兜底；高度同时兜 100vh，防矮窗口下浮层溢出视口。 */
+    max-width: min(var(--history-menu-max-w), calc(100vw - var(--sp-6)));
+    max-height: min(var(--history-menu-max-h), calc(100vh - var(--sp-6)));
     /* 🔴 禁在此写 display：treedd 显隐 = 基础态 display:none（dropdown.ts）×
        .is-open 态 display:flex。此处 (0,2,0) 特异性会压过基础态 none ⇒ 浮层常驻
        （2026-10-19 初版实踩，已撤）。布局按需补 non-display 属性即可——基础态
@@ -382,7 +384,7 @@ export const chatStyles = `
     padding: var(--sp-2, 6px) var(--sp-3, 8px) var(--sp-1, 4px);
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
   }
-  /* 分组切换器（会话记录 / 留存区 / 助手建的）：贴在下拉面板顶部，不随条目重建被清空。
+  /* 分组切换器（我的 / 留存 / 助手）：贴在下拉面板顶部，不随条目重建被清空。
      注意：用普通按钮样式，**不可**长成 .treedd__item（那会让点击委托收起整个菜单）。 */
   .session-tabs {
     display: flex; gap: var(--sp-1, 4px);

@@ -36,9 +36,9 @@ const HTML = `
     <!-- 镜像生产 DOM 结构（分组切换器 + 搜索框 + 条目容器同级；tab/搜索框不带 .treedd__item） -->
     <div class="treedd__menu">
       <div id="historyTabs" class="session-tabs" role="tablist">
-        <button id="historyTabRecent" class="session-tab is-active" type="button" role="tab" aria-selected="true" data-view="recent">会话记录</button>
-        <button id="historyTabArchived" class="session-tab" type="button" role="tab" aria-selected="false" data-view="archived">留存区<span id="historyArchivedCount" class="session-tab__count"></span></button>
-        <button id="historyTabHosted" class="session-tab" type="button" role="tab" aria-selected="false" data-view="hosted">助手建的</button>
+        <button id="historyTabHosted" class="session-tab" type="button" role="tab" aria-selected="false" data-view="hosted">助手</button>
+        <button id="historyTabRecent" class="session-tab is-active" type="button" role="tab" aria-selected="true" data-view="recent">我的</button>
+        <button id="historyTabArchived" class="session-tab" type="button" role="tab" aria-selected="false" data-view="archived">留存<span id="historyArchivedCount" class="session-tab__count"></span></button>
       </div>
       <input id="historySearch" class="session-search" type="text" placeholder="搜索会话（标题 / 主题 / 摘要）" autocomplete="off" />
       <div id="historyMenu"></div>

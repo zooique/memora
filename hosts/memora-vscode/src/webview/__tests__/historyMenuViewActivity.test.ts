@@ -278,3 +278,54 @@ describe('生产模板第三组 tab 源码守卫（HOSTED-LIST-GROUP-1）', () =
     expect(src).toContain('tabHosted: historyTabHosted');
   });
 });
+
+/**
+ * 三组 tab 的显示形态守卫（HIST-TAB-ORDER-1 / HIST-MENU-SIZE-1 · 2026-11-20 用户拍板）：
+ * 显示顺序 = 助手(hosted) → 我的(recent) → 留存(archived)，默认选中仍为 recent（居中）。
+ * 归属判据 groupOfSession 的 hosted > archived > recent 是**显示无关的定案**，不在本守卫范围。
+ * 源码级读生产而非只锁夹具（夹具漂移不让守卫失效，规则 3）。
+ */
+describe('历史会话浮层显示形态源码守卫（HIST-TAB-ORDER-1 / HIST-MENU-SIZE-1）', () => {
+  it('生产模板 tab DOM 顺序 = 助手 → 我的 → 留存，默认 is-active 仍在 recent', () => {
+    const src = readFileSync(resolve(HOST_ROOT, 'src/webview/panels/chatPanelHtml.ts'), 'utf8');
+    const order = ['historyTabHosted', 'historyTabRecent', 'historyTabArchived'].map((id) =>
+      src.indexOf(`id="${id}"`),
+    );
+    expect(order[0]).toBeGreaterThanOrEqual(0);
+    expect(order).toEqual([...order].sort((a, b) => a - b)); // 三个 id 按此序出现
+    const recentTag = src.split('\n').find((line) => line.includes('id="historyTabRecent"')) ?? '';
+    expect(recentTag).toContain('is-active');
+    expect(recentTag).toContain('aria-selected="true"');
+  });
+
+  it('浮层尺寸走专属令牌，max 宽高均带视口兜底（不复用共享 --dim-xl）', () => {
+    const tokens = readFileSync(resolve(HOST_ROOT, 'src/webview/styles/tokens.ts'), 'utf8');
+    expect(tokens).toMatch(/--history-menu-max-w:\s*400px/);
+    expect(tokens).toMatch(/--history-menu-max-h:\s*480px/);
+    const styles = readFileSync(resolve(HOST_ROOT, 'src/webview/styles/chatStyles.ts'), 'utf8');
+    const menu = styles
+      .split('\n')
+      .find((line) => line.includes('max-width: min(var(--history-menu-max-w)'));
+    expect(menu).toBeDefined();
+    expect(styles).toContain(
+      'max-height: min(var(--history-menu-max-h), calc(100vh - var(--sp-6)))',
+    );
+    // 共享刻度仍在 5+ 处消费，历史菜单不得再引它（改引专属令牌是本项落地点）
+    expect(styles).not.toContain('max-width: min(var(--dim-xl), calc(100vw - var(--sp-6)))');
+  });
+
+  it('zh-cn 三组 tab 译文 = 助手 / 我的 / 留存（英文键不动）', () => {
+    const zh = JSON.parse(
+      readFileSync(resolve(HOST_ROOT, 'l10n/bundle.l10n.zh-cn.json'), 'utf8'),
+    ) as Record<string, string>;
+    expect(zh['Assistant-created']).toBe('助手');
+    expect(zh['Sessions']).toBe('我的');
+    expect(zh['Retained']).toBe('留存');
+    const en = JSON.parse(
+      readFileSync(resolve(HOST_ROOT, 'l10n/bundle.l10n.json'), 'utf8'),
+    ) as Record<string, string>;
+    expect(en['Assistant-created']).toBe('');
+    expect(en['Sessions']).toBe('');
+    expect(en['Retained']).toBe('');
+  });
+});

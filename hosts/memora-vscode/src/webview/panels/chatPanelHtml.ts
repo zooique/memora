@@ -88,9 +88,9 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string, form: UiForm
            为不破坏既有下拉语义与键盘模型，此处保留该组合并登记为已知取舍。 -->
       <div class="treedd__menu" role="menu">
         <div id="historyTabs" class="session-tabs" role="tablist" aria-label="${vscode.l10n.t('Session list groups')}">
+          <button id="historyTabHosted" class="session-tab" type="button" role="tab" aria-selected="false" data-view="hosted">${vscode.l10n.t('Assistant-created')}</button>
           <button id="historyTabRecent" class="session-tab is-active" type="button" role="tab" aria-selected="true" data-view="recent">${vscode.l10n.t('Sessions')}</button>
           <button id="historyTabArchived" class="session-tab" type="button" role="tab" aria-selected="false" data-view="archived">${vscode.l10n.t('Retained')}<span id="historyArchivedCount" class="session-tab__count"></span></button>
-          <button id="historyTabHosted" class="session-tab" type="button" role="tab" aria-selected="false" data-view="hosted">${vscode.l10n.t('Assistant-created')}</button>
         </div>
         <!-- FD-3-A 元数据搜索框（匹配域：标题 / 主题 / 摘要）：
              ① 必须独立于 #historyMenu——renderHistoryView 每次清空重建条目，放里面会被一并清掉；
