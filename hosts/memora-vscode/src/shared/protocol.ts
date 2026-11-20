@@ -2129,17 +2129,6 @@ export type RoundView = Pick<
    */
   attachmentUris?: Record<string, string>;
   /**
-   * 派发方会话的**展示名**（派生字段，不落盘）
-   *
-   * 真源 = 轮上 `Round.dispatchedBy.from`（内核持久化的唯一「谁派来的」事实）→ 宿主用
-   * `sessionTitleIfPresent` 现查会话标题。为什么不让 webview 自己查：webview 没有 SessionMeta
-   * 读口，另开一条通道就会变成第二份来源真源。
-   *
-   * 缺省 = 该轮不是派发轮，或来源会话已被删除（此时渲染回落 `userMessage.name` 的通用名，
-   * 不编造标题）。改名后随投影刷新，不做快照。
-   */
-  dispatchedByName?: string;
-  /**
    * 运行时标记：true = 本轮仍在流式生长（UI 显示骨架 + 停止/暂停按钮）。
    * 收场后置 false，**不落盘**——它是运行时相位而非持久化数据。
    */

@@ -76,12 +76,6 @@ export function loadRoundBasedHistory(
         // undefined，零冗余）。重放经本投影下发；运行时由宿主 settle 从同一 roundStore 读出随
         // done/interrupted 下发（证据是 Round 的独立字段 `Round.evidence`，随写点即时落盘，不进 processEvents）。
         evidence: round.evidence,
-        // 派发方展示名：唯一事实是轮上的 dispatchedBy.from，名字由会话存储现查
-        // （`getSessionMeta().displayName` 已是标题兜底后的展示名）；来源已删 ⇒ undefined，
-        // 渲染回落 userMessage.name 的通用名。webview 侧无 SessionMeta 读口，名字只能在这里补。
-        dispatchedByName: round.dispatchedBy
-          ? sessionStore.getSessionMeta(round.dispatchedBy.from)?.displayName
-          : undefined,
       });
     }
 
