@@ -14,7 +14,11 @@
  * 本模块是纯函数 + DOM 构造，无 webview 全局副作用（符合 helpers/ 落点纪律）。
  */
 import * as l10n from '@vscode/l10n';
-import type { WorkbenchJob, WorkbenchSnapshot } from '../../shared/workbenchDto.js';
+import type {
+  WorkbenchJob,
+  WorkbenchJobStatus,
+  WorkbenchSnapshot,
+} from '../../shared/workbenchDto.js';
 import { describeStatus, seatStateText } from '../scripts/workbenchView.js';
 
 /** 抽屉依赖（窄接口，便于测试替身） */
@@ -31,6 +35,33 @@ export interface AssistantWorkbenchDrawerDeps {
 export interface AssistantWorkbenchDrawer {
   /** 按快照整块重建抽屉内容（宿主每次投递一份完整快照） */
   render(snapshot: WorkbenchSnapshot): void;
+}
+
+/**
+ * 抽屉内会话的三档分组（AWB-JOB-TIER-1）——纯函数，只读 status.kind
+ *
+ * 为什么分档：等用户拍板的活最需要人注意，排最前；在跑/待跑/读不到的居中；
+ * 已收场的（完成/停手）折叠——它们是既成事实，不该挤占「接下来要做什么」的视线。
+ *
+ * SSOT 边界：这里只按 `status.kind` 分档，**不改** `WorkbenchJobStatus`、
+ * `projectSessionStatus`、`describeStatus`，也不碰独立面板。抽屉是宝自己的投影视图，
+ * 自助模式的工作逻辑与独立面板逐字不变（上位原则「自助模式独立」）。
+ */
+export type AssistantJobTier = 'attention' | 'active' | 'settled';
+
+export function assistantJobTier(status: WorkbenchJobStatus): AssistantJobTier {
+  switch (status.kind) {
+    case 'waiting':
+      return 'attention';
+    case 'running':
+    case 'queued':
+    case 'unsettled':
+    case 'unreadable':
+      return 'active';
+    case 'completed':
+    case 'stopped':
+      return 'settled';
+  }
 }
 
 /**
@@ -116,7 +147,37 @@ export function createAssistantWorkbenchDrawer(
 
       const list = document.createElement('ul');
       list.className = 'awb-jobs';
-      for (const job of snapshot.jobs) list.appendChild(renderJob(job));
+      // AWB-JOB-TIER-1：按 status.kind 分三档，**不改快照数据本身**，只调展示顺序 / 归位。
+      // 稳定排序（JS sort 保证）：同档内保持宿主下发顺序（宿主已按最近 turn 时间排序）。
+      const tierOrder: Record<AssistantJobTier, number> = {
+        attention: 0,
+        active: 1,
+        settled: 2,
+      };
+      const ordered = [...snapshot.jobs].sort(
+        (a, b) => tierOrder[assistantJobTier(a.status)] - tierOrder[assistantJobTier(b.status)],
+      );
+      // 已收场的独立成折叠区（原生 details，零 JS 状态）；未收场的仍在常驻 ul。
+      const settled = ordered.filter((job) => assistantJobTier(job.status) === 'settled');
+      for (const job of ordered) {
+        if (assistantJobTier(job.status) !== 'settled') list.appendChild(renderJob(job));
+      }
+
+      // 已收场的折叠区（AWB-JOB-TIER-1）：原生 details，默认收起、零 JS 状态；
+      // 计数用 {0} 占位（i18n），不是硬编码中文；有已收场活时才建节点。
+      let settledBox: HTMLDetailsElement | undefined;
+      if (settled.length > 0) {
+        settledBox = document.createElement('details');
+        settledBox.className = 'awb-settled';
+        const summary = document.createElement('summary');
+        summary.className = 'awb-settled__summary';
+        summary.textContent = l10n.t('Finished ({0})', settled.length);
+        settledBox.appendChild(summary);
+        const settledList = document.createElement('ul');
+        settledList.className = 'awb-jobs awb-jobs--settled';
+        for (const job of settled) settledList.appendChild(renderJob(job));
+        settledBox.appendChild(settledList);
+      }
 
       // 空态： coverage 非 complete 时如实说「读不到 / 没读全」，不说「还没有」（与独立面板同口径）
       if (snapshot.jobs.length === 0) {
@@ -132,7 +193,7 @@ export function createAssistantWorkbenchDrawer(
       }
 
       // close 置末（绝对定位不影响视觉），保住「说明行为首节点」的既有判据
-      drawer.replaceChildren(hint, seat, list, close);
+      drawer.replaceChildren(hint, seat, list, ...(settledBox ? [settledBox] : []), close);
     },
   };
 }

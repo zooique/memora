@@ -15,7 +15,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createAssistantWorkbenchDrawer } from '../assistantWorkbenchDrawer.js';
+import { createAssistantWorkbenchDrawer, assistantJobTier } from '../assistantWorkbenchDrawer.js';
 import type {
   WorkbenchJob,
   WorkbenchJobStatus,
@@ -83,7 +83,10 @@ describe('INLINE-WORKBENCH-1 · 助手页内嵌工作台抽屉', () => {
     const badges = [...document.querySelectorAll('.awb-job')].map(
       (li) => li.querySelector('.awb-badge')?.textContent ?? null,
     );
-    expect(badges).toEqual(['Stopped', null, null]);
+    // AWB-JOB-TIER-1：stopped 已收场移进折叠区，常驻列表只剩 queued/unreadable，
+    // 措辞与独立工作台同源的判据不变（Stopped 出徽记、queued/unreadable 不出）。
+    expect(badges).toEqual([null, null, 'Stopped']);
+    expect(document.querySelector('details.awb-settled .awb-badge')?.textContent).toBe('Stopped');
   });
 
   it('副行明细复刻 describeStatus.detail：无徽记的 queued/unreadable 仍出状态语义', () => {
@@ -211,5 +214,92 @@ describe('AWB-JOB-CARD-1 · 一行一卡片与实体按钮（源码级机检）'
     expect(block).not.toMatch(/background:\s*transparent/);
     // 卡片化不得丢掉键盘可达的焦点环
     expect(css()).toContain("body[data-form='assistant'] .awb-job__open:focus-visible");
+  });
+});
+
+describe('AWB-JOB-TIER-1 · 三档分层与已收场折叠（上位原则：自助模式独立）', () => {
+  it('纯函数分档：waiting=attention，未收场=active，完成/停手=settled', () => {
+    expect(assistantJobTier({ kind: 'waiting' })).toBe('attention');
+    for (const kind of ['running', 'queued', 'unsettled', 'unreadable'] as const) {
+      expect(assistantJobTier({ kind })).toBe('active');
+    }
+    expect(assistantJobTier({ kind: 'completed' })).toBe('settled');
+    expect(assistantJobTier({ kind: 'stopped', stop: { kind: 'user' } })).toBe('settled');
+  });
+
+  it('DOM 顺序：attention 在最前、active 居中，已收场移进折叠区不再平铺', () => {
+    const { drawer } = mount();
+    drawer.render(
+      snapshot({
+        jobs: [
+          job('s-completed', { kind: 'completed' }),
+          job('s-running', { kind: 'running' }),
+          job('s-waiting', { kind: 'waiting' }),
+          job('s-queued', { kind: 'queued' }),
+          job('s-stopped', { kind: 'stopped', stop: { kind: 'error', message: 'x' } }),
+        ],
+      }),
+    );
+    const host = document.getElementById('assistantWorkbenchDrawer') as HTMLElement;
+    // 常驻列表只剩 attention + active，顺序按分档重排（等待在前）
+    const live = [...host.querySelectorAll('ul.awb-jobs:not(.awb-jobs--settled) > li.awb-job')].map(
+      (li) => li.querySelector('.awb-job__title')?.textContent,
+    );
+    expect(live).toEqual(['标题-s-waiting', '标题-s-running', '标题-s-queued']);
+    // 已收场进 details，不在常驻列表
+    const settledBox = host.querySelector('details.awb-settled');
+    expect(settledBox).not.toBeNull();
+    const settledTitles = [
+      ...settledBox!.querySelectorAll('ul.awb-jobs--settled > li.awb-job'),
+    ].map((li) => li.querySelector('.awb-job__title')?.textContent);
+    expect(settledTitles).toEqual(['标题-s-completed', '标题-s-stopped']);
+  });
+
+  it('折叠区是原生 details + summary 计数，默认收起、零 JS 状态', () => {
+    const { drawer } = mount();
+    drawer.render(
+      snapshot({
+        jobs: [
+          job('a', { kind: 'completed' }),
+          job('b', { kind: 'stopped', stop: { kind: 'user' } }),
+        ],
+      }),
+    );
+    const box = document.querySelector('details.awb-settled') as HTMLDetailsElement;
+    expect(box.tagName).toBe('DETAILS');
+    expect(box.hasAttribute('open')).toBe(false); // 默认收起
+    const summary = box.querySelector('summary.awb-settled__summary');
+    expect(summary?.textContent).toBe('Finished (2)'); // 默认语言填 {0}，数字来自活计数
+    expect(box.querySelectorAll('li.awb-job')).toHaveLength(2);
+  });
+
+  it('没有已收场活时不建折叠区（不残留空 details）', () => {
+    const { drawer } = mount();
+    drawer.render(snapshot({ jobs: [job('r', { kind: 'running' })] }));
+    expect(document.querySelector('details.awb-settled')).toBeNull();
+  });
+
+  it('只读边界：抽屉源码只引用 describeStatus/seatStateText，不 import 判据投影与写入口', () => {
+    const src = readFileSync(join(__dirname, '..', 'assistantWorkbenchDrawer.ts'), 'utf8').replace(
+      /\/\*[\s\S]*?\*\//g,
+      '',
+    );
+    // import 面只有四个只读符号：两个 DTO type + 两个只读文案函数
+    expect(src).not.toMatch(/from\s+['"][^'"]*sessionStatus/);
+    expect(src).not.toMatch(/projectSessionStatus|workStatus|\.save\(/);
+    // 分档只读 status.kind，不写回 status
+    expect(src).not.toMatch(/status\s*[:=]\s*\{/);
+  });
+
+  it('CSS：折叠区规则全带形态前缀，不得泄漏到 self 形态', () => {
+    const style = readFileSync(
+      join(__dirname, '..', '..', 'styles', 'chatStyles.ts'),
+      'utf8',
+    ).replace(/\/\*[\s\S]*?\*\//g, '');
+    const stray = [...style.matchAll(/([^\n{}]*\.(?:awb-settled|awb-jobs--settled)[^\n{}]*)\s*\{/g)]
+      .map((m) => m[1] as string)
+      .filter((sel) => !sel.includes("body[data-form='assistant']"));
+    expect(stray).toEqual([]);
+    expect(style).toContain("body[data-form='assistant'] .awb-settled__summary:focus-visible");
   });
 });

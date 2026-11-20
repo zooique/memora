@@ -1845,6 +1845,26 @@ export const chatStyles = `
     outline-offset: var(--sp-hair, 1px);
   }
   body[data-form='assistant'] .awb-empty { color: var(--text-secondary); }
+  /* 已收场折叠区（AWB-JOB-TIER-1）：原生 details，默认收起；只调展示层级，不动数据/判据。
+     令牌复用既有 surface / spacing / secondary，零新增色源，不碰 line- 族计数。 */
+  body[data-form='assistant'] .awb-settled {
+    margin-top: var(--sp-2, 6px);
+    background: var(--surface-card);
+    border-radius: var(--radius-sm, 2px);
+  }
+  body[data-form='assistant'] .awb-settled__summary {
+    padding: var(--sp-2, 6px) var(--sp-3, 8px);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.9em;
+  }
+  body[data-form='assistant'] .awb-jobs--settled {
+    padding: 0 var(--sp-3, 8px) var(--sp-2, 6px);
+  }
+  body[data-form='assistant'] .awb-settled__summary:focus-visible {
+    outline: var(--sp-hair, 1px) solid var(--border-focus);
+    outline-offset: var(--sp-hair, 1px);
+  }
   /* 卡片本体：形态差异由**左缘强调条**承担，整圈描边保留给聚焦态
    * 底色改回卡片自己的主题面（--surface-card = editorWidget-background，与消息面同族），
    * 不再用 accent 淡底——那会落到 editor-inactiveSelectionBackground，与用户消息气泡同色，
