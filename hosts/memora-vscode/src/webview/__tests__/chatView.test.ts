@@ -78,6 +78,8 @@ function makeRound(over: {
   processEvents?: unknown[];
   /** 裁决证据（web_search 归因三件套等）；缺省 = 无 evidence 字段 */
   evidence?: RoundView['evidence'];
+  /** 运行时相位：true = 本流仍在生长（实时 turn 投影用） */
+  live?: boolean;
   status?: 'pending' | 'complete' | 'error' | 'interrupted';
 }): RoundView {
   const roundId = over.id ?? 'round-x';
@@ -134,6 +136,7 @@ function makeRound(over: {
       : {}),
     ...(over.processEvents ? { processEvents: over.processEvents as ProcessEvent[] } : {}),
     ...(over.evidence ? { evidence: over.evidence } : {}),
+    ...(over.live ? { live: true } : {}),
     status: over.status ?? 'complete',
     createdAt: over.user?.ts ?? '',
     ...(over.assistantMessage ? { completedAt: over.assistantMessage.ts ?? '' } : {}),
@@ -896,6 +899,60 @@ describe('chatView clear_ok 消息区清理', () => {
     // 普通回答没有主动标注（事实验证：不是所有助手消息都被加类）
     const assistants = Array.from(messages.querySelectorAll<HTMLElement>('.msg.assistant'));
     expect(assistants.filter((el) => !el.classList.contains('msg-ai--proactive')).length).toBe(1);
+  });
+
+  it('实时路径：turn_update 带来内部种子 live 轮 ⇒ 当场补上 memora宝 标注（不用等重放）', () => {
+    mountChatView();
+    // 流起始：meta 建骨架（此刻还拿不到种子身份 —— 真机「当场无标注」的现场）
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    const shell = document.querySelector('.msg.assistant');
+    expect(shell?.classList.contains('msg-ai--proactive')).toBe(false);
+
+    // 实时 turn 投影带 live 轮：userMessage.name 是内部种子
+    dispatch({
+      type: 'turn_update',
+      rounds: [
+        makeRound({
+          id: 'round-live',
+          user: { content: '内部触发指令' },
+          origin: 'hosted',
+          senderName: INTERNAL_SEED_SENDER,
+          live: true,
+          status: 'pending',
+        }),
+      ],
+      state: { phase: 'running', roundId: 'round-live', status: 'pending' },
+    });
+
+    const marked = document.querySelector<HTMLElement>('.msg.assistant.msg-ai--proactive');
+    expect(marked).not.toBeNull();
+    expect(marked?.querySelector('.msg-ai-label__role')?.textContent).toBe('memora宝');
+    // 内部种子仍不上屏（回归 ①）
+    expect(document.querySelectorAll('.msg.user').length).toBe(0);
+  });
+
+  it('实时路径：普通轮（非内部种子）的 live 投影不补标注（不误伤普通回答）', () => {
+    mountChatView();
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({
+      type: 'turn_update',
+      rounds: [
+        makeRound({
+          id: 'round-plain',
+          user: { content: '普通提问' },
+          live: true,
+          status: 'pending',
+        }),
+      ],
+      state: { phase: 'running', roundId: 'round-plain', status: 'pending' },
+    });
+    expect(document.querySelectorAll('.msg.assistant.msg-ai--proactive').length).toBe(0);
   });
 
   it('历史重放同样渲染托管标签：origin + userMessage.name（重开窗口不消失）', () => {

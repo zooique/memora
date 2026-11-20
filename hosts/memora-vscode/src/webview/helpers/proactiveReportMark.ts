@@ -9,7 +9,8 @@
  *
  * 判据不在这里：调用方按 `isInternalSeedSender` 单点算好再调（实时与重放同一判据）。
  */
-import { HOSTED_SENDER_NAME } from '../../shared/constants.js';
+import { HOSTED_SENDER_NAME, isInternalSeedSender } from '../../shared/constants.js';
+import type { RoundView } from '../../shared/protocol.js';
 
 /**
  * 给一条已创建的 assistant 消息加身份标注
@@ -19,8 +20,32 @@ import { HOSTED_SENDER_NAME } from '../../shared/constants.js';
  *
  * @param el 该轮已创建的 assistant 消息元素（label 已由 buildAssistantShell 建好）
  */
-export function markProactiveReport(el: HTMLElement): void {
+export function markProactiveReport(el: HTMLElement | null | undefined): void {
+  if (!el) return;
   el.classList.add('msg-ai--proactive');
   const roleEl = el.querySelector<HTMLElement>(':scope > .msg-ai-label .msg-ai-label__role');
   if (roleEl) roleEl.textContent = HOSTED_SENDER_NAME;
+}
+
+/**
+ * 实时路径补标：从运行时 turn 投影里找「正在流式的那一轮」，若是主动汇报就给当前气泡打标
+ *
+ * 为什么需要它：运行时 `turn_update` 不整批渲染 rounds（只喂状态机），所以实时气泡由
+ * `prepareFlowShell`（meta 到达时）建立，那一刻 webview 还不知道本轮输入是不是内部种子；
+ * 直到本消息带来 live 轮才拿得到 `userMessage.name`。不补这一处，真机就是「当场无标注、
+ * 重放后才有」。
+ *
+ * 判据与重放**同一个谓词**（`isInternalSeedSender`），这里不另写条件分支。
+ *
+ * @param el 当前正在流式的 assistant 气泡（无流时传 undefined，直接跳过）
+ * @param rounds 本条 turn 投影携带的轮（含 live 轮）
+ */
+export function markLiveProactiveReport(
+  el: HTMLElement | null | undefined,
+  rounds: readonly RoundView[],
+): void {
+  if (!el) return;
+  const live = rounds.find((r) => r.live);
+  if (!live || !isInternalSeedSender(live.userMessage?.name)) return;
+  markProactiveReport(el);
 }

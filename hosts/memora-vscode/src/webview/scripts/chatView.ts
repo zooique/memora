@@ -35,7 +35,7 @@ import {
 } from '../../shared/constants.js';
 import { bindSingleTrackRow, syncRowEdges } from '../helpers/chipRow.js';
 // 主动汇报的身份标注（PROACTIVE-REPORT-1；外置守 max-lines，判据仍由调用方单点算）
-import { markProactiveReport } from '../helpers/proactiveReportMark.js';
+import { markProactiveReport, markLiveProactiveReport } from '../helpers/proactiveReportMark.js';
 // 托管气泡的来源标签（盖章呈现单点；外置守 max-lines）
 import { appendHostedOriginTag } from '../helpers/originTag.js';
 import { createQuoteDraft } from '../helpers/quoteDraft.js';
@@ -3086,9 +3086,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // state（waiting/ask + questions）——视图重建后的 ready 握手重放、流尾补重放，都在提问
       // 挂起时到达。先渲染提问卡会被紧随的重放抹掉 → 用户看不见提问，只面对无反应的「继续」
       // 按钮（resume 被静默丢弃），提问超时后自动续跑、记录留下「未回答」——故重放先、提问卡后。
-      if (msg.replay === true) {
-        renderReplayFromRounds(msg.rounds);
-      }
+      if (msg.replay === true) renderReplayFromRounds(msg.rounds);
+      // 实时路径：主动汇报当场也要带身份（判据与重放同一谓词，见 helper）
+      else markLiveProactiveReport(activeAssistantEl ?? flowShellEl, msg.rounds);
       // 提问卡渲染真源 = turn_update.state（waiting/ask + questions）。
       // 位置在重放之后是顺序契约的一部分，勿上移。
       if (
