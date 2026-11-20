@@ -1978,11 +1978,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     roundId?: string,
     att?: UserAttachmentView,
     /**
-     * 输入来源标记（仅用户气泡消费）：
-     * - `origin === 'hosted'` 才渲染「由 X 发送」标签；`'user'` / `undefined` 不造任何标记
-     * - `senderName` 缺省时用中性文案——助手名可配置，写死具体名字会变成第二份真源
+     * 输入来源标记（仅用户气泡消费）：hosted 才渲染「由 X 发送」；名字优先
+     * `dispatchedByName`（宿主按 dispatchedBy.from 现查），缺失回落 senderName
      */
-    originMeta?: { origin?: RoundView['origin']; senderName?: string },
+    originMeta?: { origin?: RoundView['origin']; senderName?: string; dispatchedByName?: string },
   ): HTMLElement {
     // 日期分隔线：仅日期交界插入，先于本条消息（textContent 构建防注入）
     renderDateDivider(ts);
@@ -2027,10 +2026,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (originMeta?.origin === 'hosted') {
         const tag = document.createElement('span');
         tag.className = 'msg-origin-tag';
-        tag.textContent = originMeta.senderName
-          ? l10n.t('Sent by {0}', originMeta.senderName)
-          : // 缺名时也不能说「托管」：面向用户只有「助手」这一层身份（§14.22.6 第 1 条）
-            l10n.t('Sent by the assistant');
+        // 派发方会话名优先（真源 = dispatchedBy.from → 宿主现查）；缺省回落消息名，再缺才中性文案
+        const who = originMeta.dispatchedByName ?? originMeta.senderName;
+        tag.textContent = who ? l10n.t('Sent by {0}', who) : l10n.t('Sent by the assistant');
         div.appendChild(tag);
       }
       const body = document.createElement('div');
@@ -2904,9 +2902,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         try {
           const att = { attachments: r.userMessage.attachments, attachmentUris: r.attachmentUris };
           append('user', r.userMessage.content, r.userMessage.timestamp, r.id, att, {
-            // 重放路径：origin 来自 Round，senderName 复用 RoundMessage.name（历史标签不能只在实时出现）
+            // 重放路径：origin 来自 Round，senderName 复用 RoundMessage.name（历史标签不能只在实时出现）；
+            // 派发方会话名由宿主按 dispatchedBy.from 现查（缺失 = 来源已删）
             origin: r.origin,
             senderName: r.userMessage.name,
+            dispatchedByName: r.dispatchedByName,
           });
         } catch (err) {
           ensureUserInputVisible(r.userMessage.content, err);
@@ -3263,6 +3263,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         try {
           append('user', msg.text, msg.ts, msg.roundId, msg, {
             // 实时路径：protocol user 事件已平铺 origin / senderName
+            // （托管输入的 senderName 由宿主在受理时解析成派发方会话展示名）
             origin: msg.origin,
             senderName: msg.senderName,
           });

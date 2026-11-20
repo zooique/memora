@@ -486,14 +486,44 @@ describe('createImageCapture — 拖入', () => {
     });
     const over = eventWithData('dragover', 'dataTransfer', transfer);
     dom.dropZone.dispatchEvent(over);
-    // 收不收与亮不亮同源：非图片不给「+复制」承诺
-    expect(over.defaultPrevented).toBe(false);
+    // 收不收与亮不亮同源：非图片不给「+复制」高亮承诺；
+    // 但 dragover 仍要拦（不拦就收不到 drop，默认动作会把文件在编辑器打开——HOSTED-DROP-OPENS-FILE-1）
+    expect(over.defaultPrevented).toBe(true);
     expect(dom.dropZone.classList.contains('is-image-drag')).toBe(false);
     const drop = eventWithData('drop', 'dataTransfer', transfer);
     dom.dropZone.dispatchEvent(drop);
     expect(drop.defaultPrevented).toBe(true);
     expect(notices).toEqual(['Only local image files can be dropped here']);
     expect(chips().length).toBe(0);
+  });
+
+  it('资源管理器拖 .txt（只有 uri-list、drop 期读不到 URI）=> 拦默认动作 + 可见提示，绝不静默开文件', () => {
+    const notices: string[] = [];
+    const posted: unknown[] = [];
+    handle = createImageCapture({
+      doc: document,
+      ...dom,
+      readBytes: async () => new Uint8Array(),
+      sha256: async () => SHA,
+      notice: (t) => notices.push(t),
+      post: (m) => posted.push(m),
+    });
+    // 真机形态：items 只有字符串项、类型面带 uri-list，但 getData 在 drop 期返回空串
+    const transfer = {
+      items: [],
+      files: [],
+      types: ['text/uri-list'],
+      getData: () => '',
+      dropEffect: 'none',
+    } as unknown as DataTransfer;
+    const over = eventWithData('dragover', 'dataTransfer', transfer);
+    dom.dropZone.dispatchEvent(over);
+    expect(over.defaultPrevented).toBe(true);
+    const drop = eventWithData('drop', 'dataTransfer', transfer);
+    dom.dropZone.dispatchEvent(drop);
+    expect(drop.defaultPrevented).toBe(true);
+    expect(notices).toEqual(['Only local image files can be dropped here']);
+    expect(posted).toEqual([]);
   });
 
   it('dragover 只在带 Files / uri-list 时抢占（拖别的不许 preventDefault）', () => {

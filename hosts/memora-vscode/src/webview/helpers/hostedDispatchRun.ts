@@ -72,6 +72,13 @@ export interface HostedDispatchDeps {
     factory: (signal: AbortSignal) => AsyncGenerator<AgentChunk, void, unknown>,
     seed: FlowSeed,
   ) => void;
+  /**
+   * 派发方会话展示名解析（可选）：入参 = 调用方会话 id，返回 undefined = 该会话已删。
+   *
+   * 只服务气泡标签（「由哪个助手会话发送」）；名字真源仍是宿主 `sessionTitleIfPresent`
+   * 现查会话标题，本模块不缓存、不落盘。
+   */
+  resolveSessionName?: (sessionId: string) => string | undefined;
 }
 
 /**
@@ -237,13 +244,15 @@ export async function dispatchHostedInputWith(
           dispatchedBy: { from: callingSessionId, via: 'delegate' },
         }),
       {
-        // seed = 上屏与 live 投影用的裸输入：**没有**注入信封，与落盘原文同值
+        // seed = 上屏与 live 投影用的裸输入：**没有**注入信封，与落盘原文同值。
+        // name 取派发方会话展示名（受理时现查；已删 / 未注入 ⇒ 回落通用发送者名）——
+        // 它只是上屏素材，落盘名仍由内核按 opts.senderName 记，重放走 dispatchedByName。
         userMessage: {
           id: `live-hosted-${now}`,
           role: 'user',
           content: text,
           timestamp: now,
-          name: senderName,
+          name: deps.resolveSessionName?.(callingSessionId) ?? senderName,
         },
         origin: 'hosted',
       },

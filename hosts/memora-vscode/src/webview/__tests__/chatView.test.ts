@@ -66,6 +66,8 @@ function makeRound(over: {
   origin?: RoundView['origin'];
   /** 发送者名称（仅 hosted 有值；挂到 userMessage.name） */
   senderName?: string;
+  /** 派发方会话展示名（RoundView 派生字段；缺省 = 未派生 / 来源已删） */
+  dispatchedByName?: string;
   assistantLog?: { content: string; ts?: string }[];
   interactiveInputs?: {
     content: string;
@@ -96,6 +98,8 @@ function makeRound(over: {
       : { id: `${roundId}-placeholder-user`, role: 'user', content: '', timestamp: '' },
     // 来源标记：缺省不展开，保持旧数据形状（无 origin 键）
     ...(over.origin ? { origin: over.origin } : {}),
+    // 派发方展示名：缺省不展开（等价于来源会话已删，渲染回落 userMessage.name）
+    ...(over.dispatchedByName ? { dispatchedByName: over.dispatchedByName } : {}),
     ...(over.assistantLog
       ? {
           // 前序 assistant 段数组（UI 上与 final 区分，同 roundId 同容器）
@@ -830,6 +834,35 @@ describe('chatView clear_ok 消息区清理', () => {
     const wrappers = messages.querySelectorAll('.msg-wrapper');
     expect(wrappers[2]?.querySelector('.msg-origin-tag')).toBeNull();
     expect(wrappers[3]?.querySelector('.msg-origin-tag')).toBeNull();
+  });
+
+  it('派发气泡能看出是哪个助手会话派的：优先 dispatchedByName，来源已删回落消息名', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+
+    dispatchReplayMany([
+      // 主用例：来源会话仍在 ⇒ 显示其展示名（不是笼统的 Memora）
+      makeRound({
+        id: 'round-dispatched',
+        user: { content: '派给我的活', ts: '2026-11-17T09:00:00.000Z' },
+        origin: 'hosted',
+        senderName: 'Memora',
+        dispatchedByName: '统计目录文件数',
+        status: 'complete',
+      }),
+      // 降级：来源会话已删 ⇒ 派生名为空，回落消息名（不编造会话标题）
+      makeRound({
+        id: 'round-dispatched-deleted',
+        user: { content: '来源被删的活', ts: '2026-11-17T09:05:00.000Z' },
+        origin: 'hosted',
+        senderName: 'Memora',
+        status: 'complete',
+      }),
+    ]);
+
+    const tags = messages.querySelectorAll('.msg-origin-tag');
+    expect(tags[0]?.textContent).toBe('Sent by 统计目录文件数');
+    expect(tags[1]?.textContent).toBe('Sent by Memora');
   });
 
   it('历史重放同样渲染托管标签：origin + userMessage.name（重开窗口不消失）', () => {

@@ -2883,6 +2883,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         rememberCreator: (sessionId, creator) => this._hostedNotifier.remember(sessionId, creator),
         trackLease: (sessionId, lease) => this._dispatchLeases.set(sessionId, lease),
         startFlow: (sessionId, factory, seed) => void this.runFlow(factory, seed, sessionId),
+        // 派发方展示名：读会话存储现成的展示名（已含标题兜底）；已删会话返回 undefined
+        resolveSessionName: (id) => this.sessionStore.getSessionMeta(id)?.displayName,
       },
       callingSessionId,
       targetSessionId,

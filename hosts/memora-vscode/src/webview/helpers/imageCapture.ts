@@ -308,27 +308,45 @@ export function pickImageFiles(transfer: DataTransfer | null): File[] {
 }
 
 /**
- * `dragover` 期能否承诺「这里可以松手」——与 {@link pickImageFiles} **同一判据**
+ * 拖入裁决——`dragover` 高亮与 `drop` 接收**共用的唯一判据**（HOSTED-IMAGE-DROP-SILENT-1 /
+ * HOSTED-DROP-OPENS-FILE-1，2026-11-20 真机复现）
  *
- * 高亮 = 承诺；承诺的宽度必须等于接收的宽度（两套条件 = 界面撒谎）。
- * `dragover` 期拿不到文件字节，只能看 `items` 的 kind/type；平台不给 items 明细时
- * 退回类型面兜底（此时收不了也在 drop 处给可见提示，不静默）。
+ * 四档语义：
+ * - `images`：有文件明细且过「可能是图片」粗筛 → 高亮 + 当场校验收 chip；
+ * - `file-uris`：只拿到 uri-list（VS Code 资源管理器拖入）→ 高亮 + 报宿主摄取
+ *   （webview 读不到工作区字节，成败由宿主回执建 chip 或可见拒收）；
+ * - `unsupported`：有文件明细、但没有一个可能是图片（.txt / .pdf …）→ **不高亮**，
+ *   松手给可见提示（界面不承诺放进来 = 承诺宽度与接收宽度同源）；
+ * - `none`：与文件无关的拖拽 → 不拦、不提示。
+ *
+ * 为什么不再用「types 含 Files 就高亮」兜底：那正是真机复现的宽度错配——高亮亮着、
+ * 松手不收、默认动作还把文件在编辑器里打开。`items` 明细缺失时只能看类型面，
+ * 此时 `Files` 归 `unsupported`：宁可不高亮（松手仍有提示），也不许再空承诺。
  */
-function dragMayCarryImage(transfer: DataTransfer | null): boolean {
-  if (!transfer) return false;
+export type DropIntent = 'images' | 'file-uris' | 'unsupported' | 'none';
+
+/**
+ * 判读这次拖拽属于哪一档（纯函数，`dragover` 与 `drop` 两端同源）
+ *
+ * @param transfer 拖拽数据（`null` ⇒ `none`，调用方不拦事件）
+ */
+export function decideDropIntent(transfer: DataTransfer | null): DropIntent {
+  if (!transfer) return 'none';
+  if (pickImageFiles(transfer).length > 0) return 'images';
   const types = Array.from(transfer.types);
   const items = transfer.items;
   if (items && items.length > 0) {
+    // 有文件明细但都不是候选：声明 MIME 已是否定证据，明确不吃
     for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item?.kind === 'file' && isImageCandidateMime(item.type)) return true;
+      if (items[i]?.kind === 'file') return 'unsupported';
     }
-    // 资源管理器拖入：只有 uri-list（webview 读不到工作区字节，交宿主摄取）
-    return types.includes('text/uri-list');
+    // 没有文件明细、却带 uri-list：资源管理器拖入（URI 要到 drop 期才读得到）
+    return types.includes('text/uri-list') ? 'file-uris' : 'none';
   }
-  // items 明细缺失：`Files` 下面可能是图也可能不是——无法在 dragover 期分辨，
-  // 按「可能」承诺；drop 侧对非图文件给可见提示，避免第二次静默。
-  return types.includes('Files') || types.includes('text/uri-list');
+  // items 明细缺失：只能看类型面。uri-list 是资源管理器通道；Files 无法分辨真伪
+  if (types.includes('text/uri-list')) return 'file-uris';
+  if (types.includes('Files')) return 'unsupported';
+  return 'none';
 }
 
 /**
@@ -852,10 +870,14 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
   }
 
   function onDragOver(e: DragEvent): void {
-    // 高亮（承诺能放）= 接收判据，同一函数裁决（HOSTED-IMAGE-DROP-SILENT-1）：
-    // 旧实现按 `types 含 Files / uri-list` 高亮，比接收条件宽 ⇒ 界面承诺了放不进来的拖拽
-    if (!dragMayCarryImage(e.dataTransfer)) return;
+    // 高亮 = 承诺；承诺宽度必须等于接收宽度（两套条件 = 界面撒谎）。判据单点 = decideDropIntent
+    const intent = decideDropIntent(e.dataTransfer);
+    if (intent === 'none') return;
+    // 即使不吃（unsupported）也要拦：不 preventDefault 就收不到 drop，默认动作会把文件
+    // 当链接在编辑器打开（HOSTED-DROP-OPENS-FILE-1 的直接成因），也就没机会给提示。
     e.preventDefault();
+    // 明确不吃：只拦事件，不给高亮 / copy 光标——界面不承诺放进来
+    if (intent === 'unsupported') return;
     e.dataTransfer!.dropEffect = 'copy';
     dropZone?.classList.add('is-image-drag');
   }
@@ -868,26 +890,23 @@ export function createImageCapture(deps: ImageCaptureDeps): ImageCaptureHandle {
     dropZone?.classList.remove('is-image-drag');
     const transfer = e.dataTransfer;
     if (!transfer) return;
-    const files = pickImageFiles(transfer);
-    if (files.length > 0) {
-      e.preventDefault();
-      for (const file of files) void ingestFile(file, 'drop-file');
-      return;
-    }
-    // 资源管理器拖入：`files` 为空，URI 在 uri-list（边界文档 B3）。IMG-13：不建 chip，
-    // 把 `file:` URI 报宿主摄取（webview 读不到工作区文件字节）；非 `file:` 方案（浏览器拖图等）
-    // 本端就拒——拦下事件是防 webview 被拖拽导航，提示是不静默丢用户动作
-    const uris = parseUriList(transfer.getData('text/uri-list'));
-    if (uris.length === 0) {
-      // 有文件进来、却没有一张过了粗筛（如 .txt / .pdf）：不能沿用旧实现的静默 return——
-      // 用户已松手，必须知道「为什么什么都没发生」（与下方非本地 URI 同一提示，键面单一）
-      if (Array.from(transfer.types).includes('Files')) {
-        e.preventDefault();
-        notice(l10n.t('Only local image files can be dropped here'));
-      }
-      return;
-    }
+    // 先无条件拦默认动作（HOSTED-DROP-OPENS-FILE-1）：任一分支漏拦，宿主都会把拖入文件
+    // 当链接在编辑器打开——真机四次复现的「松手反而开了标签页」就是从这里漏出去的。
     e.preventDefault();
+    const intent = decideDropIntent(transfer);
+    if (intent === 'images') {
+      for (const file of pickImageFiles(transfer)) void ingestFile(file, 'drop-file');
+      return;
+    }
+    if (intent === 'unsupported') {
+      // 明确的非候选文件（.txt / .pdf…）：松手必须有可见反馈，静默返回就是旧病
+      notice(l10n.t('Only local image files can be dropped here'));
+      return;
+    }
+    if (intent === 'none') return;
+    // `file-uris`：资源管理器只给 uri-list（webview 读不到工作区字节，交宿主摄取，IMG-13）。
+    // drop 期读不到 URI（平台屏蔽 getData）或全是非本地方案 ⇒ 同一条可见提示，不许静默。
+    const uris = parseUriList(transfer.getData('text/uri-list'));
     const fileUris = uris.filter((u) => u.startsWith('file:'));
     if (fileUris.length === 0) {
       notice(l10n.t('Only local image files can be dropped here'));
