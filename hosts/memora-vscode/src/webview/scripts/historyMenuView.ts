@@ -279,31 +279,24 @@ export function createHistoryMenuView(deps: HistoryMenuViewDeps): HistoryMenuVie
     item.className = 'treedd__item';
     item.dataset.treeddId = s.sessionId; // treedd 选择委托据此回调 __historyOnSelect
     item.setAttribute('role', 'menuitem');
-    // 悬停摘要（原生 title，与 keepBtn 同款惯例）：summary/keyTopics 已随列表下发
-    // （FD-3-A 搜索域复用，零新协议），浏览态也可感知；截断防长摘要炸 tooltip
+    // 悬停摘要（原生 title）：名称之外的信息移到 tooltip —— 2026-11-20 用户真机反馈
+    // 「弹窗内容太多、名称显示很少」。行内只留名称 + 必要状态 + 相对时间；
+    // 主题 / 摘要 / 角色包名仍在 hover 可见（数据未丢，只是不再抢名称的宽度）。
+    // 截断防长摘要炸 tooltip；topics/summary 同时是 FD-3-A 搜索域，零新协议。
     const topics = (s.keyTopics ?? []).slice(0, 5).join(' · ');
     const brief = (s.summary ?? '').slice(0, 100) + ((s.summary ?? '').length > 100 ? '…' : '');
-    const tip = [topics, brief].filter(Boolean).join('\n');
+    const role = s.activeRolePackName ? l10n.t('Role pack: {0}', s.activeRolePackName) : '';
+    const tip = [topics, brief, role].filter(Boolean).join('\n');
     if (tip) item.title = tip;
     const titleEl = document.createElement('span');
     titleEl.className = 'session-history__item-title';
     titleEl.textContent = s.title; // textContent 防注入
     const timeEl = document.createElement('span');
     timeEl.className = 'session-history__item-time';
-    // 计数并槽（messageCount 缺省 = 旧会话未生成，只显示时间不显示 0）
-    const timeText =
-      typeof s.messageCount === 'number' && s.messageCount > 0
-        ? l10n.t('{0} · {1} messages', fmtRelativeTime(s.updatedAt), s.messageCount)
-        : fmtRelativeTime(s.updatedAt);
-    // 角色包名并槽（缺省 = 从未选过角色，旧会话副标题一字不变）；
-    // 只展示名字快照，不判断包是否仍可用——可用性判断会造第二份状态源，卸载场景由打开会话时的既有回落 notice 告知
-    timeEl.textContent = [
-      timeText,
-      s.activeRolePackName ? l10n.t('Role: {0}', s.activeRolePackName) : '',
-    ]
-      .filter(Boolean)
-      .join(' · ');
-    if (s.activeRolePackName) timeEl.title = l10n.t('Role pack: {0}', s.activeRolePackName);
+    // 行内副标题只留相对时间（2026-11-20 减法拍板）：消息数与角色包名不再并列抢宽，
+    // 前者是纯计数（用户明确判为多余信息），后者已移入上方 tooltip。
+    // messageCount / activeRolePackName 两个 DTO 字段与宿主下发判据零改动——只减展示。
+    timeEl.textContent = fmtRelativeTime(s.updatedAt);
     /**
      * 活跃度标识（E4 批 4）：待处理优先于运行中——既在跑又在等你答，先说的是「等你答」；
      * 同一条目只挂一个标签（两个都挂会让用户以为要处理两件事）。

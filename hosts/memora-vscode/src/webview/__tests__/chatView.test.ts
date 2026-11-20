@@ -4538,7 +4538,7 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     });
   });
 
-  it('历史条目渲染 messageCount 并槽「N 条」；缺省时只显示时间不显示 0', () => {
+  it('历史条目行内不显示消息数（2026-11-20 减法）；宿主下发 messageCount 字段不变', () => {
     const { postMessage } = mountChatView();
     dispatch({
       type: 'session_list_data',
@@ -4554,18 +4554,18 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
       archivedIds: [],
     });
     const items = document.querySelectorAll('#historyMenu .treedd__item');
-    // 带计数：时间并槽追加「 · 12 messages」
-    expect(items[0]?.querySelector('.session-history__item-time')?.textContent).toContain(
-      '12 messages',
+    // 旧判据「带计数并在时间后追加 12 messages」按用户 2026-11-20 减法拍板作废：
+    // 行内只留相对时间，消息数从展示面退出；数据面由 chatPanelHistory 的下发测试保住。
+    expect(items[0]?.querySelector('.session-history__item-time')?.textContent).not.toContain(
+      'messages',
     );
-    // 缺省（旧会话未生成）：只显示时间，不出现「0 messages」
     expect(items[1]?.querySelector('.session-history__item-time')?.textContent).not.toContain(
       'messages',
     );
     void postMessage;
   });
 
-  it('历史条目渲染会话角色包名（副标题并槽）；缺省时旧会话不出现「角色：」', () => {
+  it('角色包名移入 tooltip，行内不再并列（2026-11-20 减法）；未选角色仍无角色段', () => {
     mountChatView();
     dispatch({
       type: 'session_list_data',
@@ -4581,14 +4581,17 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
       archivedIds: [],
     });
     const items = document.querySelectorAll('#historyMenu .treedd__item');
-    const withRole = items[0]?.querySelector('.session-history__item-time') as HTMLElement | null;
-    const withoutRole = items[1]?.querySelector(
-      '.session-history__item-time',
-    ) as HTMLElement | null;
-    expect(withRole?.textContent).toContain('Role: 只读项目顾问');
-    expect(withRole?.title).toBe('Role pack: 只读项目顾问');
-    // 未选过角色的旧会话：副标题不出现角色段（与改动前零差异）
-    expect(withoutRole?.textContent).not.toContain('Role:');
+    const withRole = items[0] as HTMLElement | null;
+    const withoutRole = items[1] as HTMLElement | null;
+    // 旧判据「副标题并槽 Role: X」按减法拍板作废：名字快照不丢，只是移到 hover。
+    expect(withRole?.querySelector('.session-history__item-time')?.textContent).not.toContain(
+      'Role:',
+    );
+    expect(withRole?.title).toContain('Role pack: 只读项目顾问');
+    // 未选过角色的旧会话：行内与 tooltip 都不出现角色段
+    expect(withoutRole?.querySelector('.session-history__item-time')?.textContent).not.toContain(
+      'Role:',
+    );
     expect(withoutRole?.title).toBe('');
   });
 

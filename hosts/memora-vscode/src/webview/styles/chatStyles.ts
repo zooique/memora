@@ -332,11 +332,14 @@ export const chatStyles = `
     padding: var(--sp-2, 6px) var(--sp-3, 8px);
   }
   .session-history__item-title {
-    flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    /* 名称优先（2026-11-20 用户真机反馈）：浮层放大后行内并列过多，名称被挤到很窄。
+     * 副标题已减到只剩相对时间，这里再显式 min-width:0 保住收缩后的省略号能力。 */
+    flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  /* 副标题（时间 · 消息数 · 角色包名）：可收缩 + 省略号，防止长角色包名挤掉标题 */
+  /* 副标题只剩相对时间：上限由 58% 收到 24%，名称拿回大部分行宽。
+   * 状态标签 / 来源图标 / hover 按钮仍按原语义渲染，只让次要文本先让位。 */
   .session-history__item-time {
-    flex: 0 1 auto; min-width: 0; max-width: 58%;
+    flex: 0 1 auto; min-width: 0; max-width: 24%;
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }

@@ -328,4 +328,26 @@ describe('历史会话浮层显示形态源码守卫（HIST-TAB-ORDER-1）', () 
     expect(en['Sessions']).toBe('');
     expect(en['Retained']).toBe('');
   });
+
+  /** 2026-11-20 真机反馈「放大后内容太多、名称显示很少」：减法落在展示层，
+   *  行内只留名称 + 状态 + 相对时间；消息数 / 角色名退出行内（角色名移到 tooltip）。
+   *  守卫只锁宽度分配，不碰活跃度语义与 400×480 尺寸令牌（上一拍板仍生效）。 */
+  it('条目以名称为主：副标题上限 24%，名称 flex 主位且可收缩省略', () => {
+    const styles = readFileSync(resolve(HOST_ROOT, 'src/webview/styles/chatStyles.ts'), 'utf8');
+    const blockFor = (selector: string): string => {
+      const lines = styles.split('\n');
+      const i = lines.findIndex((line) => line.includes(`${selector} {`));
+      expect(i).toBeGreaterThanOrEqual(0);
+      return lines.slice(i, i + 6).join('\n');
+    };
+    const titleBlock = blockFor('.session-history__item-title');
+    const timeBlock = blockFor('.session-history__item-time');
+    // 名称：flex 主位 + min-width:0 保住省略号能力
+    expect(titleBlock).toContain('flex: 1 1 auto');
+    expect(titleBlock).toContain('min-width: 0');
+    expect(titleBlock).toContain('text-overflow: ellipsis');
+    // 副标题：上限由 58% 收至 24%，长文本不能再把名称挤成窄条
+    expect(timeBlock).toContain('max-width: 24%');
+    expect(styles).not.toContain('max-width: 58%');
+  });
 });
