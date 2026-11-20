@@ -1784,29 +1784,31 @@ export const chatStyles = `
     flex-direction: column;
     gap: var(--sp-2, 6px);
   }
-  /* 一行一卡片（AWB-JOB-CARD-1）：原先是无边框的 flex 裸行，多条连排糊成一片。
-   * 纵向排列 + 描边/内距/面色三件套与独立面板 .wb-job 同族；令牌全复用既有，
+  /* 一行一卡片（AWB-JOB-CARD-1）+ 横排紧凑（2026-11-20 用户真机拍板）：
+   * 描边/内距/面色三件套保留 —— 用卡片包着才能轻松查看；
+   * 主轴由 column 改 row + wrap：标题/徽记/明细/按钮同一行起排，空间不足才换行；
+   * 按钮 margin-left:auto 靠右，多行卡片不因按钮独占一行而增高。
    * 作用域锁在助手形态，self 形态与独立面板逐字不变。 */
   body[data-form='assistant'] .awb-job {
     display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--sp-1, 4px);
-    padding: var(--sp-3, 8px) var(--sp-4, 10px);
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-1, 4px) var(--sp-2, 6px);
+    padding: var(--sp-2, 6px) var(--sp-3, 8px);
     border: var(--line-solid);
     border-radius: var(--radius-sm, 2px);
     background: var(--surface-card);
   }
   body[data-form='assistant'] .awb-job__title {
-    flex: 0 0 auto;
+    flex: 1 1 auto;
     min-width: 0;
     word-break: break-word;
   }
-  /* 副行明细：与独立面板 wb-job__detail 同口径（字号/弱化色/长词折行）。
-   * 卡片改纵向后不再需要 order + flex-basis:100% 抢行，DOM 顺序天然是明细独立一行；
-   * 徽记颜色只表语义，明细文字恒在（色觉无障碍）。 */
+  /* 明细与主行同排（与独立面板 wb-job__detail 同字号/弱化色/长词折行）；
+   * wrap 后自然换行，不再强制 flex-basis:100% 抢行。徽记只表语义，文字恒在。 */
   body[data-form='assistant'] .awb-job__detail {
-    flex: 0 0 auto;
+    flex: 0 1 auto;
     font-size: 0.9em;
     color: var(--text-secondary);
     word-break: break-word;
@@ -1826,7 +1828,8 @@ export const chatStyles = `
    * 形态与身份条「工作台」入口同族。文案 / aria-label / openSession 回调逐字不动。 */
   body[data-form='assistant'] .awb-job__open {
     flex: 0 0 auto;
-    align-self: flex-start;
+    align-self: center;
+    margin-left: auto;
     min-height: var(--sp-8, 24px);
     padding: var(--sp-0, 2px) var(--sp-3, 8px);
     border: var(--line-solid);
@@ -1845,26 +1848,9 @@ export const chatStyles = `
     outline-offset: var(--sp-hair, 1px);
   }
   body[data-form='assistant'] .awb-empty { color: var(--text-secondary); }
-  /* 已收场折叠区（AWB-JOB-TIER-1）：原生 details，默认收起；只调展示层级，不动数据/判据。
-     令牌复用既有 surface / spacing / secondary，零新增色源，不碰 line- 族计数。 */
-  body[data-form='assistant'] .awb-settled {
-    margin-top: var(--sp-2, 6px);
-    background: var(--surface-card);
-    border-radius: var(--radius-sm, 2px);
-  }
-  body[data-form='assistant'] .awb-settled__summary {
-    padding: var(--sp-2, 6px) var(--sp-3, 8px);
-    color: var(--text-secondary);
-    cursor: pointer;
-    font-size: 0.9em;
-  }
-  body[data-form='assistant'] .awb-jobs--settled {
-    padding: 0 var(--sp-3, 8px) var(--sp-2, 6px);
-  }
-  body[data-form='assistant'] .awb-settled__summary:focus-visible {
-    outline: var(--sp-hair, 1px) solid var(--border-focus);
-    outline-offset: var(--sp-hair, 1px);
-  }
+  /* 已收场卡片直接显示（2026-11-20 用户真机拍板覆盖折叠形态）：按 AWB-JOB-TIER-1
+   * 排序仍在末位，但不再进 details —— 折叠层被判为过度设计，卡片本身就是足够的分组。
+   * 旧 .awb-settled / .awb-settled__summary / .awb-jobs--settled 规则随之删除，不留死样式。 */
   /* 卡片本体：形态差异由**左缘强调条**承担，整圈描边保留给聚焦态
    * 底色改回卡片自己的主题面（--surface-card = editorWidget-background，与消息面同族），
    * 不再用 accent 淡底——那会落到 editor-inactiveSelectionBackground，与用户消息气泡同色，
@@ -1876,6 +1862,11 @@ export const chatStyles = `
     background: var(--surface-card);
     border: var(--line-solid);
     border-left: var(--sp-0, 2px) solid var(--accent);
+    /* 助手输入区紧凑（2026-11-20 用户真机反馈）：自助下限 128px（textarea 72 + footer 56）
+     * 在助手形态变成 placeholder 贴顶、工具条贴底、中间一大片无内容空白。
+     * 下限归零后由「textarea 一行 + 工具条」自然撑开，附件行 / 长文本仍继续增高。
+     * 不改全局令牌、不改 autoResize（高度唯一控制权）、不改 self 形态。 */
+    min-height: 0;
   }
   /* 聚焦态：三边换焦点色，左缘 accent 强调条保持不动。
    * 逐条写 border-*-color 而不是 border-color 简写：后者会把左缘条一起染成焦点蓝，
@@ -1899,15 +1890,23 @@ export const chatStyles = `
     flex: 1 1 auto;
     min-width: 0;
     padding-left: 0;
+    /* 空态从「双行舒适 72px」收为一行：上下内距 8/6 + 一行行高 ≈ 32px；
+     * min-height 归零后高度仍由 autoResize 写 style.height，不新增第二控制权。 */
+    min-height: 0;
+    padding-top: var(--sp-3, 8px);
+    padding-bottom: var(--sp-2, 6px);
   }
   body[data-form='assistant'] .assistant-mode-icon {
     display: flex;
     flex: 0 0 auto;
-    padding-top: var(--sp-6, 16px);
+    /* 与 textarea 顶距同刻度下移到 sp-3（原 sp-6 配 72px 双行）；附件行在场时
+     * 下方 :has 规则仍收到 sp-2，两种形态都不与文字错行。 */
+    padding-top: var(--sp-3, 8px);
     /* 图标与「工作台」链接同一档前景色（--accent 是按钮底色，做图标/文字对比度不足） */
     color: var(--text-link);
   }
-  /* 附件行在场时 textarea 顶距收到 sp-2（见上方 :has 规则）⇒ 图标同刻度跟随，避免错行 */
+  /* 附件行在场时 textarea 顶距收到 sp-2（见上方 :has 规则）⇒ 图标同刻度跟随，避免错行。
+   * 紧凑化后空态 textarea 顶距 sp-3、附件态 sp-2，图标两态严格同刻度。 */
   body[data-form='assistant'] #inputWrap:has(.skill-chip-row:not([hidden])) .assistant-mode-icon {
     padding-top: var(--sp-2, 6px);
   }

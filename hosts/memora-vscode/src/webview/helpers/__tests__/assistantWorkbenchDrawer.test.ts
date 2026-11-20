@@ -83,10 +83,13 @@ describe('INLINE-WORKBENCH-1 · 助手页内嵌工作台抽屉', () => {
     const badges = [...document.querySelectorAll('.awb-job')].map(
       (li) => li.querySelector('.awb-badge')?.textContent ?? null,
     );
-    // AWB-JOB-TIER-1：stopped 已收场移进折叠区，常驻列表只剩 queued/unreadable，
+    // 2026-11-20 去折叠：stopped 排末位仍直接显示，三张卡片同在常驻 ul；
     // 措辞与独立工作台同源的判据不变（Stopped 出徽记、queued/unreadable 不出）。
     expect(badges).toEqual([null, null, 'Stopped']);
-    expect(document.querySelector('details.awb-settled .awb-badge')?.textContent).toBe('Stopped');
+    expect(
+      document.querySelectorAll('li.awb-job')[2]?.querySelector('.awb-badge')?.textContent,
+    ).toBe('Stopped');
+    expect(document.querySelector('details')).toBeNull();
   });
 
   it('副行明细复刻 describeStatus.detail：无徽记的 queued/unreadable 仍出状态语义', () => {
@@ -184,16 +187,19 @@ describe('AWB-JOB-CARD-1 · 一行一卡片与实体按钮（源码级机检）'
     }
   });
 
-  it('CSS：卡片纵向排列 + 描边/内距/面色，且行间距可辨、形态前缀不漏', () => {
+  it('CSS：卡片横排 + wrap + 描边/内距/面色，且行间距可辨、形态前缀不漏', () => {
     const block = blockOf("body[data-form='assistant'] .awb-job");
-    expect(block).toMatch(/flex-direction:\s*column/);
+    // 2026-11-20 用户拍板：按钮与标题同行，空间不足才换行，卡片本身仍保留
+    expect(block).toMatch(/flex-direction:\s*row/);
+    expect(block).toMatch(/flex-wrap:\s*wrap/);
+    expect(block).toMatch(/align-items:\s*center/);
     expect(block).toContain('border: var(--line-solid)');
     expect(block).toMatch(/border-radius:\s*var\(--radius/);
-    expect(block).toMatch(/padding:\s*var\(--sp-3/);
+    expect(block).toMatch(/padding:\s*var\(--sp-2/);
     expect(block).toContain('background: var(--surface-card)');
-    // 反向：退回旧的裸行（居中 + wrap）会让卡片边界再次糊掉
-    expect(block).not.toMatch(/align-items:\s*center/);
-    expect(block).not.toMatch(/flex-wrap:\s*wrap/);
+    // 反向：退回纵向独占一行的旧卡片，多行又变高
+    expect(block).not.toMatch(/flex-direction:\s*column/);
+    expect(block).not.toMatch(/align-items:\s*stretch/);
     // 卡片间距取 sp-2（大于卡内 sp-1），逐卡可辨
     expect(blockOf("body[data-form='assistant'] .awb-jobs")).toContain('gap: var(--sp-2, 6px)');
     // 反向：无前缀的同名卡片规则会泄漏到 self 形态
@@ -208,6 +214,9 @@ describe('AWB-JOB-CARD-1 · 一行一卡片与实体按钮（源码级机检）'
     expect(block).toContain('border: var(--line-solid)');
     expect(block).toMatch(/border-radius:\s*var\(--radius-pill/);
     expect(block).toContain('background: var(--surface-card)');
+    // 横排靠右：按钮不独占一行，与标题/徽记同行或换行到行尾
+    expect(block).toContain('margin-left: auto');
+    expect(block).toMatch(/align-self:\s*center/);
     // 反向：这三条正是「看起来像一行字」的旧形态
     expect(block).not.toMatch(/text-decoration:\s*underline/);
     expect(block).not.toMatch(/border:\s*none/);
@@ -227,7 +236,7 @@ describe('AWB-JOB-TIER-1 · 三档分层与已收场折叠（上位原则：自�
     expect(assistantJobTier({ kind: 'stopped', stop: { kind: 'user' } })).toBe('settled');
   });
 
-  it('DOM 顺序：attention 在最前、active 居中，已收场移进折叠区不再平铺', () => {
+  it('DOM 顺序：attention 最前、active 居中、已收场直接显示在末位（2026-11-20 去折叠）', () => {
     const { drawer } = mount();
     drawer.render(
       snapshot({
@@ -241,21 +250,23 @@ describe('AWB-JOB-TIER-1 · 三档分层与已收场折叠（上位原则：自�
       }),
     );
     const host = document.getElementById('assistantWorkbenchDrawer') as HTMLElement;
-    // 常驻列表只剩 attention + active，顺序按分档重排（等待在前）
-    const live = [...host.querySelectorAll('ul.awb-jobs:not(.awb-jobs--settled) > li.awb-job')].map(
+    const titles = [...host.querySelectorAll('ul.awb-jobs > li.awb-job')].map(
       (li) => li.querySelector('.awb-job__title')?.textContent,
     );
-    expect(live).toEqual(['标题-s-waiting', '标题-s-running', '标题-s-queued']);
-    // 已收场进 details，不在常驻列表
-    const settledBox = host.querySelector('details.awb-settled');
-    expect(settledBox).not.toBeNull();
-    const settledTitles = [
-      ...settledBox!.querySelectorAll('ul.awb-jobs--settled > li.awb-job'),
-    ].map((li) => li.querySelector('.awb-job__title')?.textContent);
-    expect(settledTitles).toEqual(['标题-s-completed', '标题-s-stopped']);
+    expect(titles).toEqual([
+      '标题-s-waiting',
+      '标题-s-running',
+      '标题-s-queued',
+      '标题-s-completed',
+      '标题-s-stopped',
+    ]);
+    // 折叠层判为过度设计：不得再出现 details / summary，且只有一个 ul
+    expect(host.querySelector('details')).toBeNull();
+    expect(host.querySelector('summary')).toBeNull();
+    expect(host.querySelectorAll('ul.awb-jobs')).toHaveLength(1);
   });
 
-  it('折叠区是原生 details + summary 计数，默认收起、零 JS 状态', () => {
+  it('已收场卡片直接显示：无 details、无计数文案，卡片本身即分组', () => {
     const { drawer } = mount();
     drawer.render(
       snapshot({
@@ -265,18 +276,13 @@ describe('AWB-JOB-TIER-1 · 三档分层与已收场折叠（上位原则：自�
         ],
       }),
     );
-    const box = document.querySelector('details.awb-settled') as HTMLDetailsElement;
-    expect(box.tagName).toBe('DETAILS');
-    expect(box.hasAttribute('open')).toBe(false); // 默认收起
-    const summary = box.querySelector('summary.awb-settled__summary');
-    expect(summary?.textContent).toBe('Finished (2)'); // 默认语言填 {0}，数字来自活计数
-    expect(box.querySelectorAll('li.awb-job')).toHaveLength(2);
-  });
-
-  it('没有已收场活时不建折叠区（不残留空 details）', () => {
-    const { drawer } = mount();
-    drawer.render(snapshot({ jobs: [job('r', { kind: 'running' })] }));
+    const cards = [...document.querySelectorAll('li.awb-job')];
+    expect(cards.map((li) => li.querySelector('.awb-job__title')?.textContent)).toEqual([
+      '标题-a',
+      '标题-b',
+    ]);
     expect(document.querySelector('details.awb-settled')).toBeNull();
+    expect(document.body.textContent).not.toContain('Finished (');
   });
 
   it('只读边界：抽屉源码只引用 describeStatus/seatStateText，不 import 判据投影与写入口', () => {
@@ -291,15 +297,12 @@ describe('AWB-JOB-TIER-1 · 三档分层与已收场折叠（上位原则：自�
     expect(src).not.toMatch(/status\s*[:=]\s*\{/);
   });
 
-  it('CSS：折叠区规则全带形态前缀，不得泄漏到 self 形态', () => {
+  it('CSS：折叠区规则已删除，无 awb-settled 死样式残留', () => {
     const style = readFileSync(
       join(__dirname, '..', '..', 'styles', 'chatStyles.ts'),
       'utf8',
     ).replace(/\/\*[\s\S]*?\*\//g, '');
-    const stray = [...style.matchAll(/([^\n{}]*\.(?:awb-settled|awb-jobs--settled)[^\n{}]*)\s*\{/g)]
-      .map((m) => m[1] as string)
-      .filter((sel) => !sel.includes("body[data-form='assistant']"));
-    expect(stray).toEqual([]);
-    expect(style).toContain("body[data-form='assistant'] .awb-settled__summary:focus-visible");
+    expect(style).not.toMatch(/\.awb-settled/);
+    expect(style).not.toMatch(/\.awb-jobs--settled/);
   });
 });
