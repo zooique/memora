@@ -128,7 +128,7 @@ describe('dispatchHostedInputWith · 用户接管态派活门禁', () => {
   it('目标用户接管中 ⇒ E_DENIED，不上屏、不起流、不拿锁、不登记驱动', async () => {
     const acquired: string[] = [];
     const marked: string[] = [];
-    const { deps, starts } = makeDeps({
+    const { deps, starts, notes } = makeDeps({
       isTargetTakenOver: (sid) => sid === 'target-session',
       acquireLock: async (sid) => {
         acquired.push(sid);
@@ -149,6 +149,26 @@ describe('dispatchHostedInputWith · 用户接管态派活门禁', () => {
     expect(starts).toHaveLength(0);
     expect(acquired).toHaveLength(0);
     expect(marked).toHaveLength(0);
+    // E_DENIED 收尾（与 E_BUSY/E_LOCKED/E_UNREADABLE 同口径）：先派给谁、再为什么没派成。
+    // 漏掉这句 = 助手窗留下「派给《X》」却无下文的假交代（审查真伤）。
+    expect(notes[0]).toContain('派给《目标会话》');
+    expect(notes[1]).toContain('没派出去：');
+  });
+
+  it('调用方非托管 ⇒ E_DENIED 也补失败收尾（不留半句假交代）', async () => {
+    const { deps, starts, notes } = makeDeps({ isManaged: () => false });
+
+    const result = await dispatchHostedInputWith(deps, {
+      callingSessionId: 'self-session',
+      targetSessionId: 'target-session',
+      text: '任务',
+      senderName: HOSTED_SENDER_NAME,
+      targetTitle: '目标会话',
+    });
+
+    expect(result).toMatchObject({ ok: false, code: 'E_DENIED' });
+    expect(starts).toHaveLength(0);
+    expect(notes[1]).toContain('没派出去：');
   });
 
   it('目标非接管（自建会话 / 已收场）⇒ 正常受理，门禁不误伤设计内派发', async () => {

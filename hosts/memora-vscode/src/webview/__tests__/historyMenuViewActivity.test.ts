@@ -280,12 +280,12 @@ describe('生产模板第三组 tab 源码守卫（HOSTED-LIST-GROUP-1）', () =
 });
 
 /**
- * 三组 tab 的显示形态守卫（HIST-TAB-ORDER-1 / HIST-MENU-SIZE-1 · 2026-11-20 用户拍板）：
+ * 三组 tab 的显示形态守卫（HIST-TAB-ORDER-1 · 2026-11-20 用户拍板）：
  * 显示顺序 = 助手(hosted) → 我的(recent) → 留存(archived)，默认选中仍为 recent（居中）。
  * 归属判据 groupOfSession 的 hosted > archived > recent 是**显示无关的定案**，不在本守卫范围。
  * 源码级读生产而非只锁夹具（夹具漂移不让守卫失效，规则 3）。
  */
-describe('历史会话浮层显示形态源码守卫（HIST-TAB-ORDER-1 / HIST-MENU-SIZE-1）', () => {
+describe('历史会话浮层显示形态源码守卫（HIST-TAB-ORDER-1）', () => {
   it('生产模板 tab DOM 顺序 = 助手 → 我的 → 留存，默认 is-active 仍在 recent', () => {
     const src = readFileSync(resolve(HOST_ROOT, 'src/webview/panels/chatPanelHtml.ts'), 'utf8');
     const order = ['historyTabHosted', 'historyTabRecent', 'historyTabArchived'].map((id) =>

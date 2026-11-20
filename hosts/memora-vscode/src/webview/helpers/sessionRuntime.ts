@@ -176,7 +176,8 @@ export class BackgroundFlowGate {
  *
  * 为什么上屏必须发生在这里：回声若在轮建立前推，就没有 roundId 归属——webview 的 ready 重放
  * （`resetChatView` + `buildLiveTurn` 以 roundId 为界）带不上它，会被整屏清掉且流尾不补偿，
- * 表现为「目标会话在跑、侧栏始终没有 Sent by Memora 气泡」（真机 80ms 窗口）。
+ * 表现为「目标会话在跑、侧栏始终没有托管发送者身份的用户气泡」（真机 80ms 窗口，
+ * 身份名统一取 `HOSTED_SENDER_NAME`，不在注释里写死展示文案）。
  * 本函数把 `seedUserMessage` 与 `roundId` 绑在同一时刻产出，之后的重放从 seed / 落盘轮天然带出，
  * 不需要投递缓冲、不需要第二次推送。
  *

@@ -95,7 +95,8 @@ export interface HostedDispatchDeps {
  * @param callingSessionId 调用方会话（非托管 = `E_DENIED`）
  * @param targetSessionId 目标会话（必须是已知会话，存在性由工具层先判）
  * @param text 派发原文（不注入任何信封）
- * @param senderName 发送者名（落盘消息名 + `dispatchedBy.from` 的对侧展示）
+ * @param senderName 发送者名（落 `RoundMessage.name` 的展示名，取 `HOSTED_SENDER_NAME`；
+ *                    `Round.dispatchedBy` 是纯数据、不参与任何上屏文案）
  * @returns 受理 / 拒收回执（拒收必带可操作下一步）
  */
 export async function dispatchHostedInputWith(
@@ -147,11 +148,13 @@ export async function dispatchHostedInputWith(
   // ① 调用方身份
   if (!deps.isManaged(callingSessionId)) {
     logger.warn({ from: callingSessionId, code: 'E_DENIED' }, '派发被拒：调用方非托管');
-    return {
+    const denied: HostedDispatchResult = {
       ok: false,
       code: 'E_DENIED',
       message: l10n.t('Memora: only managed sessions can call send_to_session.'),
     };
+    noteFail(denied.message);
+    return denied;
   }
   // ①.5 目标接管门禁（DISPATCH-TAKEOVER-GUARD-1）：用户正在这条会话里亲手发轮且未收场（含
   //     软暂停 / ask 等待——两态 streaming=false，E_BUSY 挡不住），代理不许往里插输入。
@@ -161,13 +164,15 @@ export async function dispatchHostedInputWith(
       { from: callingSessionId, to: targetSessionId, code: 'E_DENIED' },
       '派发被拒：目标会话用户接管中',
     );
-    return {
+    const denied: HostedDispatchResult = {
       ok: false,
       code: 'E_DENIED',
       message: l10n.t(
         'Memora: the target session is being handled by you right now; the input was not sent. Finish or stop your turn first.',
       ),
     };
+    noteFail(denied.message);
+    return denied;
   }
   // 前置判忙的同一份信封（两处判据必须同文案，抽一份防漂移）
   const busy: HostedDispatchResult = {

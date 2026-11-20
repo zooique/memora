@@ -704,7 +704,7 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //             实数经 scripts/count-token-refs.mjs 实锤同步）。
     //             2026-11-18 授权请求卡随异步授权流退役（HOSTED-CONFIRM-SOFT-1）⇒ 30-2=28
     //             （卡体 var(--dim-2xl) + 命令原文块 var(--dim-lg) 两处同批删除；机械实测同步）。
-    //             2026-11-20 历史会话浮层放大（HIST-MENU-SIZE-1）⇒ 28-2=26：
+    //             2026-11-20 历史会话浮层放大（HIST-TAB-ORDER-1）⇒ 28-2=26：
     //             .session-history .treedd__menu 的 max-width/max-height 由共享 --dim-xl
     //             改引专属 --history-menu-max-w/h（该共享令牌另有设置面板等 5+ 消费者，
     //             不动它）。机械实测 count-token-refs.mjs = 26，沿革保留非放宽。

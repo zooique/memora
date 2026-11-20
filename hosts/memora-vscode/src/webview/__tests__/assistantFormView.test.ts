@@ -257,6 +257,25 @@ describe('助手形态样式作用域守卫（漏前缀 = 漏到自助形态）'
     );
   });
 
+  it('主动开口标签显形（PROACTIVE-REPORT-1）：仅 proactive 解除隐藏，普通回答仍隐藏', () => {
+    // jsdom 不算样式：DOM 类断言证明不了「标签真可见」。显形唯一支点 = 这条 CSS，
+    // 删掉 / 去 !important / 反向 broaden 都会让拍板形态无声消失而 DOM 测试全绿。
+    const css = readFileSync(join(__dirname, '..', 'styles', 'chatStyles.ts'), 'utf8');
+    // 正向：显形规则存在、带 .msg-ai--proactive 限定、带 !important（压过基础隐藏）
+    expect(css).toMatch(
+      /body\[data-form='assistant'\]\s+\.msg-ai--proactive\s+\.msg-ai-label\s*\{[^}]*display:\s*flex\s*!important/,
+    );
+    // 反向①：不得 broaden 成「所有 assistant 标签显形」（会推翻 11-16 普通回答隐藏定案）
+    expect(css).not.toMatch(
+      /body\[data-form='assistant'\]\s+\.msg-ai-label\s*\{[^}]*display:\s*flex\s*!important/,
+    );
+    // 反向②：proactive 显形规则不得漏形态前缀（漏 = 泄漏到 self 工作会话）
+    const stray = [...css.matchAll(/([^\n{}]*\.msg-ai--proactive[^\n{}]*)\{[^}]*display:\s*flex/g)]
+      .map((m) => m[1] as string)
+      .filter((sel) => !sel.includes("body[data-form='assistant']"));
+    expect(stray).toEqual([]);
+  });
+
   it('同轮多段视觉合并（BUBBLE-MERGE-1）：只连相邻 assistant 段的圆角与内距，不碰底栏/数据', () => {
     // 前段：后面还紧跟 assistant 段时抹掉下圆角与下内距
     expect(css).toMatch(

@@ -361,7 +361,7 @@ export const tokens = `
     --dd-trigger-max-w-narrow: 120px; /* 单图标胶囊（skill-picker）：触发器更窄兜底 */
     --dd-menu-min-w-wide: 200px;      /* 宽名胶囊（model-picker）：长模型名不逼截菜单 */
 
-    /* 历史会话浮层尺寸（HIST-MENU-SIZE-1 · 2026-11-20）：会话条目含标题/主题/摘要/时间，
+    /* 历史会话浮层尺寸（HIST-TAB-ORDER-1 · 2026-11-20）：会话条目含标题/主题/摘要/时间，
      * 共享刻度 --dim-xl(280) 容纳不下 ⇒ 历史菜单专属放大档（400×480），不引全局共享令牌
      * （--dim-xl 另有设置面板/model-picker/缩略图 5+ 消费者，改它=牵一发动全身）。
      * 视口兜底仍由消费处 min(令牌, calc(100vw - …)) 承担，窄侧栏自动收缩不溢出。 */
