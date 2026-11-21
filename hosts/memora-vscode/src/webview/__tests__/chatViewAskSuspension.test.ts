@@ -221,3 +221,145 @@ describe('chatView ask 挂起批次：预告行收口 + 任务项归位', () => 
     expect(toolRow('call_t')?.closest('.round-block__plan-item')).not.toBeNull();
   });
 });
+
+/**
+ * ask 续跑的身份唯一性：一轮只应有一个角色名头
+ *
+ * 真机症状：指定角色包的工作会话触发 ask、作答后续跑，屏幕上出现两行
+ * 「角色名 · 模型名」；默认 memora助手 会话未复现。落盘只有 1 条 meta 是因为
+ * `mergeProcessEvents` 按身份去重——运行时宿主每个 runFlow 都会重发 meta。
+ *
+ * 判据：ask 卡渲染 = 本轮「等作答 → 必续跑」，此刻必须把当前活动块登记为续写锚。
+ * 否则视图重建（`resetChatView` 清 `pausedAssistantEl`）后续跑的 meta 无锚，
+ * 落续接骨架兜底分支，同一轮长出第二个角色名头块。
+ */
+describe('chatView ask 续跑：视图重建后不得长出第二个角色名头', () => {
+  const ROLE = '白话方案设计师';
+  const RID = 'r-ask';
+
+  /** 带 roundId 的 meta（续跑判定需要本轮身份） */
+  function metaWithRound(seq: number): Record<string, unknown> {
+    return {
+      type: 'process_event',
+      roundId: RID,
+      event: {
+        type: 'meta',
+        seq,
+        ts: '2026-11-22T00:00:00.000Z',
+        payload: { role: ROLE, llm: 'mimo-v2.6-flash' },
+      },
+    };
+  }
+
+  /** 视图重建时的 live 轮快照（宿主 ready 握手 / 切回会话的 replay 载荷） */
+  function liveRound(): Record<string, unknown> {
+    return {
+      id: RID,
+      userMessage: { content: '测试任务', timestamp: '2026-11-22T00:00:00.000Z' },
+      processEvents: [
+        {
+          type: 'meta',
+          seq: 1,
+          ts: '2026-11-22T00:00:00.000Z',
+          payload: { role: ROLE, llm: 'mimo-v2.6-flash' },
+        },
+      ],
+      interactiveInputs: [],
+      status: 'pending',
+      live: true,
+      createdAt: '2026-11-22T00:00:00.000Z',
+    };
+  }
+
+  function roleLabelTexts(): string[] {
+    return Array.from(document.querySelectorAll('.msg-ai-label__role')).map(
+      (el) => el.textContent ?? '',
+    );
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('ask 挂起时视图重建 → 续跑（重发 meta）仍只有一行角色名', () => {
+    mountChatView();
+    dispatch({
+      type: 'process_event',
+      roundId: RID,
+      event: {
+        type: 'meta',
+        seq: 1,
+        ts: '2026-11-22T00:00:00.000Z',
+        payload: { role: ROLE, llm: 'mimo-v2.6-flash' },
+      },
+    } as never);
+    dispatch({ type: 'paused' });
+    dispatch(askWaiting('第 1 题'));
+    // 视图重建：整批重放 live 轮（resetChatView 清续写锚的路径）
+    dispatch({
+      type: 'turn_update',
+      replay: true,
+      rounds: [liveRound()],
+      state: {
+        phase: 'waiting',
+        reason: 'ask',
+        questions: [{ slot: 'task', question: '第 2 题', options: ['是', '否'] }],
+      },
+    } as never);
+    expect(roleLabelTexts()).toHaveLength(1);
+    // 作答 → 续跑（宿主每个 runFlow 重发 meta；落盘按身份去重，运行时真的会到）
+    dispatch(userAnswer('是', '2026-11-22T00:00:02.000Z'));
+    dispatch(metaWithRound(2) as never);
+    expect(roleLabelTexts()).toEqual([ROLE]);
+  });
+
+  it('连环两题：每题挂起各经历一次视图重建，角色名头始终唯一', () => {
+    mountChatView();
+    dispatch(metaWithRound(1) as never);
+    dispatch({ type: 'paused' });
+    dispatch(askWaiting('第 1 题'));
+    // 第 1 题挂起期间重建 → 作答 → 续跑
+    dispatch({
+      type: 'turn_update',
+      replay: true,
+      rounds: [liveRound()],
+      state: {
+        phase: 'waiting',
+        reason: 'ask',
+        questions: [{ slot: 'task', question: '第 1 题', options: ['是', '否'] }],
+      },
+    } as never);
+    dispatch(userAnswer('是', '2026-11-22T00:00:02.000Z'));
+    dispatch(metaWithRound(2) as never);
+    // 第 2 题挂起再重建一次 → 作答 → 续跑：两次都只依赖 ask 渲染锁锚，不靠 paused
+    dispatch({
+      type: 'turn_update',
+      replay: true,
+      rounds: [
+        {
+          ...liveRound(),
+          interactiveInputs: [
+            {
+              id: 'qa-1',
+              content: '是',
+              timestamp: '2026-11-22T00:00:02.000Z',
+              kind: 'question-answer',
+              question: '第 1 题',
+            },
+          ],
+        },
+      ],
+      state: {
+        phase: 'waiting',
+        reason: 'ask',
+        questions: [{ slot: 'task', question: '第 2 题', options: ['是', '否'] }],
+      },
+    } as never);
+    dispatch(userAnswer('否', '2026-11-22T00:00:04.000Z'));
+    dispatch(metaWithRound(3) as never);
+    expect(roleLabelTexts()).toEqual([ROLE]);
+  });
+});

@@ -4335,6 +4335,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     //（对齐 TraeWork/主流对话流交互），不再用底部 clarifyBar 替换输入栏。
     // 底部 clarifyBar 保留为异常兜底（无 assistant 块锚点时退化使用）
     const askBlock = askInlineView.render(questions);
+    // ask 挂起 = 本轮确定会续跑：把当前活动 assistant 块登记为续写锚。
+    // 为什么必须在这里重设：`pausedAssistantEl` 会被视图重建（`resetChatView`）与中断收场清空，
+    // 而续跑的 meta 只认这个锚——锚一缺就落「无锚兜底」建续接骨架，同一轮长出第二个角色名头块
+    // （真机症状：ask 作答后出现两行「角色名 · 模型名」）。ask 卡渲染是本轮「等作答→必续跑」
+    // 的唯一信号点，在此登记可一并覆盖重建 / 清锚全路径；无内联卡（降级 clarifyBar）不设，
+    // 避免把别的轮的块误登记成本轮续写锚（故用 else-if：只有内联卡成立才锁锚）。
     if (!askBlock) {
       clarifyText.textContent = l10n.t(
         'Agent needs your confirmation: {0}',
@@ -4363,7 +4369,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       clarifyBar.classList.add('visible');
       inputBar.hidden = true;
       clarifyInput.focus();
-    }
+    } else if (activeAssistantEl?.isConnected) pausedAssistantEl = activeAssistantEl;
   }
 
   // 主动提问回答（clarifyBar 异常兜底路径）：提交并续跑
