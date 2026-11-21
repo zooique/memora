@@ -1,18 +1,23 @@
 /**
- * 盖章会话卡投影状态（DISPATCH-CARD-INLINE-1）——chatView 域外置
+ * 盖章会话卡投影状态（DISPATCH-CARD-TURN-1）——chatView 域外置
  *
- * 持有三份渲染状态 + 幂等投影，chatView 只在 4 个事件点接线（快照到达 / 每轮重放 / 重放前复位 / 重投影）。
- * 存在性来自 session_activity 快照（真源），触发轮锚点由 webview 现场解析：
- *   - replay：每轮 processEvents 里的 create_session / send_to_session 成功事件，**后到覆盖**
- *     （DISPATCH-CARD-POS-1：锚点 = 该 sid 最后一次成功盖章轮 = 最新 turn，卡随追加的下一次派发
- *     下移；「直接回答不派活」触发 replay 时不再跳回最早触发轮 = 真机置顶 bug 的根治）；
- *   - 实时：不登记（当下对话即流尾，卡落流尾 = 正确实时表现；重启 replay 再精确归位）。
+ * 持有快照 + turn 级卡片身份表 + 幂等投影，chatView 只在 5 个事件点接线（快照到达 /
+ * 每轮重放 / 实时过程事件 / 重放前复位 / 重投影）。
  *
- * 无 DOM 全局依赖（messages 容器由 project 注入），符合 helpers 落点纪律；零协议/落盘改动。
+ * 身份 = `(sid, roundId)`：同一会话被派活多次 ⇒ 多张卡，各自钉在触发轮；
+ * **不做后到覆盖**（那是已被改判的 DISPATCH-CARD-POS-1 旧口径）。存在性/展示名仍来自
+ * `session_activity` 快照；轮锚点由 webview 从 replay 的 processEvents 或实时
+ * `process_event.roundId` 现场解析（宿主派发受理当下拿不到 roundId，不新增落盘字段）。
+ *
+ * 无 DOM 全局依赖（messages 容器由 project 注入），符合 helpers 落点纪律。
  */
 import type { ProcessEvent } from '@zooique/memora';
 import { dispatchedSidsFromEvents } from './processEventText.js';
-import { renderDispatchCards, type DispatchedSessionView } from './dispatchSessionCard.js';
+import {
+  renderDispatchCards,
+  type DispatchedSessionView,
+  type DispatchCardEntry,
+} from './dispatchSessionCard.js';
 
 export interface DispatchCardProjection {
   /** 收到 session_activity 快照：更新存在性/旋转真源并重投影 */
@@ -20,12 +25,17 @@ export interface DispatchCardProjection {
     sessions: readonly DispatchedSessionView[] | undefined,
     runningIds: readonly string[],
   ): void;
-  /** replay 每轮：解析本轮盖章事件，登记 sid → 轮 id（后到覆盖 = 最新盖章轮） */
-  noteRound(roundId: string | undefined, events: readonly ProcessEvent[]): void;
-  /** replay 前复位锚点（跨会话/重建失效） */
+  /** 登记一轮的派活事件；返回是否新增了卡片身份（供实时路径决定是否重投影） */
+  noteRound(roundId: string | undefined, events: readonly ProcessEvent[]): boolean;
+  /** 复位 turn 身份表（跨会话/重放重建失效） */
   reset(): void;
   /** 用当前状态投影卡片到消息流（仅助手形态生效） */
   project(messages: HTMLElement): void;
+}
+
+/** 身份键带长度前缀，避免 sid/roundId 含分隔符时串键 */
+function entryKey(sid: string, roundId: string): string {
+  return `${sid.length}:${sid}:${roundId}`;
 }
 
 export function createDispatchCardProjection(
@@ -33,24 +43,46 @@ export function createDispatchCardProjection(
 ): DispatchCardProjection {
   let sessions: DispatchedSessionView[] = [];
   let running: string[] = [];
-  const anchors = new Map<string, string>();
+  let entries: DispatchCardEntry[] = [];
+  const seen = new Set<string>();
+  // 实时路径逐条事件到达，而 sid 解析要 tool_start + tool_result 成对；按轮攒齐再解析。
+  const eventsByRound = new Map<string, ProcessEvent[]>();
+  const seqByRound = new Map<string, Set<number>>();
   return {
     setSnapshot(next, runningIds) {
       sessions = [...(next ?? [])];
       running = [...runningIds];
     },
     noteRound(roundId, events) {
-      if (!roundId || events.length === 0) return;
-      for (const sid of dispatchedSidsFromEvents(events)) {
-        anchors.set(sid, roundId); // 后到覆盖 = 最新盖章轮（DISPATCH-CARD-POS-1）
+      if (!roundId || events.length === 0) return false;
+      const list = eventsByRound.get(roundId) ?? [];
+      const seqs = seqByRound.get(roundId) ?? new Set<number>();
+      for (const ev of events) {
+        if (seqs.has(ev.seq)) continue;
+        seqs.add(ev.seq);
+        list.push(ev);
       }
+      eventsByRound.set(roundId, list);
+      seqByRound.set(roundId, seqs);
+      let added = false;
+      for (const sid of dispatchedSidsFromEvents(list)) {
+        const key = entryKey(sid, roundId);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        entries.push({ sid, roundId });
+        added = true;
+      }
+      return added;
     },
     reset() {
-      anchors.clear();
+      entries = [];
+      seen.clear();
+      eventsByRound.clear();
+      seqByRound.clear();
     },
     project(messages) {
       if (!isAssistantForm()) return;
-      renderDispatchCards(messages, sessions, running, anchors);
+      renderDispatchCards(messages, sessions, running, entries);
     },
   };
 }

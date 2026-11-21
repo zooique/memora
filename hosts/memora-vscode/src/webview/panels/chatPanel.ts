@@ -431,7 +431,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     },
     rekeyAgent: (from, to) => this._rekeyAgent?.(from, to),
     bindAgent: (agent) => this.bindAgent(agent),
-    replaySession: () => this.replaySession(),
+    replaySession: (roundId) => this.replaySession(roundId),
     postBackgroundTasks: () => this.postBackgroundTasks('force'),
   });
   /** 记忆软删域（B9-D-5 外置）：单条反馈删除 + 会话删除联动软删（降级口径同一份） */
@@ -1377,8 +1377,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 标题条「历史」按钮 → 返回非当前会话列表供 webview 渲染模态浮层
       this.pushSessionList();
     } else if (msg.type === 'switch_session') {
-      // 历史浮层点击条目 → 切入该会话并回放
-      void this.switchToSession(msg.sessionId);
+      // 历史浮层条目 = 无 roundId（看最新轮）；助手对话 turn 卡 = 带 roundId（落到那一轮）
+      void this.switchToSession(msg.sessionId, msg.roundId);
     } else if (msg.type === 'delete_session') {
       // 历史浮层垃圾桶删除 → host 确认不可恢复后删除会话记录
       void this.handleDeleteSession(msg.sessionId);
@@ -2057,9 +2057,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     await this._navOps.renameCurrentSession();
   }
 
-  /** 切换到指定会话（实现见 `chatSessionNavOps.ts`：取/建实例 → 绑定显示源 → 回放） */
-  public async switchToSession(sessionId: string): Promise<void> {
-    await this._navOps.switchToSession(sessionId);
+  /** 切换到指定会话（实现见 `chatSessionNavOps.ts`：取/建实例 → 绑定显示源 → 回放 / 定位轮） */
+  public async switchToSession(sessionId: string, roundId?: string): Promise<void> {
+    await this._navOps.switchToSession(sessionId, roundId);
   }
 
   /** 确保 Agent 已装配（未装配时返回 undefined 并提示） */
@@ -2284,8 +2284,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 宿主侧会话切换（切会话 / 新建 / 分叉 / 截断）。两处**同一份**推送清单——
    * 曾拆成「重建当前会话」/「重建指定会话」两套入口，清单各自演化必漂移（漏推看板/占用）。
    */
-  private replaySession(): void {
-    this.replaySessionFor(this._currentSessionId);
+  private replaySession(roundId?: string): void {
+    this.replaySessionFor(this._currentSessionId, roundId);
   }
 
   /**
@@ -2295,8 +2295,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 助手会话：只回放对话气泡 + 标题 + 配置面——**角色 / 徽章按该会话自己的实例取**，
    * 不拿侧栏投影冒充（否则助手窗顶着工作会话的角色名，是另一种谎报）。
    */
-  private replaySessionFor(sessionId: string): void {
-    replaySessionInto(this._replayDeps, sessionId);
+  private replaySessionFor(sessionId: string, roundId?: string): void {
+    replaySessionInto(this._replayDeps, sessionId, roundId);
   }
 
   /** 回放依赖（字段读口 + 既有投影方法；构造期不访问字段） */
@@ -3447,7 +3447,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         list.push(event);
         eventsByRound.set(liveBuffer.currentRoundKey, list);
       }
-      this.postToSession(sessionId, { type: 'process_event', event });
+      this.postToSession(sessionId, {
+        type: 'process_event',
+        event,
+        roundId: liveBuffer.currentRoundKey,
+      });
     };
     // 暂停标记——当轮是否收到 paused chunk（软暂停状态）
     let pausedOnPurpose = false;

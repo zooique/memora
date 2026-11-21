@@ -642,6 +642,42 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(title[0]?.title).toBe('会话A');
   });
 
+  it('切换会话带 turn 锚点 → 回放落点发 focus_round，不再发 history_loaded（DISPATCH-CARD-TURN-1）', async () => {
+    const { store, roundStore, provider, posted } = setup();
+    const { agent } = agentStub();
+    provider.setAgentFactory(vi.fn().mockResolvedValue(agent));
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '问题A', ts: '2026-08-15T10:00:00.000Z' },
+      { role: 'assistant', content: '回答A', ts: '2026-08-15T10:00:30.000Z' },
+    ]);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-14-other';
+
+    await provider.switchToSession('2026-08-15-s1', 'round-42');
+
+    const types = posted.map((m) => (m as { type: string }).type);
+    expect(types).toContain('clear_ok');
+    expect(types).toContain('focus_round');
+    expect(types).not.toContain('history_loaded');
+    expect(posted.find((m) => (m as { type: string }).type === 'focus_round')).toEqual({
+      type: 'focus_round',
+      roundId: 'round-42',
+    });
+  });
+
+  it('已在目标会话点另一张 turn 卡 → 早退不吞落点，只补 focus_round（DISPATCH-CARD-TURN-1）', async () => {
+    const { provider, posted } = setup();
+    const { agent } = agentStub();
+    provider.setAgent(agent);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+
+    await provider.switchToSession('2026-08-15-s1', 'round-77');
+
+    expect(posted.filter((m) => (m as { type: string }).type === 'focus_round')).toEqual([
+      { type: 'focus_round', roundId: 'round-77' },
+    ]);
+    expect(posted.map((m) => (m as { type: string }).type)).not.toContain('clear_ok');
+  });
+
   it('改名当前会话 → 写入元数据 + 推送新标题', async () => {
     const { store, roundStore, provider, posted } = setup();
     const { agent, renameSession } = agentStub();

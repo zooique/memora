@@ -12516,6 +12516,42 @@ describe('光标状态机（运行态 data-status / 终态 data-terminus）', ()
 // 文本节点刷新不触碰——变异锁：改 icon 随文本重写 / 漏注入某构建点 → 对应用例转红。
 // 折叠箭头统一为 CSS 层（chevron ::after 行内随文），DOM 断言不覆盖，真机对照验收。
 describe('块类型标与折叠箭头（批次三）', () => {
+  /** 实时路径造一次成功派活：user 轮锚 + 带 roundId 的 process_event（DISPATCH-CARD-TURN-1） */
+  function dispatchLiveDispatch(sid: string, roundId: string, via: 'delegate' | 'create'): void {
+    dispatch({ type: 'user', text: '去派活', ts: '2026-11-21T09:00:00.000Z', roundId });
+    if (via === 'delegate') {
+      dispatch({
+        type: 'process_event',
+        roundId,
+        event: {
+          type: 'tool_start',
+          seq: 0,
+          ts: '2026-11-21T09:00:00.000Z',
+          payload: {
+            toolCallId: `c-${sid}`,
+            name: 'send_to_session',
+            args: JSON.stringify({ sid, text: '继续' }),
+          },
+        },
+      });
+    }
+    dispatch({
+      type: 'process_event',
+      roundId,
+      event: {
+        type: 'tool_result',
+        seq: 1,
+        ts: '2026-11-21T09:00:01.000Z',
+        payload: {
+          toolCallId: `c-${sid}`,
+          name: via === 'delegate' ? 'send_to_session' : 'create_session',
+          ok: true,
+          summary: via === 'create' ? JSON.stringify({ ok: true, sid, title: sid }) : '{}',
+        },
+      },
+    });
+  }
+
   beforeEach(() => {
     document.body.innerHTML = '';
   });
@@ -12637,15 +12673,13 @@ describe('块类型标与折叠箭头（批次三）', () => {
     expect(row().querySelector('.round-block__tool-summary')).toBeNull();
   });
 
-  it('盖章会话卡：dispatchedSessions 驱动消息流内插卡，真名/旋转同源 + 点击切会话（DISPATCH-CARD-INLINE-1）', () => {
-    // 卡只归助手会话（hostedPanel = assistant form）；self 工作会话不投影
+  it('盖章会话卡：turn 事件驱动消息流内插卡，真名/旋转同源 + 点击带轮锚切会话（DISPATCH-CARD-TURN-1）', () => {
     const { postMessage } = mountChatView('assistant');
     const messages = () => document.getElementById('messages') as HTMLElement;
     const card = () => messages().querySelector<HTMLElement>('.dispatch-session-card');
-    // 未盖章前无卡（空态不上屏）
     expect(card()).toBeNull();
 
-    // 派活受理快照到达：盖章列表（真名由宿主下发）⇒ 立即出卡，无锚点落流尾（当下对话即流尾）
+    // 快照只给存在性/真名，不凭空造卡：卡身份来自具体 turn 事件
     dispatch({
       type: 'session_activity',
       runningIds: ['2026-11-18-target'],
@@ -12654,15 +12688,16 @@ describe('块类型标与折叠箭头（批次三）', () => {
       titleById: {},
       dispatchedSessions: [{ sid: '2026-11-18-target', title: '统计目录文件数', via: 'delegate' }],
     });
+    expect(card()).toBeNull();
+
+    dispatchLiveDispatch('2026-11-18-target', 'live-r1', 'delegate');
     expect(card()).not.toBeNull();
     expect(card()!.getAttribute('data-dispatch-session')).toBe('2026-11-18-target');
-    expect(messages().lastElementChild).toBe(card()); // 无锚点 → 流尾
-    // 名字取宿主真源（不依赖 titleById 遍历面）
+    expect(card()!.getAttribute('data-dispatch-round')).toBe('live-r1');
     expect(card()!.querySelector('.dispatch-session-card__name')?.textContent).toBe(
       '统计目录文件数',
     );
     expect(card()!.classList.contains('is-running')).toBe(true);
-    // 第三形态：在 #messages 内、不在工具行 / .round-block 内
     expect(card()!.closest('#messages')).not.toBeNull();
     expect(card()!.closest('.round-block')).toBeNull();
 
@@ -12678,19 +12713,18 @@ describe('块类型标与折叠箭头（批次三）', () => {
     expect(card()).not.toBeNull();
     expect(card()!.classList.contains('is-running')).toBe(false);
 
-    // 点击卡片 → switch_session
     postMessage.mockClear();
     card()!.click();
     expect(postMessage).toHaveBeenCalledWith({
       type: 'switch_session',
       sessionId: '2026-11-18-target',
+      roundId: 'live-r1',
     });
   });
 
-  it('create 会话同样盖章出卡（via=create），不等工具结果/replay · DISPATCH-CREATE-CARD-1', () => {
+  it('create 会话同样盖章出卡（via=create），成功事件带轮锚 · DISPATCH-CREATE-CARD-1', () => {
     const { postMessage } = mountChatView('assistant');
     const messages = () => document.getElementById('messages') as HTMLElement;
-    // 新建会话被盖章：dispatchedSessions 一到就出卡，真名由宿主下发，via 标 create
     dispatch({
       type: 'session_activity',
       runningIds: [],
@@ -12699,17 +12733,21 @@ describe('块类型标与折叠箭头（批次三）', () => {
       titleById: {},
       dispatchedSessions: [{ sid: '2026-11-19-readme-node22', title: '补 README', via: 'create' }],
     });
+    expect(messages().querySelector('.dispatch-session-card')).toBeNull();
+
+    dispatchLiveDispatch('2026-11-19-readme-node22', 'create-r1', 'create');
     const card = messages().querySelector<HTMLElement>('.dispatch-session-card');
     expect(card).not.toBeNull();
     expect(card!.getAttribute('data-dispatch-session')).toBe('2026-11-19-readme-node22');
+    expect(card!.getAttribute('data-dispatch-round')).toBe('create-r1');
     expect(card!.querySelector('.dispatch-session-card__name')?.textContent).toBe('补 README');
     expect(card!.dataset.via).toBe('create');
-    // 点击出口与 delegate 同款 → switch_session 切到新建会话
     postMessage.mockClear();
     card!.click();
     expect(postMessage).toHaveBeenCalledWith({
       type: 'switch_session',
       sessionId: '2026-11-19-readme-node22',
+      roundId: 'create-r1',
     });
   });
 
@@ -12740,13 +12778,15 @@ describe('块类型标与折叠箭头（批次三）', () => {
         { sid: '2026-11-18-target', title: '统计目录文件数', via: 'delegate' as const },
       ],
     };
-    // 助手形态：出卡（对照基线，确认快照本身有效）
+    // 助手形态：出卡（对照基线，确认快照 + turn 事件有效）
     mountChatView('assistant');
     dispatch(snap);
+    dispatchLiveDispatch('2026-11-18-target', 'zone-r1', 'delegate');
     expect(document.querySelector('.dispatch-session-card')).not.toBeNull();
-    // 自助形态：同一份快照不投影卡片（DOM 无卡）
+    // 自助形态：同一份快照 + 事件不投影卡片（DOM 无卡）
     mountChatView('self');
     dispatch(snap);
+    dispatchLiveDispatch('2026-11-18-target', 'zone-r1', 'delegate');
     const selfMessages = document.getElementById('messages') as HTMLElement;
     expect(selfMessages.querySelector('.dispatch-session-card')).toBeNull();
   });

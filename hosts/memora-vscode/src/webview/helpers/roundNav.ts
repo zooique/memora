@@ -183,6 +183,19 @@ export function jumpToRound(messages: HTMLElement, target: HTMLElement): boolean
   return trackScroll(messages);
 }
 
+/**
+ * 按 roundId 定位到对应轮（DISPATCH-CARD-TURN-1）：复用 `jumpToRound` 的唯一滚动判据，
+ * 不另造滚动公式；目标不在流里时如实返回 false，不偷偷滚到流尾冒充定位成功。
+ */
+export function focusRoundById(messages: HTMLElement, roundId: string): boolean {
+  const target = Array.from(messages.querySelectorAll<HTMLElement>('[data-round-id]')).find(
+    (el) => el.dataset.roundId === roundId,
+  );
+  if (!target) return false;
+  jumpToRound(messages, target); // 吸底标记由 jumpToRound 内部显式重算，本处不重复
+  return true;
+}
+
 /** 控制器句柄：sync = 结构变更/尺寸变更后重建与压密；refresh = 滚动后轻量刷高亮 */
 export interface RoundNavController {
   sync(): void;

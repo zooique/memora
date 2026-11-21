@@ -29,6 +29,7 @@ import {
   computeDensity,
   createRoundNav,
   extractPreview,
+  focusRoundById,
   jumpToRound,
 } from '../roundNav.js';
 
@@ -255,6 +256,29 @@ describe('jumpToRound（点击定位）', () => {
       scrollTop: 0,
     }); // 2000 - 1588 - 400 = 12 ≤ 48 → 吸底
     expect(jumpToRound(messages, target)).toBe(true);
+    document.body.innerHTML = '';
+  });
+
+  it('focusRoundById：按 roundId 找到目标轮并复用同一滚动判据；缺轮时如实失败不滚流尾', () => {
+    const messages = document.createElement('div');
+    document.body.appendChild(messages);
+    const r1 = document.createElement('div');
+    r1.dataset.roundId = 'r1';
+    const r2 = document.createElement('div');
+    r2.dataset.roundId = 'r2';
+    messages.append(r1, r2);
+    stubRect(messages, 0);
+    stubRect(r2, 300);
+    const state = stubScrollBox(messages, {
+      scrollHeight: 2000,
+      clientHeight: 400,
+      scrollTop: 0,
+    });
+    expect(focusRoundById(messages, 'r2')).toBe(true);
+    expect(state.scrollTop).toBe(288);
+    state.scrollTop = 0;
+    expect(focusRoundById(messages, 'missing')).toBe(false);
+    expect(state.scrollTop).toBe(0);
     document.body.innerHTML = '';
   });
 });

@@ -90,8 +90,13 @@ import { join } from 'node:path';
  *  是查看意图的两种形态，不复用同一通道。path 由 webview 原样回传，宿主先与改动清单对拍、
  *  再走 refPath 单点解析，见 workProjectionBridge 同构契约。
  *  实测 145，阈值同口径重算 146。
+ *  2026-11-21 turn 级会话卡（`DISPATCH-CARD-TURN-1`）+1：新增 `focus_round`（E→W）——
+ *  点助手对话里的 turn 卡要滚到指定轮，语义与 `history_loaded`（回放完成滚流尾）不同，
+ *  工作台「去这个会话」也不发本条，不能借既有通道冒充。切会话载荷只在 `switch_session`
+ *  加可选 `roundId`、过程事件只在 `process_event` 加可选 `roundId`，均不新增 type。
+ *  实测 146，阈值同口径重算 147。
  */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 146;
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 147;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {

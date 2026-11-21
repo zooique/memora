@@ -55,8 +55,8 @@ export interface ChatSessionNavOpsDeps {
   rekeyAgent?: (from: string, to: string) => void;
   /** 绑定显示源（含各订阅面重绑） */
   bindAgent: (agent: Agent) => void;
-  /** 重放当前会话，保证 UI 与存储一致 */
-  replaySession: () => void;
+  /** 重放当前会话，保证 UI 与存储一致；roundId 可选 = turn 卡落点 */
+  replaySession: (roundId?: string) => void;
   /** 后台任务条按会话重投影（切换 / 分叉后必须 force） */
   postBackgroundTasks: () => void;
 }
@@ -65,7 +65,7 @@ export interface ChatSessionNavOpsDeps {
 export interface ChatSessionNavOps {
   forkCurrentSession(roundId?: string): Promise<void>;
   renameCurrentSession(): Promise<void>;
-  switchToSession(sessionId: string): Promise<void>;
+  switchToSession(sessionId: string, roundId?: string): Promise<void>;
 }
 
 /**
@@ -170,9 +170,14 @@ export function createChatSessionNavOps(deps: ChatSessionNavOpsDeps): ChatSessio
      * 流中允许切换——后台会话的流继续跑，其 UI 投递由 `isBackgroundFlow()` 挡在显示会话之外。
      *
      * @param sessionId 目标会话标识（YYYY-MM-DD-sessionName）
+     * @param roundId 可选 turn 锚点：同会话只定位不切源；跨会话随回放落到该轮（DISPATCH-CARD-TURN-1）
      */
-    async switchToSession(sessionId: string): Promise<void> {
-      if (sessionId === deps.getCurrentSessionId()) return; // 已在目标会话
+    async switchToSession(sessionId: string, roundId?: string): Promise<void> {
+      if (sessionId === deps.getCurrentSessionId()) {
+        // 同会话早退只对「看最新轮」成立；turn 卡点来的落点必须执行，否则旧卡点了没反应
+        if (roundId) deps.post({ type: 'focus_round', roundId });
+        return;
+      }
       const wasHeld = deps.lock.holds(sessionId); // 切回旧会话 = 已是长锁，失败不得误放
       // 先拿目标会话的锁：拿不到 = 另一窗口正在用，明确拒绝（不静默覆盖对方写入）
       if (!(await deps.lock.acquire(sessionId))) {
@@ -185,7 +190,7 @@ export function createChatSessionNavOps(deps: ChatSessionNavOpsDeps): ChatSessio
         deps.setCurrentSessionId(sessionId);
         const agent = await deps.agentForSession(sessionId);
         deps.bindAgent(agent);
-        deps.replaySession();
+        deps.replaySession(roundId);
         // 后台任务条按会话重投影（BGTASK-SWITCH-REPUSH-1）：切会话不推 ⇒ 常驻条继续显示上一个会话的任务。
         // 必须 force（两会话任务都可能为空、签名相同）；force 是**第二道保险**——`sessionChanged`
         // 已在起作用，保留它防未来调用顺序漂移，**不是必需成本，勿当冗余删掉**。

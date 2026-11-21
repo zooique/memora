@@ -500,8 +500,11 @@ export type WebviewToExtensionMessage =
   | { type: 'session_list' }
   /**
    * 加载指定历史会话（历史浮层点击条目触发）：host 调 switchToSession 切入并回放
+   *
+   * roundId 可选 = 助手对话里的 turn 卡点出的落点（DISPATCH-CARD-TURN-1）：
+   * 有则切会话后定位到该轮；缺省保持「打开会话看最新 turn」的既有语义（工作台/历史浮层）。
    */
-  | { type: 'switch_session'; sessionId: string }
+  | { type: 'switch_session'; sessionId: string; roundId?: string }
   /**
    * 删除指定历史会话（历史浮层条目垃圾桶触发）：host 侧确认不可恢复后删除该会话记录
    *
@@ -1223,8 +1226,10 @@ export type ExtensionToWebviewMessage =
    * 由 extension host 在 consumeFlow 旁路将 AgentChunk / 主机事件归一为 ProcessEvent 后逐条推送；
    * webview 一律 append 到当前轮 events[] 由 renderRoundBlock 统一渲染。
    * thinking / tool_start / tool_result / self_review / memory 等过程渲染统一走本通道。
+   * roundId 可选 = 内核 chunk 自带的本轮身份（RoundTagged）；webview 据此把派活事件登记到
+   * 对应 turn 卡（DISPATCH-CARD-TURN-1），首 chunk 前仍可缺省，不造假占位。
    */
-  | { type: 'process_event'; event: ProcessEvent }
+  | { type: 'process_event'; event: ProcessEvent; roundId?: string }
   /**
    * 任务看板更新（任务驱动多步闭环 · 最小可视化）
    *
@@ -1379,6 +1384,14 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'history_loaded' }
   /**
+   * 打开会话后的 turn 级落点（DISPATCH-CARD-TURN-1）
+   *
+   * 语义 ≠ `history_loaded`（那条专指回放完成、滚到流尾）：本条专指「已经在这个会话里，
+   * 现在滚到 roundId 那一轮」。点助手对话里的 turn 卡时发出；同会话重复点另一张卡也能生效，
+   * 不被 `switchToSession` 的「已在目标会话」早退吞掉。工作台 `Go to this session` 不发本条。
+   */
+  | { type: 'focus_round'; roundId: string }
+  /**
    * 当前会话标题
    *
    * host 在会话回放/新建/切换/改名时推送当前会话标题，webview 顶部展示，
@@ -1498,7 +1511,8 @@ export type ExtensionToWebviewMessage =
        *
        * 按助手会话算：`dispatchedBy.from === 助手会话` 的会话，本进程取创建者账本、
        * 重启后取轮次反查。名字逐条走宿主 sessionTitleFor 真源（不依赖 titleById 的遍历面，
-       * 后台会话未装配时也能取到真名）；via 区分派活/新建。sid 去重，天然会话维度一张卡。
+       * 会话存在性快照按 sid 去重（名字只给展示用）；**卡片身份不在本协议内**——
+       * 助手对话按 `(sid, roundId)` 出多张同名卡，轮锚点由 webview 现场从事件解析。
        */
       dispatchedSessions: Array<{ sid: string; title: string; via: 'delegate' | 'create' }>;
     }

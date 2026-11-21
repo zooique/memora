@@ -72,7 +72,7 @@ import {
   toolStartNames,
 } from '../helpers/processEventText.js';
 // 会话大纲导航条（HOST-NAV-1）：逻辑收口于 helpers/roundNav.ts（SSOT），本文件只接线
-import { createRoundNav } from '../helpers/roundNav.js';
+import { createRoundNav, focusRoundById } from '../helpers/roundNav.js';
 // 重放时间线交织（正文段 × 交互行按时间升序）：纯函数外置，本文件只消费
 import { buildReplayTimeline } from '../helpers/replayTimeline.js';
 // 骨架（会话控件）语义派生纯函数层：矩阵与状态容器在 turnUiState.ts，
@@ -114,7 +114,8 @@ import {
   type MemoryHitEntry,
 } from '../helpers/processFlowModel.js';
 import { createMemoryHitsBlock } from './memoryHitsBlock.js';
-import { DISPATCH_SESSION_ATTR, removeDispatchCards } from '../helpers/dispatchSessionCard.js';
+import { removeDispatchCards } from '../helpers/dispatchSessionCard.js';
+import { initDispatchCardClicks } from '../helpers/dispatchCardClicks.js';
 import { createDispatchCardProjection } from '../helpers/dispatchCardProjection.js';
 import { createAssistantWorkbenchDrawer } from '../helpers/assistantWorkbenchDrawer.js';
 import { hideWorkbenchDrawer, shouldOpenWorkbench } from '../helpers/workbenchDrawerToggle.js';
@@ -3217,6 +3218,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           livePlanStates = new Map(ev.payload.items.map((i) => [i.planItemId, i.status]));
         }
         currentEvents.push(ev);
+        // turn 卡锚点：实时路径从 chunk 同源 roundId 现场登记，仅新增卡时重投影。
+        if (msg.roundId && dispatchCards.noteRound(msg.roundId, [ev])) {
+          dispatchCards.project(messages);
+        }
         // 运行时过程平铺容器随流同步刷新（增量：narrate 冒号行 + 工具折叠行 + 思考状态）
         renderProcessFlow(currentEvents);
       }
@@ -3576,6 +3581,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 历史消息加载完成 → 强制滚到底部（不走吸底逻辑）
       // 解决多条历史消息 rAF 节流导致滚动位置不正确的问题
       forceScrollToBottom(messages);
+    } else if (msg.type === 'focus_round') {
+      // turn 卡落点：不冒充 history_loaded，也不滚流尾；找不到目标轮时如实不动。
+      focusRoundById(messages, msg.roundId);
     } else if (msg.type === 'session_title') {
       // 更新会话标题条（ADR-024）：textContent 防注入；切换/改名/清空后由 chatPanel 推送最新标题
       sessionTitleText.textContent = msg.title;
@@ -4106,26 +4114,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
   document.addEventListener('click', onDocumentClick);
 
-  // 用户折叠意图闩（单一写入点）：点击 summary = 用户接管该 details 的开合。
-  // 此后程序默认值（工具行成功收起/失败展开等）不得再覆盖该块的 open——
-  // 覆盖消费点见 updateToolRowState；键盘激活 summary 同样派生 click，一并覆盖。
-  document.addEventListener('click', (e) => {
-    // 派活会话卡嵌在 summary 内，点它只该切会话、不算用户接管折叠 ⇒ 本委托跳过（否则误设 userToggled）
-    if ((e.target as HTMLElement | null)?.closest?.(`[${DISPATCH_SESSION_ATTR}]`)) return;
-    const summary = (e.target as HTMLElement | null)?.closest?.('summary');
-    const details = summary?.closest('details');
-    if (details) details.dataset.userToggled = 'true';
-  });
-  // 派活会话卡：点卡片切到目标会话（复用历史条目的 switch_session 出口）。
-  // 卡片嵌在 <summary> 内 ⇒ preventDefault 阻止 details 原生开合（stopPropagation 挡不住同层委托，
-  // 折叠误记由上面那个委托自行跳过）。两者分工：这里管「不折叠」，那里管「不误记」。
-  document.addEventListener('click', (e) => {
-    const card = (e.target as HTMLElement | null)?.closest?.(`[${DISPATCH_SESSION_ATTR}]`);
-    if (!card) return;
-    e.preventDefault();
-    const sid = card.getAttribute(DISPATCH_SESSION_ATTR);
-    if (sid) vscode.postMessage({ type: 'switch_session', sessionId: sid });
-  });
+  // 派活会话卡两段点击委托（折叠闩 + 切会话带 turn 锚）收口于 helper，避免本文件再涨行。
+  initDispatchCardClicks(document, (msg) => vscode.postMessage(msg));
 
   // 下拉菜单：显式回调映射替代原 window.__xxx 全局函数名（去全局污染）
   // 键名与 buildDropdownHtml 的 data-on-select 属性值一一对应。
