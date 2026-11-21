@@ -11,10 +11,14 @@
  * （它们是队列投影的一对，与运行控制共享的只是「停止会丢弃排队插话」这一个调用点）。
  */
 import * as vscode from 'vscode';
-import type { Agent, AgentChunk } from '@zooique/memora';
+import type { Agent, AgentChunk, ProcessEvent } from '@zooique/memora';
 import { toNoticeText } from '../../extension/host/noticeText.js';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
-import { INTERNAL_SEED_SENDER } from '../../shared/constants.js';
+import {
+  CREATE_SESSION_TOOL_NAME,
+  INTERNAL_SEED_SENDER,
+  SEND_TO_SESSION_TOOL_NAME,
+} from '../../shared/constants.js';
 import type { HostedStopResult } from '../../extension/host/workSessionTools.js';
 import type {
   HostedPauseResult,
@@ -31,6 +35,8 @@ import {
   shouldNudgeDispatchRepair,
   type DispatchRepairInput,
 } from '../helpers/dispatchReceiptHint.js';
+// 判据输入的事件合并单点（与 step 检查点 / 流尾 / live 重放同一 seq 幂等语义）
+import { mergeProcessEvents } from '../helpers/processEventMerge.js';
 
 /** 本域读到的会话级运行态（`runtimeFor()` 的窄投影，只读本域需要的两个字段） */
 export interface RunControlRuntime {
@@ -137,18 +143,22 @@ export interface ChatRunControlOps {
   /**
    * 完成门入口：判据成立就**延后一拍**起一轮补派检查
    *
-   * 为什么延后：调用点在流的收尾块里，此刻 `runtime.streaming` 可能还没清，
-   * 直接判空闲会误判「不空闲」而静默跳过。
+   * 为什么延后（重入隔离，不是等 streaming 清空）：调用点在 `consumeFlow` 的正常收场分支，
+   * 此刻 `runtime.streaming` 已在 finally 里清掉；但本函数起的补派轮会走同一个 `runFlow`，
+   * 若同步调用，新流的开场（置 streaming / 挂摘要监听）会与旧流余下的收场逻辑
+   * （摘要解锁 / 派发租约归还）交错。延后一拍 = 等本流彻底收场后再起新流。
    * 只做三件事：托管门控 → 判据 → 调 `wakeDispatchRepair`；不复制判据、不代发。
    *
    * @param sessionId 源会话
    * @param round 源轮（只读；缺省直接返回；判据见 `shouldNudgeDispatchRepair`）
    * @param sourceRoundId 源轮 id（缺省 / 空串直接返回）
+   * @param liveRound 本轮内存轮快照（只读，只取 processEvents 与盘面按 seq 合并后喂判据，防 resume 续跑丢前段回执）
    */
   maybeWakeDispatchRepair(
     sessionId: string,
     round: DispatchRepairInput | null | undefined,
     sourceRoundId: string | undefined,
+    liveRound?: { readonly processEvents?: readonly ProcessEvent[] } | undefined,
   ): void;
 }
 
@@ -431,20 +441,31 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
       // 只在托管会话里补派：与提示的助手形态同域，用户自建会话不打扰
       if (!deps.isManaged(sessionId)) return false;
       // 种子只给「补派检查」口径：既不许复述旧承诺，也不许把「说了」当「做了」
+      // 工具名插值真源（与回执判据 dispatchedSidTextsFromEvents 同源），不写死字面量
       const seedText = [
         `You ended round ${sourceRoundId} telling me the work had been dispatched,`,
         'but that round has no accepted session-dispatch receipt.',
-        'Do not restate it as done. Either actually call send_to_session (or create_session) for the session you named,',
+        `Do not restate it as done. Either actually call ${SEND_TO_SESSION_TOOL_NAME} (or ${CREATE_SESSION_TOOL_NAME}) for the session you named,`,
         'or tell me plainly that it was not dispatched, and why.',
       ].join(' ');
       return startInternalSeedTurn(sessionId, `live-dispatch-repair-${sourceRoundId}`, seedText);
     },
 
-    maybeWakeDispatchRepair(sessionId, round, sourceRoundId): void {
+    maybeWakeDispatchRepair(sessionId, round, sourceRoundId, liveRound): void {
       if (!round || !sourceRoundId) return;
       if (!deps.isManaged(sessionId)) return;
-      if (!shouldNudgeDispatchRepair(round)) return;
-      // 延后一拍：收尾块里 streaming 可能还没清，直接判空闲会静默跳过
+      // 判据输入 = 盘面快照 ∪ 本轮内存事件（mergeProcessEvents 单点、按 seq 幂等）：
+      // 盘面快照在流尾 checkpoint 前读，末段回执可能只在内存；resume 续跑流内存段又只含
+      // 续跑部分——单取任一方都会漏判回执而误起补派轮。字段其余部分不变（只读投影）。
+      const judged: DispatchRepairInput = {
+        ...round,
+        processEvents: mergeProcessEvents(round.processEvents ?? [], [
+          ...(liveRound?.processEvents ?? []),
+        ]),
+      };
+      if (!shouldNudgeDispatchRepair(judged)) return;
+      // 延后一拍 = 重入隔离：等本流 runFlow 收场（摘要解锁 / 租约归还）跑完再起补派轮，
+      // 否则新流开场与本流收尾交错（streaming 置位 / 双重摘要监听）。
       setTimeout(() => {
         ops.wakeDispatchRepair(sessionId, sourceRoundId);
       }, 0);

@@ -9,8 +9,10 @@
  *   ③ 创建者通知读的是**被停的会话 id**，不是当前显示会话。
  */
 // @vitest-environment node
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import type { Agent } from '@zooique/memora';
+import type { Agent, ProcessEvent } from '@zooique/memora';
 import {
   createChatRunControlOps,
   type ChatRunControlOpsDeps,
@@ -468,5 +470,96 @@ describe('完成门补派 — wakeDispatchRepair', () => {
 
     const gone = makeOps({ getAgent: () => undefined });
     expect(gone.ops.wakeDispatchRepair(REPAIR_SID, 'r-source')).toBe(false);
+  });
+
+  it('种子工具名走真源：源码守卫禁止再写死字面量（DISPATCH-REPAIR-1）', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/webview/panels/chatRunControlOps.ts'),
+      'utf8',
+    );
+    // 种子文案必须插值真源常量，工具名变更须随常量全仓同批改动
+    expect(src).toContain(
+      'actually call ${SEND_TO_SESSION_TOOL_NAME} (or ${CREATE_SESSION_TOOL_NAME})',
+    );
+    expect(src).not.toContain('actually call send_to_session (or create_session)');
+  });
+});
+
+/**
+ * 完成门入口的判据输入合并（DISPATCH-REPAIR-1）
+ *
+ * 判据吃的是「盘面快照 ∪ 本轮内存事件」——流尾 checkpoint 前读盘，末段回执可能只在内存；
+ * resume 续跑流内存段又只含续跑部分。单取任一方都会漏判回执 → 误起补派轮。
+ * 这里用 fake timers 控制延后一拍，钉住「任一方有回执都不误触发」。
+ */
+describe('完成门入口 — maybeWakeDispatchRepair 判据输入合并', () => {
+  const SID = '2026-11-14-creator';
+  const CLAIM = { content: '已派给小说会话。' };
+
+  /** 一次真实形状的 send_to_session 成功回执（业务 ok=true 在摘要首键） */
+  const receipt: ProcessEvent[] = [
+    {
+      type: 'tool_start',
+      seq: 1,
+      ts: '2026-11-21T06:00:01.000Z',
+      payload: {
+        toolCallId: 'send-ok',
+        name: 'send_to_session',
+        args: JSON.stringify({ sid: '2026-11-14-target', text: '继续写' }),
+      },
+    },
+    {
+      type: 'tool_result',
+      seq: 2,
+      ts: '2026-11-21T06:00:01.500Z',
+      payload: {
+        toolCallId: 'send-ok',
+        name: 'send_to_session',
+        ok: true,
+        summary: JSON.stringify({ ok: true, accepted: true }),
+      },
+    },
+  ] as ProcessEvent[];
+
+  /** 基础源轮：完成 + 声称已派 + 非种子 + 盘面无事件 */
+  const round = {
+    status: 'complete',
+    assistantMessage: CLAIM,
+    userMessage: { name: 'memora宝' },
+    processEvents: [] as ProcessEvent[],
+  };
+
+  function run(
+    diskEvents: ProcessEvent[],
+    buffered: ProcessEvent[] | undefined,
+  ): ReturnType<typeof makeOps> {
+    vi.useFakeTimers();
+    try {
+      const built = makeOps({
+        getAgent: () => fakeWakeAgent('thinking').agent,
+      });
+      built.ops.maybeWakeDispatchRepair(SID, { ...round, processEvents: diskEvents }, 'r-source', {
+        processEvents: buffered,
+      });
+      vi.advanceTimersByTime(0);
+      return built;
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it('回执只在内存（盘面空）⇒ 不误起补派轮', () => {
+    const { calls } = run([], receipt);
+    expect(calls.runFlow).not.toHaveBeenCalled();
+  });
+
+  it('回执只在盘面（内存空）⇒ 不误起补派轮', () => {
+    const { calls } = run(receipt, []);
+    expect(calls.runFlow).not.toHaveBeenCalled();
+  });
+
+  it('两边都无回执 ⇒ 起一轮补派检查', () => {
+    const { calls } = run([], []);
+    expect(calls.runFlow).toHaveBeenCalledTimes(1);
   });
 });
