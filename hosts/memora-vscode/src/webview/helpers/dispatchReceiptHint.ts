@@ -23,6 +23,7 @@
  */
 import type { ProcessEvent } from '@zooique/memora';
 import * as l10n from '@vscode/l10n';
+import { isInternalSeedSender } from '../../shared/constants.js';
 import { dispatchedSidTextsFromEvents } from './processEventText.js';
 
 /** 提示元素 class（幂等重建与测试定位共用） */
@@ -48,6 +49,42 @@ const DISPATCH_CLAIM_WORDS: readonly string[] = ['已派给', '派给', '已受�
 export function hasDispatchClaim(assistantText: string | undefined): boolean {
   const text = assistantText ?? '';
   return DISPATCH_CLAIM_WORDS.some((word) => text.includes(word));
+}
+
+/** 完成门判据输入：只取判据需要的四个字段（Round 与测试替身同型） */
+export interface DispatchRepairInput {
+  /** 轮终态（只有 complete 才参与对账） */
+  status: string;
+  /** 助手正文（派发措辞的触发器） */
+  assistantMessage?: { content?: string } | undefined;
+  /** 用户消息（只读 name：识别内部种子轮，防补派检查自己再触发） */
+  userMessage?: { name?: string } | undefined;
+  /** 进程事件（回执判据的唯一输入） */
+  processEvents?: ProcessEvent[] | undefined;
+}
+
+/**
+ * 完成门判据（DISPATCH-REPAIR-1）：这一轮是否该自动起一轮「补派检查」
+ *
+ * 与提示**同源**：同一措辞表（`hasDispatchClaim`）+ 同一回执判据
+ * （`dispatchedSidTextsFromEvents`），不写第二份。
+ *
+ * 三条排除：
+ *   - 非 complete：中断 / 软暂停的正文可能半截，不当承诺；
+ *   - 内部种子轮：补派检查自己也是内部种子，若再触发会无限自唤；
+ *   - 有受理回执：已派成功（含后续投递）不算缺口。
+ *
+ * 注意：这只是**概率修复**。词表抓不到换说法 / 引用 / 假设；它只负责「提醒模型去补」，
+ * 绝不代替模型发送——真正的派发仍必须在补派轮里由模型调用工具完成。
+ *
+ * @param round 判据输入（只读，不改任何落盘状态）
+ * @returns true = 需要起一轮补派检查
+ */
+export function shouldNudgeDispatchRepair(round: DispatchRepairInput): boolean {
+  if (round.status !== 'complete') return false;
+  if (isInternalSeedSender(round.userMessage?.name)) return false;
+  if (!hasDispatchClaim(round.assistantMessage?.content)) return false;
+  return dispatchedSidTextsFromEvents(round.processEvents ?? []).length === 0;
 }
 
 /**

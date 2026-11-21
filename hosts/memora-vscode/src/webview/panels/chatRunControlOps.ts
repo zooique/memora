@@ -26,6 +26,11 @@ import { stopHostedSession } from '../helpers/hostedSessionStop.js';
 import { pauseHostedSession, resumeHostedSession } from '../helpers/hostedSessionRunControl.js';
 // 本轮运行时种子（开轮上屏素材；单一类型源在会话级运行态模块）
 import type { FlowSeed } from '../helpers/sessionRuntime.js';
+// 完成门判据与提示同源（同一词表 + 同一回执判据）；本文件只做门控与起轮
+import {
+  shouldNudgeDispatchRepair,
+  type DispatchRepairInput,
+} from '../helpers/dispatchReceiptHint.js';
 
 /** 本域读到的会话级运行态（`runtimeFor()` 的窄投影，只读本域需要的两个字段） */
 export interface RunControlRuntime {
@@ -116,6 +121,35 @@ export interface ChatRunControlOps {
    * @returns 是否真的起了一轮（false = 实例未就绪 / 不空闲 / 未开跑）
    */
   wakeSettlementReport(creator: string): boolean;
+
+  /**
+   * 完成门「补派检查」：轮末声称已派但无受理回执 ⇒ 起一轮内部种子
+   *
+   * 只提醒不代发：真正的派发仍必须在补派轮里由模型调用工具完成；内部种子轮不再触发
+   * （判据侧按 `isInternalSeedSender` 排除），防无限自唤。
+   *
+   * @param sessionId 源会话（必须托管且空闲）
+   * @param sourceRoundId 触发检查的源轮 id（写进种子，供模型回看）
+   * @returns 是否真的起了一轮
+   */
+  wakeDispatchRepair(sessionId: string, sourceRoundId: string): boolean;
+
+  /**
+   * 完成门入口：判据成立就**延后一拍**起一轮补派检查
+   *
+   * 为什么延后：调用点在流的收尾块里，此刻 `runtime.streaming` 可能还没清，
+   * 直接判空闲会误判「不空闲」而静默跳过。
+   * 只做三件事：托管门控 → 判据 → 调 `wakeDispatchRepair`；不复制判据、不代发。
+   *
+   * @param sessionId 源会话
+   * @param round 源轮（只读；缺省直接返回；判据见 `shouldNudgeDispatchRepair`）
+   * @param sourceRoundId 源轮 id（缺省 / 空串直接返回）
+   */
+  maybeWakeDispatchRepair(
+    sessionId: string,
+    round: DispatchRepairInput | null | undefined,
+    sourceRoundId: string | undefined,
+  ): void;
 }
 
 /**
@@ -381,50 +415,89 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
      * （界面据此标「由助手发送」）；不另造角色。
      */
     wakeSettlementReport(creator: string): boolean {
-      const agent = deps.getAgent(creator);
-      if (!agent || !ops.isSessionIdle(creator)) return false;
       // 汇报口径进种子：**讲交付物**（通知里带成功轮的交付摘录）→ 结果 → 下一步或需用户决定。
       // 不许答「哪条会话 / round / 成功」这类元信息：那些通知里已有，主控答它们等于零信息。
       const seedText = vscode.l10n.t(
         'A managed session has just settled. The settlement notice in context includes an excerpt of what it actually delivered. Report what it delivered (quote the excerpt or summarize its key points — do not answer with which session, round id, or "success"), then one sentence on the outcome, and the next step or what you need me to decide.',
       );
-      const now = new Date().toISOString();
-      const seed: FlowSeed = {
-        userMessage: {
-          id: `live-settlement-${now}`,
-          role: 'user',
-          content: seedText,
-          timestamp: now,
-          // HOSTED-INTERNAL-SEED-1：显式标记"内部汇报种子"，重放时据此跳过 user 气泡。
-          // name 是 RoundMessage 既有字段（实时/重放同一份），零协议扩张；真正用户托管输入
-          // 的 name = HOSTED_SENDER_NAME，不撞车。文本仍进模型上下文，落盘照旧——只不上屏。
-          name: INTERNAL_SEED_SENDER,
-        },
-        origin: 'hosted',
-      };
-      const start = (): void => {
-        void deps.runFlow(
-          (signal) =>
-            agent.chat(seedText, signal, undefined, {
-              origin: 'hosted',
-              // HOSTED-INTERNAL-SEED-1：与 seed.userMessage.name 同值——内核 appendUser 据此落
-              // RoundMessage.name，重启重放才能识别内部种子并跳过 user 气泡。两处缺一即回归。
-              senderName: INTERNAL_SEED_SENDER,
-            }),
-          creator,
-          seed,
-        );
-      };
-      // 与 dispatchHostedInput 同一对齐判据：内核当前会话错位会把这一轮写进别的会话
-      const manager = agent.sessionManager;
-      const info = manager?.getCurrentSessionInfo();
-      if (manager && info && `${info.date}-${info.session}` !== creator) {
-        void manager.switchToSession(creator).then(start, () => undefined);
-        return true;
-      }
-      start();
-      return true;
+      return startInternalSeedTurn(
+        creator,
+        `live-settlement-${new Date().toISOString()}`,
+        seedText,
+      );
+    },
+
+    wakeDispatchRepair(sessionId: string, sourceRoundId: string): boolean {
+      // 只在托管会话里补派：与提示的助手形态同域，用户自建会话不打扰
+      if (!deps.isManaged(sessionId)) return false;
+      // 种子只给「补派检查」口径：既不许复述旧承诺，也不许把「说了」当「做了」
+      const seedText = [
+        `You ended round ${sourceRoundId} telling me the work had been dispatched,`,
+        'but that round has no accepted session-dispatch receipt.',
+        'Do not restate it as done. Either actually call send_to_session (or create_session) for the session you named,',
+        'or tell me plainly that it was not dispatched, and why.',
+      ].join(' ');
+      return startInternalSeedTurn(sessionId, `live-dispatch-repair-${sourceRoundId}`, seedText);
+    },
+
+    maybeWakeDispatchRepair(sessionId, round, sourceRoundId): void {
+      if (!round || !sourceRoundId) return;
+      if (!deps.isManaged(sessionId)) return;
+      if (!shouldNudgeDispatchRepair(round)) return;
+      // 延后一拍：收尾块里 streaming 可能还没清，直接判空闲会静默跳过
+      setTimeout(() => {
+        ops.wakeDispatchRepair(sessionId, sourceRoundId);
+      }, 0);
     },
   };
+
+  /**
+   * 起一轮内部种子（落定汇报 / 完成门补派检查共用）
+   *
+   * 与托管派发同一条 `runFlow` + `chat(origin='hosted')` 通路：不新造流、不新造面板。
+   * 两个写端同值：seed.userMessage.name 与 chat opts.senderName 都标 `INTERNAL_SEED_SENDER`，
+   * 内核据此落 `RoundMessage.name`，重放跳过 user 气泡（HOSTED-INTERNAL-SEED-1）。
+   *
+   * @param sessionId 目标会话（必须空闲）
+   * @param seedId 种子消息 id（实时投影 / 幂等定位共用）
+   * @param seedText 进模型上下文的种子正文
+   * @returns 是否真的起了一轮
+   */
+  function startInternalSeedTurn(sessionId: string, seedId: string, seedText: string): boolean {
+    const agent = deps.getAgent(sessionId);
+    if (!agent || !ops.isSessionIdle(sessionId)) return false;
+    const seed: FlowSeed = {
+      userMessage: {
+        id: seedId,
+        role: 'user',
+        content: seedText,
+        timestamp: new Date().toISOString(),
+        // HOSTED-INTERNAL-SEED-1：显式标记内部种子，重放跳过 user 气泡；
+        // 真正用户托管输入的 name = HOSTED_SENDER_NAME，不撞车。
+        name: INTERNAL_SEED_SENDER,
+      },
+      origin: 'hosted',
+    };
+    const start = (): void => {
+      void deps.runFlow(
+        (signal) =>
+          agent.chat(seedText, signal, undefined, {
+            origin: 'hosted',
+            senderName: INTERNAL_SEED_SENDER,
+          }),
+        sessionId,
+        seed,
+      );
+    };
+    // 与 dispatchHostedInput 同一对齐判据：内核当前会话错位会把这一轮写进别的会话
+    const manager = agent.sessionManager;
+    const info = manager?.getCurrentSessionInfo();
+    if (manager && info && `${info.date}-${info.session}` !== sessionId) {
+      void manager.switchToSession(sessionId).then(start, () => undefined);
+      return true;
+    }
+    start();
+    return true;
+  }
   return ops;
 }

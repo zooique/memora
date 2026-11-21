@@ -14,6 +14,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { ProcessEvent } from '@zooique/memora';
 import type { RoundView } from '../../shared/protocol.js';
+import { INTERNAL_SEED_SENDER } from '../../shared/constants.js';
+import { shouldNudgeDispatchRepair } from '../helpers/dispatchReceiptHint.js';
 import { dispatch, mountChatView } from './helpers/chatViewTestEnv.js';
 
 /** 提示元素选择器（与 helper 常量同值；测试侧写死以锁契约） */
@@ -217,5 +219,96 @@ describe('派活承诺对账提示（DISPATCH-CLAIM-HINT-1）', () => {
     // 同一轮第二次投影（待发送队列同步等）→ 幂等：先撤后插，不叠加
     dispatch(turnUpdate);
     expect(document.querySelectorAll(HINT_SELECTOR)).toHaveLength(1);
+  });
+});
+
+/**
+ * 完成门判据（DISPATCH-REPAIR-1）
+ *
+ * 与提示同源：同一词表 + 同一回执判据；额外排除内部种子轮（防补派检查自唤成环）。
+ * 只判断「要不要起一轮补派」，不判断「模型一定会补」——它是概率修复，不是保证。
+ */
+describe('完成门判据：何时自动起一轮补派检查', () => {
+  /** 一次真实形状的成功派发事件对 */
+  const acceptedEvents = [
+    {
+      type: 'tool_start',
+      seq: 1,
+      ts: '2026-11-21T06:00:01.000Z',
+      payload: {
+        toolCallId: 'send-ok',
+        name: 'send_to_session',
+        args: JSON.stringify({ sid: '2026-11-14-session-x', text: '继续写' }),
+      },
+    },
+    {
+      type: 'tool_result',
+      seq: 2,
+      ts: '2026-11-21T06:00:01.500Z',
+      payload: {
+        toolCallId: 'send-ok',
+        name: 'send_to_session',
+        ok: true,
+        summary: '{\n  "ok": true,\n  "accepted": true\n}',
+      },
+    },
+  ] as unknown as ProcessEvent[];
+
+  /** 一次真实形状的业务失败派发（内核 ok=true，业务 ok=false） */
+  const busyEvents = [
+    acceptedEvents[0],
+    {
+      type: 'tool_result',
+      seq: 3,
+      ts: '2026-11-21T06:00:01.500Z',
+      payload: {
+        toolCallId: 'send-ok',
+        name: 'send_to_session',
+        ok: true,
+        summary: '{\n  "ok": false,\n  "code": "E_BUSY"\n}',
+      },
+    },
+  ] as unknown as ProcessEvent[];
+
+  /** 判据输入底座：正常用户轮 + 完成 + 声称已派 */
+  const base = {
+    status: 'complete',
+    assistantMessage: { content: '扩写任务已派给小说会话。' },
+    userMessage: { name: 'memora宝' },
+    processEvents: [] as ProcessEvent[],
+  };
+
+  it('声称已派 + 零回执 ⇒ 触发', () => {
+    expect(shouldNudgeDispatchRepair(base)).toBe(true);
+  });
+
+  it('有业务受理回执 ⇒ 不触发', () => {
+    expect(shouldNudgeDispatchRepair({ ...base, processEvents: acceptedEvents })).toBe(false);
+  });
+
+  it('业务失败回执（E_BUSY）⇒ 触发', () => {
+    expect(shouldNudgeDispatchRepair({ ...base, processEvents: busyEvents })).toBe(true);
+  });
+
+  it('内部种子轮 ⇒ 不触发（补派检查不得自唤成环）', () => {
+    expect(
+      shouldNudgeDispatchRepair({
+        ...base,
+        userMessage: { name: INTERNAL_SEED_SENDER },
+      }),
+    ).toBe(false);
+  });
+
+  it('非 complete（中断 / 软暂停）⇒ 不触发', () => {
+    expect(shouldNudgeDispatchRepair({ ...base, status: 'interrupted' })).toBe(false);
+  });
+
+  it('正文没有派发措辞 ⇒ 不触发', () => {
+    expect(
+      shouldNudgeDispatchRepair({
+        ...base,
+        assistantMessage: { content: '我把文件写好了。' },
+      }),
+    ).toBe(false);
   });
 });

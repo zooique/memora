@@ -3880,6 +3880,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.postTurnUpdateFor(sessionId, liveTurn);
       // 交互提醒（完成）：仅正常收场分支——用户停/软暂停都不是「任务完成」。
       if (latestRoundId) this._attention.onRoundSettled({ roundId: latestRoundId });
+      this._runOps.maybeWakeDispatchRepair(sessionId, settledRound, latestRoundId);
       // status:done 延后到摘要完成（或 5s 兜底）——防 done 后立即删除导致孤儿 round-summary
       // 摘要 Promise 的 then/catch 都会 emit roundSummaryGenerated（成功或失败），正常事件很快到达；
       // 5秒兜底足够抗偶发网络抖动，避免 UI 长时间卡在 thinking 态让用户困惑

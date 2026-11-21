@@ -419,3 +419,54 @@ describe('落定主动浮现 — isSessionIdle / wakeSettlementReport', () => {
     await vi.waitFor(() => expect(calls.runFlow).toHaveBeenCalledTimes(1));
   });
 });
+
+describe('完成门补派 — wakeDispatchRepair', () => {
+  /** 与 fakeWakeAgent 的当前会话对齐口径一致（date-session） */
+  const REPAIR_SID = '2026-11-14-creator';
+
+  it('托管 + 空闲 ⇒ 起一轮内部种子，种子点名源轮', () => {
+    const { agent, chat } = fakeWakeAgent('thinking');
+    const { ops, calls } = makeOps({ getAgent: () => agent });
+
+    expect(ops.wakeDispatchRepair(REPAIR_SID, 'r-source')).toBe(true);
+    expect(calls.runFlow).toHaveBeenCalledTimes(1);
+    const [factory, sessionId, seed] = calls.runFlow.mock.calls[0] as [
+      (signal: AbortSignal) => AsyncGenerator<unknown, void, unknown>,
+      string,
+      { origin?: string; userMessage?: { content: string; name?: string } },
+    ];
+    // 归到源会话、带 hosted 来源戳、点名源轮（模型据此回看自己的承诺）
+    expect(sessionId).toBe(REPAIR_SID);
+    expect(seed.origin).toBe('hosted');
+    expect(seed.userMessage?.content).toContain('r-source');
+    expect(seed.userMessage).toMatchObject({ name: INTERNAL_SEED_SENDER });
+    // 种子只负责起一轮：调用即进既有 chat 通道（不新造流）
+    void factory(new AbortController().signal).next();
+    expect(chat).toHaveBeenCalledTimes(1);
+    // 两个写端同值：检查不得在重放时伪装成用户输入
+    expect(chat.mock.calls[0]?.[3]).toEqual({
+      origin: 'hosted',
+      senderName: INTERNAL_SEED_SENDER,
+    });
+  });
+
+  it('非托管 ⇒ 不起轮（用户自建会话不打扰）', () => {
+    const { agent } = fakeWakeAgent('thinking');
+    const { ops, calls } = makeOps({ isManaged: () => false, getAgent: () => agent });
+
+    expect(ops.wakeDispatchRepair(REPAIR_SID, 'r-source')).toBe(false);
+    expect(calls.runFlow).not.toHaveBeenCalled();
+  });
+
+  it('不空闲 / 实例不在 ⇒ 不起轮', () => {
+    const busy = makeOps({
+      runtimeFor: () => ({ streaming: true }),
+      getAgent: () => fakeWakeAgent('thinking').agent,
+    });
+    expect(busy.ops.wakeDispatchRepair(REPAIR_SID, 'r-source')).toBe(false);
+    expect(busy.calls.runFlow).not.toHaveBeenCalled();
+
+    const gone = makeOps({ getAgent: () => undefined });
+    expect(gone.ops.wakeDispatchRepair(REPAIR_SID, 'r-source')).toBe(false);
+  });
+});
