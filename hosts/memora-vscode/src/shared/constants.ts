@@ -113,7 +113,7 @@ export const L10N_BUNDLE_ELEMENT_ID = 'memora-l10n-bundle';
 /**
  * 内部汇报种子轮的发送者名标记（HOSTED-INTERNAL-SEED-1 · 2026-11-18 真机缺陷）
  *
- * `wakeSettlementReport`（工作会话落定 → 唤醒助手主动汇报）用 `agent.chat(seedText)` 造的
+ * `wakeNoticeTurn`（托管事实送达 → 唤醒接收方主动处置）用 `agent.chat(seedText)` 造的
  * 轮以 `role:'user'` 落盘，重启重放时 `renderReplayRound` 把它当用户输入画成气泡——
  * 用户真机看到"输入区多了一条不是我输入的内容"。按 Claude Code 主流做法，内部注入的
  * 触发指令只进模型上下文、不进用户 timeline，故用本标记让重放跳过该 user 气泡。

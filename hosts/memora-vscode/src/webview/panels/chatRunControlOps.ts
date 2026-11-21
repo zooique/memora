@@ -37,6 +37,8 @@ import {
 } from '../helpers/dispatchReceiptHint.js';
 // 判据输入的事件合并单点（与 step 检查点 / 流尾 / live 重放同一 seq 幂等语义）
 import { mergeProcessEvents } from '../helpers/processEventMerge.js';
+// 唤醒档位：由通知器声明「这次是哪一档事实」，本域只按档位给种子（档位不散、文案不散）
+import type { WakeKind } from '../helpers/hostedSessionNotice.js';
 
 /** 本域读到的会话级运行态（`runtimeFor()` 的窄投影，只读本域需要的两个字段） */
 export interface RunControlRuntime {
@@ -118,15 +120,18 @@ export interface ChatRunControlOps {
   /** 某会话此刻是否空闲（不在跑流 / 没有待答提问 / 没有暂停挂起）——落定汇报的「不打断」判据 */
   isSessionIdle(sessionId: string): boolean;
   /**
-   * 托管落定「主动起一轮」：替创建者开一轮汇报（读结果 → 整理 → 发给用户）
+   * 托管事实「主动起一轮」：替接收方开一轮处置（落定汇报 / 待拍板代答 / 交回裁决）
    *
    * 与托管派发同一条 `runFlow` + `chat(origin='hosted')` 通路，不新造通道、不新造面板；
-   * 事实本体由通知器压入创建者的系统事件队列，本方法只负责「起一轮」并把汇报口径写进种子。
+   * 事实本体由通知器压入接收方的系统事件队列，本方法只负责「起一轮」并把**该档的处置口径**
+   * 写进种子。档位由通知器给（它知道投的是哪一档），文案只在本处持有——第四档 `pending`
+   * = 待办合并浮现（可跨档），种子据实说「若干条、可能已被取代」。
    *
-   * @param creator 创建者（托管主控）会话 id
+   * @param creator 接收方（托管主控）会话 id
+   * @param kind 本次唤醒的事实档位
    * @returns 是否真的起了一轮（false = 实例未就绪 / 不空闲 / 未开跑）
    */
-  wakeSettlementReport(creator: string): boolean;
+  wakeNoticeTurn(creator: string, kind: WakeKind): boolean;
 
   /**
    * 完成门「补派检查」：轮末声称已派但无受理回执 ⇒ 起一轮内部种子
@@ -226,7 +231,14 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
         const roundId = agent.currentRoundId();
         // ask 域先清宿主镜像 + 逐条透出「未回答」行（与盘面同文案、同题身份），再走内核收场
         const checkpointDiscarded = await ask.abandonOnStop();
-        if (visible) deps.post({ type: 'status', state: 'done' }, targetId);
+        if (visible) {
+          // 轮级收场必发：paused 态没有活跃流，runFlow 收尾不会发 interrupted——漏了这一条，
+          // ask 挂起前建的续接骨架（D3 既定形态）就永不收场，留下带角色名头的「等待输入」
+          // 空壳（2026-11-22 真机「一轮里两个角色名」正是此因）。顺序与 thinking 态停止同构：
+          // 先轮级收场（finalize + 底栏「用户中断」），再切骨架显隐。
+          deps.post({ type: 'interrupted', roundId }, targetId);
+          deps.post({ type: 'status', state: 'done' }, targetId);
+        }
         if (checkpointDiscarded) {
           // 有提问时已由 ask 域给出「N 个提问未回答」，此处只补纯暂停态的旧提示
           if (!hadAsk) {
@@ -416,24 +428,44 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
     },
 
     /**
-     * 托管落定「主动起一轮」：替创建者开一轮汇报
+     * 托管事实「主动起一轮」：按档位写处置口径（第八切片 HOSTED-NOTICE-KIND-1）
      *
      * 走既有托管通道（`chat(origin='hosted')` + `runFlow`），不新造流、不新造面板：
-     * 事实本体已由通知器压入创建者的系统事件队列（首个 step 边界注入），
-     * 本方法的种子只写「读结果并汇报」的口径——主控据此主动说话，用户不必先开口。
+     * 事实本体已由通知器压入接收方的系统事件队列（首个 step 边界注入），本方法只管种子。
      * 种子气泡与普通托管输入同型：role 仍是 `user`，只盖来源戳 `origin='hosted'`
      * （界面据此标「由助手发送」）；不另造角色。
+     *
+     * 为什么必须分档（真机证据）：三条通道共用一句「有一条托管会话刚落定」时，
+     * 「子会话在等你拍板」那次唤醒也被通知「已落定」，模型于是先汇报交付、顺手代答；
+     * `handback` 被同样错告知，交回裁决变成交付汇报。档位是通知器的事实，口径是本域的指令
+     * —— 两处各持一半，档位不散、文案不散。
      */
-    wakeSettlementReport(creator: string): boolean {
-      // 汇报口径进种子：**讲交付物**（通知里带成功轮的交付摘录）→ 结果 → 下一步或需用户决定。
-      // 不许答「哪条会话 / round / 成功」这类元信息：那些通知里已有，主控答它们等于零信息。
-      const seedText = vscode.l10n.t(
-        'A managed session has just settled. The settlement notice in context includes an excerpt of what it actually delivered. Report what it delivered (quote the excerpt or summarize its key points — do not answer with which session, round id, or "success"), then one sentence on the outcome, and the next step or what you need me to decide.',
-      );
+    wakeNoticeTurn(creator: string, kind: WakeKind): boolean {
+      // 四档口径各写一段，不共用首句：首句就是模型据以定性的那句
+      const seeds: Record<WakeKind, string> = {
+        // 落定：**讲交付物**（通知里带成功轮的交付摘录）→ 结果 → 下一步或需用户决定。
+        // 不许答「哪条会话 / round / 成功」这类元信息：那些通知里已有，答它们等于零信息。
+        settlement: vscode.l10n.t(
+          'A managed session has just settled. The settlement notice in context includes an excerpt of what it actually delivered. Report what it delivered (quote the excerpt or summarize its key points — do not answer with which session, round id, or "success"), then one sentence on the outcome, and the next step or what you need me to decide.',
+        ),
+        // 待拍板：首句必须否掉「已落定」，并把处置优先级写成可执行的一条
+        'needs-answer': vscode.l10n.t(
+          'A managed session is waiting for your decision — it has NOT settled. The pending question and its options are in the fact notice above. Decide it and unblock the work: pick an option with a stated reason whenever the question and the context allow it; only pass it back to me when you genuinely cannot judge; never make an irreversible decision for me. Close with one sentence on what you decided.',
+        ),
+        // 交回：事实是「超界」，动作是三选一，不是汇报交付
+        handback: vscode.l10n.t(
+          'A managed session has handed the work back to you — it went beyond the assignment you gave it. The handback notice in context carries that original boundary. Decide which of the three you want (start a new assignment / merge it into the work you already have / hand it to me) and say why.',
+        ),
+        // 合并浮现：可能跨档，据实说「若干条 + 时间 + 可能已被取代」，不许假装单一档
+        pending: vscode.l10n.t(
+          'Several managed-session facts were queued while you were busy; they are now in context, oldest first. Each line starts with how long ago it was produced — a later line may already have superseded an earlier one, so read the age before acting and never treat an old settlement as the current state of that session. Handle them in the order that makes sense, then give me one short summary.',
+        ),
+      };
+      // seedId 带档位：重放 / 排查时一眼看出这一轮是被哪一档唤醒的（不再一律叫 settlement）
       return startInternalSeedTurn(
         creator,
-        `live-settlement-${new Date().toISOString()}`,
-        seedText,
+        `live-notice-${kind}-${new Date().toISOString()}`,
+        seeds[kind],
       );
     },
 

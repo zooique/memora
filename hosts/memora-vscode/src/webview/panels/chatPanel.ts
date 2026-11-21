@@ -488,7 +488,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 主动浮现的前提：创建者空闲，且用户没在输入框里打字（不抢 / 不打断；宁晚不打断）
     canWakeCreator: (sid) =>
       this._runOps.isSessionIdle(sid) && !(sid === this._currentSessionId && this._composerHasText),
-    wakeCreator: (sid) => this._runOps.wakeSettlementReport(sid),
+    // 档位由通知器随事实一起给：不同档的种子口径不同（第八切片 HOSTED-NOTICE-KIND-1）
+    wakeCreator: (sid, kind) => this._runOps.wakeNoticeTurn(sid, kind),
   });
   /** 当前**显示会话**的 Agent（`_sessionAgents` 的一份投影；真正的实例归属表在 extension） */
   private _agent: Agent | undefined;

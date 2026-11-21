@@ -40,6 +40,18 @@
  * 第七切片（P2 Hand back）：Worker 超界交回走同一投递器的 `handback` 档——收场文本以
  * `[HAND_BACK]` 开头时接管本轮落定通知（只投一条，防双醒），正文带原派活边界
  * `workOrder` 供 Router 决策；去重键前缀与落定 / needs-answer 隔离。不启用第二套消费者。
+ *
+ * 第八切片（HOSTED-NOTICE-KIND-1 · 2026-11-22）：**唤醒种子按档位分家 + 待办事实带时效**。
+ * 真机证据（两轮 `userMessage` 原文）：三条通道共用一句「有一条托管会话刚落定」的种子，
+ * 于是「子会话在等你拍板」那一次唤醒也被告知「已落定」，模型只好先汇报交付、顺手代答；
+ * 同轮上下文里「中断」与「待答」并存却没有产生时刻，模型按「最后一条为准」推断，
+ * 把几分钟前的旧落定读成「此刻刚被停」，进而不去代答第 2 题。
+ *
+ * 两条修法各自收口在**它该在的那一层**：
+ *   - 档位由本通知器声明（它知道每次投的是哪一档），文案仍单点留在运行控制域
+ *     （`wakeNoticeTurn`）——档位不散、文案不散，不新增第二份真相；
+ *   - 待办正文原样保留（不二次改写、不做二手摘要），只前置「产生于 N 分钟前」，
+ *     让模型能自己排先后；「较早一条可能已被取代」这类**指令**归种子，不塞进事实正文。
  */
 import {
   getSessionDisplayName,
@@ -60,6 +72,38 @@ import {
   type HandBackMessage,
 } from './handBackMessage.js';
 
+/**
+ * 唤醒种子的档位（第八切片 HOSTED-NOTICE-KIND-1）
+ *
+ * 分工的理由：**谁知道「这是哪一档事实」，谁负责声明**——本通知器按入口分别发落定 /
+ * 待拍板 / 交回三档，它最清楚；而种子措辞是「起一轮干什么」的**指令**，属于起轮机制，
+ * 归运行控制域单点持有。两处各持一半才是单点：档位不散、文案不散。
+ *
+ * `pending` = 待办合并浮现档：一次放出多条（可能跨档），种子据实说「若干条、可能已被后续
+ * 动作取代，先看时间」，**不许假装单一档**——那正是把旧落定说成当前状态的根因。
+ */
+export type WakeKind = 'settlement' | 'needs-answer' | 'handback' | 'pending';
+
+/**
+ * 压着待浮现的一条事实（第八切片：带身份与产生时刻）
+ *
+ * 模块头原来写「只存正文、不存轮身份」是当时的如实设计（去重键在受理时已记，不需要它防重）。
+ * 真机证明还需要**排序与归属**：多条压在一起时，没有时刻就没有先后，没有 sid 就只能让模型
+ * 从正文里自己拼故事。故补身份与时刻——补的是「被丢掉的事实」，不改任何判据。
+ */
+interface PendingReport {
+  /** 已拼好的通知正文（原样保留，释放时只在前面加时间，不改写） */
+  text: string;
+  /** 事实属于哪条会话（与正文里的 sid 同源，供将来按会话分组；不另造摘要） */
+  sessionId: string;
+  /** 事实归属的轮（待拍板档没有轮 id，如实缺省） */
+  roundId?: string;
+  /** 档位（释放时据此声明是合并浮现） */
+  kind: WakeKind;
+  /** 产生时刻（毫秒）：释放时折算成「N 分钟前」，让模型能排先后 */
+  at: number;
+}
+
 /** 通知器依赖（全部由面板注入闭包；本类不持有面板实例） */
 export interface HostedSessionNoticeDeps {
   /** 按会话读元数据（真源 = 宿主 SessionStore） */
@@ -79,11 +123,12 @@ export interface HostedSessionNoticeDeps {
   /** 此刻能否唤醒创建者（空闲 + 用户没在输入框里打字）——「不抢 / 不打断」的唯一判据 */
   canWakeCreator: (creatorSessionId: string) => boolean;
   /**
-   * 替创建者立刻起一轮汇报（面板实现：既有托管通道 `chat(origin='hosted')` + `runFlow`）
+   * 替创建者立刻起一轮（面板实现：既有托管通道 `chat(origin='hosted')` + `runFlow`）
    *
+   * @param kind 本次唤醒的事实档位（种子口径由起轮侧按档位单点给出，见 {@link WakeKind}）
    * @returns false = 起不来（实例未就绪 / 此刻不空闲）；调用方据此保留待办、不装作已浮现
    */
-  wakeCreator: (creatorSessionId: string) => boolean;
+  wakeCreator: (creatorSessionId: string, kind: WakeKind) => boolean;
 }
 
 /** 流尾通知入参（对象化只为可读；字段都来自流尾现成值） */
@@ -259,12 +304,12 @@ export class HostedSessionNotifier {
   private readonly notified = new Set<string>();
 
   /**
-   * 创建者 → 压着待浮现的落定正文（创建者忙 / 用户正在输入时暂存）
+   * 创建者 → 压着待浮现的事实（创建者忙 / 用户正在输入时暂存）
    *
-   * 只存正文、不存轮身份：去重键在入待办时就已记下，同一轮不会再排第二次。
-   * 内存态、随进程消失（重启不补发，见模块头边界）。
+   * 每条带会话身份、轮身份、档位与产生时刻（第八切片）：去重仍由 `notified` 负责，
+   * 这些字段只服务「释放时如实标注先后与归属」。内存态、随进程消失（重启不补发，见模块头边界）。
    */
-  private readonly pendingReports = new Map<string, string[]>();
+  private readonly pendingReports = new Map<string, PendingReport[]>();
 
   constructor(private readonly deps: HostedSessionNoticeDeps) {}
 
@@ -345,7 +390,14 @@ export class HostedSessionNotifier {
       detail,
       delivered || undefined,
     );
-    return this.deliver(target.creator, text, key);
+    return this.deliver({
+      creator: target.creator,
+      text,
+      key,
+      kind: 'settlement',
+      sessionId: input.sessionId,
+      roundId: round.id,
+    });
   }
 
   /**
@@ -403,7 +455,13 @@ export class HostedSessionNotifier {
       undefined,
       `失败（异常终止：${message}）`,
     );
-    return this.deliver(target.creator, text, undefined);
+    return this.deliver({
+      creator: target.creator,
+      text,
+      key: undefined,
+      kind: 'settlement',
+      sessionId: input.sessionId,
+    });
   }
 
   /**
@@ -429,7 +487,13 @@ export class HostedSessionNotifier {
     const key = needsAnswerKey(input.sessionId, input.questions);
     if (this.notified.has(key)) return false;
     const text = formatNeedsAnswer(target.title, input.sessionId, input.questions);
-    return this.deliver(target.creator, text, key);
+    return this.deliver({
+      creator: target.creator,
+      text,
+      key,
+      kind: 'needs-answer',
+      sessionId: input.sessionId,
+    });
   }
 
   /**
@@ -449,7 +513,13 @@ export class HostedSessionNotifier {
     if (!target) return false;
     const workOrder = this.deps.readSessionMeta(sessionId)?.workOrder;
     const text = formatHandBack(target.title, sessionId, msg, workOrder);
-    const delivered = this.deliver(target.creator, text, key);
+    const delivered = this.deliver({
+      creator: target.creator,
+      text,
+      key,
+      kind: 'handback',
+      sessionId,
+    });
     // deliver 在未装配 / 忙时压待办也返回 false，但已记去重键 ⇒ 视为受理
     return delivered || this.notified.has(key);
   }
@@ -487,12 +557,17 @@ export class HostedSessionNotifier {
     if (!loop) return;
     if (!this.deps.canWakeCreator(creator)) return;
     this.pendingReports.delete(creator);
-    for (const text of pending) loop.enqueueCommandResult(text);
-    this.deps.wakeCreator(creator);
+    const now = Date.now();
+    // 逐条入队、保持产生顺序：每条前置「产生于多久之前」——模型据此排出先后，
+    // 不会把几分钟前的落定当成此刻刚发生（旧事实被后续动作取代后，没时间戳就会被
+    // 读成当前状态：真机里模型正是这样把上一轮的停止当成本轮结论）。
+    for (const report of pending) loop.enqueueCommandResult(stampPending(report, now));
+    // 合并浮现是**第四档**：可能跨落定 / 待拍板 / 交回，种子不许假装单一档
+    this.deps.wakeCreator(creator, 'pending');
   }
 
   /**
-   * 真正投递：压入创建者的系统事件注入队列，并（空闲时）替它起一轮汇报
+   * 真正投递：压入创建者的系统事件注入队列，并（空闲时）替它起一轮
    *
    * 受理即记去重键——三种受理形态（直接投递 / 忙时压待办 / 实例未装配时压待办）都算受理，
    * 只有「判定不该通知」才不记。创建者实例还没装配时**不许直接丢**：真机场景是
@@ -501,36 +576,72 @@ export class HostedSessionNotifier {
    *
    * @returns true = 已投进创建者事件队列（或已决定稍后自动放出）；false = 本轮不通知
    */
-  private deliver(creator: string, text: string, key: string | undefined): boolean {
+  private deliver(delivery: {
+    creator: string;
+    text: string;
+    key: string | undefined;
+    kind: WakeKind;
+    sessionId: string;
+    roundId?: string;
+  }): boolean {
+    const { creator, text, key, kind } = delivery;
     if (key) this.notified.add(key);
     const loop = this.deps.getAgent(creator)?.agentLoop;
     // 实例未装配（或刚被摘）：先压待办，等实例就位再放；不丢、也不装作已送达
     if (!loop) {
-      this.enqueuePending(creator, text);
+      this.enqueuePending(delivery);
       return false;
     }
     if (!this.deps.canWakeCreator(creator)) {
-      this.enqueuePending(creator, text);
+      this.enqueuePending(delivery);
       return true;
     }
     loop.enqueueCommandResult(text);
-    // 事实已入队；立刻起一轮让主控主动汇报。起不来（实例刚被摘）时事实仍在队列，
+    // 事实已入队；立刻起一轮让主控主动处置。起不来（实例刚被摘）时事实仍在队列，
     // 下次用户说话时照样带进上下文——不丢事实，只是不主动开口这一种降级。
-    this.deps.wakeCreator(creator);
+    this.deps.wakeCreator(creator, kind);
     return true;
   }
 
   /**
-   * 把一条待浮现正文压进创建者的待办（同一轮重复信号不会重复排队：去重键在 `deliver` 入口就记了）
+   * 把一条待浮现事实压进创建者的待办（同一轮重复信号不会重复排队：去重键在 `deliver` 入口就记了）
    *
-   * @param creator 创建者会话
-   * @param text 已拼好的通知正文
+   * @param delivery 已受理的投递（正文 + 身份 + 档位；产生时刻在此刻落章）
    */
-  private enqueuePending(creator: string, text: string): void {
-    const queue = this.pendingReports.get(creator);
-    if (queue) queue.push(text);
-    else this.pendingReports.set(creator, [text]);
+  private enqueuePending(delivery: {
+    creator: string;
+    text: string;
+    kind: WakeKind;
+    sessionId: string;
+    roundId?: string;
+  }): void {
+    const report: PendingReport = {
+      text: delivery.text,
+      sessionId: delivery.sessionId,
+      ...(delivery.roundId ? { roundId: delivery.roundId } : {}),
+      kind: delivery.kind,
+      at: Date.now(),
+    };
+    const queue = this.pendingReports.get(delivery.creator);
+    if (queue) queue.push(report);
+    else this.pendingReports.set(delivery.creator, [report]);
   }
+}
+
+/**
+ * 给待浮现事实标上「产生于多久之前」（第八切片）
+ *
+ * 只加时间前缀、不改写正文——与「摘录只剪不改写」同一纪律：正文是事实，本函数只补事实的
+ * 时间坐标。分钟级足够：投递延迟是秒级，而误导发生在「几分钟前的机会窗口已过」这个量级上。
+ *
+ * @param report 待浮现事实
+ * @param now 释放时刻（毫秒）
+ * @returns 可直接入队的一行
+ */
+function stampPending(report: PendingReport, now: number): string {
+  const minutes = Math.floor(Math.max(0, now - report.at) / 60_000);
+  const age = minutes < 1 ? '刚刚产生' : `产生于 ${minutes} 分钟前`;
+  return `（${age}）${report.text}`;
 }
 
 /**

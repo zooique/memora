@@ -127,6 +127,12 @@ describe('handleStop — 指定会话', () => {
     expect(calls.sync).not.toHaveBeenCalled();
     expect(calls.discarded).toHaveBeenCalledWith(['排队的话'], BACKGROUND);
     expect(calls.turnUpdate).toHaveBeenCalledWith(BACKGROUND);
+    // 后台会话没有视图在画它 → 不发轮级收场（切过去时由重放正确渲染中断轮），
+    // 也就不会把 A 的骨架收掉（与上面的按会话投递同一纪律）
+    expect(calls.post).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'interrupted' }),
+      expect.anything(),
+    );
   });
 
   it('当前显示会话暂停：界面副作用照旧发生（状态 / 队列 / 丢弃信号）', async () => {
@@ -137,6 +143,12 @@ describe('handleStop — 指定会话', () => {
     const stopped = await ops.handleStop();
     expect(stopped).toBe(true);
     expect(calls.post).toHaveBeenCalledWith({ type: 'status', state: 'done' }, CURRENT);
+    // 轮级收场必发（2026-11-22 真机 bug1）：paused 态没有活跃流，runFlow 收尾不会发
+    // interrupted——缺了它，ask 挂起前建的续接骨架永不收场，留下带角色名头的「等待输入」空壳。
+    // 顺序与 thinking 态同构：先轮级收场（带被停的轮 id），再切骨架显隐。
+    const postedTypes = calls.post.mock.calls.map(([msg]) => (msg as { type: string }).type);
+    expect(postedTypes.slice(0, 2)).toEqual(['interrupted', 'status']);
+    expect(calls.post).toHaveBeenCalledWith({ type: 'interrupted', roundId: 'round-2' }, CURRENT);
     expect(calls.sync).toHaveBeenCalledWith(true);
     expect(calls.discarded).toHaveBeenCalledWith(['排队的话'], CURRENT);
     expect(calls.stopped).toHaveBeenCalledWith(expect.anything(), 'round-2', CURRENT);
@@ -341,7 +353,7 @@ function fakeWakeAgent(
   return { agent, chat, switchToSession };
 }
 
-describe('落定主动浮现 — isSessionIdle / wakeSettlementReport', () => {
+describe('托管事实主动浮现 — isSessionIdle / wakeNoticeTurn', () => {
   /** 创建者会话 id（与 fakeWakeAgent 的对齐口径一致） */
   const CREATOR = '2026-11-14-creator';
 
@@ -372,7 +384,7 @@ describe('落定主动浮现 — isSessionIdle / wakeSettlementReport', () => {
     const { agent, chat } = fakeWakeAgent('thinking');
     const { ops, calls } = makeOps({ getAgent: () => agent });
 
-    expect(ops.wakeSettlementReport(CREATOR)).toBe(true);
+    expect(ops.wakeNoticeTurn(CREATOR, 'settlement')).toBe(true);
     expect(calls.runFlow).toHaveBeenCalledTimes(1);
     const [factory, sessionId, seed] = calls.runFlow.mock.calls[0] as [
       (signal: AbortSignal) => AsyncGenerator<unknown, void, unknown>,
@@ -403,22 +415,72 @@ describe('落定主动浮现 — isSessionIdle / wakeSettlementReport', () => {
       runtimeFor: () => ({ streaming: true }),
       getAgent: () => fakeWakeAgent('thinking').agent,
     });
-    expect(busy.wakeSettlementReport(CREATOR)).toBe(false);
+    expect(busy.wakeNoticeTurn(CREATOR, 'settlement')).toBe(false);
     expect(busyCalls.runFlow).not.toHaveBeenCalled();
 
     const { ops: gone } = makeOps({ getAgent: () => undefined });
-    expect(gone.wakeSettlementReport(CREATOR)).toBe(false);
+    expect(gone.wakeNoticeTurn(CREATOR, 'settlement')).toBe(false);
   });
 
   it('内核当前会话错位 → 先切回创建者再起轮（不把汇报写进别的会话）', async () => {
     const { agent, switchToSession } = fakeWakeAgent('thinking', false);
     const { ops, calls } = makeOps({ getAgent: () => agent });
 
-    expect(ops.wakeSettlementReport(CREATOR)).toBe(true);
+    expect(ops.wakeNoticeTurn(CREATOR, 'settlement')).toBe(true);
     // 错位时不同步直接开跑：先等切换完成，再走 runFlow
     expect(switchToSession).toHaveBeenCalledWith(CREATOR);
     expect(calls.runFlow).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(calls.runFlow).toHaveBeenCalledTimes(1));
+  });
+
+  /**
+   * 起一轮并取回种子（每档一个独立替身：runFlow 调用记录不互相污染）
+   *
+   * @param kind 唤醒档位
+   * @returns 种子正文与 seedId
+   */
+  function seedOf(kind: 'settlement' | 'needs-answer' | 'handback' | 'pending'): {
+    content: string;
+    id: string;
+  } {
+    const { agent } = fakeWakeAgent('thinking');
+    const { ops, calls } = makeOps({ getAgent: () => agent });
+    expect(ops.wakeNoticeTurn(CREATOR, kind)).toBe(true);
+    const seed = calls.runFlow.mock.calls[0]?.[2] as {
+      userMessage?: { id?: string; content?: string };
+    };
+    return { content: seed.userMessage?.content ?? '', id: seed.userMessage?.id ?? '' };
+  }
+
+  it('种子按档位分家：待拍板档必须否掉「已落定」，交回档不是交付汇报', () => {
+    const settlement = seedOf('settlement');
+    const needsAnswer = seedOf('needs-answer');
+    const handback = seedOf('handback');
+    const pending = seedOf('pending');
+
+    // 落定档：首句就是「已落定」
+    expect(settlement.content).toContain('has just settled');
+    // 待拍板档：必须**明确否掉**已落定——共用首句正是真机误判的根因
+    expect(needsAnswer.content).toContain('NOT settled');
+    expect(needsAnswer.content).not.toContain('has just settled');
+    expect(needsAnswer.content).toContain('waiting for your decision');
+    // 交回档：三选一裁决，不是交付汇报
+    expect(handback.content).toContain('handed the work back');
+    expect(handback.content).not.toContain('has just settled');
+    // 合并浮现档：据实说「压着若干条 + 可能已被取代」，并给排序指令
+    expect(pending.content).toContain('queued while you were busy');
+    expect(pending.content).toContain('superseded');
+    // 四档两两不同（防退化成共用一句）
+    const unique = new Set([
+      settlement.content,
+      needsAnswer.content,
+      handback.content,
+      pending.content,
+    ]);
+    expect(unique.size).toBe(4);
+    // seedId 带档位：重放 / 排查时一眼看出这一轮被哪一档唤醒
+    expect(needsAnswer.id).toContain('live-notice-needs-answer-');
+    expect(pending.id).toContain('live-notice-pending-');
   });
 });
 

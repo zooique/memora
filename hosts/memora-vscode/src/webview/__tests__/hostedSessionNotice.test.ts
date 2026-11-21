@@ -14,6 +14,10 @@
  * 并按 2026-11-21 订正为「有选项优先代选」（ASK-PROXY-PREFER-1）；
  * 忙 / 未装配压待办不丢；无戳轮不叫代理；同批去重；
  * needs-answer 键与落定键隔离（同轮先提问后落定，两条都能投递，落定不被吞）。
+ *
+ * 第八切片（HOSTED-NOTICE-KIND-1 · 唤醒档位与待办时效）：三档事实各自声明档位（种子不再共用
+ * 一句「已落定」）；待办释放时每条前置「产生于 N 分钟前」且档位归 `pending`——否则多条压队
+ * 合并浮现时模型无法排先后，会把几分钟前的旧落定读成「此刻刚被停」。
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -829,5 +833,83 @@ describe('P2 · Hand back 交回档（与落定共投递面）', () => {
     expect(src.match(/noteHandBackOrSettlement\(/g)?.length).toBe(1);
     expect(src).toContain('textByRound.get(latestRoundId)');
     expect(src).not.toContain('this._hostedNotifier.noteSettledFlow(');
+  });
+});
+
+/**
+ * 第八切片（HOSTED-NOTICE-KIND-1）：唤醒档位分家 + 待办事实带时效
+ *
+ * 真机证据：三条通道共用一句「有一条托管会话刚落定」的种子 ⇒「子会话在等你拍板」那次唤醒
+ * 也被告知已落定，模型先汇报交付、顺手代答；多条压队合并浮现时无产生时刻 ⇒ 模型按
+ * 「最后一条为准」推断，把几分钟前的旧落定读成「此刻刚被停」，进而不去代答第 2 题。
+ */
+describe('HostedSessionNotifier · 唤醒档位与待办时效（HOSTED-NOTICE-KIND-1）', () => {
+  /** 最小提问 DTO（题面真源 = 协议；本组只验档位与时效，不验题面拼装） */
+  const ask: PendingQuestionDto[] = [{ slot: 'slot-0', question: '选哪个？' }];
+
+  it('待拍板 → 档位 needs-answer（不再冒充「已落定」）', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '小说家 ask 测试'));
+    h.notifier.remember(CHILD, CREATOR);
+
+    expect(h.notifier.noteNeedsAnswer({ sessionId: CHILD, questions: ask })).toBe(true);
+    expect(h.wakeCreator).toHaveBeenCalledWith(CREATOR, 'needs-answer');
+  });
+
+  it('落定 → settlement；交回 → handback（三档各自声明，不共用一句）', () => {
+    const settled = harness();
+    settled.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    settled.rounds.set('r31', round('r31', 'complete', []));
+    settled.notifier.remember(CHILD, CREATOR);
+    settled.notifier.noteSettledFlow(CHILD, 'r31', false, false);
+    expect(settled.wakeCreator).toHaveBeenCalledWith(CREATOR, 'settlement');
+
+    const back = harness();
+    back.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    back.notifier.remember(CHILD, CREATOR);
+    back.notifier.noteHandBack(CHILD, '[HAND_BACK] reason: 超出范围');
+    expect(back.wakeCreator).toHaveBeenCalledWith(CREATOR, 'handback');
+  });
+
+  it('待办合并浮现 → 档位 pending，且每条前置「产生于 N 分钟前」', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-11-22T10:00:00.000Z'));
+      const h = harness();
+      h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+      h.rounds.set('r32', round('r32', 'complete', []));
+      h.notifier.remember(CHILD, CREATOR);
+      // 创建者在忙：事实压进待办，此刻不浮现
+      h.setCanWake(false);
+      h.notifier.noteSettledFlow(CHILD, 'r32', false, false);
+      expect(h.creatorQueue).not.toHaveBeenCalled();
+
+      // 3 分钟后创建者收场空闲 → 浮现时必须带上产生时刻
+      vi.setSystemTime(new Date('2026-11-22T10:03:00.000Z'));
+      h.setCanWake(true);
+      h.notifier.flushPending(CREATOR);
+
+      const text = h.creatorQueue.mock.calls[0]?.[0] as string;
+      expect(text).toContain('产生于 3 分钟前');
+      // 正文仍原样保留（只加时间坐标，不改写事实）
+      expect(text).toContain('[托管会话已落定]');
+      expect(text).toContain('抓取任务');
+      expect(h.wakeCreator).toHaveBeenCalledWith(CREATOR, 'pending');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('刚压就放 → 标「刚刚产生」（不给毫秒级假精度）', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    h.rounds.set('r33', round('r33', 'complete', []));
+    h.notifier.remember(CHILD, CREATOR);
+    h.setCanWake(false);
+    h.notifier.noteSettledFlow(CHILD, 'r33', false, false);
+    h.setCanWake(true);
+    h.notifier.flushPending(CREATOR);
+
+    expect(h.creatorQueue.mock.calls[0]?.[0] as string).toContain('刚刚产生');
   });
 });
