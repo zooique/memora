@@ -1825,6 +1825,48 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(postMessage).toHaveBeenCalledWith({ type: 'open_changed_file', path: 'src/b.ts' });
   });
 
+  it('清单每行独立「确认」按钮 → post confirm_all_file_changes 带该行 path（FILE-CHANGES-FLOAT-1）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'file_changes', count: 2, files: ['src/a.md', 'src/b.ts'] });
+    const list = document.querySelector('.file-changes-bar__list') as HTMLElement;
+    const rows = list.querySelectorAll('.file-changes-bar__row');
+    expect(rows).toHaveLength(2);
+    // 每行 = 打开按钮 + 确认按钮两个兄弟，button 不嵌 button（HTML 合法）
+    const secondConfirm = rows[1]!.querySelector(
+      '.file-changes-bar__file-confirm',
+    ) as HTMLButtonElement;
+    expect(secondConfirm).not.toBeNull();
+    secondConfirm.click();
+    // 带 path 的单文件确认；打开按钮与全量按钮的 payload 都不被改写
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'confirm_all_file_changes',
+      path: 'src/b.ts',
+    });
+    expect(postMessage).not.toHaveBeenCalledWith({ type: 'open_changed_file', path: 'src/b.ts' });
+    expect(postMessage).not.toHaveBeenCalledWith({ type: 'confirm_all_file_changes' });
+  });
+
+  it('清单每行独立「回退」按钮 → post revert_all_file_changes 带该行 path（FILE-CHANGES-FLOAT-1）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'file_changes', count: 2, files: ['src/a.md', 'src/b.ts'] });
+    const list = document.querySelector('.file-changes-bar__list') as HTMLElement;
+    const rows = list.querySelectorAll('.file-changes-bar__row');
+    expect(rows).toHaveLength(2);
+    // 每行 = 打开 + 确认 + 回退三兄弟按钮，button 不嵌 button（HTML 合法）
+    const firstRevert = rows[0]!.querySelector(
+      '.file-changes-bar__file-revert',
+    ) as HTMLButtonElement;
+    expect(firstRevert).not.toBeNull();
+    firstRevert.click();
+    // 带 path 的单文件回退；头部全量回退的无字段 payload 不被改写
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'revert_all_file_changes',
+      path: 'src/a.md',
+    });
+    expect(postMessage).not.toHaveBeenCalledWith({ type: 'revert_all_file_changes' });
+    expect(postMessage).not.toHaveBeenCalledWith({ type: 'open_changed_file', path: 'src/a.md' });
+  });
+
   it('清单随新快照全量重建 + 保留 title 兜底（展开态不被重渲染关掉）', () => {
     mountChatView();
     dispatch({ type: 'file_changes', count: 1, files: ['a.md'] });

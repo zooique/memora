@@ -21,6 +21,8 @@ import { relativeUnderPrimaryRoot, resolveUnderPrimaryRoot } from '../../extensi
 // findFiles 只吃 files.exclude，不显式传 exclude 时 node_modules 等噪音会挤占上限
 // （排除语义实读见 ignoredDirs.ts）
 import { IGNORED_DIR_GLOB } from '../../extension/host/ignoredDirs.js';
+// 单文件确认 / 回退命令 id 唯一真源 = fileChangeView（与 CONFIRM_ALL / REVERT_ALL 同源同模块，SSOT）
+import { CONFIRM_FILE_COMMAND, RESTORE_FILE_COMMAND } from '../../extension/host/fileChangeView.js';
 // 注入源命名单一真源（HOST-CTX-4 ①）：@ 下拉 label 与 chip 短名 / 信封头同读一处，勿内嵌字面量
 import { MOUNTABLE_INJECTION_META } from '../../shared/injectionSourceMeta.js';
 
@@ -54,6 +56,23 @@ export interface ChatRefOps {
    * 篡改后借这条上行通道打开任意文件。对拍真源由调用方（面板）注入，本域不缓存副本。
    */
   openChangedFile(path: string, changedFiles: readonly string[]): Promise<void>;
+  /**
+   * 文件改动条展开清单 → 点某行的独立「确认」按钮（单文件确认）
+   *
+   * 与 `openChangedFile` 同款对拍契约：`path` 必须命中宿主当前未确认清单（防 webview 被篡改
+   * 后借这条通道确认任意文件）。确认语义 = 复用已注册 `CONFIRM_FILE_COMMAND`（与文件内
+   * CodeLens / 状态栏同一实现，SSOT，纯清装饰不写盘），解析走 `resolveUnderPrimaryRoot`
+   * 同模块单点——不新造第二套路径守卫，也不自己实现清理逻辑。
+   */
+  confirmChangedFile(path: string, changedFiles: readonly string[]): void;
+  /**
+   * 文件改动条展开清单 → 点某行的独立「回退此文件」按钮（单文件写盘回退）
+   *
+   * 与 `confirmChangedFile` 同款对拍 + 首根越界守卫，但语义是**写盘且不可撤销**——
+   * 故复用已注册 `RESTORE_FILE_COMMAND`（与编辑器标题栏那颗同实现，自带 dirty 模态
+   * 二次确认），本域绝不绕过它的确认、不自己实现回退逻辑（SSOT + 不带伤）。
+   */
+  restoreChangedFile(path: string, changedFiles: readonly string[]): void;
   openMentionQuickPick(): Promise<void>;
 }
 
@@ -187,6 +206,63 @@ export function createChatRefOps(deps: ChatRefOpsDeps): ChatRefOps {
         return;
       }
       await ops.openRefInEditor({ path, kind: 'file' });
+    },
+
+    confirmChangedFile(path: string, changedFiles: readonly string[]): void {
+      if (!changedFiles.includes(path)) {
+        deps.post({
+          type: 'notice',
+          level: 'error',
+          message: vscode.l10n.t(
+            'Cannot confirm changed file: {0} is no longer in the change list',
+            path,
+          ),
+        });
+        return;
+      }
+      const root = vscode.workspace.workspaceFolders?.[0];
+      if (!root) return;
+      // resolveUnderPrimaryRoot 越界返 undefined（非抛错）——必须判面，否则 undefined 参数
+      // 会让 CONFIRM_FILE_COMMAND 的 withRecord 静默落空（假成功，与 fail-closed 相悖）
+      const abs = resolveUnderPrimaryRoot(root.uri.fsPath, path);
+      if (!abs) {
+        deps.post({
+          type: 'notice',
+          level: 'error',
+          message: vscode.l10n.t('Cannot confirm changed file: {0} is outside the workspace', path),
+        });
+        return;
+      }
+      void vscode.commands.executeCommand(CONFIRM_FILE_COMMAND, abs);
+    },
+
+    restoreChangedFile(path: string, changedFiles: readonly string[]): void {
+      if (!changedFiles.includes(path)) {
+        deps.post({
+          type: 'notice',
+          level: 'error',
+          message: vscode.l10n.t(
+            'Cannot revert changed file: {0} is no longer in the change list',
+            path,
+          ),
+        });
+        return;
+      }
+      const root = vscode.workspace.workspaceFolders?.[0];
+      if (!root) return;
+      // 与 confirmChangedFile 同款：越界返 undefined（非抛错），必须判面，
+      // 否则 undefined 参数让 RESTORE_FILE_COMMAND 的 withRecord 静默落空（假成功）
+      const abs = resolveUnderPrimaryRoot(root.uri.fsPath, path);
+      if (!abs) {
+        deps.post({
+          type: 'notice',
+          level: 'error',
+          message: vscode.l10n.t('Cannot revert changed file: {0} is outside the workspace', path),
+        });
+        return;
+      }
+      // 命令自带 dirty 模态确认（写盘不可逆）——本域只做对拍/越界守卫，不绕过确认
+      void vscode.commands.executeCommand(RESTORE_FILE_COMMAND, abs);
     },
 
     /**

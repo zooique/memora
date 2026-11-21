@@ -209,6 +209,8 @@ export function createStatusBarsView(deps: StatusBarsViewDeps): StatusBarsView {
    *
    * 两个处置按钮**不自己实现逻辑**，只 postMessage 给宿主 → 宿主 executeCommand 复用已注册命令
    * （与文件内 CodeLens / 状态栏 QuickPick / 命令面板同一实现，SSOT，无第二份清理逻辑）。
+   * 清单每行同样挂「确认 / 回退」两颗单文件按钮（带 path 走同一 type 分流），回退是写盘
+   * 破坏性操作，宿主侧 RESTORE_FILE_COMMAND 自带 dirty 模态确认——webview 不做前置拦截。
    * 「全部回退」是破坏性操作，宿主侧必弹模态二次确认——webview 不做前置拦截（拦截逻辑只能落 host）。
    * 计数只在宿主推来 file_changes 时更新：**webview 不自维护副本**（真源 = 宿主 tracker）。
    */
@@ -252,19 +254,50 @@ export function createStatusBarsView(deps: StatusBarsViewDeps): StatusBarsView {
     if (badge) badge.textContent = String(files.length);
     // 悬停看完整文件清单（相对路径由宿主下发，webview 只展示不解析）——展开态的补充兜底，不删
     _fileChangesBar.title = files.join('\n');
-    // 清单每行 = 打开原文件的上行按钮；每次快照全量重建（路径是宿主真源，webview 不缓存）
+    // 清单每行 = 一行容器：左侧文件名按钮（打开原文件）+ 右侧独立确认按钮（只清这一个文件的装饰）
+    // 每次快照全量重建（路径是宿主真源，webview 不缓存）。button 不能嵌 button，故用 div 容器 +
+    // 两个兄弟按钮；点确认按钮不会冒泡到文件名按钮（兄弟非父子），也不触发面板外的收起委托。
     const list = _fileChangesBar.querySelector('.file-changes-bar__list');
     if (list && 'hidden' in list) {
       list.innerHTML = '';
       for (const file of files) {
-        const row = deps.document.createElement('button');
-        row.className = 'file-changes-bar__file';
-        row.type = 'button';
-        row.title = file;
-        row.textContent = file;
-        row.addEventListener('click', () => {
+        const row = deps.document.createElement('div');
+        row.className = 'file-changes-bar__row';
+
+        const open = deps.document.createElement('button');
+        open.className = 'file-changes-bar__file';
+        open.type = 'button';
+        open.title = file;
+        open.textContent = file;
+        open.addEventListener('click', () => {
           deps.postMessage({ type: 'open_changed_file', path: file });
         });
+
+        const confirm = deps.document.createElement('button');
+        confirm.className = 'file-changes-bar__file-confirm';
+        confirm.type = 'button';
+        confirm.title = l10n.t(
+          'Confirm this file change (clears this notice only; file is not modified)',
+        );
+        confirm.textContent = l10n.t('Confirm');
+        confirm.addEventListener('click', () => {
+          deps.postMessage({ type: 'confirm_all_file_changes', path: file });
+        });
+
+        const revert = deps.document.createElement('button');
+        revert.className = 'file-changes-bar__file-revert';
+        revert.type = 'button';
+        revert.title = l10n.t(
+          'Revert this file to before the agent ran (irreversible; asks for confirmation)',
+        );
+        revert.textContent = l10n.t('Revert');
+        revert.addEventListener('click', () => {
+          deps.postMessage({ type: 'revert_all_file_changes', path: file });
+        });
+
+        row.appendChild(open);
+        row.appendChild(confirm);
+        row.appendChild(revert);
         list.appendChild(row);
       }
       list.hidden = !_fileChangesExpanded;

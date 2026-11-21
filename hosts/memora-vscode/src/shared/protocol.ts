@@ -902,10 +902,18 @@ export type WebviewToExtensionMessage =
    * 语义 = 一次性确认**所有文件**的未确认改动。宿主侧是**纯内存清理**（清装饰 / 释放虚拟文档 /
    * 清缓存 / 注销记录），**不写盘、不改文件内容**（改动早已落盘生效）⇒ 幂等、零风险，
    * **无需二次确认**。
+  /**
    * host 侧复用已注册命令 `memora.confirmAllFileChanges`（与文件内 CodeLens、状态栏 QuickPick、
    * 命令面板**同一实现**——SSOT）。
+   *
+   * `path`（可选，2026-11-21 单文件确认按钮）：省略 = 全部确认（原语义，命令无参）；
+   * 带值 = 只确认清单中的这一个文件——webview 从 `file_changes.files` 原样回传的相对路径，
+   * 宿主须先与当前清单对拍 + `resolveUnderPrimaryRoot` 解析（与 `open_changed_file` 同款安全
+   * 契约，不新造第二套字符串守卫），再走已注册的 `CONFIRM_FILE_COMMAND`。**复用既有通道加可选
+   * 字段而非新增 type**：两者都是「确认改动、只清装饰不写盘」同一语义，只是作用范围不同，
+   * 协议守卫按 type 字面量计数，合并保零差值。
    */
-  | { type: 'confirm_all_file_changes' }
+  | { type: 'confirm_all_file_changes'; path?: string }
   /**
    * 全部回退文件改动（对话区常驻条「全部回退」按钮触发）
    *
@@ -914,8 +922,13 @@ export type WebviewToExtensionMessage =
    * 的手动编辑）⇒ host 侧必须先弹**模态二次确认**（列出文件清单 + 其中新建文件数），
    * 用户确认后才逐个执行，并逐个统计成败（单个失败不中断整批）。
    * host 侧复用已注册命令 `memora.revertAllFileChanges`。
+   *
+   * `path?`：清单行独立「回退此文件」按钮带上（单文件写盘回退，host 复用已注册
+   * `RESTORE_FILE_COMMAND`——与编辑器标题栏那颗同实现，含 dirty 模态确认）。
+   * 无 `path` = 头部「全部回退」（原样走 REVERT_ALL 命令）；两种语义共用一个 type，
+   * 协议计数零扩张。path 是 webview 从 file_changes.files 原样回传，host 侧必对拍 + 越界守卫。
    */
-  | { type: 'revert_all_file_changes' }
+  | { type: 'revert_all_file_changes'; path?: string }
   /**
    * 打开单个改动文件（对话区常驻条展开清单 → 点某一行 → 在编辑器打开原文件）
    *

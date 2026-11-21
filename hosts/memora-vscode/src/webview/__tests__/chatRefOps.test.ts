@@ -11,8 +11,10 @@
  * 变异验证：把 `ref.range.end > doc.lineCount` 改坏（恒 false），本套件第一条用例即转红。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { join } from 'node:path';
 import type { Mock } from 'vitest';
 import type { ChatRef, ExtensionToWebviewMessage } from '../../shared/protocol.js';
+import { CONFIRM_FILE_COMMAND, RESTORE_FILE_COMMAND } from '../../extension/host/fileChangeView.js';
 import { createChatRefOps } from '../panels/chatRefOps.js';
 
 /** l10n.t 替身：`{0}/{1}` 按参替换（vi.hoisted——mock 工厂先于 import 执行） */
@@ -190,5 +192,85 @@ describe('chatRefOps.openChangedFile · 清单对拍（OPEN-CHANGED-FILE-1）', 
     await ops.openChangedFile('src/a.ts', []);
     expect(vscodeStub.workspace.openTextDocument).not.toHaveBeenCalled();
     expect(post).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('chatRefOps.confirmChangedFile · 单文件独立确认（FILE-CHANGES-FLOAT-1）', () => {
+  let post: Mock<(msg: ExtensionToWebviewMessage) => void>;
+  let ops: ReturnType<typeof createChatRefOps>;
+
+  beforeEach(() => {
+    post = vi.fn<(msg: ExtensionToWebviewMessage) => void>();
+    vscodeStub.commands.executeCommand.mockReset();
+    ops = createChatRefOps({ post, pushRefs: vi.fn(), hasView: () => true });
+  });
+
+  it('命中清单 → 走已注册 CONFIRM_FILE_COMMAND，绝对参数（首根解析），零 notice', () => {
+    ops.confirmChangedFile('src/a.ts', ['src/a.ts', 'src/b.ts']);
+
+    expect(vscodeStub.commands.executeCommand).toHaveBeenCalledTimes(1);
+    const [cmd, arg] = vscodeStub.commands.executeCommand.mock.calls[0];
+    expect(cmd).toBe(CONFIRM_FILE_COMMAND);
+    expect(arg).toBe(join(process.cwd(), 'src', 'a.ts')); // resolveUnderPrimaryRoot 产出绝对路径（平台分隔符）
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('未命中清单（伪造/已确认）→ 发 error notice，零命令调用（对拍守卫）', () => {
+    ops.confirmChangedFile('/etc/passwd', ['src/a.ts']);
+
+    expect(vscodeStub.commands.executeCommand).not.toHaveBeenCalled();
+    expect(post).toHaveBeenCalledTimes(1);
+    const msg = post.mock.calls[0][0];
+    expect(msg.type === 'notice' && msg.level).toBe('error');
+    expect(JSON.stringify(msg)).toContain('/etc/passwd');
+  });
+
+  it('越界路径（.. 逃出首根）→ resolve 抛错被 catch，error notice，零命令调用', () => {
+    ops.confirmChangedFile('../../escape.ts', ['../../escape.ts']);
+
+    expect(vscodeStub.commands.executeCommand).not.toHaveBeenCalled();
+    expect(post).toHaveBeenCalledTimes(1);
+    const msg = post.mock.calls[0][0];
+    expect(msg.type === 'notice' && msg.level).toBe('error');
+  });
+});
+
+describe('chatRefOps.restoreChangedFile · 单文件独立回退（FILE-CHANGES-FLOAT-1）', () => {
+  let post: Mock<(msg: ExtensionToWebviewMessage) => void>;
+  let ops: ReturnType<typeof createChatRefOps>;
+
+  beforeEach(() => {
+    post = vi.fn<(msg: ExtensionToWebviewMessage) => void>();
+    vscodeStub.commands.executeCommand.mockReset();
+    ops = createChatRefOps({ post, pushRefs: vi.fn(), hasView: () => true });
+  });
+
+  it('命中清单 → 走 RESTORE_FILE_COMMAND（含 dirty 模态确认），绝对参数，零 notice', () => {
+    ops.restoreChangedFile('src/a.ts', ['src/a.ts', 'src/b.ts']);
+
+    expect(vscodeStub.commands.executeCommand).toHaveBeenCalledTimes(1);
+    const [cmd, arg] = vscodeStub.commands.executeCommand.mock.calls[0];
+    expect(cmd).toBe(RESTORE_FILE_COMMAND);
+    expect(arg).toBe(join(process.cwd(), 'src', 'a.ts'));
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('未命中清单（伪造/已回退）→ error notice，零命令调用（对拍守卫，写盘动作尤须守）', () => {
+    ops.restoreChangedFile('/etc/passwd', ['src/a.ts']);
+
+    expect(vscodeStub.commands.executeCommand).not.toHaveBeenCalled();
+    expect(post).toHaveBeenCalledTimes(1);
+    const msg = post.mock.calls[0][0];
+    expect(msg.type === 'notice' && msg.level).toBe('error');
+    expect(JSON.stringify(msg)).toContain('/etc/passwd');
+  });
+
+  it('越界路径（.. 逃出首根）→ undefined 被判面，error notice，零命令调用', () => {
+    ops.restoreChangedFile('../../escape.ts', ['../../escape.ts']);
+
+    expect(vscodeStub.commands.executeCommand).not.toHaveBeenCalled();
+    expect(post).toHaveBeenCalledTimes(1);
+    const msg = post.mock.calls[0][0];
+    expect(msg.type === 'notice' && msg.level).toBe('error');
   });
 });

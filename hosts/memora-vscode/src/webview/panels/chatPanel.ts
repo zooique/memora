@@ -40,13 +40,9 @@ import { scanWorkspaceTextFiles } from '../../extension/host/workspaceTextScan.j
 import type { ImageCache } from '../../extension/host/imageCache.js';
 import * as pinned from '../../extension/host/pinnedContext.js';
 
-// 命令 id 唯一真源 = fileChangeView（与 package.json#contributes.commands 的值同源维护）。
-// 对话区常驻条的两个按钮**不自己实现动作**，只 executeCommand 复用已注册命令——
-// 与文件内 CodeLens、状态栏 QuickPick、命令面板走同一实现（SSOT，无第二份清理逻辑）。
-import {
-  CONFIRM_ALL_FILE_CHANGES_COMMAND,
-  REVERT_ALL_FILE_CHANGES_COMMAND,
-} from '../../extension/host/fileChangeView.js';
+// 文件改动条确认/回退分流已外置到 helpers/fileChangeDispatch（腾 max-lines 行）；
+// 命令 id 真源仍在 fileChangeView，由该 helper 统一 import，本文件不再直引。
+import { dispatchFileChangeAction } from '../helpers/fileChangeDispatch.js';
 import {
   resolveContextWindow,
   LOOP_CONSTANTS,
@@ -1444,12 +1440,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // （HOST-SPLIT-1 第 2 刀：应答处理整体迁至协调器 `answer`——顺序保持
       //   resolve → 决策留痕 → 终结+泵下一条，见 confirmCoordinator.ts 的 JSDoc）
       this._confirm.answer(msg.requestId, msg.approved);
-    } else if (msg.type === 'confirm_all_file_changes') {
-      // 对话区常驻条「全部确认」：复用已注册命令（纯内存清理，零风险，无需二次确认）
-      void vscode.commands.executeCommand(CONFIRM_ALL_FILE_CHANGES_COMMAND);
-    } else if (msg.type === 'revert_all_file_changes') {
-      // 对话区常驻条「全部回退」：命令内部含模态二次确认（破坏性操作，勿绕过）
-      void vscode.commands.executeCommand(REVERT_ALL_FILE_CHANGES_COMMAND);
+    } else if (msg.type === 'confirm_all_file_changes' || msg.type === 'revert_all_file_changes') {
+      // 两种 type × 带 path 与否四象限，全在 helper 分派（腾行，命令真源仍单点）
+      dispatchFileChangeAction(msg.type, msg.path, {
+        refOps: this._refOps,
+        changedFiles: this._fileChangesProvider?.() ?? [],
+        runCommand: vscode.commands.executeCommand,
+      });
     } else if (msg.type === 'open_changed_file') {
       // 对话区常驻条展开清单 → 点单行打开原文件（OPEN-CHANGED-FILE-1）：
       // 清单对拍 + 越界守卫 + 打开 + 失败 notice 全在 chatRefOps 同域（与 open_ref 共执行面）

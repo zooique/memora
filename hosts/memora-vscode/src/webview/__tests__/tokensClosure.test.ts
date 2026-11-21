@@ -602,7 +602,12 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
   // border: var(--line-solid)）新增 1 处，实数经 count-token-refs.mjs 实锤（2026-10-24）。
   const EXPECTED = {
     // 17：COPY-2 右键菜单 .ctxmenu 浮层 z-index: var(--z-menu)（contextMenuStyles）+1（2026-10-30）
-    'z-': 17, // HOST-NAV-1：大纲条 var(--z-float)（chatStyles）+1（2026-10-20）；
+    // 18：文件改动清单悬浮浮层（FILE-CHANGES-FLOAT-1）z-index: var(--z-menu)（chatStyles）+1
+    // （2026-11-21；实数经 scripts/count-token-refs.mjs 实锤同步）。
+    // 19：同条目层级真因修复——bar 自身也显式 z-index: var(--z-menu)（从根上下文压过
+    // #messages 的 z-base:1，否则 bar 的 transform 自成层叠上下文困住浮层 z-index）+1
+    // （2026-11-21 三轮真机翻案；实数为守卫消费计数，feed 事实非改阈值）。
+    'z-': 19, // HOST-NAV-1：大纲条 var(--z-float)（chatStyles）+1（2026-10-20）；
     //          UI-TOAST-1：浮层 +1 / config 旧形态 -1 相抵（2026-10-24，净不变）；
     //          IMG-2：悬停预览浮层 .image-chip-tip 叠层 +1（2026-10-28，
     //          实数经 scripts/count-token-refs.mjs 实锤同步）
@@ -664,7 +669,10 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // 94：工作台会话行卡片化（AWB-JOB-CARD-1）——`.awb-job` 卡片本体与
     // `.awb-job__open` 实体按钮各引 var(--line-solid) +2（2026-11-20，与身份条同款
     // 既有令牌，机械实测经 scripts/count-token-refs.mjs 实锤同步）。
-    'line-': 94, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
+    // 96：文件改动清单悬浮浮层（FILE-CHANGES-FLOAT-1）——浮层本体 `.file-changes-bar__list`
+    // 与每行独立确认按钮 `.file-changes-bar__file-confirm` 各引 var(--line-solid) +2
+    // （2026-11-21，与头部「全部确认」同款既有令牌，实数经 count-token-refs.mjs 实锤）。
+    'line-': 96, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
     //             var(--line-solid) +1 ⇒ 79→80（UI-STATUS-DIVIDE-1，与
     //             `.context-ring__injection` 同一既有令牌，未新造颜色）；
     //             实数经 scripts/count-token-refs.mjs 实锤同步。

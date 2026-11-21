@@ -1127,8 +1127,15 @@ export const chatStyles = `
      用注意色左条区分「有未确认改动待处理」语义，区别于打断语义的蓝色条。
      数字用 warn 色 + 粗体（不设底色，避免浅/深主题下底字对比度失控）。 */
   .file-changes-bar {
+    position: relative; /* 展开清单的绝对定位锚（浮层向上盖住消息区，不占流、不顶对话） */
+    /* 🔴 层级真因（2026-11-21 第三次真机反馈）：本条带 dockPanelOpen 进场动画
+     * （animation-fill-mode:both ⇒ to 帧 transform:translateX(0) 常驻）。非 none 的 transform
+     * 会创建层叠上下文 ⇒ 浮层的 z-index:100 被困在本条内部，出不去；而本条自身在根上下文
+     * 无 z-index（≈0），低于 #messages 的 z-base:1 ⇒ 对话文字反而盖在浮层之上（表现为
+     * 「和对话记录糊成一片」，换 surface token 无效——那不是透明度问题）。
+     * 修法：本条显式抬到 z-menu，让它从根上下文就压过消息区，浮层随之盖住对话。 */
+    z-index: var(--z-menu);
     display: flex;
-    flex-wrap: wrap; /* 展开清单整行铺开（__list  flex-basis:100%），不挤压首行 */
     align-items: center;
     gap: var(--sp-1, 4px);
     margin: 0 var(--sp-4, 10px) var(--sp-2, 6px);
@@ -1175,17 +1182,44 @@ export const chatStyles = `
   .file-changes-bar__spacer {
     flex: 1 1 auto;
   }
-  /* 展开清单：整行铺开（改动文件通常个位数，不设滚动上限，避免裸 px 债务） */
+  /* 展开清单 = 悬浮独立浮层（FILE-CHANGES-FLOAT-1）：相对本条锚向上弹出，盖在对话记录
+   * 之上而非把它顶动。原形态 flex:1 0 100% 让清单参与 body flex column 的流高，
+   * 展开即增大 bar 高度 → #messages(flex:1) 被挤压 → 对话记录跳动（真机 2026-11-21 实锤）。
+   * 改绝对定位后浮层脱离流：常驻条高度恒定，展开只叠加一层浮层，零布局位移。
+   * 形态对齐历史弹窗 / activity toast 的既有浮层范式（absolute + translateZ 独立合成层
+   * + z-menu 层级 + shadow-toast），不造第二套浮层机制；token 全部复用，零裸值。 */
   .file-changes-bar__list {
-    flex: 1 0 100%;
+    position: absolute;
+    left: 0;
+    right: 0; /* 与确认栏严格等宽（= bar 内容盒），不再用 280 下限撑出一个错位小窗 */
+    bottom: calc(100% + var(--sp-1, 4px));
+    z-index: var(--z-menu);
     display: flex;
     flex-direction: column;
-    margin-top: var(--sp-1, 4px);
-    padding-top: var(--sp-1, 4px);
+    gap: var(--sp-0, 2px);
+    max-height: min(var(--history-menu-max-h), calc(100vh - var(--sp-6)));
+    overflow-y: auto;
+    margin: 0;
+    padding: var(--sp-2, 6px);
+    border: var(--line-solid);
+    border-left: 3px solid var(--warn, #d7ba7d); /* 呼应确认栏左条，视觉同一组件 */
+    border-radius: var(--radius-sm, 2px);
+    /* 🔴 不透明底（2026-11-21 真机反馈）：surface-card 引自
+     * --vscode-editorWidget-background，部分主题带 alpha ⇒ 浮层与下方对话文字糊成一片。
+     * surface-page 引自 --vscode-editor-background（VS Code 主题契约要求不透明），
+     * 是本 webview 唯一可保证不透的底；浮层必须盖断下方内容而非透出。 */
+    background: var(--surface-page, #1e1e1e);
+    box-shadow: var(--shadow-toast);
+    transform: translateZ(0);
+  }
+  .file-changes-bar__row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1, 4px);
   }
   .file-changes-bar__file {
-    display: block;
-    width: 100%;
+    flex: 1 1 auto;
+    min-width: 0; /* 长路径省略号：flex 子项默认 min-width:auto 会撑破等宽浮层 */
     padding: var(--sp-0, 2px) var(--sp-1, 4px);
     border: none;
     border-radius: var(--radius-sm, 2px);
@@ -1198,6 +1232,27 @@ export const chatStyles = `
     overflow: hidden;
     text-overflow: ellipsis;
     cursor: pointer;
+  }
+  /* 单文件独立确认按钮（2026-11-21）：与头部「全部确认」同款 token，只缩内距适配行内 */
+  .file-changes-bar__file-confirm,
+  .file-changes-bar__file-revert {
+    flex: 0 0 auto;
+    padding: var(--sp-0, 2px) var(--sp-2, 6px);
+    border: var(--line-solid);
+    border-radius: var(--radius-sm, 2px);
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+    font-size: var(--font-sm, 11px);
+    cursor: pointer;
+  }
+  .file-changes-bar__file-confirm:hover {
+    border-color: var(--accent, #0e639c);
+    color: var(--accent, #0e639c);
+  }
+  .file-changes-bar__file-revert:hover {
+    border-color: var(--text-error, #f14c4c);
+    color: var(--text-error, #f14c4c);
   }
   .file-changes-bar__file:hover,
   .file-changes-bar__file:focus-visible {
