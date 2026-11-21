@@ -1176,8 +1176,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * @param rolePack 角色包内部名（如 '白话方案设计师'）
    * @returns UI 展示名（displayName 或回退 name）
    */
-  private roleDisplayName(rolePack: string): string {
-    const meta = this._agent?.rolePackManager?.listMeta().find((m) => m.name === rolePack);
+  private roleDisplayName(rolePack: string, agent: Agent | undefined = this._agent): string {
+    const meta = agent?.rolePackManager?.listMeta().find((m) => m.name === rolePack);
     return meta?.displayName ?? rolePack;
   }
 
@@ -1188,25 +1188,26 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 配置与角色包策略 `act.outputLimit` 间取更小值（宿主不重算），只记配置面会把「我配了 64K」当成
    * 「真的发了 64K」——真机排雷已因此得出过错误结论（详见 tasks/审查-空响应根因排雷与优化方案-20260929.md）。
    * @param providerConfig 流首取的激活 Provider 配置快照（仅作为 agent 未装配时的回落来源）
+   * @param agent 本流实例（`consumeFlow` 按会话取）：轮级角色只认它的实际激活包，不认显示会话的 `_activeRolePack`；缺省仅测试直驱。
    */
-  private buildRoundMeta(providerConfig: LlmProviderConfig | undefined): ProcessMetaPayload {
-    const role = this._activeRolePack ? this.roleDisplayName(this._activeRolePack) : 'AI';
+  private buildRoundMeta(
+    providerConfig: LlmProviderConfig | undefined,
+    agent: Agent,
+  ): ProcessMetaPayload {
+    const role = this.roleDisplayName(agent.rolePackManager?.activeName ?? '', agent) || 'AI';
     const llm = this._activeProviderDisplayName || this._providerStore.getActiveName() || '';
     // reasoning_effort 转达口径（流首**配置面**快照）：仅策略键 multiStepReasoning='manual' 发 'low'，
     // 其余不发送（缺省不入包）。⚠️ 非「实际发送面」——llmCaller 的 truncatedRetry 可在运行时置入
     // 'low'（截断换策略，T2），流首快照天然不可见；实际发送面以截断救回计数（truncationRecoveryCount）
     // 佐证。providerKind 当前唯一适配器形态（内核工厂只产 OpenAI 兼容）
-    const reasoningMode =
-      this._agent?.rolePackManager?.getActive()?.strategy.act?.multiStepReasoning;
+    const reasoningMode = agent.rolePackManager?.getActive()?.strategy.act?.multiStepReasoning;
     return {
       role,
       llm,
-      contextWindow: providerConfig
-        ? resolveContextWindow(providerConfig.contextWindow)
-        : undefined,
+      contextWindow: resolveContextWindow(providerConfig?.contextWindow),
       // 输出上限记**生效值**（内核 buildChatOptions 裁决后的实际请求值）：per-LLM 配置与角色包
       // act.outputLimit 取更小值，故配置值不能代表已发出去的值；agent 未装配时回落配置面。
-      maxTokens: this._agent?.getEffectiveMaxTokens() ?? providerConfig?.maxTokens,
+      maxTokens: agent.getEffectiveMaxTokens() ?? providerConfig?.maxTokens,
       reasoningEffort: reasoningMode === 'manual' ? 'low' : undefined,
       providerKind: 'openai-compatible',
     };
@@ -3432,7 +3433,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     let metaEmittedForRound = false;
     // meta 取证包：流首取一次激活 Provider 配置快照（本轮生效值），每 turn 首条 meta 携带
     const providerConfig = await this._providerStore.getActive();
-    const roundMeta = () => this.buildRoundMeta(providerConfig);
+    const roundMeta = () => this.buildRoundMeta(providerConfig, agent);
     /** 构造过程事件：进缓冲（按 turn 分段，落盘真相源）+ 即时投影给 webview（渲染真相源），同一份数据 */
     const emitEvent = (typeKey: ProcessEvent['type'], payload: ProcessEvent['payload']): void => {
       // seq 实例级全局单调（_processSeq）：step 原子检查点按 seq 幂等合并，跨流/跨轮不冲突

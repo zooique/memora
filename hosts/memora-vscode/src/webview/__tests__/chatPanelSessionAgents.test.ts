@@ -2935,4 +2935,55 @@ describe('助手会话与工作会话分家（HOSTED-SEAT-SESSION-1 真机订正
     expect(snap.pendingIds).not.toContain('2026-11-06-a');
     expect(snap.badgeCount).toBe(0);
   });
+
+  /**
+   * ROLE-META-FLOW-1（2026-11-21 真机）：轮 meta 的角色 = **本流会话实例**的实际激活包，
+   * 不是当前显示会话的投影（`_activeRolePack`）/ `_agent`。
+   *
+   * 真机形态：侧栏显示小说家工作会话 A，后台 memora助手会话 B 在跑（ask 代答轮），
+   * B 的 meta.role 被写成 A 的「共鸣小说家」⇒ 同一条消息上两个角色名并列。
+   * 变异靶标：把 `consumeFlow` 的 `buildRoundMeta(providerConfig, agent)` 改回
+   * `buildRoundMeta(providerConfig)`（缺省回落 `_agent`=显示的 A）⇒ 本条转红。
+   */
+  it('后台流的 meta.role 取本流实例角色，不取当前显示会话的角色', async () => {
+    const roundId = 'round-role-meta-bg';
+    const flow = (): AsyncGenerator<Chunk> =>
+      (async function* () {
+        yield { type: 'thinking', phase: 'processing', roundId };
+      })();
+    /** 给桩挂上 rolePackManager：activeName 是本轮真源，listMeta 供 displayName 反查 */
+    const withRole = (agent: Agent, name: string): Agent => {
+      (agent as unknown as { rolePackManager: unknown }).rolePackManager = {
+        activeName: name,
+        listMeta: () => [{ name, displayName: name, description: '' }],
+        getActive: () => ({ strategy: { act: {} }, capabilities: [] }),
+      };
+      return agent;
+    };
+    const shown = withRole(sessionAgent('2026-11-06-a'), '共鸣小说家');
+    const worker = withRole(sessionAgent('2026-11-06-b', flow), 'memora助手');
+    const h = setupPanel({ '2026-11-06-a': shown, '2026-11-06-b': worker }, ['2026-11-06-a']);
+    h.cast._agent = shown; // 侧栏当前显示 A（小说家）
+    // 附加视图绑定 B ⇒ B 的 process_event（含 meta）有投递面，不被后台闸过滤
+    const extraPosted: Array<{ type: string }> = [];
+    const extraWebview = {
+      postMessage: (msg: { type: string }) => {
+        extraPosted.push(msg);
+        return Promise.resolve(true);
+      },
+    } as unknown as vscode.Webview;
+    const unregister = h.provider.registerAdditionalView(extraWebview, {
+      sessionId: () => '2026-11-06-b',
+    });
+
+    await h.cast.runFlow(() => flow(), undefined, '2026-11-06-b');
+
+    const metaEvent = extraPosted.find(
+      (m) => (m as unknown as { type: string }).type === 'process_event',
+    ) as unknown as { event?: { type: string; payload?: { role?: string } } } | undefined;
+    expect(metaEvent?.event?.type).toBe('meta');
+    // 本流实例的角色名（memora助手），不是显示会话 A 的（共鸣小说家）
+    expect(metaEvent?.event?.payload?.role).toBe('memora助手');
+    unregister.dispose();
+  });
 });

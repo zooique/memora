@@ -350,9 +350,14 @@ describe('chatPanel · agent 强制依赖面守卫（P1-2）', () => {
    */
   const source = readFileSync(CHAT_PANEL_PATH, 'utf8');
 
-  const strictCalls = [...source.matchAll(/this\._agent\?\.([A-Za-z_][\w]*)\(/g)].map(
-    (m) => m[1] as string,
-  );
+  // 本流 agent 严格调用（2026-11-21 ROLE-META-FLOW-1）：buildRoundMeta 的取证面从显示会话
+  // 迁到本流实例后，getEffectiveMaxTokens 的严格形态不能脱离守卫——只点名该方法，
+  // 其余 agent.foo() 在各自消费点已有守卫，全扫会引入无关登记项。
+  const flowStrict = source.match(/agent\.getEffectiveMaxTokens\(/g)?.length ?? 0;
+  const strictCalls = [
+    ...[...source.matchAll(/this\._agent\?\.([A-Za-z_][\w]*)\(/g)].map((m) => m[1] as string),
+    ...(flowStrict > 0 ? (['getEffectiveMaxTokens'] as const) : []),
+  ];
   const lenientCalls = [...source.matchAll(/this\._agent\?\.([A-Za-z_][\w]*)\?\.\(/g)].map(
     (m) => m[1] as string,
   );

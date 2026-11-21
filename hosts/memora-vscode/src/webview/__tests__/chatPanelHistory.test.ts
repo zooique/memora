@@ -805,14 +805,17 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 
     const meta = (
       provider as unknown as {
-        buildRoundMeta: (c: unknown) => {
+        buildRoundMeta: (
+          c: unknown,
+          a?: unknown,
+        ) => {
           contextWindow?: number;
           maxTokens?: number;
           reasoningEffort?: string;
           providerKind?: string;
         };
       }
-    ).buildRoundMeta({ contextWindow: 600000, maxTokens: 64000 });
+    ).buildRoundMeta({ contextWindow: 600000, maxTokens: 64000 }, agent);
 
     expect(meta.contextWindow).toBe(600000);
     // 输入配置面给的是 64K，但生效值是内核裁决后的 4096 → 取证面取后者
@@ -835,8 +838,10 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     provider.setAgent(agent);
 
     const meta = (
-      provider as unknown as { buildRoundMeta: (c: unknown) => Record<string, unknown> }
-    ).buildRoundMeta({});
+      provider as unknown as {
+        buildRoundMeta: (c: unknown, a?: unknown) => Record<string, unknown>;
+      }
+    ).buildRoundMeta({}, agent);
 
     // 未发送 reasoning_effort → 缺省（与「已发送」可区分）
     expect(meta.reasoningEffort).toBeUndefined();

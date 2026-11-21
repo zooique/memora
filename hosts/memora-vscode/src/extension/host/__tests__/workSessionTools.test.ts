@@ -32,6 +32,7 @@ import {
 import { CREATE_SESSION_TOOL_NAME, SEND_TO_SESSION_TOOL_NAME } from '../../../shared/constants.js';
 // 代答工具面独立模块：工具名 / 回执类型直接取自声明处（不在两个文件里各抄一份）
 import {
+  ANSWER_SESSION_QUESTION_DEFINITION,
   ANSWER_SESSION_QUESTION_TOOL_NAME,
   type HostedAnswerResult,
   type HostedQuestionAnswerer,
@@ -845,6 +846,18 @@ async function executeAnswer(
 }
 
 describe('托管 v0 · answer_session_question（代答子会话提问）', () => {
+  /**
+   * 模型可见面守卫（ASK-PROXY-PREFER-1，2026-11-21）：工具描述对「有选项的题」必须指明
+   * 按题面代选一项，不能只写「空串 = 该题不答」——真机里那是被模型选中的零风险退路。
+   * 空串语义本身保留（用户自助跳过合法），故只断言新增的优先指令在，不断言空串被删。
+   * 变异靶标：删掉描述里「带选项的题应…」那句 ⇒ 本条转红。
+   */
+  it('工具描述含「带选项优先代选」指令，且保留空串的用户自助语义', () => {
+    const description = ANSWER_SESSION_QUESTION_DEFINITION.description;
+    expect(description).toContain('带选项的题应按题面与上下文选一项并说明代选理由');
+    expect(description).toContain('空串 = 该题不答');
+  });
+
   it('参数只认 { sid, answers? }：未知键 / 非字符串数组一律 E_ARGS，且不触代答', async () => {
     const answerQuestions = vi.fn((): HostedAnswerResult => ({
       ok: true,

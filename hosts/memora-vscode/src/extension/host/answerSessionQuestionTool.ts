@@ -15,6 +15,10 @@ import type { ToolDefinition } from '@zooique/memora';
  *
  * 与 `send_to_session` 的分界：本工具只回答**已经挂起的提问**，不投递新输入、不建轮；
  * 题面与选项必须由宿主如实带回，代理不能凭空编答案。
+ *
+ * 2026-11-21 订正（ASK-PROXY-PREFER-1）：真机里模型把「空串 = 该题不答」当零风险退路，
+ * 偏好题一律交空串跳过 ⇒ 题面 + 选项如实带回后**有选项应据题面代选一项并说明理由**；
+ * 空串仍保留为「用户自助跳过 / 确实无法判断」的合法形态（判据不变），只是不再是首选。
  */
 export const ANSWER_SESSION_QUESTION_TOOL_NAME = 'answer_session_question';
 
@@ -97,6 +101,7 @@ export const ANSWER_SESSION_QUESTION_DEFINITION: ToolDefinition = {
     '回答指定会话正在等待的提问（ask_user）。' +
     '先省略 answers 调用一次：回执带 questions（每题的 index / question / options），按 index 顺序作答。' +
     '再提交 answers：必须与当前题目**等长同序**（空串 = 该题不答）；' +
+    '带选项的题应按题面与上下文选一项并说明代选理由，只有确实无法判断时才留空或转述用户；' +
     '条数不等于当前题数时整批拒收（E_ARGS），回执同样带 questions 供你重答。' +
     '目标不在等待问答（已答 / 已超时 / 已收场）时回 answered=false，这不是错误。' +
     'sid 必须来自 list_work_sessions；本工具不投递新任务，投递请用 send_to_session。',
