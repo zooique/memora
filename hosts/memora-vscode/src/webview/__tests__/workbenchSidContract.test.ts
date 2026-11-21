@@ -16,8 +16,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { ProcessEvent, Round } from '@zooique/memora';
-import { serializeCreateSessionResult } from '../../extension/host/workSessionTools.js';
+import {
+  serializeCreateSessionResult,
+  serializeSendToSessionResult,
+} from '../../extension/host/workSessionTools.js';
 import { parseCreateSessionSid, rebuildWorkbenchChildren } from '../helpers/workbenchHistory.js';
+import { dispatchedSidTextsFromEvents } from '../helpers/processEventText.js';
 
 /** 固定的会话标识（真实形态：日期前缀 + session 名） */
 const SID = '2026-11-14-session-weekly-report';
@@ -66,8 +70,11 @@ describe('send_to_session 派发记录的配对面', () => {
   const DISPATCH_TS = '2026-11-14T09:30:00.000Z';
 
   it('目标 sid 只能来自 tool_start.args（成功回执里没有 sid）', () => {
-    // 真实成功回执 = 派发层结果直接序列化后过内核 100 字截断：只有 ok / accepted
-    const receipt = JSON.stringify({ ok: true, accepted: true }, null, 2).slice(0, SUMMARY_LIMIT);
+    // 真实成功回执 = 派发层结果经唯一产生点序列化后过内核 100 字截断：只有 ok / accepted
+    const receipt = serializeSendToSessionResult({ ok: true, accepted: true }).slice(
+      0,
+      SUMMARY_LIMIT,
+    );
     expect(receipt.toLowerCase()).not.toContain('sid');
 
     /** 一次真实形状的派发调用对（入参完整，结果只有 ok / accepted） */
@@ -106,5 +113,81 @@ describe('send_to_session 派发记录的配对面', () => {
     expect(rebuilt.dispatches).toEqual([
       { sessionId: SID, excerpt: '把周报整理成三段', at: DISPATCH_TS },
     ]);
+  });
+});
+
+/**
+ * send_to_session 业务受理互锁（DISPATCH-RECEIPT-1）
+ *
+ * 消费侧判据 `isAcceptedDispatchResult` 只认「首键 ok + 100 字窗口」，所以产生点必须
+ * 保证：成功首键是 `"ok": true`、业务失败首键是 `"ok": false`，且都在窗口内。
+ * 这里直接调用真产生点，避免内联 `JSON.stringify` 被改后消费侧静默失灵。
+ */
+describe('send_to_session 业务受理互锁', () => {
+  /** 派发事件时间（断言时间取自事件，不取轮创建时间） */
+  const DISPATCH_TS = '2026-11-14T09:30:00.000Z';
+
+  it('成功 / 业务失败的文本首键都在 100 字窗口内可读', () => {
+    const okText = serializeSendToSessionResult({ ok: true, accepted: true });
+    const busyText = serializeSendToSessionResult({
+      ok: false,
+      code: 'E_BUSY',
+      message: '目标会话正在运行中',
+    });
+    // 首键固定：改键序、加前置字段、改缩进都会红
+    expect(okText.startsWith('{\n  "ok": true')).toBe(true);
+    expect(busyText.startsWith('{\n  "ok": false')).toBe(true);
+    // 100 字窗口内可读（与内核 summary 截断同宽）
+    expect(okText.slice(0, SUMMARY_LIMIT)).toContain('"ok": true');
+    expect(busyText.slice(0, SUMMARY_LIMIT)).toContain('"ok": false');
+  });
+
+  it('业务失败对两个消费面同判：卡片锚点与工作台清单都不得算已派', () => {
+    /** 一次真实形状的业务失败派发：内核 ok=true，业务 ok=false */
+    const events = [
+      {
+        type: 'tool_start',
+        seq: 1,
+        ts: DISPATCH_TS,
+        payload: {
+          toolCallId: 'send-busy',
+          name: 'send_to_session',
+          args: JSON.stringify({ sid: SID, text: '把周报整理成三段' }),
+        },
+      },
+      {
+        type: 'tool_result',
+        seq: 2,
+        ts: DISPATCH_TS,
+        payload: {
+          toolCallId: 'send-busy',
+          name: 'send_to_session',
+          ok: true,
+          summary: serializeSendToSessionResult({
+            ok: false,
+            code: 'E_BUSY',
+            message: '目标会话正在运行中',
+          }).slice(0, SUMMARY_LIMIT),
+        },
+      },
+    ] as unknown as ProcessEvent[];
+
+    // 消费面 1：卡片锚点解析
+    expect(dispatchedSidTextsFromEvents(events)).toEqual([]);
+
+    // 消费面 2：工作台清单（同一判据，不得各说各话）
+    const rebuilt = rebuildWorkbenchChildren('session-agent', {
+      readRoundIds: () => ['r2'],
+      listSessionIds: () => [],
+      readRoundDispatch: () => undefined,
+      readRound: () =>
+        ({
+          id: 'r2',
+          status: 'complete',
+          createdAt: '2026-11-14T09:29:00.000Z',
+          processEvents: events,
+        }) as Round,
+    });
+    expect(rebuilt.dispatches).toEqual([]);
   });
 });

@@ -1013,6 +1013,25 @@ export function serializeCreateSessionResult(result: CreateSessionResult): strin
 }
 
 /**
+ * send_to_session 结果的**唯一序列化产生点**
+ *
+ * 为什么要有名字：webview 的「业务已受理」判据（`isAcceptedDispatchResult`）依赖
+ * **首键 `ok` + 100 字窗口内可读**，这是跨包文本互锁；内联 `JSON.stringify` 没有名字，
+ * 互锁测试只能手抄形态，生产点改了不会红。收成函数后由
+ * `src/webview/__tests__/workbenchSidContract.test.ts` 直接调用真产生点做断言。
+ *
+ * 键序固定 `ok` 在最前（成功带 accepted，失败带 code/message）；两者都在 100 字窗口内。
+ *
+ * @param result 派发层结果（含 E_HOST 兜底形态）
+ * @returns 缩进 2 空格的 JSON 文本（与既有对外形态逐字一致）
+ */
+export function serializeSendToSessionResult(
+  result: HostedDispatchResult | { ok: false; code: 'E_HOST'; message: string },
+): string {
+  return JSON.stringify(result, null, 2);
+}
+
+/**
  * 读「这条会话是不是调用方开的」所需的既有事实（stop / pause / resume 三条入口共用）
  *
  * 账本 = 本进程创建者记录（重启后为空）；历史 = 每次按需重建（有上限）。
@@ -1197,20 +1216,16 @@ export function registerWorkSessionTools(
             // 交代文案的真值：与会话清单同一回落链（展示名 → 会话 id），不另写一套
             targetTitle: getSessionDisplayName(targetMeta) || targetMeta.sessionId,
           });
-          return JSON.stringify(result, null, 2);
+          return serializeSendToSessionResult(result);
         } catch (err) {
           // 业务契约：不 throw（throw 会让模型只看到工具失败，读不到可判读的错误码）。
           // 码 = E_HOST：装配 / 面板等**宿主侧**异常，与「sid 不存在」是两回事，
           // 不许冒名 E_NOT_FOUND——那会让模型误以为换一个 sid 就能成功。
-          return JSON.stringify(
-            {
-              ok: false,
-              code: 'E_HOST',
-              message: `宿主派发失败：${err instanceof Error ? err.message : String(err)}`,
-            },
-            null,
-            2,
-          );
+          return serializeSendToSessionResult({
+            ok: false,
+            code: 'E_HOST',
+            message: `宿主派发失败：${err instanceof Error ? err.message : String(err)}`,
+          });
         }
       });
     }

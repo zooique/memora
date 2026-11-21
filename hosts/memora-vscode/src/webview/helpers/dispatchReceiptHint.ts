@@ -17,6 +17,9 @@
  *   - 只助手形态（与盖章会话卡同构）；
  *   - 插在 `.round-group` 内、footer 之前（**常显**元素，不挂在 hover 才显形的底栏里）；
  *   - 实时与重放共用同一谓词，实时插入先撤后插（同一轮会多次 turn_update）。
+ *
+ * 范围边界：只对 `status === 'complete'` 计算——中断轮是用户主动打断，正文可能半截，
+ * 把半截断言当成「承诺」会明显增大误报；要放开须单独立项，不在此顺手扩。
  */
 import type { ProcessEvent } from '@zooique/memora';
 import * as l10n from '@vscode/l10n';
