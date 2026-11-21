@@ -12517,7 +12517,12 @@ describe('光标状态机（运行态 data-status / 终态 data-terminus）', ()
 // 折叠箭头统一为 CSS 层（chevron ::after 行内随文），DOM 断言不覆盖，真机对照验收。
 describe('块类型标与折叠箭头（批次三）', () => {
   /** 实时路径造一次成功派活：user 轮锚 + 带 roundId 的 process_event（DISPATCH-CARD-TURN-1） */
-  function dispatchLiveDispatch(sid: string, roundId: string, via: 'delegate' | 'create'): void {
+  function dispatchLiveDispatch(
+    sid: string,
+    roundId: string,
+    via: 'delegate' | 'create',
+    text = '继续',
+  ): void {
     dispatch({ type: 'user', text: '去派活', ts: '2026-11-21T09:00:00.000Z', roundId });
     if (via === 'delegate') {
       dispatch({
@@ -12530,7 +12535,7 @@ describe('块类型标与折叠箭头（批次三）', () => {
           payload: {
             toolCallId: `c-${sid}`,
             name: 'send_to_session',
-            args: JSON.stringify({ sid, text: '继续' }),
+            args: JSON.stringify({ sid, text }),
           },
         },
       });
@@ -12694,6 +12699,7 @@ describe('块类型标与折叠箭头（批次三）', () => {
     expect(card()).not.toBeNull();
     expect(card()!.getAttribute('data-dispatch-session')).toBe('2026-11-18-target');
     expect(card()!.getAttribute('data-dispatch-round')).toBe('live-r1');
+    expect(card()!.getAttribute('data-dispatch-text')).toBe('继续');
     expect(card()!.querySelector('.dispatch-session-card__name')?.textContent).toBe(
       '统计目录文件数',
     );
@@ -12719,6 +12725,7 @@ describe('块类型标与折叠箭头（批次三）', () => {
       type: 'switch_session',
       sessionId: '2026-11-18-target',
       roundId: 'live-r1',
+      text: '继续',
     });
   });
 
@@ -12864,6 +12871,63 @@ describe('块类型标与折叠箭头（批次三）', () => {
     // 第三形态：卡在 #messages 内、不在 .round-block
     expect(cards[0]!.closest('.round-block')).toBeNull();
     expect(cards[0]!.closest('#messages')).not.toBeNull();
+  });
+
+  it('实时 turn_update（非 replay）带派活事件 → 助手窗当场出卡，不等关窗重渲（DISPATCH-CARD-REALTIME-1）', () => {
+    const { postMessage } = mountChatView('assistant');
+    const messages = () => document.getElementById('messages') as HTMLElement;
+    const card = () => messages().querySelector<HTMLElement>('.dispatch-session-card');
+    // 助手窗收得到快照（sid 存在性真源），但 bubbleOnly 过滤掉 process_event ⇒ entries 只能
+    // 从本条 turn_update.rounds 的落盘事件重建。
+    dispatch({
+      type: 'session_activity',
+      runningIds: [],
+      pendingIds: [],
+      badgeCount: 0,
+      titleById: {},
+      dispatchedSessions: [{ sid: '2026-11-21-live', title: '实时派活', via: 'delegate' }],
+    });
+    expect(card()).toBeNull(); // 快照单独不出卡（无 turn 锚）
+
+    dispatch({
+      type: 'turn_update',
+      rounds: [
+        makeRound({
+          id: 'live-anchor-r1',
+          user: { content: '帮我实时派活', ts: '2026-11-21T12:00:00.000Z' },
+          processEvents: [
+            {
+              type: 'tool_start',
+              seq: 0,
+              ts: '2026-11-21T12:00:01.000Z',
+              payload: {
+                toolCallId: 'live-c1',
+                name: 'send_to_session',
+                args: JSON.stringify({ sid: '2026-11-21-live', text: '实时任务内容' }),
+              },
+            },
+            {
+              type: 'tool_result',
+              seq: 1,
+              ts: '2026-11-21T12:00:02.000Z',
+              payload: { toolCallId: 'live-c1', name: 'send_to_session', ok: true, summary: '{}' },
+            },
+          ],
+        }),
+      ],
+      state: { phase: 'settled', roundId: 'live-anchor-r1', status: 'complete' },
+    });
+    expect(card()).not.toBeNull();
+    expect(card()!.getAttribute('data-dispatch-session')).toBe('2026-11-21-live');
+    expect(card()!.getAttribute('data-dispatch-text')).toBe('实时任务内容');
+    postMessage.mockClear();
+    card()!.click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'switch_session',
+      sessionId: '2026-11-21-live',
+      roundId: 'live-anchor-r1',
+      text: '实时任务内容',
+    });
   });
 
   it('assistant 页收到 workbench_snapshot → 内嵌抽屉渲染并就地展开；点会话复用 switch_session', () => {

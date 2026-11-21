@@ -73,13 +73,15 @@ export interface SessionReplayDeps {
  *
  * @param deps 面板注入的窄依赖
  * @param sessionId 目标会话
- * @param focusRoundId 可选 turn 锚点（DISPATCH-CARD-TURN-1）：点 turn 卡打开会话时落到该轮；
- *   缺省仍是历史加载后滚到流尾（工作台 / 历史浮层 / 普通切会话不变）。
+ * @param focusRoundId 可选 turn 身份锚（DISPATCH-CARD-TURN-1），随链路透传、不作定位判据；
+ * @param focusText 可选派活原文（DISPATCH-CARD-LOCATE-1）：点 turn 卡打开会话时靠它在目标
+ *   会话用户气泡里逐字配对定位。两者都缺省仍是历史加载后滚到流尾（工作台 / 历史浮层不变）。
  */
 export function replaySessionInto(
   deps: SessionReplayDeps,
   sessionId: string,
   focusRoundId?: string,
+  focusText?: string,
 ): void {
   const isCurrent = deps.isCurrent(sessionId);
   // 两个视图都没在显示这条会话 ⇒ 无事可做
@@ -94,11 +96,18 @@ export function replaySessionInto(
   // 清空消息区（切换会话时旧 DOM 必须先清）
   deps.post(sessionId, { type: 'clear_ok' });
   replayHistoryInto(deps, sessionId);
-  // 落点信号：无锚点 = 历史加载完成滚到底；带锚点 = 点 turn 卡定位该轮。
+  // 落点信号：无锚点 = 历史加载完成滚到底；带 text = 点 turn 卡定位派活那轮。
   // 两者互斥而非先后，避免「先到底再回跳」的双次滚动闪烁。
+  // roundId 只随卡身份透传（兼容旧调用），跨会话定位只认 text（助手轮 id 在目标会话不存在）。
   deps.post(
     sessionId,
-    focusRoundId ? { type: 'focus_round', roundId: focusRoundId } : { type: 'history_loaded' },
+    focusRoundId || focusText
+      ? {
+          type: 'focus_round',
+          roundId: focusRoundId ?? '',
+          ...(focusText ? { text: focusText } : {}),
+        }
+      : { type: 'history_loaded' },
   );
   // 会话标题（空会话 = 引导文案，避免「新会话 HH:MM」占位误认）
   deps.post(sessionId, {

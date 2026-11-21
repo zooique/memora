@@ -501,10 +501,12 @@ export type WebviewToExtensionMessage =
   /**
    * 加载指定历史会话（历史浮层点击条目触发）：host 调 switchToSession 切入并回放
    *
-   * roundId 可选 = 助手对话里的 turn 卡点出的落点（DISPATCH-CARD-TURN-1）：
-   * 有则切会话后定位到该轮；缺省保持「打开会话看最新 turn」的既有语义（工作台/历史浮层）。
+   * roundId 可选 = 助手对话 turn 卡的身份锚（DISPATCH-CARD-TURN-1）；text 可选 = 该卡的
+   * 派活原文（DISPATCH-CARD-LOCATE-1）——跨会话定位只认 text（助手轮 roundId 在目标
+   * 会话里不存在，拿它定位必然落空）。两者都缺省保持「打开会话看最新 turn」的既有语义
+   * （工作台 `Go to this session` / 历史浮层）。
    */
-  | { type: 'switch_session'; sessionId: string; roundId?: string }
+  | { type: 'switch_session'; sessionId: string; roundId?: string; text?: string }
   /**
    * 删除指定历史会话（历史浮层条目垃圾桶触发）：host 侧确认不可恢复后删除该会话记录
    *
@@ -1384,13 +1386,15 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'history_loaded' }
   /**
-   * 打开会话后的 turn 级落点（DISPATCH-CARD-TURN-1）
+   * 打开会话后的 turn 级落点（DISPATCH-CARD-TURN-1 / 定位判据订正 DISPATCH-CARD-LOCATE-1）
    *
    * 语义 ≠ `history_loaded`（那条专指回放完成、滚到流尾）：本条专指「已经在这个会话里，
-   * 现在滚到 roundId 那一轮」。点助手对话里的 turn 卡时发出；同会话重复点另一张卡也能生效，
-   * 不被 `switchToSession` 的「已在目标会话」早退吞掉。工作台 `Go to this session` 不发本条。
+   * 现在滚到那次派活对应的轮」。`text` = 派活原文，webview 在目标会话 `.msg.user` 里按它
+   * 逐字配对定位（roundId 是助手轮 id，跨会话不通，仅留作兼容不被当作定位判据）。
+   * 点助手对话里的 turn 卡时发出；同会话重复点另一张卡也能生效，不被 `switchToSession`
+   * 的「已在目标会话」早退吞掉。工作台 `Go to this session` 不发本条。
    */
-  | { type: 'focus_round'; roundId: string }
+  | { type: 'focus_round'; roundId: string; text?: string }
   /**
    * 当前会话标题
    *

@@ -24,6 +24,9 @@ export const DISPATCH_SESSION_ATTR = 'data-dispatch-session';
 /** 卡片对应的 turn 锚点（点击携带；与会话名标签分离） */
 export const DISPATCH_ROUND_ATTR = 'data-dispatch-round';
 
+/** 派活原文（跨会话定位锚：助手轮 roundId 在目标会话不存在，靠这句逐字配对） */
+export const DISPATCH_TEXT_ATTR = 'data-dispatch-text';
+
 /** 卡片节点的 class（resetChatView 清理、幂等撤卡共用） */
 export const DISPATCH_CARD_CLASS = 'dispatch-session-card';
 
@@ -34,10 +37,11 @@ export interface DispatchedSessionView {
   via: 'delegate' | 'create';
 }
 
-/** 一张卡的身份：会话 + 那次派活 turn（turn 锚点缺省仅作兜底，不参与身份去重） */
+/** 一张卡的身份：会话 + 那次派活 turn（roundId 只作身份去重；text 才是跨会话定位锚） */
 export interface DispatchCardEntry {
   sid: string;
   roundId?: string;
+  text?: string;
 }
 
 /**
@@ -51,12 +55,14 @@ export function buildDispatchSessionCard(
   doc: Document,
   sid: string,
   roundId?: string,
+  text?: string,
 ): HTMLButtonElement {
   const btn = doc.createElement('button');
   btn.type = 'button';
   btn.className = DISPATCH_CARD_CLASS;
   btn.setAttribute(DISPATCH_SESSION_ATTR, sid);
   if (roundId) btn.setAttribute(DISPATCH_ROUND_ATTR, roundId);
+  if (text) btn.setAttribute(DISPATCH_TEXT_ATTR, text);
   // 图标只是装饰；状态由下方文字 + class 表达，读屏无需重复
   const icon = doc.createElement('span');
   icon.className = 'dispatch-session-card__icon';
@@ -115,7 +121,12 @@ export function renderDispatchCards(
     const key = `${entry.sid.length}:${entry.sid}:${entry.roundId ?? ''}`;
     if (seen.has(key)) continue; // 同一 turn 同一会话幂等；不再按 sid 全局去重
     seen.add(key);
-    const card = buildDispatchSessionCard(messages.ownerDocument, entry.sid, entry.roundId);
+    const card = buildDispatchSessionCard(
+      messages.ownerDocument,
+      entry.sid,
+      entry.roundId,
+      entry.text,
+    );
     const name = card.querySelector<HTMLElement>('.dispatch-session-card__name');
     const title = meta.title || entry.sid; // 真名为空回落 sid，不写空串冒充
     if (name) name.textContent = title;

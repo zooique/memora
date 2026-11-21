@@ -196,6 +196,37 @@ export function focusRoundById(messages: HTMLElement, roundId: string): boolean 
   return true;
 }
 
+/**
+ * 按派活原文定位到目标会话的用户气泡（DISPATCH-CARD-LOCATE-1）
+ *
+ * 为什么不用 roundId：助手轮的 roundId 在目标会话里不存在（目标轮是另一套 id），
+ * 拿它找 `data-round-id` 必然落空——真机症状就是「打开会话但不跳到那轮」。
+ * text 是两侧唯一同源的值：助手 `tool_start.args.text` 逐字成为目标轮
+ * `userMessage.content`，上屏即 `.msg.user .msg-body` 的 textContent。
+ *
+ * 判据（SSOT：复用导航条 collect 的 `.msg.user` 锚 + jumpToRound 唯一滚动公式）：
+ *  - 逐字比对归一后的 `.msg-body` 文本（与 collect 的预览同源，走 extractPreview 同前提）；
+ *  - 同一会话派了两次相同的话 ⇒ 取**最后一条**（最近一次任务），符合直觉；
+ *  - 命中外壳取 `.msg-wrapper`（与 collect 一致，落点更稳），无壳回退气泡自身；
+ *  - 找不到 ⇒ 如实返回 false，不滚流尾冒充成功。
+ *
+ * @param messages 消息流容器（#messages）
+ * @param text 派活原文（来自卡的 data-dispatch-text）
+ * @returns 是否命中并定位
+ */
+export function focusRoundByText(messages: HTMLElement, text: string): boolean {
+  if (!text) return false;
+  const users = Array.from(messages.querySelectorAll<HTMLElement>('.msg.user'));
+  for (let i = users.length - 1; i >= 0; i--) {
+    const body = users[i].querySelector<HTMLElement>('.msg-body');
+    if ((body?.textContent ?? '') !== text) continue;
+    const wrapper = users[i].closest<HTMLElement>('.msg-wrapper') ?? users[i];
+    jumpToRound(messages, wrapper);
+    return true;
+  }
+  return false;
+}
+
 /** 控制器句柄：sync = 结构变更/尺寸变更后重建与压密；refresh = 滚动后轻量刷高亮 */
 export interface RoundNavController {
   sync(): void;

@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   argStr,
+  dispatchedSidTextsFromEvents,
   dispatchedSidsFromEvents,
   fmtDuration,
   parseToolArgs,
@@ -182,5 +183,104 @@ describe('dispatchedSidsFromEvents（DISPATCH-CARD-INLINE-1 触发轮解析）',
         }),
       ]).size,
     ).toBe(0);
+  });
+});
+
+describe('dispatchedSidTextsFromEvents（跨会话定位锚 DISPATCH-CARD-LOCATE-1）', () => {
+  const ev = (e: unknown): ProcessEvent => e as ProcessEvent;
+
+  it('send_to_session 成功 → (sid, text) 都从 args 取，按 toolCallId 配回执', () => {
+    expect(
+      dispatchedSidTextsFromEvents([
+        ev({
+          type: 'tool_start',
+          seq: 0,
+          ts: '2026-11-19T09:00:00.000Z',
+          payload: {
+            toolCallId: 'c1',
+            name: 'send_to_session',
+            args: '{"sid":"2026-11-19-target","text":"请把加法算完"}',
+          },
+        }),
+        ev({
+          type: 'tool_result',
+          seq: 1,
+          ts: '2026-11-19T09:00:01.000Z',
+          payload: { toolCallId: 'c1', name: 'send_to_session', ok: true },
+        }),
+      ]),
+    ).toEqual([{ sid: '2026-11-19-target', text: '请把加法算完' }]);
+  });
+
+  it('create_session 成功 → text 从 args、sid 从 summary；缺 text 时 text 为空串', () => {
+    expect(
+      dispatchedSidTextsFromEvents([
+        ev({
+          type: 'tool_start',
+          seq: 0,
+          ts: '2026-11-19T09:00:00.000Z',
+          payload: {
+            toolCallId: 'c2',
+            name: 'create_session',
+            args: '{"text":"新建后做减法"}',
+          },
+        }),
+        ev({
+          type: 'tool_result',
+          seq: 1,
+          ts: '2026-11-19T09:00:01.000Z',
+          payload: {
+            toolCallId: 'c2',
+            name: 'create_session',
+            ok: true,
+            summary: '{"sid":"2026-11-19-created"}',
+          },
+        }),
+      ]),
+    ).toEqual([{ sid: '2026-11-19-created', text: '新建后做减法' }]);
+    // 缺 text：仍出卡（sid 有效），但定位锚为空串，点击退化看最新轮
+    const noText = dispatchedSidTextsFromEvents([
+      ev({
+        type: 'tool_start',
+        seq: 0,
+        ts: '2026-11-19T09:00:00.000Z',
+        payload: { toolCallId: 'c3', name: 'create_session', args: '{}' },
+      }),
+      ev({
+        type: 'tool_result',
+        seq: 1,
+        ts: '2026-11-19T09:00:01.000Z',
+        payload: {
+          toolCallId: 'c3',
+          name: 'create_session',
+          ok: true,
+          summary: '{"sid":"2026-11-19-x"}',
+        },
+      }),
+    ]);
+    expect(noText).toEqual([{ sid: '2026-11-19-x', text: '' }]);
+  });
+
+  it('受理失败 / 无 sid → 不产生锚；dispatchedSidsFromEvents 与之一致（单一真源）', () => {
+    const events = [
+      ev({
+        type: 'tool_start',
+        seq: 0,
+        ts: '2026-11-19T09:00:00.000Z',
+        payload: {
+          toolCallId: 'c4',
+          name: 'send_to_session',
+          args: '{"sid":"2026-11-19-fail","text":"失败的任务"}',
+        },
+      }),
+      ev({
+        type: 'tool_result',
+        seq: 1,
+        ts: '2026-11-19T09:00:01.000Z',
+        payload: { toolCallId: 'c4', name: 'send_to_session', ok: false },
+      }),
+    ];
+    expect(dispatchedSidTextsFromEvents(events)).toEqual([]);
+    expect([...dispatchedSidsFromEvents(events)]).toEqual([]);
   });
 });

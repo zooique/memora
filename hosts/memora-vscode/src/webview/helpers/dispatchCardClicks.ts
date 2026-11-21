@@ -6,7 +6,11 @@
  * 曾写在 chatView 内，撑破 max-lines 基线；本模块无 DOM 全局，document 由调用方注入。
  */
 import type { WebviewToExtensionMessage } from '../../shared/protocol.js';
-import { DISPATCH_ROUND_ATTR, DISPATCH_SESSION_ATTR } from './dispatchSessionCard.js';
+import {
+  DISPATCH_ROUND_ATTR,
+  DISPATCH_SESSION_ATTR,
+  DISPATCH_TEXT_ATTR,
+} from './dispatchSessionCard.js';
 
 /** webview → 宿主的单点投递口（由 chatView 注入 vscode.postMessage） */
 type Post = (msg: WebviewToExtensionMessage) => void;
@@ -28,10 +32,12 @@ export function initDispatchCardClicks(doc: Document, post: Post): void {
     const sid = card.getAttribute(DISPATCH_SESSION_ATTR);
     if (!sid) return;
     const roundId = card.getAttribute(DISPATCH_ROUND_ATTR);
+    const text = card.getAttribute(DISPATCH_TEXT_ATTR);
     post({
       type: 'switch_session',
       sessionId: sid,
       ...(roundId ? { roundId } : {}),
+      ...(text ? { text } : {}),
     });
   });
 }

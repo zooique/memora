@@ -241,28 +241,59 @@ export function parseCreateSessionSid(summary: string): string | undefined {
  * @returns 本轮成功盖章的 sid 集合（可能为空；不编造）
  */
 export function dispatchedSidsFromEvents(events: readonly ProcessEvent[]): Set<string> {
-  const sids = new Set<string>();
-  const sendSidByCall = new Map<string, string>();
+  return new Set(dispatchedSidTextsFromEvents(events).map((d) => d.sid));
+}
+
+/** 一次成功盖章 = 目标会话 + 派活原文（DISPATCH-CARD-LOCATE-1）
+ *
+ * `text` 是助手侧与工作会话侧唯一同源的值：助手 `tool_start.args.text` 逐字成为目标轮
+ * `userMessage.content`，故可作为跨会话定位锚（助手轮 roundId 在目标会话里不存在）。
+ */
+export interface DispatchedSidText {
+  sid: string;
+  text: string;
+}
+
+/**
+ * 从一轮过程事件解析「成功盖章的 (sid, 派活原文)」列表（DISPATCH-CARD-LOCATE-1）
+ *
+ * 与 {@link dispatchedSidsFromEvents} 同一解析契约、后者由本函数派生（单一真源）：
+ *  - `send_to_session` 成功：sid/text 都在 `tool_start.args`，用 toolCallId 配成功回执；
+ *  - `create_session` 成功：text 在 `args.text`，sid 在 `tool_result.summary`（parseCreateSessionSid）。
+ * 只有 `tool_result.ok === true` 才算盖章成功；args 缺 text 的条目不产生定位锚（text=''）。
+ *
+ * @param events 本轮过程事件
+ * @returns 盖章成功的 (sid,text) 列表（可能为空；不编造）
+ */
+export function dispatchedSidTextsFromEvents(events: readonly ProcessEvent[]): DispatchedSidText[] {
+  const out: DispatchedSidText[] = [];
+  const sendByCall = new Map<string, { sid: string; text: string }>();
+  const createTextByCall = new Map<string, string>();
   for (const ev of events) {
     if (ev.type === 'tool_start') {
-      if (ev.payload.name === 'create_session') continue; // create 的 sid 只在结果里
+      if (ev.payload.name === 'create_session') {
+        const args = parseToolArgs(ev.payload.args);
+        const text = argStr(args, 'text');
+        if (text) createTextByCall.set(ev.payload.toolCallId, text);
+        continue;
+      }
       if (ev.payload.name === 'send_to_session') {
         const args = parseToolArgs(ev.payload.args);
-        if (typeof args.sid === 'string' && args.sid)
-          sendSidByCall.set(ev.payload.toolCallId, args.sid);
+        const sid = argStr(args, 'sid');
+        if (sid) sendByCall.set(ev.payload.toolCallId, { sid, text: argStr(args, 'text') ?? '' });
       }
       continue;
     }
     if (ev.type !== 'tool_result' || !ev.payload.ok) continue;
     if (ev.payload.name === 'create_session') {
       const sid = parseCreateSessionSid(ev.payload.summary ?? '');
-      if (sid) sids.add(sid);
+      if (sid) out.push({ sid, text: createTextByCall.get(ev.payload.toolCallId) ?? '' });
     } else if (ev.payload.name === 'send_to_session') {
-      const sid = sendSidByCall.get(ev.payload.toolCallId);
-      if (sid) sids.add(sid);
+      const send = sendByCall.get(ev.payload.toolCallId);
+      if (send) out.push(send);
     }
   }
-  return sids;
+  return out;
 }
 
 /**

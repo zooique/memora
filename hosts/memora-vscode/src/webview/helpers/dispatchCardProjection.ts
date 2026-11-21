@@ -12,7 +12,7 @@
  * 无 DOM 全局依赖（messages 容器由 project 注入），符合 helpers 落点纪律。
  */
 import type { ProcessEvent } from '@zooique/memora';
-import { dispatchedSidsFromEvents } from './processEventText.js';
+import { dispatchedSidTextsFromEvents } from './processEventText.js';
 import {
   renderDispatchCards,
   type DispatchedSessionView,
@@ -65,11 +65,11 @@ export function createDispatchCardProjection(
       eventsByRound.set(roundId, list);
       seqByRound.set(roundId, seqs);
       let added = false;
-      for (const sid of dispatchedSidsFromEvents(list)) {
+      for (const { sid, text } of dispatchedSidTextsFromEvents(list)) {
         const key = entryKey(sid, roundId);
         if (seen.has(key)) continue;
         seen.add(key);
-        entries.push({ sid, roundId });
+        entries.push({ sid, roundId, text });
         added = true;
       }
       return added;

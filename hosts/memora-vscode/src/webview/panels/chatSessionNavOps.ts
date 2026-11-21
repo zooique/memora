@@ -55,8 +55,8 @@ export interface ChatSessionNavOpsDeps {
   rekeyAgent?: (from: string, to: string) => void;
   /** 绑定显示源（含各订阅面重绑） */
   bindAgent: (agent: Agent) => void;
-  /** 重放当前会话，保证 UI 与存储一致；roundId 可选 = turn 卡落点 */
-  replaySession: (roundId?: string) => void;
+  /** 重放当前会话，保证 UI 与存储一致；roundId 随卡身份透传，text = 跨会话定位锚 */
+  replaySession: (roundId?: string, text?: string) => void;
   /** 后台任务条按会话重投影（切换 / 分叉后必须 force） */
   postBackgroundTasks: () => void;
 }
@@ -65,7 +65,7 @@ export interface ChatSessionNavOpsDeps {
 export interface ChatSessionNavOps {
   forkCurrentSession(roundId?: string): Promise<void>;
   renameCurrentSession(): Promise<void>;
-  switchToSession(sessionId: string, roundId?: string): Promise<void>;
+  switchToSession(sessionId: string, roundId?: string, text?: string): Promise<void>;
 }
 
 /**
@@ -170,12 +170,15 @@ export function createChatSessionNavOps(deps: ChatSessionNavOpsDeps): ChatSessio
      * 流中允许切换——后台会话的流继续跑，其 UI 投递由 `isBackgroundFlow()` 挡在显示会话之外。
      *
      * @param sessionId 目标会话标识（YYYY-MM-DD-sessionName）
-     * @param roundId 可选 turn 锚点：同会话只定位不切源；跨会话随回放落到该轮（DISPATCH-CARD-TURN-1）
+     * @param roundId 可选 turn 身份锚（卡身份，随链路透传、不作定位判据）
+     * @param text 可选派活原文：跨会话/同会话都靠它在目标会话里逐字配对定位（DISPATCH-CARD-LOCATE-1）
      */
-    async switchToSession(sessionId: string, roundId?: string): Promise<void> {
+    async switchToSession(sessionId: string, roundId?: string, text?: string): Promise<void> {
       if (sessionId === deps.getCurrentSessionId()) {
         // 同会话早退只对「看最新轮」成立；turn 卡点来的落点必须执行，否则旧卡点了没反应
-        if (roundId) deps.post({ type: 'focus_round', roundId });
+        // 定位只认 text（助手轮 roundId 在目标会话不存在）；无 text 时保留 roundId 兼容旧调用
+        if (text || roundId)
+          deps.post({ type: 'focus_round', roundId: roundId ?? '', ...(text ? { text } : {}) });
         return;
       }
       const wasHeld = deps.lock.holds(sessionId); // 切回旧会话 = 已是长锁，失败不得误放
@@ -190,7 +193,7 @@ export function createChatSessionNavOps(deps: ChatSessionNavOpsDeps): ChatSessio
         deps.setCurrentSessionId(sessionId);
         const agent = await deps.agentForSession(sessionId);
         deps.bindAgent(agent);
-        deps.replaySession(roundId);
+        deps.replaySession(roundId, text);
         // 后台任务条按会话重投影（BGTASK-SWITCH-REPUSH-1）：切会话不推 ⇒ 常驻条继续显示上一个会话的任务。
         // 必须 force（两会话任务都可能为空、签名相同）；force 是**第二道保险**——`sessionChanged`
         // 已在起作用，保留它防未来调用顺序漂移，**不是必需成本，勿当冗余删掉**。

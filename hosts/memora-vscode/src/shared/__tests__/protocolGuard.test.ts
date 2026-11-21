@@ -95,6 +95,9 @@ import { join } from 'node:path';
  *  工作台「去这个会话」也不发本条，不能借既有通道冒充。切会话载荷只在 `switch_session`
  *  加可选 `roundId`、过程事件只在 `process_event` 加可选 `roundId`，均不新增 type。
  *  实测 146，阈值同口径重算 147。
+ *  2026-11-21 跨会话定位订正（`DISPATCH-CARD-LOCATE-1`）：`switch_session` / `focus_round`
+ *  各加可选 `text`（派活原文，跨会话定位锚），均为既有 type 的可选字段，不新增 type ⇒
+ *  阈值仍 147（只记沿革，不调阈值）。
  */
 const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 147;
 

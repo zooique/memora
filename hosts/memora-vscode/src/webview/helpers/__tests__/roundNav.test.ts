@@ -30,6 +30,7 @@ import {
   createRoundNav,
   extractPreview,
   focusRoundById,
+  focusRoundByText,
   jumpToRound,
 } from '../roundNav.js';
 
@@ -278,6 +279,71 @@ describe('jumpToRound（点击定位）', () => {
     expect(state.scrollTop).toBe(288);
     state.scrollTop = 0;
     expect(focusRoundById(messages, 'missing')).toBe(false);
+    expect(state.scrollTop).toBe(0);
+    document.body.innerHTML = '';
+  });
+
+  /** 造一条用户气泡（与导航条 collect 同源：.msg.user > .msg-body，外壳 .msg-wrapper） */
+  function userBubble(text: string): HTMLElement {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'msg-wrapper';
+    const user = document.createElement('div');
+    user.className = 'msg user';
+    const body = document.createElement('div');
+    body.className = 'msg-body';
+    body.textContent = text;
+    user.appendChild(body);
+    wrapper.appendChild(user);
+    return wrapper;
+  }
+
+  it('focusRoundByText：按派活原文逐字找到 .msg.user 并复用 jumpToRound 判据', () => {
+    const messages = document.createElement('div');
+    document.body.appendChild(messages);
+    messages.append(userBubble('第一轮的活'), userBubble('请把加法算完'), userBubble('第三轮的活'));
+    stubRect(messages, 0);
+    const wrappers = Array.from(messages.querySelectorAll<HTMLElement>('.msg-wrapper'));
+    stubRect(wrappers[1], 300); // 目标 = 第二条（jumpToRound 定位的是 .msg-wrapper）
+    const state = stubScrollBox(messages, {
+      scrollHeight: 2000,
+      clientHeight: 400,
+      scrollTop: 0,
+    });
+    expect(focusRoundByText(messages, '请把加法算完')).toBe(true);
+    expect(state.scrollTop).toBe(288);
+    document.body.innerHTML = '';
+  });
+
+  it('focusRoundByText：同一会话派两次相同话 → 取最后一条（最近一次任务）', () => {
+    const messages = document.createElement('div');
+    document.body.appendChild(messages);
+    messages.append(userBubble('重复任务'), userBubble('别的'), userBubble('重复任务'));
+    stubRect(messages, 0);
+    const wrappers = Array.from(messages.querySelectorAll<HTMLElement>('.msg-wrapper'));
+    stubRect(wrappers[0], 100);
+    stubRect(wrappers[2], 500); // 最后一条靠后 400px，命中应滚到 488
+    const state = stubScrollBox(messages, {
+      scrollHeight: 2000,
+      clientHeight: 400,
+      scrollTop: 0,
+    });
+    expect(focusRoundByText(messages, '重复任务')).toBe(true);
+    expect(state.scrollTop).toBe(488);
+    document.body.innerHTML = '';
+  });
+
+  it('focusRoundByText：找不到 / 空 text 如实失败，不滚流尾', () => {
+    const messages = document.createElement('div');
+    document.body.appendChild(messages);
+    messages.append(userBubble('已删除的活'));
+    stubRect(messages, 0);
+    const state = stubScrollBox(messages, {
+      scrollHeight: 2000,
+      clientHeight: 400,
+      scrollTop: 0,
+    });
+    expect(focusRoundByText(messages, '不存在的话')).toBe(false);
+    expect(focusRoundByText(messages, '')).toBe(false);
     expect(state.scrollTop).toBe(0);
     document.body.innerHTML = '';
   });

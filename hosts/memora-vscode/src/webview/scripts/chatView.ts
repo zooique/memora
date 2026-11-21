@@ -72,7 +72,7 @@ import {
   toolStartNames,
 } from '../helpers/processEventText.js';
 // 会话大纲导航条（HOST-NAV-1）：逻辑收口于 helpers/roundNav.ts（SSOT），本文件只接线
-import { createRoundNav, focusRoundById } from '../helpers/roundNav.js';
+import { createRoundNav, focusRoundById, focusRoundByText } from '../helpers/roundNav.js';
 // 重放时间线交织（正文段 × 交互行按时间升序）：纯函数外置，本文件只消费
 import { buildReplayTimeline } from '../helpers/replayTimeline.js';
 // 骨架（会话控件）语义派生纯函数层：矩阵与状态容器在 turnUiState.ts，
@@ -3089,7 +3089,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 按钮（resume 被静默丢弃），提问超时后自动续跑、记录留下「未回答」——故重放先、提问卡后。
       if (msg.replay === true) renderReplayFromRounds(msg.rounds);
       // 实时路径：主动汇报当场也要带身份（判据与重放同一谓词，见 helper）
-      else markLiveProactiveReport(activeAssistantEl ?? flowShellEl, msg.rounds);
+      else {
+        markLiveProactiveReport(activeAssistantEl ?? flowShellEl, msg.rounds);
+        // DISPATCH-CARD-REALTIME-1：助手窗 bubbleOnly 过滤 process_event，实时派活的
+        // 工具事件只能从本条 turn_update.rounds（落盘/合并轮）取。与 replay 同用 noteRound
+        // 单一真源登记 turn 锚，新增卡才重投影——否则实时阶段 entries 恒空、卡要等关窗
+        // 重渲 replay 才出现（真机「安排的工作会话不实时显示」）。seq 去重保幂等。
+        for (const r of msg.rounds ?? []) {
+          if (dispatchCards.noteRound(r.id, r.processEvents ?? [])) dispatchCards.project(messages);
+        }
+      }
       // 提问卡渲染真源 = turn_update.state（waiting/ask + questions）。
       // 位置在重放之后是顺序契约的一部分，勿上移。
       if (
@@ -3583,7 +3592,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       forceScrollToBottom(messages);
     } else if (msg.type === 'focus_round') {
       // turn 卡落点：不冒充 history_loaded，也不滚流尾；找不到目标轮时如实不动。
-      focusRoundById(messages, msg.roundId);
+      // 定位只认派活 text（助手轮 roundId 在目标会话不存在）——DISPATCH-CARD-LOCATE-1；
+      // 无 text 的旧调用回退 roundId（同会话 id 空间时仍成立）。
+      if (msg.text) focusRoundByText(messages, msg.text);
+      else focusRoundById(messages, msg.roundId);
     } else if (msg.type === 'session_title') {
       // 更新会话标题条（ADR-024）：textContent 防注入；切换/改名/清空后由 chatPanel 推送最新标题
       sessionTitleText.textContent = msg.title;

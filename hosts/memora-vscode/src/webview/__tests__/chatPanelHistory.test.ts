@@ -678,6 +678,40 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(posted.map((m) => (m as { type: string }).type)).not.toContain('clear_ok');
   });
 
+  it('跨会话点 turn 卡 → focus_round 透传派活 text（DISPATCH-CARD-LOCATE-1）', async () => {
+    const { store, roundStore, provider, posted } = setup();
+    const { agent } = agentStub();
+    provider.setAgentFactory(vi.fn().mockResolvedValue(agent));
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '问题A', ts: '2026-08-15T10:00:00.000Z' },
+    ]);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-14-other';
+
+    await provider.switchToSession('2026-08-15-s1', 'helper-round', '请把加法算完');
+
+    const focus = posted.find((m) => (m as { type: string }).type === 'focus_round');
+    expect(focus).toEqual({
+      type: 'focus_round',
+      roundId: 'helper-round',
+      text: '请把加法算完',
+    });
+    expect(posted.map((m) => (m as { type: string }).type)).not.toContain('history_loaded');
+  });
+
+  it('已在目标会话点另一张卡 → 早退也透传 text，不吞定位（DISPATCH-CARD-LOCATE-1）', async () => {
+    const { provider, posted } = setup();
+    const { agent } = agentStub();
+    provider.setAgent(agent);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+
+    await provider.switchToSession('2026-08-15-s1', 'helper-round', '再看减法');
+
+    expect(posted.filter((m) => (m as { type: string }).type === 'focus_round')).toEqual([
+      { type: 'focus_round', roundId: 'helper-round', text: '再看减法' },
+    ]);
+    expect(posted.map((m) => (m as { type: string }).type)).not.toContain('clear_ok');
+  });
+
   it('改名当前会话 → 写入元数据 + 推送新标题', async () => {
     const { store, roundStore, provider, posted } = setup();
     const { agent, renameSession } = agentStub();
