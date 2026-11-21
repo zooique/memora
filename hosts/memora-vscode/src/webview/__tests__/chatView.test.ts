@@ -12551,7 +12551,10 @@ describe('块类型标与折叠箭头（批次三）', () => {
           toolCallId: `c-${sid}`,
           name: via === 'delegate' ? 'send_to_session' : 'create_session',
           ok: true,
-          summary: via === 'create' ? JSON.stringify({ ok: true, sid, title: sid }) : '{}',
+          summary:
+            via === 'create'
+              ? JSON.stringify({ ok: true, sid, title: sid })
+              : JSON.stringify({ ok: true, accepted: true }),
         },
       },
     });
@@ -12834,7 +12837,12 @@ describe('块类型标与折叠箭头（批次三）', () => {
             type: 'tool_result',
             seq: 1,
             ts: '2026-11-19T09:00:01.000Z',
-            payload: { toolCallId: 'c1', name: 'send_to_session', ok: true, summary: '{}' },
+            payload: {
+              toolCallId: 'c1',
+              name: 'send_to_session',
+              ok: true,
+              summary: '{\n  "ok": true,\n  "accepted": true\n}',
+            },
           },
           {
             type: 'tool_result',
@@ -12910,7 +12918,12 @@ describe('块类型标与折叠箭头（批次三）', () => {
               type: 'tool_result',
               seq: 1,
               ts: '2026-11-21T12:00:02.000Z',
-              payload: { toolCallId: 'live-c1', name: 'send_to_session', ok: true, summary: '{}' },
+              payload: {
+                toolCallId: 'live-c1',
+                name: 'send_to_session',
+                ok: true,
+                summary: '{\n  "ok": true,\n  "accepted": true\n}',
+              },
             },
           ],
         }),

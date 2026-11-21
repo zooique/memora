@@ -39,7 +39,12 @@ function roundWithDispatch(roundId: string, from: string, sid: string): Round {
       type: 'tool_result',
       seq: 1,
       ts: '2026-11-19T09:00:01.000Z',
-      payload: { toolCallId: 'c1', name: 'send_to_session', ok: true, summary: '{}' },
+      payload: {
+        toolCallId: 'c1',
+        name: 'send_to_session',
+        ok: true,
+        summary: '{\n  "ok": true,\n  "accepted": true\n}',
+      },
     } as unknown as ProcessEvent,
   ];
   return {

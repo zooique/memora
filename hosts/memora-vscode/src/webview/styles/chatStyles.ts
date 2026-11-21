@@ -1032,6 +1032,15 @@ export const chatStyles = `
    * 加类、settleRoundFooter 移除。提问（turn_update 的 waiting/ask）等待回答期间容器 footer
    * 不显示——底部只留 ask-inline 交互块；回答 resume 完成（done）后与不提问场景底部栏统一。 */
   .round-group__footer.is-pending { display: none; }
+  /* 派活承诺对账提示（DISPATCH-CLAIM-HINT-1）：轮容器内的证据缺口提示。
+   * 刻意**不**挂进 .round-group__footer——助手形态底栏默认 opacity:0（hover 才显形），
+   * 而本提示的全部价值是「被看见」，故作为容器的常显子元素、置于底栏之前。
+   * 只由 dispatchReceiptHint.applyDispatchClaimHint（助手形态门控）插入，self 形态零 DOM。 */
+  .round-group__dispatch-hint {
+    margin-top: var(--sp-1, 4px);
+    font-size: var(--font-sm, 11px);
+    color: var(--text-secondary);
+  }
   .round-group__actions { display: inline-flex; align-items: center; gap: var(--sp-1, 4px); }
   /* 终态标签收口底栏（2026-10-13，布局返修同日）：状态词/淡勾挂底栏 time 之后的
    * ::after，正文尾回归光标纯度。载体泛匹配（契约见 chatView TerminusKind）：有正文轮

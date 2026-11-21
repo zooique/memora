@@ -25,6 +25,8 @@ import {
   resolveListCoverage,
   type AgentCreatedBy,
 } from '../../shared/sessionStatus.js';
+// 派发 / 建会话工具名单点真源（webview 业务受理判据同源引用，勿在此另立副本）
+import { CREATE_SESSION_TOOL_NAME, SEND_TO_SESSION_TOOL_NAME } from '../../shared/constants.js';
 import type { WorkbenchJobStatus } from '../../shared/workbenchDto.js';
 // 角色包名的读侧归一化与「会话记录的角色包」同一判据（不在这里另写 trim / 空串判断）
 import { normalizeRolePackName } from './rolePackName.js';
@@ -79,20 +81,6 @@ const WORK_SESSION_TOOL_DISCIPLINE =
  * 与设计文档 §13.11.1 的四个路由工具之一同名；本片只落地这一个。
  */
 export const LIST_WORK_SESSIONS_TOOL_NAME = 'list_work_sessions';
-
-/**
- * 派发工具名（与设计文档 §13.11.1 同名）
- *
- * 合法用途 = 主控把一条输入交给指定会话继续处理；不建会话、不代替目标会话作答。
- */
-export const SEND_TO_SESSION_TOOL_NAME = 'send_to_session';
-
-/**
- * 建会话工具名（与设计文档 §13.11.1 同名）
- *
- * 合法用途 = 主控开一个合适的会话并让它开始第一轮；创建走宿主既有新建路径，不另造链路。
- */
-export const CREATE_SESSION_TOOL_NAME = 'create_session';
 
 /**
  * 停止会话工具名（台账 HOST-MANAGED-MODE-V0-1 判据 6 的「停止」半）

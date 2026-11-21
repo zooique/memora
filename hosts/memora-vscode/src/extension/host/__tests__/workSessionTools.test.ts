@@ -20,16 +20,16 @@ import { WorkspaceSessionStore } from '../sessionStore.js';
 import { WorkspaceRoundStore } from '../workspaceRoundStore.js';
 import {
   buildMemorySummaryFacts,
-  CREATE_SESSION_TOOL_NAME,
   LIST_ROLE_PACKS_TOOL_NAME,
   LIST_WORK_SESSIONS_TOOL_NAME,
   ORCHESTRATOR_ALLOWED_TOOLS,
   PAUSE_WORK_SESSION_TOOL_NAME,
   READ_MEMORY_SUMMARY_TOOL_NAME,
   RESUME_WORK_SESSION_TOOL_NAME,
-  SEND_TO_SESSION_TOOL_NAME,
   STOP_WORK_SESSION_TOOL_NAME,
 } from '../workSessionTools.js';
+// 工具名单点真源 = shared/constants（与 webview 业务受理判据同源）
+import { CREATE_SESSION_TOOL_NAME, SEND_TO_SESSION_TOOL_NAME } from '../../../shared/constants.js';
 // 代答工具面独立模块：工具名 / 回执类型直接取自声明处（不在两个文件里各抄一份）
 import {
   ANSWER_SESSION_QUESTION_TOOL_NAME,

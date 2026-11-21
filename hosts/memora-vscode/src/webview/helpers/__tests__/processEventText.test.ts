@@ -6,11 +6,13 @@
  * toDateKey 为内核 formatDateKey 的必要镜像（webview 沙箱无运行时依赖），口径漂移在此报警。
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   argStr,
   dispatchedSidTextsFromEvents,
   dispatchedSidsFromEvents,
   fmtDuration,
+  isAcceptedDispatchResult,
   parseToolArgs,
   toDateKey,
   toolActionLabel,
@@ -142,7 +144,12 @@ describe('dispatchedSidsFromEvents（DISPATCH-CARD-INLINE-1 触发轮解析）',
         type: 'tool_result',
         seq: 1,
         ts: '2026-11-19T09:00:01.000Z',
-        payload: { toolCallId: 'c2', name: 'send_to_session', ok: true, summary: '{}' },
+        payload: {
+          toolCallId: 'c2',
+          name: 'send_to_session',
+          ok: true,
+          summary: '{\n  "ok": true,\n  "accepted": true\n}',
+        },
       }),
     ]);
     expect([...sids]).toEqual(['worker-b']);
@@ -186,6 +193,59 @@ describe('dispatchedSidsFromEvents（DISPATCH-CARD-INLINE-1 触发轮解析）',
   });
 });
 
+describe('isAcceptedDispatchResult（业务受理单点判据 DISPATCH-RECEIPT-1）', () => {
+  it('内核 ok=false 一律不受理（执行层失败）', () => {
+    expect(
+      isAcceptedDispatchResult({ name: 'send_to_session', ok: false, summary: '{"ok":true}' }),
+    ).toBe(false);
+  });
+
+  it('内核 ok=true 但业务 ok=false ⇒ 不受理（E_BUSY 真实形态）', () => {
+    expect(
+      isAcceptedDispatchResult({
+        name: 'send_to_session',
+        ok: true,
+        summary: '{\n  "ok": false,\n  "code": "E_BUSY",\n  "message": "目标会话在跑"\n}',
+      }),
+    ).toBe(false);
+  });
+
+  it('内核 ok=true 且摘要首键 ok=true ⇒ 受理（send / create 两类）', () => {
+    expect(
+      isAcceptedDispatchResult({
+        name: 'send_to_session',
+        ok: true,
+        summary: '{\n  "ok": true,\n  "accepted": true\n}',
+      }),
+    ).toBe(true);
+    expect(
+      isAcceptedDispatchResult({
+        name: 'create_session',
+        ok: true,
+        summary: '{\n  "ok": true,\n  "sid": "worker-a",\n  "title": "统计"\n}',
+      }),
+    ).toBe(true);
+  });
+
+  it('fail-closed：摘要缺失 / 读不到显式 true ⇒ 不算受理（旧数据不编卡）', () => {
+    expect(isAcceptedDispatchResult({ name: 'send_to_session', ok: true })).toBe(false);
+    expect(isAcceptedDispatchResult({ name: 'create_session', ok: true, summary: '{}' })).toBe(
+      false,
+    );
+  });
+
+  it('作用域只到派发工具：非派发工具一律 false（不是通用成功判据）', () => {
+    expect(isAcceptedDispatchResult({ name: 'read_file', ok: true, summary: '{}' })).toBe(false);
+    expect(isAcceptedDispatchResult({ name: 'read_file', ok: false })).toBe(false);
+  });
+
+  it('工作台清单与卡片锚点共用同一判据（源码守卫：禁止第二份裸 payload.ok）', () => {
+    const src = readFileSync(new URL('../workbenchHistory.ts', import.meta.url), 'utf8');
+    expect(src).toContain('isAcceptedDispatchResult');
+    expect(src).not.toMatch(/event\.payload\.ok/);
+  });
+});
+
 describe('dispatchedSidTextsFromEvents（跨会话定位锚 DISPATCH-CARD-LOCATE-1）', () => {
   const ev = (e: unknown): ProcessEvent => e as ProcessEvent;
 
@@ -206,7 +266,12 @@ describe('dispatchedSidTextsFromEvents（跨会话定位锚 DISPATCH-CARD-LOCATE
           type: 'tool_result',
           seq: 1,
           ts: '2026-11-19T09:00:01.000Z',
-          payload: { toolCallId: 'c1', name: 'send_to_session', ok: true },
+          payload: {
+            toolCallId: 'c1',
+            name: 'send_to_session',
+            ok: true,
+            summary: '{\n  "ok": true,\n  "accepted": true\n}',
+          },
         }),
       ]),
     ).toEqual([{ sid: '2026-11-19-target', text: '请把加法算完' }]);
@@ -233,7 +298,7 @@ describe('dispatchedSidTextsFromEvents（跨会话定位锚 DISPATCH-CARD-LOCATE
             toolCallId: 'c2',
             name: 'create_session',
             ok: true,
-            summary: '{"sid":"2026-11-19-created"}',
+            summary: '{\n  "ok": true,\n  "sid": "2026-11-19-created",\n  "title": "减法"\n}',
           },
         }),
       ]),
@@ -254,7 +319,7 @@ describe('dispatchedSidTextsFromEvents（跨会话定位锚 DISPATCH-CARD-LOCATE
           toolCallId: 'c3',
           name: 'create_session',
           ok: true,
-          summary: '{"sid":"2026-11-19-x"}',
+          summary: '{\n  "ok": true,\n  "sid": "2026-11-19-x"\n}',
         },
       }),
     ]);

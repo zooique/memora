@@ -49,7 +49,12 @@ const sendEvents = (sid: string, n = 0): ProcessEvent[] => {
       type: 'tool_result',
       seq: n * 2 + 1,
       ts: '2026-11-19T09:00:01.000Z',
-      payload: { toolCallId: callId, name: 'send_to_session', ok: true, summary: '{}' },
+      payload: {
+        toolCallId: callId,
+        name: 'send_to_session',
+        ok: true,
+        summary: '{\n  "ok": true,\n  "accepted": true\n}',
+      },
     } as unknown as ProcessEvent,
   ];
 };

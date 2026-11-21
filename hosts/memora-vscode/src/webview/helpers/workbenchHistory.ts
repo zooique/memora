@@ -29,13 +29,10 @@
  * （界面显示「部分历史读不到」），**不**静默跳过、**不**当成「没有」。
  */
 import type { Round } from '@zooique/memora';
-import {
-  CREATE_SESSION_TOOL_NAME,
-  SEND_TO_SESSION_TOOL_NAME,
-} from '../../extension/host/workSessionTools.js';
+import { CREATE_SESSION_TOOL_NAME, SEND_TO_SESSION_TOOL_NAME } from '../../shared/constants.js';
 // DISPATCH-CREATE-CARD-1：解析真源下沉到 webview 纯 helper processEventText（零宿主依赖），
 // 本模块仍调用并对外 re-export——契约测试 workbenchSidContract 的 import 路径保持不变。
-import { parseCreateSessionSid } from './processEventText.js';
+import { isAcceptedDispatchResult, parseCreateSessionSid } from './processEventText.js';
 export { parseCreateSessionSid } from './processEventText.js';
 import {
   WORKBENCH_DISPATCH_LOOKBACK_ROUNDS,
@@ -312,7 +309,9 @@ function collectFromRound(
       }
       continue;
     }
-    if (event.type !== 'tool_result' || !event.payload.ok) continue;
+    // 业务受理判据与会话卡锚点共用单点（DISPATCH-RECEIPT-1）：内核 ok=true 但业务 ok=false
+    // （E_BUSY / E_DENIED / E_LOCKED）不算「派过活」——否则卡片消失而工作台清单仍显示已派。
+    if (event.type !== 'tool_result' || !isAcceptedDispatchResult(event.payload)) continue;
     if (event.payload.name === SEND_TO_SESSION_TOOL_NAME) {
       const send = sends.get(event.payload.toolCallId);
       if (!send) {

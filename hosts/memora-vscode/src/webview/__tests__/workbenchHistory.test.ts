@@ -379,6 +379,9 @@ describe('rebuildWorkbenchChildren · 派发记录（send_to_session）', () => 
           result('send-1', 'send_to_session', false, '{"ok":false,"code":"E_BUSY"}'),
           // 只有开始、没有结果（轮被中断）：不能确认派成功，也不算
           start('send-2', 'send_to_session', JSON.stringify({ sid: 'session-abc', text: '中断' })),
+          // 内核 ok=true 但业务 ok=false（真实 E_BUSY 形态，DISPATCH-RECEIPT-1）：不算派过
+          start('send-3', 'send_to_session', JSON.stringify({ sid: 'session-abc', text: '撞忙' })),
+          result('send-3', 'send_to_session', true, '{"ok":false,"code":"E_BUSY"}'),
         ]),
       ]),
     );

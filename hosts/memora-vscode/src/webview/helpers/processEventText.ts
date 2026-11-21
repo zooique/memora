@@ -12,12 +12,13 @@
  *
  * **webview 沙箱约束**（同 toolNameMap）：webview 运行时对内核只有 `import type`、
  * 对内核零运行时依赖（esbuild `platform: 'browser'` / `format: 'iife'` 单独打包）——
- * 本文件引用内核类型一律 `import type`；宿主注入模块之外，运行时依赖只有同目录
- * `toolNameMap` 与 `@vscode/l10n`。
+ * 本文件引用内核类型一律 `import type`；宿主注入模块之外，运行时依赖只有
+ * `shared/constants`（派发工具名真源）、同目录 `toolNameMap` 与 `@vscode/l10n`。
  */
 
 import type { ProcessEvent, ProcessThinkingPhase } from '@zooique/memora';
 import * as l10n from '@vscode/l10n';
+import { CREATE_SESSION_TOOL_NAME, SEND_TO_SESSION_TOOL_NAME } from '../../shared/constants.js';
 import { getToolDisplayName } from './toolNameMap.js';
 
 /** 本地时区 YYYY-MM-DD 日期键。
@@ -222,17 +223,51 @@ export function parseCreateSessionSid(summary: string): string | undefined {
 }
 
 /**
+ * 派发类工具回执的「业务已受理」判据（单点 · DISPATCH-RECEIPT-1）
+ *
+ * 为什么不能只看内核 `tool_result.ok`：内核 `ok = outcome.status === 'ok'`
+ * （`src/agent/loop.ts` 的 tool_result 生成点），只表示执行器没抛错。宿主工具正常返回
+ * `{"ok": false, "code": "E_BUSY"}` 时内核仍记 `ok: true`——业务失败会被当成「已受理」。
+ *
+ * 业务 `ok` 的可读性：`send_to_session` / `create_session` 的对外文本由宿主唯一产生点
+ * 序列化，`ok` 恒为第一字段；内核摘要截到 100 字（`result.slice(0, 100)`）仍在窗口内。
+ * 故此处读 `summary` 是**窗内无损读**，不是从 UI 文案反推。
+ *
+ * 🔒 单一判据、两个消费者：会话卡锚点（{@link dispatchedSidTextsFromEvents}）与工作台
+ * 子会话清单（`workbenchHistory.collectFromRound`）都调用本函数；禁止在任一处再写裸
+ * `payload.ok` 比较（源码守卫见 `__tests__/processEventText.test.ts`）。
+ *
+ * fail-closed：摘要缺 `"ok": true`（旧数据 / 畸形摘要）一律不算受理——不编卡、不当作回执。
+ *
+ * 作用域：**只对派发工具成立**。非派发工具没有「业务受理」契约，本函数一律返回 `false`——
+ * 它不是通用「工具成功」判据，拿它判 `read_file` 之类的结果是误用。
+ *
+ * @param payload `tool_result` 载荷（name / ok / summary）
+ * @returns 该次派发是否业务受理成功
+ */
+export function isAcceptedDispatchResult(payload: {
+  name: string;
+  ok: boolean;
+  summary?: string;
+}): boolean {
+  if (!payload.ok) return false;
+  if (payload.name !== CREATE_SESSION_TOOL_NAME && payload.name !== SEND_TO_SESSION_TOOL_NAME) {
+    return false;
+  }
+  return /["']?ok["']?\s*:\s*true/.test(payload.summary ?? '');
+}
+
+/**
  * 从一轮过程事件里解析「本轮盖章启动了哪些工作会话」（DISPATCH-CARD-INLINE-1）
  *
  * 两种盖章动作，sid 来源不同（与 workbenchHistory.collectFromRound 同一契约）：
  *   - `create_session` 成功：sid 在 `tool_result.summary`（parseCreateSessionSid）；
  *   - `send_to_session` 成功：sid 在 `tool_start.args.sid`（回执无 sid，只能从入参取）。
  *
- * 🔒 工具名字面量 'create_session' / 'send_to_session' 与宿主
- * `extension/host/workSessionTools.ts` 的 CREATE_SESSION_TOOL_NAME / SEND_TO_SESSION_TOOL_NAME
- * 是同一契约：webview bundle 不能 import 宿主模块（见文件头沙箱约束），故此处镜像字面量，
- * 常量值变更须两侧同步（workbenchSidContract 测试钉宿主侧，本函数由 knot 测试钉）。
- * 只有 `tool_result.ok === true` 才算盖章成功——受理失败不编卡。
+ * 🔒 工具名真源 = `shared/constants.ts` 的 CREATE_SESSION_TOOL_NAME / SEND_TO_SESSION_TOOL_NAME
+ * （宿主与 webview 同源引用，不镜像字面量；契约值变更改一处即两侧随动）。
+ * 只有业务已受理才算盖章成功（{@link isAcceptedDispatchResult}：内核 ok + 摘要业务 ok）——
+ * 受理失败（E_BUSY / E_DENIED / E_LOCKED）不编卡、也不当作「已派」回执。
  *
  * 用途：replay 每轮渲染时，判定该轮是否是某张会话卡的触发轮，把卡插到该轮消息之后
  * （按时间自然平铺）。纯函数、零 DOM、零宿主依赖，webview bundle 可直接用。
@@ -260,7 +295,8 @@ export interface DispatchedSidText {
  * 与 {@link dispatchedSidsFromEvents} 同一解析契约、后者由本函数派生（单一真源）：
  *  - `send_to_session` 成功：sid/text 都在 `tool_start.args`，用 toolCallId 配成功回执；
  *  - `create_session` 成功：text 在 `args.text`，sid 在 `tool_result.summary`（parseCreateSessionSid）。
- * 只有 `tool_result.ok === true` 才算盖章成功；args 缺 text 的条目不产生定位锚（text=''）。
+ * 只有业务已受理才算盖章成功（{@link isAcceptedDispatchResult}）；args 缺 text 的条目不产生
+ * 定位锚（text=''）。
  *
  * @param events 本轮过程事件
  * @returns 盖章成功的 (sid,text) 列表（可能为空；不编造）
@@ -271,24 +307,24 @@ export function dispatchedSidTextsFromEvents(events: readonly ProcessEvent[]): D
   const createTextByCall = new Map<string, string>();
   for (const ev of events) {
     if (ev.type === 'tool_start') {
-      if (ev.payload.name === 'create_session') {
+      if (ev.payload.name === CREATE_SESSION_TOOL_NAME) {
         const args = parseToolArgs(ev.payload.args);
         const text = argStr(args, 'text');
         if (text) createTextByCall.set(ev.payload.toolCallId, text);
         continue;
       }
-      if (ev.payload.name === 'send_to_session') {
+      if (ev.payload.name === SEND_TO_SESSION_TOOL_NAME) {
         const args = parseToolArgs(ev.payload.args);
         const sid = argStr(args, 'sid');
         if (sid) sendByCall.set(ev.payload.toolCallId, { sid, text: argStr(args, 'text') ?? '' });
       }
       continue;
     }
-    if (ev.type !== 'tool_result' || !ev.payload.ok) continue;
-    if (ev.payload.name === 'create_session') {
+    if (ev.type !== 'tool_result' || !isAcceptedDispatchResult(ev.payload)) continue;
+    if (ev.payload.name === CREATE_SESSION_TOOL_NAME) {
       const sid = parseCreateSessionSid(ev.payload.summary ?? '');
       if (sid) out.push({ sid, text: createTextByCall.get(ev.payload.toolCallId) ?? '' });
-    } else if (ev.payload.name === 'send_to_session') {
+    } else if (ev.payload.name === SEND_TO_SESSION_TOOL_NAME) {
       const send = sendByCall.get(ev.payload.toolCallId);
       if (send) out.push(send);
     }

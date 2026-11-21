@@ -25,6 +25,21 @@ export const ROLE_PACK_TEAMS_KEY = 'memora.rolePackTeams';
 export const CONFIRM_SCRIPTS_KEY = 'memora.confirmScripts';
 
 /**
+ * 会话派发工具名（宿主装配面与 webview 业务受理判据共用的单点真源）
+ *
+ * 为什么放 shared：`send_to_session` / `create_session` 的**业务受理**要在 webview 侧从
+ * `tool_result` 摘要判定（DISPATCH-RECEIPT-1），宿主工具定义也用同一名字——两处各写字面量
+ * 必漂移（旧写法靠注释约定「两侧同改」，属 stale mirror）。这里只放名字，不放工具定义。
+ *
+ * 语义：
+ *   - `send_to_session` = 主控把一条输入交给指定会话继续处理；不建会话、不替代目标会话作答；
+ *   - `create_session` = 主控开一个会话并让它开始第一轮；走宿主既有新建路径，不另造链路。
+ * 工具语义与参数校验见 `extension/host/workSessionTools.ts`。
+ */
+export const SEND_TO_SESSION_TOOL_NAME = 'send_to_session';
+export const CREATE_SESSION_TOOL_NAME = 'create_session';
+
+/**
  * 未发送输入草稿在 `workspaceState` 里的键（`Record<sessionId | 空白页标记, string>`）
  *
  * 归属**按会话走**：草稿是「那条会话还没发出去的话」，不是全局一坨。空白草稿页

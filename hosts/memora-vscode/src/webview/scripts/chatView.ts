@@ -117,6 +117,7 @@ import { createMemoryHitsBlock } from './memoryHitsBlock.js';
 import { removeDispatchCards } from '../helpers/dispatchSessionCard.js';
 import { initDispatchCardClicks } from '../helpers/dispatchCardClicks.js';
 import { createDispatchCardProjection } from '../helpers/dispatchCardProjection.js';
+import { projectDispatchClaimHintInRound } from '../helpers/dispatchReceiptHint.js';
 import { createAssistantWorkbenchDrawer } from '../helpers/assistantWorkbenchDrawer.js';
 import { hideWorkbenchDrawer, shouldOpenWorkbench } from '../helpers/workbenchDrawerToggle.js';
 import {
@@ -3029,6 +3030,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           );
         }
         renderRoundBlock(currentEvents, true, runtimeInteractiveInputs, r.evidence);
+        // 派活承诺对账（DISPATCH-CLAIM-HINT-1）：重放与实时共用同一轮级投影
+        projectDispatchClaimHintInRound(document, messages, r);
         // ASSISTANT-WECHAT-UX-1：同上一处——助手形态上屏行是终位，不回收（删了就丢）。
         if (r.id && roundBlockEl?.isConnected && document.body.dataset.form !== 'assistant') {
           messages
@@ -3097,6 +3100,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 重渲 replay 才出现（真机「安排的工作会话不实时显示」）。seq 去重保幂等。
         for (const r of msg.rounds ?? []) {
           if (dispatchCards.noteRound(r.id, r.processEvents ?? [])) dispatchCards.project(messages);
+          // 派活承诺对账（DISPATCH-CLAIM-HINT-1）：宿主先 done 后 turn_update，提示只能在这里算；
+          // 同一轮多次 turn_update 由投影内部先撤后插（幂等）。
+          projectDispatchClaimHintInRound(document, messages, r);
         }
       }
       // 提问卡渲染真源 = turn_update.state（waiting/ask + questions）。
