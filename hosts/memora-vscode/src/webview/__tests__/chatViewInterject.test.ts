@@ -87,4 +87,54 @@ describe('插话吸收时上屏 · webview diff 分流（chatView）', () => {
     pushQueue([]);
     expect(supRows()).toHaveLength(1);
   });
+
+  it('工作形态忽略入队回执：仍由队列消费才出「你补充」过程行', () => {
+    dispatch({
+      type: 'user',
+      text: '工作补充',
+      ts: '2026-11-22T12:53:20.000Z',
+      roundId: 'r-work',
+      kind: 'supplement',
+      echo: 'enqueued',
+    });
+    expect(supRows()).toHaveLength(0);
+    pushQueue(['工作补充']);
+    pushQueue([]);
+    expect(supRows()).toHaveLength(1);
+  });
+});
+
+describe('插话入队回执 · 助手形态即时上屏', () => {
+  beforeEach(() => {
+    mountChatView('assistant');
+  });
+
+  it('回执即出普通用户气泡，带真实 roundId 归位（无需关页重开）', () => {
+    dispatch({
+      type: 'user',
+      text: '停止任务，快速结束',
+      ts: '2026-11-22T12:53:20.000Z',
+      roundId: 'r-live',
+      kind: 'supplement',
+      echo: 'enqueued',
+    });
+    const bubbles = Array.from(document.querySelectorAll<HTMLElement>('.msg.user'));
+    expect(bubbles).toHaveLength(1);
+    expect(bubbles[0]!.textContent).toContain('停止任务，快速结束');
+    expect(bubbles[0]!.dataset.roundId).toBe('r-live');
+  });
+
+  it('队列消费不画第二颗：回执已上屏后快照消失零重复', () => {
+    dispatch({
+      type: 'user',
+      text: '快速收敛结束任务',
+      ts: '2026-11-22T12:53:36.000Z',
+      roundId: 'r-live',
+      kind: 'supplement',
+      echo: 'enqueued',
+    });
+    pushQueue(['快速收敛结束任务']);
+    pushQueue([]);
+    expect(document.querySelectorAll('.msg.user')).toHaveLength(1);
+  });
 });

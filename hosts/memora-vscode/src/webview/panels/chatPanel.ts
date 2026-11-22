@@ -45,6 +45,7 @@ import * as pinned from '../../extension/host/pinnedContext.js';
 // 文件改动条确认/回退分流已外置到 helpers/fileChangeDispatch（腾 max-lines 行）；
 // 命令 id 真源仍在 fileChangeView，由该 helper 统一 import，本文件不再直引。
 import { dispatchFileChangeAction } from '../helpers/fileChangeDispatch.js';
+import { interjectEcho } from '../helpers/interjectEcho.js';
 import {
   resolveContextWindow,
   LOOP_CONSTANTS,
@@ -2987,6 +2988,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // user 消息续跑（不 abort 旧流、不新开 chat）；pausePending 窗口发补充 = interject + 取消暂停。
     if (this.runtimeFor(sessionId).streaming && this.runtimeFor(sessionId).abortController) {
       // 三态裁决真源在内核：'rejected-limit' 零入队零落盘（须提示）；'queued-unpersisted'=已生效但历史未写（勿诱导重发，重发即双执行）
+      const acceptedAt = new Date().toISOString();
       const outcome = await agent.interject(input);
       if (outcome === 'rejected-limit')
         return void vscode.window.showWarningMessage(limitNotice(INTERJECT_LIMIT));
@@ -2996,9 +2998,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           message: interjectUnsavedNotice(),
           category: 'unknown',
         });
-      // 上屏时机 = 消费时刻（吸收时上屏）：排队中 ≠ 已说出，入队成功**不再**即时 post type:'user'
-      // （退役设计：变异加回 `this.post({type:'user',…})` 即 chatPanelInterject「入队不 post」红）。
-      // 排队期唯一呈现 = 待发送区；内核消费落盘后队列快照减少 → webview diff 上屏「你补充」行。
+      // 入队受理即投回执（同一次落盘事实的投影）；拒收 / 落盘失败分支已在上方
+      this.postToSession(sessionId, interjectEcho(input, acceptedAt, agent.currentRoundId()));
       if (agent.isPausePending()) {
         agent.cancelPauseRequest();
         // 暂停覆盖取消由 turn_update 补推（骨架回 running）

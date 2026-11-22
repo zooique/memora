@@ -99,6 +99,7 @@ function inputAgentStub() {
     getCheckpoint: () => undefined,
     isPausePending: () => false,
     cancelPauseRequest: vi.fn(),
+    currentRoundId: () => 'r-input',
     interject,
     answerQuestion,
     getPendingInterjections,
@@ -195,11 +196,15 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
 
     await h.cast.handleInput({ kind: 'send', text: '补充要求' });
 
-    // interject 入队成功；**不再即时上屏**（吸收时上屏：排队中 ≠ 已说出，
-    // 上屏改由 webview 在队列快照减少（消费）时 diff 触发——见 chatViewInterject.test.ts）
+    // interject 入队成功即投回执（同一次落盘事实，带真实轮身份；助手形态即时上屏）
     expect(interject).toHaveBeenCalledTimes(1);
     expect(interject).toHaveBeenCalledWith('补充要求');
-    expect(h.posted.some((m) => (m as { type?: string }).type === 'user')).toBe(false);
+    expect(
+      h.posted.some(
+        (m) =>
+          (m as { type?: string }).type === 'user' && (m as { echo?: string }).echo === 'enqueued',
+      ),
+    ).toBe(true);
     // 不中断旧流、不发起新 chat
     expect(chat).not.toHaveBeenCalled();
     expect(h.posted.filter((m) => (m as { type?: string }).type === 'status')).toHaveLength(0);
@@ -520,10 +525,10 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     );
   });
 
-  it('INPUT-LIMIT-1：插话未达上限 → 正常入队、不即时上屏（吸收时上屏）', async () => {
+  it('INPUT-LIMIT-1：插话未达上限 → 正常入队即投回执（带真实轮身份）', async () => {
     const h = setupInput();
     const { interject } = mount(h);
-    // 内核受理（未满员）→ 宿主不 post user 气泡（呈现时机 = 消费时刻）
+    // 内核受理（未满员）→ 宿主投带真实 roundId 的入队回执
     interject.mockResolvedValue('queued');
     h.cast.runtimeFor().streaming = true;
     h.cast.runtimeFor().abortController = new AbortController();
@@ -532,7 +537,7 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     await h.cast.handleInput({ kind: 'send', text: '第 5 条' });
 
     expect(interject).toHaveBeenCalledTimes(1);
-    expect(h.posted.filter((m) => (m as { type?: string }).type === 'user')).toHaveLength(0);
+    expect(h.posted.filter((m) => (m as { echo?: string }).echo === 'enqueued')).toHaveLength(1);
   });
 
   it('INTERJECT-PERSIST-1：插话已生效但历史未写入 → 上屏 error 提示且不诱导重发', async () => {

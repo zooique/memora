@@ -2,8 +2,8 @@
  * 插话「吸收时上屏」宿主侧测试（方案：呈现 ⟺ 事实——排队中不上屏，消费/丢弃按事实分流）
  *
  * 覆盖三件事：
- *   ① 入队成功**不再**即时 post type:'user'（旧「发送即上屏」设计已退役——
- *      排队中 ≠ 已说出，超前呈现让「取消排队」留孤儿行）；
+ *   ① 入队受理即 post type:'user' 回执（带真实 roundId/ts/echo）——interject 已
+ *      「先入队、后落盘」，呈现同一次落盘事实而非超前消息；拒收零上屏；
  *   ② 三条丢弃路径（删除单条 / 全部清空 / 停止放弃检查点）发 pending_discarded 信号，
  *      载荷 = 被丢条目文本（先读后丢），且信号先于新快照 turn_update（FIFO 时序契约）；
  *   ③ 丢弃信号唯一发点 postPendingDiscarded 的空载荷 no-op。
@@ -157,12 +157,17 @@ function takeDiscarded(posted: Array<Record<string, unknown>>): { items: string[
 }
 
 describe('插话吸收时上屏 · 宿主出口（chatPanel）', () => {
-  it('interject 入队成功不 post type:user（旧即时上屏已退役——变异加回即本用例红）', async () => {
+  it('interject 入队受理即 post 回执：带真实 roundId/ts/echo（变异删 echo 或 roundId 即红）', async () => {
     const h = setup([]);
     h.cast.runtimeFor().streaming = true;
     h.cast.runtimeFor().abortController = new AbortController();
     await h.cast.sendInput('排队中的补充');
-    expect(h.posted.some((m) => m.type === 'user')).toBe(false);
+    const echo = h.posted.find((m) => m.type === 'user' && m.echo === 'enqueued');
+    expect(echo).toBeDefined();
+    expect(echo!.text).toBe('排队中的补充');
+    expect(echo!.kind).toBe('supplement');
+    expect(echo!.roundId).toBe('r-interject');
+    expect(typeof echo!.ts).toBe('string');
   });
 
   it('删除单条 → pending_discarded 携带被删文本，且先于新快照 turn_update（FIFO 时序契约）', async () => {

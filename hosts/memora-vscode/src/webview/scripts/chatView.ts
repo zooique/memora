@@ -465,7 +465,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     inputBar,
     setDockActive: (id, active) => dock.setActive(id, active),
     registerDockEntry: (id, el) => dock.register(id, el),
-    appendInteractiveInput,
+    appendInteractiveInput: (text, ts, kind, roundId, question, options) => {
+      // 助手形态补充已由入队回执即时上屏；队列消费只撤待发送条，不画第二颗气泡
+      if (document.body.dataset.form === 'assistant' && kind === 'supplement') return;
+      appendInteractiveInput(text, ts, kind, roundId, question, options);
+    },
     postMessage: (msg) => vscode.postMessage(msg as WebviewToExtensionMessage),
   });
 
@@ -3104,15 +3108,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 普通新闭环输入重置同环判定 + 清续跑期待 + round-block 锚点（供新轮首块挂载）
       if (msg.kind) {
         resumePending = true;
-        appendInteractiveInput(
-          msg.text,
-          msg.ts,
-          msg.kind,
-          msg.roundId,
-          msg.question,
-          msg.options,
-          msg.inputId,
-        );
+        // 入队回执只在助手形态即时上屏；工作形态维持「消费时过程行」逐字不变
+        if (msg.echo !== 'enqueued' || document.body.dataset.form === 'assistant')
+          appendInteractiveInput(
+            msg.text,
+            msg.ts,
+            msg.kind,
+            msg.roundId,
+            msg.question,
+            msg.options,
+            msg.inputId,
+          );
       } else {
         // 用户消息渲染兜底（防「重启后首输气泡偶发缺失」）：
         // 异常不再静默——console.warn 暴露堆栈（复制发现场 Console 即可定位），且以最小文本块

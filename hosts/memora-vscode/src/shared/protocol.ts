@@ -1126,6 +1126,12 @@ export type ExtensionToWebviewMessage =
        */
       inputId?: string;
       /**
+       * 入队回执标记（流式插话唯一值 `'enqueued'`）：宿主在 interject 受理后带真实
+       * roundId/ts 投本会话。助手形态据此即时上屏（与重放同轮同形），工作形态忽略、
+       * 仍由队列消费上屏——同一事件两种形态各按既有真源消费，不新增消息类型。
+       */
+      echo?: 'enqueued';
+      /**
        * 本条的图片附件（仅普通新闭环输入携带；插话 / 问答 / 暂停补充三类续接
        * 通道内核不收图，故恒缺省）
        *
