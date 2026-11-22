@@ -1687,7 +1687,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(bar).not.toBeNull();
     expect(bar.hidden).toBe(false);
     expect(bar.querySelectorAll('.pending-queue-bar__item').length).toBe(1);
-    // 非空 → 空：撤出裁决（true→false 触发 resolveDock）
+    // 非空 → 空：撤出裁决（true→false 触发 dock.resolve()）
     dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' }, pendingQueue: [] });
     expect(bar.hidden).toBe(true);
   });
@@ -2414,7 +2414,7 @@ describe('P4 状态抽屉：时间线静态固定 + 未读只亮入口徽章（C
       vi.useRealTimers();
     });
 
-    it('🔴 拉开态：未读消费后抽屉保持展开（变异：resolveDock 按未读位强制合抽屉必红）', () => {
+    it('🔴 拉开态：未读消费后抽屉保持展开（变异：dock.resolve() 按未读位强制合抽屉必红）', () => {
       mountChatView();
       pushActivity('正在思考');
       toggleDrawer(); // 拉开即消费未读
@@ -2453,7 +2453,7 @@ describe('P4 状态抽屉：时间线静态固定 + 未读只亮入口徽章（C
       toggleDrawer(); // 用户正在看
       vi.advanceTimersByTime(2500); // 条撤
       expect(actBar().hidden).toBe(true);
-      // 正在看的东西不许消失：唯一折叠轴不被 resolveDock 替用户翻回
+      // 正在看的东西不许消失：唯一折叠轴不被 dock.resolve() 替用户翻回
       expect(panel().hidden).toBe(false);
       expect(chip().getAttribute('aria-expanded')).toBe('true');
       // 入口从「+N」语义退为「活动」（rest 清空，时间段仍在）
@@ -2486,9 +2486,9 @@ describe('P4 状态抽屉：时间线静态固定 + 未读只亮入口徽章（C
 // UI-TOAST-1 · 瞬态提示浮层化（2026-10-24 真机反馈：「蓝条影响会话记录显示」）
 // ═══════════════════════════════════════════════════════════
 // 形态演进：B 类瞬态提示（#activityBar 的 info/error）从「流内占位条」改为「浮层」——
-// resolveDock 主位为 activity 时把它搬进 #activityToastSlot（零高度定位锚）并打
+// dock.resolve() 主位为 activity 时把它搬进 #activityToastSlot（零高度定位锚）并打
 // is-toast 类（CSS 切绝对定位，--z-bar 层浮于消息区底部，盖住消息区不盖抽屉/输入区）。
-// 不变式（显隐/归位仍只由 resolveDock 单点裁决）：info 2500ms / error 8000ms；
+// 不变式（显隐/归位仍只由 dock.resolve() 单点裁决）：info 2500ms / error 8000ms；
 // error 压 info（P0）；历史与未读在抽屉（与条解耦）；confirm 在场自动抑制
 // （pickDockHead 首判 confirm ⇒ activity 非主位 ⇒ 不进槽，只进历史 + 未读）。
 // 持久条（fileChanges/pendingQueue/background）与 A 类确认卡**不浮**——用户要操作它们。
@@ -9806,7 +9806,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
 
   it('🔴 主位条位置恒定：B 类条进出不得挤开审批卡（真机「先消失再出现」守卫）', () => {
     // 真机实锤（2026-10-05 第二轮，P7 落地后仍闪）：审批卡每切一张必闪一次。
-    // 探针实测根因：resolveDock 把 +N chip /浮层 panel 插到 **anchor(inputBar) 前**，
+    // 探针实测根因：dock.resolve() 把 +N chip /浮层 panel 插到 **anchor(inputBar) 前**，
     // 即插进「confirm 卡 ↔ inputBar」之间；而 rest 是否非空随 B 类条进出而变
     // （activity 条 2500ms 自动消失 = 高频触发点，恰好落在用户审下一条的等待窗口内）
     // ⇒ chip/panel 反复插拔 ⇒ 卡在「紧邻 inputBar」与「被挤开」之间来回跳。
@@ -9919,7 +9919,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
    * UI-CONFIRM-FIT-1（2026-10-22 用户真机实测三条）：
    * ① 尺寸比输入框小 ② 对话记录弹到下面 ③ 回到底部按钮和确认框交叠。
    *
-   * ①② **同源**：卡片是**替换** `#inputWrap` 的（resolveDock 里 composer hidden、卡插
+   * ①② **同源**：卡片是**替换** `#inputWrap` 的（dock.resolve() 里 composer hidden、卡插
    * inputBar 前），但盒模型没对齐 ⇒ 替换瞬间「盒子换了形状」：缺 min-height 矮约 38px、
    * 圆角 8 vs 14、底色 surface-card vs surface-input；而 `#messages` 是 flex:1 ⇒ 高度突变
    * 直接表现为「对话记录整体弹一下」。
@@ -10046,7 +10046,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       });
       // 卡已占据 inputBar 原位（同盒替身），入口留在上方会破「同盒」视觉且阻断态无承接面
       expect(chip.hidden).toBe(true);
-      // 收卡后 resolveDock 重跑：入口恢复（未读位由活动抽屉域持有，未被清除）
+      // 收卡后 dock.resolve() 重跑：入口恢复（未读位由活动抽屉域持有，未被清除）
       dispatch({ type: 'write_confirm_closed', requestId: 'fit_chip' });
       expect(chip.hidden).toBe(false);
     });
@@ -12696,7 +12696,9 @@ describe('块类型标与折叠箭头（批次三）', () => {
         pendingIds: [],
         badgeCount: 0,
         titleById: {},
-        dispatchedSessions: [{ sid: '2026-11-18-target', title: '统计目录文件数', via: 'delegate' }],
+        dispatchedSessions: [
+          { sid: '2026-11-18-target', title: '统计目录文件数', via: 'delegate' },
+        ],
       });
     activity([]);
     expect(card()).toBeNull();

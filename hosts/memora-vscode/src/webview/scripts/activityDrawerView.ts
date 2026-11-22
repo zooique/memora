@@ -16,7 +16,7 @@
  * 五元组）驱动，禁用「推过」「全文 diff」「activityMetrics.hidden 渲染结果」当事实源。
  *
  * **耦合 4 面承接**（上刀占用域方案 §四实测）：renderMetrics 尾调 notifyDockChanged（出）；
- * resolveDock 经 getDockState() 读 timelineReady/hasUnread 判据（入）；dockChip click
+ * dock.resolve() 经 getDockState() 读 timelineReady/hasUnread 判据（入）；dockChip click
  * 拉开时经 markDrawerOpened() 清未读+消费信号（入）；isDockExpanded() 决定未读
  * 「当场消费 vs 标未读」（入）。
  *
@@ -52,7 +52,7 @@ export interface ActivityDrawerViewDeps {
   setDockActive: (id: 'activity', active: boolean) => void;
   /** StatusDock 上报：error 豁免恒主位（fail-visible） */
   setDockFixed: (id: 'activity', fixed: boolean) => void;
-  /** resolveDock 单点重排（showActivity 入口显式刷新 / renderMetrics 尾部刷新） */
+  /** dock.resolve() 单点重排（showActivity 入口显式刷新 / renderMetrics 尾部刷新） */
   notifyDockChanged: () => void;
   /** 折叠轴只读（决定未读「当场消费 vs 标未读」；容器不得反向写） */
   isDockExpanded: () => boolean;
@@ -69,7 +69,7 @@ export interface ActivityDrawerView {
   ): void;
   /** metrics 消息到达：渲染指标块 + 信号驱动的未读判定 */
   renderMetrics(msg: MetricsMessage): void;
-  /** resolveDock 消费的抽屉入口判据：时间段有内容（timelineReady）/ 有未读（hasUnread） */
+  /** dock.resolve() 消费的抽屉入口判据：时间段有内容（timelineReady）/ 有未读（hasUnread） */
   getDockState(): { timelineReady: boolean; hasUnread: boolean };
   /** 拉开＝已读：清两个未读位 + 消费指标信号（dockChip click 拉开分支调用） */
   markDrawerOpened(): void;
@@ -135,7 +135,7 @@ export function createActivityDrawerView(deps: ActivityDrawerViewDeps): Activity
 
   /**
    * 渲染时间段的活动历史列表（内容职责；C1 起不再裁决任何显隐——
-   * 时间线可见性是 #dockPanel.hidden 的纯函数，徽章/入口显隐归 resolveDock）。
+   * 时间线可见性是 #dockPanel.hidden 的纯函数，徽章/入口显隐归 dock.resolve()）。
    */
   function renderActivityDetail(): void {
     // 历史列表：textContent 构建防注入（全部来自内核/宿主文案或用户输入）
@@ -180,12 +180,12 @@ export function createActivityDrawerView(deps: ActivityDrawerViewDeps): Activity
     activityHistory.push(record);
     if (activityHistory.length > MAX_ACTIVITY_HISTORY) activityHistory.shift();
     // 新活动 ⇒ 标未读（抽屉收起态才标；拉开着说明用户正在看，不标）。
-    // 未读只亮 #dockChip 徽章、不弹时间线（宪法④）；事实位在此，呈现在 resolveDock。
+    // 未读只亮 #dockChip 徽章、不弹时间线（宪法④）；事实位在此，呈现在 dock.resolve()。
     if (!deps.isDockExpanded()) {
       activityUnread = true;
     }
     renderActivityDetail();
-    // 入口显式刷新（必须在 P0 早退判据**之前**）：history 与未读位是 resolveDock 的输入，
+    // 入口显式刷新（必须在 P0 早退判据**之前**）：history 与未读位是 dock.resolve() 的输入，
     // 但重复通知时 active/fixed 往往没变——setDockActive/setDockFixed 判重 no-op 不触发裁决，
     // 不补这一下则「收抽屉后第二条通知到达，徽章不亮」（与 renderMetrics 尾部同款刷新）。
     // 紧接着的 setter 若状态真变化会再裁决一次：两次同帧、幂等，head 有免重排守卫不搬。
@@ -195,7 +195,7 @@ export function createActivityDrawerView(deps: ActivityDrawerViewDeps): Activity
     if (level === 'info' && activityBar.dataset.level === 'error') return;
 
     activityBar.dataset.level = level;
-    // 🔴 禁整体赋值 className（`className = 'activity-bar ' + level` 会抹掉 resolveDock
+    // 🔴 禁整体赋值 className（`className = 'activity-bar ' + level` 会抹掉 dock.resolve()
     // 刚加的 is-toast 浮层类——2026-10-24 实踩：第二条同类活动到达时条留在槽内却丢浮层
     // 形态、退化成流内条，由「免重排真行为锁」抓到）。只动 level 两个类，其余类原样保留。
     activityBar.classList.remove('info', 'error');
@@ -216,14 +216,14 @@ export function createActivityDrawerView(deps: ActivityDrawerViewDeps): Activity
       activityBar.textContent = text;
     }
     // StatusDock 接线：error 豁免恒主位（fail-visible），非错误态参与收纳（垫底优先级）。
-    // hidden 归 resolveDock 裁决（setDockActive 触发全量重排），此处不直写。
+    // hidden 归 dock.resolve() 裁决（setDockActive 触发全量重排），此处不直写。
     deps.setDockActive('activity', true);
     deps.setDockFixed('activity', level === 'error');
     if (activityTimer) window.clearTimeout(activityTimer);
     activityTimer = window.setTimeout(
       () => {
         delete activityBar.dataset.level;
-        // 自动消失 → 撤出收纳器（fixed 随之撤销；hidden 与归位由 resolveDock 统一裁决）
+        // 自动消失 → 撤出收纳器（fixed 随之撤销；hidden 与归位由 dock.resolve() 统一裁决）
         deps.setDockActive('activity', false);
         deps.setDockFixed('activity', false);
       },
@@ -360,7 +360,7 @@ export function createActivityDrawerView(deps: ActivityDrawerViewDeps): Activity
   return {
     showActivity,
     renderMetrics,
-    /** 抽屉入口判据（resolveDock 消费）：时间段有内容（历史有界保留 / metrics 渲染后
+    /** 抽屉入口判据（dock.resolve() 消费）：时间段有内容（历史有界保留 / metrics 渲染后
      *  常驻）⇒ 入口首次出现后常驻——C1 闭合的最后残余缺口（台账 P15 病③）。 */
     getDockState: () => ({
       timelineReady: activityHistory.length > 0 || !activityMetrics.hidden,

@@ -136,7 +136,7 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string, form: UiForm
          锁定本约束）。 -->
   </div>
 
-  <!-- UI-TOAST-1 浮层槽：零高度锚不占流高；activity 主位由 resolveDock 搬入本槽上浮 --><div id="activityToastSlot"></div>
+  <!-- UI-TOAST-1 浮层槽：零高度锚不占流高；activity 主位由 dock.resolve() 搬入本槽上浮 --><div id="activityToastSlot"></div>
   <!-- 会话大纲导航条（HOST-NAV-1）：右缘按轮锚点外壳，条列/浮层由 chatView 经
        helpers/roundNav.ts 动态构建；不足两轮或不可滚动时整条 hidden。
        🔴 挂 #messages 之外（同 scrollToBottomBtn 血训：滚动容器内 absolute 随内容滚走）；
@@ -151,7 +151,7 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string, form: UiForm
   </div>
 
   <!-- 活动状态条（错误/低扰通知的**瞬态单条**：info 2500ms / error 8000ms 自动撤）。
-       归位/显隐由 resolveDock 单点裁决。历史与指标**不在本条**——固定归下方
+       归位/显隐由 dock.resolve() 单点裁决。历史与指标**不在本条**——固定归下方
        #dockPanel 的时间段（C1，2026-10-05）：本条再怎么生灭，时间线都不陪葬。
        不把时间段做成本条子节点的原因不变：showActivity 每次整体重置
        activityBar.textContent，嵌套即被销毁。 -->
@@ -203,7 +203,7 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string, form: UiForm
        唯一常驻状态面 = 入口 #dockChip——被收纳的活跃条 >0 时显「+N」，
        仅有时间段内容时显「活动」；未读挂 is-unread 徽章。从不自动弹（宪法④）。
        下拉体 #dockPanel 分两段：#dockControls 控件段（被收纳的活跃条由
-       resolveDock 单实例搬运）+ #activityDetail 时间段（活动历史/诊断指标，
+       dock.resolve() 单实例搬运）+ #activityDetail 时间段（活动历史/诊断指标，
        静态固定，不再随瞬态条进出——P4 follower 机制在 C1 整组拆除）。
        静态序 chip → panel → inputBar：主位条归位插 inputBar 前，恒紧贴输入框，
        抽屉开合不挤占 A 类确认卡位置。 -->

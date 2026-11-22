@@ -1,10 +1,10 @@
 /**
- * dock 浮层放置机制（UI-TOAST-1 · chatView resolveDock 的浮层分支外置）
+ * dock 浮层放置机制（UI-TOAST-1 · chatView dock.resolve() 的浮层分支外置）
  *
  * 背景：瞬态提示（活动条）浮层化后，「主位条归位」多出一种形态——主位恰是 activity 且
  * #activityToastSlot 在位时，本条出流、以绝对定位于该零高度槽（CSS 见 chatStyles 的
  * .activity-bar.is-toast），消息区不再被提示条生灭挤兑。本文件收这一域的放置/类同步
- * 机制；**裁决仍归 chatView 的 resolveDock 单点**（显隐与归位 SSOT 不在本文件），
+ * 机制；**裁决仍归 chatView 的 dock.resolve() 单点**（显隐与归位 SSOT 不在本文件），
  * 此处只放「判据已定之后的搬移/类操作」机械。
  *
  * 行为钉子：chatView.test.ts 的「UI-TOAST-1」describe 七项（info/error 浮层、confirm
@@ -17,7 +17,7 @@ interface DockHeadLike {
   el: HTMLElement;
 }
 
-/** 浮层化标记类（UI-TOAST-1）：只切形态，不承载显隐（显隐归 resolveDock 的 hidden 单点） */
+/** 浮层化标记类（UI-TOAST-1）：只切形态，不承载显隐（显隐归 dock.resolve() 的 hidden 单点） */
 export const DOCK_TOAST_CLASS = 'is-toast';
 
 /**
@@ -39,7 +39,7 @@ export function isToastHead(
  * 归位循环的浮层同步：返回 true ⇒ 调用方 continue（免动）。
  *
  * 浮层主位已在槽内（父即槽且带浮层类）⇒ 免动：回流即掉位，重复搬动还破坏免重排
- * （resolveDock 会被重复触发——重复通知时 active/fixed 未变，见 activityDrawerView
+ * （dock.resolve() 会被重复触发——重复通知时 active/fixed 未变，见 activityDrawerView
  * showActivity 尾部说明；其余节点同位置重放是同步无帧操作，唯 head 可见）。
  * 其余条目（含非浮层主位）**先去类再搬移**：类在而人不在槽内 = 零高度槽里 absolute
  * 渲染错位 / 收纳器里浮层形态残留（2026-10-24 实踩：showActivity 曾以 className 整体
@@ -73,7 +73,7 @@ export function toastLoopSkip(
  * 真机上 = 整条瞬移。
  *
  * @param headEl 主位条元素
- * @param parent 流内归位的父节点（由 resolveDock 早退保证非空，此处不接 null——
+ * @param parent 流内归位的父节点（由 dock.resolve() 早退保证非空，此处不接 null——
  *   主位条「搬不动」是失位故障，必须响（早退发生在调用方），不能在此静默跳过）
  * @param anchor 流内归位锚（inputBar；流内主位插其前）
  * @param asToast 是否浮层主位（isToastHead 判据）
@@ -87,7 +87,7 @@ export function placeDockHead(
   toastSlot: HTMLElement | null,
 ): void {
   if (asToast && toastSlot) {
-    // 浮层主位：定位于 toast 槽（hidden 仍由 resolveDock 单点裁决，禁调用方直写）
+    // 浮层主位：定位于 toast 槽（hidden 仍由 dock.resolve() 单点裁决，禁调用方直写）
     if (headEl.parentNode !== toastSlot) toastSlot.appendChild(headEl);
     headEl.classList.add(DOCK_TOAST_CLASS);
     return;

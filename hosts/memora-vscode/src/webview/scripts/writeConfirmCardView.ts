@@ -28,7 +28,7 @@ export interface WriteConfirmCardViewDeps {
   document: Document;
   /** Dock 注册：把卡片元素身份交给 chatView 的收纳体系 */
   registerDockEntry: (el: HTMLElement) => void;
-  /** 显隐开关（真源仍是 chatView 的 resolveDock；本模块只发意图） */
+  /** 显隐开关（真源仍是 chatView 的 dock.resolve()；本模块只发意图） */
   setDockActive: (active: boolean) => void;
   /** 回传裁决（chatView 组 postMessage 载荷） */
   postAnswer: (requestId: string, approved: boolean) => void;
@@ -227,9 +227,9 @@ export function createWriteConfirmCardView(deps: WriteConfirmCardViewDeps): Writ
     pendingRequestId = msg.requestId;
     // 退出等待态（2026-10-05 P5 落地 A）：宿主推来新 request = 上一张已终结、队列还有下一条。
     // 此处复位按钮可用性与提示——卡片**保持可见**（同 DOM 覆盖内容，天然无闪烁）。
-    // ⚠️ 显隐不归本函数：只 setDockActive(true)（幂等，SSOT 仍是 resolveDock）。
+    // ⚠️ 显隐不归本函数：只 setDockActive(true)（幂等，SSOT 仍是 dock.resolve()）。
     exitAwaitingNext();
-    // 显隐交裁决器（SSOT）：不再直写 hidden——直写会绕过 resolveDock 的主位/收纳裁决，
+    // 显隐交裁决器（SSOT）：不再直写 hidden——直写会绕过 dock.resolve() 的主位/收纳裁决，
     // 与 B 类条同屏时顺序不定（方案 §九 A1）。
     setDockActive(true);
     // 末段倒计时（时长真源 = 宿主 timeoutMs）
@@ -240,7 +240,7 @@ export function createWriteConfirmCardView(deps: WriteConfirmCardViewDeps): Writ
   }
 
   // ─── 卡片接入 Dock 收纳器 ───────────────────────────────────────
-  // A 类阻断面板（审批卡）接入同一收纳器：显隐与归位自此**只由 resolveDock 裁决**，
+  // A 类阻断面板（审批卡）接入同一收纳器：显隐与归位自此**只由 dock.resolve() 裁决**，
   // 渲染 / 按钮回调一律改走 setDockActive，禁直写 hidden（散写即回到堆叠）。
   if (card) registerDockEntry(card);
 

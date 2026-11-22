@@ -113,7 +113,7 @@ export function createStatusBarsView(deps: StatusBarsViewDeps): StatusBarsView {
     // 投影缓存先于一切：空队列也要落缓存，否则满员预检读到上一次的残留长度
     _pendingQueueItems = [...items];
     // 空态在懒创建之前返回（与 updateFileChanges 同范式）：dock 注册初值 active=false，
-    // 若先创建再以空数组 setDockActive(false) 属状态未变 no-op，resolveDock 永不裁决该节点，
+    // 若先创建再以空数组 setDockActive(false) 属状态未变 no-op，dock.resolve() 永不裁决该节点，
     // 裸插入的空条会永久可见且任何后续空投影都关不掉。未创建 = DOM 中无此条，无需撤出。
     if (items.length === 0) {
       if (_pendingQueueBar) deps.setDockActive('pendingQueue', false); // 显隐裁决归 StatusDock（SSOT）
