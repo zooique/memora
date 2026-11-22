@@ -760,6 +760,14 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
             ...(readHostedHistory ? { readHistory: readHostedHistory } : {}),
             // 范围声明（判据 4）的规范化基准：把绝对路径截成相对，只用于比较
             workspaceRoot: projectPath,
+            // B：派活账本根（问进度只读消费账本，路径推导仍走 projectDataDir 单点）
+            projectDataPath: projectPath,
+            // B：目标轮读口（取交付正文 / 失败原因）；缺 RoundStore 时工具降级为只报状态
+            ...(roundStore
+              ? {
+                  readRound: (roundId: string) => roundStore.getById(roundId) ?? undefined,
+                }
+              : {}),
             // 声明真源 = 会话元数据（创建时写入）：读侧直接列，不反推历史轮次
             readDeclaredScopes: () =>
               store.listSessionMetas().map((meta) => ({

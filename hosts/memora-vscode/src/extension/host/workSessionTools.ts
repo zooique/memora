@@ -18,7 +18,14 @@
  *     不需要关系表 / `E_LIMIT` / 深度闸 / 父字段 / 层级树（这些已被明确砍掉，不要复活）。
  *   - 主控身份**不落盘、不进 `SessionMeta`**：`SessionMeta.mode` 已作废。
  */
-import type { Agent, ISessionStore, Memory, SessionMeta, ToolDefinition } from '@zooique/memora';
+import type {
+  Agent,
+  ISessionStore,
+  Memory,
+  Round,
+  SessionMeta,
+  ToolDefinition,
+} from '@zooique/memora';
 import { getSessionDisplayName } from '@zooique/memora';
 import {
   projectCreatedBy,
@@ -40,6 +47,14 @@ import {
   type ActiveScopeScan,
   type ScopeCheck,
 } from './workSessionScope.js';
+// 派活账本只读消费 + 成品报告（B：用户问进度时返回可直接转述的话）
+import { readDispatchLedger } from './dispatchLedger.js';
+import {
+  buildDispatchProgressReport,
+  GET_DISPATCH_PROGRESS_DEFINITION,
+  GET_DISPATCH_PROGRESS_TOOL_NAME,
+  parseDispatchProgressArgs,
+} from './dispatchProgressReport.js';
 // 代答子会话提问的工具面（定义 / 参数解析 / 回执类型）：独立闭环外置，注册仍在本文件
 import {
   ANSWER_SESSION_QUESTION_DEFINITION,
@@ -148,6 +163,7 @@ export const ORCHESTRATOR_ALLOWED_TOOLS: readonly string[] = [
   STOP_WORK_SESSION_TOOL_NAME,
   LIST_ROLE_PACKS_TOOL_NAME,
   READ_MEMORY_SUMMARY_TOOL_NAME,
+  GET_DISPATCH_PROGRESS_TOOL_NAME,
   PAUSE_WORK_SESSION_TOOL_NAME,
   RESUME_WORK_SESSION_TOOL_NAME,
   ANSWER_SESSION_QUESTION_TOOL_NAME,
@@ -271,6 +287,18 @@ export interface WorkSessionToolDeps {
     title?: string;
     paths?: readonly string[];
   }[];
+  /**
+   * 派活账本所在的项目根（B：问进度；缺省 ⇒ 不注册 `get_dispatch_progress`）
+   *
+   * 路径推导仍走 `projectDataDir.ts` 单点；本文件只把根传下去，不拼目录名。
+   */
+  projectDataPath?: string;
+  /**
+   * 按 roundId 读目标轮（B：取交付正文 / 失败原因；缺省 ⇒ 该工具只报状态）
+   *
+   * 真源 = 宿主 RoundStore；缺省不注册第二条读盘路径，避免第二真相源。
+   */
+  readRound?: (roundId: string) => Round | undefined;
 }
 
 /**
@@ -1179,6 +1207,28 @@ export function registerWorkSessionTools(
       2,
     );
   });
+  // B：派活进度查询（只读）。依赖不到位就不注册空壳，延续既有降级纪律
+  if (deps?.projectDataPath) {
+    const projectDataPath = deps.projectDataPath;
+    const callerSessionId = deps.callingSessionId;
+    const readRound = deps.readRound;
+    tools.registerTool(GET_DISPATCH_PROGRESS_DEFINITION, async (args) => {
+      const parsed = parseDispatchProgressArgs(args);
+      if (!parsed.ok) return parsed.message;
+      const records = readDispatchLedger(projectDataPath, {
+        // 只看「我这个调用方」派出去的活：账本不是全局工作台
+        callerSessionId,
+        ...(parsed.sid ? { targetSessionId: parsed.sid } : {}),
+      });
+      return buildDispatchProgressReport({
+        records,
+        // 读口缺省时报告会如实说「取不到原文」，不猜内容
+        ...(readRound ? { readRound } : {}),
+        // 点名查某个会话时，抬头用账本里的标题（查不到则用 sid）
+        ...(parsed.sid ? { scopeTitle: records[0]?.targetTitle ?? parsed.sid } : {}),
+      });
+    });
+  }
   if (deps) {
     if (deps.dispatch) {
       const dispatch = deps.dispatch;
