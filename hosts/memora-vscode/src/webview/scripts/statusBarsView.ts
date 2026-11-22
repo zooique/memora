@@ -5,10 +5,11 @@
  * 未确认文件改动条（fileChanges）/ 后台任务条（background）。自 `chatView.ts` 外置
  * （方案见 `tasks/方案-HOST-SPLIT-1-chatView状态条域提取-20261021.md`）。
  *
- * **与 StatusDock 裁决器的分界（ADR-037 形态宪法）**：裁决器（resolveDock / dockEntries /
- * _dockExpanded / dockChip click）是共享基础设施，留在 chatView——pendingQueue /
- * fileChanges / background 三条仍消费它（经 deps.setDockActive / deps.registerDockEntry
- * 上报显隐）。本容器只负责「条内渲染 + 状态投影」，不裁决任何显隐（SSOT 归裁决器）。
+ * **与 StatusDock 裁决器的分界（ADR-037 形态宪法）**：裁决器（register / setActive /
+ * setFixed / resolve + 展开态）是共享基础设施，已收口于 `helpers/statusDock.ts`——
+ * pendingQueue / fileChanges / background 三条仍消费它（经 deps.setDockActive /
+ * deps.registerDockEntry 上报显隐）。本容器只负责「条内渲染 + 状态投影」，不裁决任何
+ * 显隐（SSOT 归裁决器）。
  *
  * **跨触点契约（本刀相对前几刀多出的耦合面，须逐一面承接）**：
  *  ① 入：turn_update.pendingQueue 驱动 `updatePendingQueue`（替代原 updatePendingQueueBar）；

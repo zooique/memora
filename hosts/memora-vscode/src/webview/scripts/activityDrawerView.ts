@@ -5,11 +5,11 @@
  * 未读位判定。自 `chatView.ts` 外置（方案见
  * `tasks/方案-HOST-SPLIT-1-chatView活动抽屉域提取-20261021.md`）。
  *
- * **与 StatusDock 裁决器的分界（ADR-037 形态宪法）**：裁决器（resolveDock/dockEntries/
- * _dockExpanded/dockChip click）是共享基础设施，留在 chatView——pendingQueue /
- * fileChanges / background / confirm 四条仍消费它，本域只是其 'activity' 一条 entry。
- * 本域对裁决器只有两个合法动作：①经 deps.setDockActive/setDockFixed 上报状态（禁直写
- * 任何 hidden/insertBefore——hidden 与归位只由 resolveDock 裁决）；②只读
+ * **与 StatusDock 裁决器的分界（ADR-037 形态宪法）**：裁决器（register/setActive/
+ * setFixed/resolve + 展开态）是共享基础设施，已收口于 `helpers/statusDock.ts`——
+ * pendingQueue / fileChanges / background / confirm 四条仍消费它，本域只是其 'activity'
+ * 一条 entry。本域对裁决器只有两个合法动作：①经 deps.setDockActive/setDockFixed 上报
+ * 状态（禁直写任何 hidden/insertBefore——hidden 与归位只由 dock.resolve 裁决）；②只读
  * deps.isDockExpanded（禁反向写折叠轴——「不替用户合抽屉」纪律）。
  *
  * **未读判据边界（2026-10-05 两轮实锤病根）**：未读只由「诊断信号」（metricsSignalOf
