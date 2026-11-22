@@ -71,6 +71,8 @@ import {
   parseHandBackMessage,
   type HandBackMessage,
 } from './handBackMessage.js';
+// 派活账本（判据 C）：核销只挂这里（系统落定回程），不看模型发言
+import { settleDispatchLedger } from '../../extension/host/dispatchLedger.js';
 
 /**
  * 唤醒种子的档位（第八切片 HOSTED-NOTICE-KIND-1）
@@ -126,6 +128,13 @@ export interface HostedSessionNoticeDeps {
    * @returns false = 起不来（实例未就绪 / 此刻不空闲）；调用方据此保留待办、不装作已浮现
    */
   wakeCreator: (creatorSessionId: string, kind: WakeKind) => boolean;
+  /**
+   * 项目根（派活账本核销用；缺省 = 不核销——测试 / 旧装配零破坏）
+   *
+   * 核销必须在 `isRoundSettled` 之后、`resolveTarget` 之前完成：后者会因为
+   * 创建者不可通知而返回 undefined，但「这一轮已落定」的系统事实仍然成立。
+   */
+  projectPath?: () => string;
 }
 
 /** 流尾通知入参（对象化只为可读；字段都来自流尾现成值） */
@@ -181,7 +190,7 @@ function describeStopper(derived: ReturnType<typeof deriveInterruptReason>): str
 }
 
 /**
- * 把一轮终态翻译成落定结论文案
+ * 把一轮终态翻译成落定结论（判据与文案同一处产出，避免两处各判一次）
  *
  * 判据全部走内核单点（`isRoundSuccessful` / `isRoundSettled`），宿主不自己比较状态字面量：
  *   - 成功 = `complete`；
@@ -189,19 +198,25 @@ function describeStopper(derived: ReturnType<typeof deriveInterruptReason>): str
  *   - 其余 `interrupted` = 中断（用户停 / 超时 / 原因不可知）。
  *
  * 失败与中断刻意分开：主控汇报时「跑挂了」和「被叫停」是两种结论，不能混成一句「已停止」。
+ * 返回的 `verdict` 同时供派活账本核销（同一份判定，不另写一套）。
  *
  * @param round 盘上已收场的轮
  * @param hostAborted 宿主这一轮是否真的 abort 过
- * @returns 可直接拼进通知的结论文案
+ * @returns 结论文案 + 账本用的三档枚举
  */
-function deriveSettlement(round: Round, hostAborted: boolean): string {
-  if (isRoundSuccessful(round.status)) return '成功';
+function deriveSettlement(
+  round: Round,
+  hostAborted: boolean,
+): { verdict: SettlementVerdict; text: string } {
+  if (isRoundSuccessful(round.status)) return { verdict: 'success', text: '成功' };
   const derived = deriveInterruptReason(round.processEvents ?? [], { hostAborted });
   // error 事件 = 跑挂了；其余（user / timeout / unavailable）都算中断，不冒充失败
   const verdict: SettlementVerdict = derived.stopper === 'error' ? 'failed' : 'interrupted';
-  return verdict === 'failed'
-    ? `失败（${describeStopper(derived)}）`
-    : `中断（${describeStopper(derived)}）`;
+  const reason = describeStopper(derived);
+  return {
+    verdict,
+    text: verdict === 'failed' ? `失败（${reason}）` : `中断（${reason}）`,
+  };
 }
 
 /**
@@ -301,6 +316,14 @@ export class HostedSessionNotifier {
   private readonly notified = new Set<string>();
 
   /**
+   * 已向派活账本核销过的 `${sessionId}:${roundId}`
+   *
+   * 与 `notified` 分开：通知可能因创建者不可达而不投，但「这一轮已落定」的系统事实
+   * 仍必须只核销一次。两套去重键防止「通知去重」误吞账本核销。
+   */
+  private readonly settlementRecorded = new Set<string>();
+
+  /**
    * 创建者 → 压着待浮现的事实（创建者忙 / 用户正在输入时暂存）
    *
    * 每条带会话身份、轮身份、档位与产生时刻（第八切片）：去重仍由 `notified` 负责，
@@ -369,12 +392,27 @@ export class HostedSessionNotifier {
     if (input.paused || !input.round) return false;
     const round = input.round;
     if (!isRoundSettled(round.status)) return false;
-    const target = this.resolveTarget(input.sessionId);
-    if (!target) return false;
     // 同一会话同一轮只写一条：成功 / 失败 / 中断共用同一去重键，重复信号不再打扰主控
     const key = `${input.sessionId}:${round.id}`;
+    // 落定结论只算一次：通知文案与账本核销共用同一份判定
+    const settlement = deriveSettlement(round, input.hostAborted);
+    // 派活账本核销（判据 C）：系统落定事实成立即核销，与「要不要通知创建者」解耦。
+    // 必须放在 resolveTarget 之前——创建者不可通知时它会返回 undefined，
+    // 但目标轮已落定的事实仍然成立，账本不能因此永远停在 pending。
+    if (!this.settlementRecorded.has(key)) {
+      this.settlementRecorded.add(key);
+      const projectPath = this.deps.projectPath?.();
+      if (projectPath) {
+        settleDispatchLedger(projectPath, {
+          targetSessionId: input.sessionId,
+          roundId: round.id,
+          outcome: settlement.verdict,
+        });
+      }
+    }
+    const target = this.resolveTarget(input.sessionId);
+    if (!target) return false;
     if (this.notified.has(key)) return false;
-    const detail = deriveSettlement(round, input.hostAborted);
     // 交付摘录：只在成功轮取盘上已定型的 assistantMessage（判据调内核单点）；
     // 失败 / 中断不取——半截回答不是交付物。截断口径与工作台末轮摘要共用 textClip。
     const delivered = isRoundSuccessful(round.status)
@@ -384,7 +422,7 @@ export class HostedSessionNotifier {
       target.title,
       input.sessionId,
       round.id,
-      detail,
+      settlement.text,
       delivered || undefined,
     );
     return this.deliver({

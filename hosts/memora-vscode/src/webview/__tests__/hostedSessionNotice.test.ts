@@ -26,6 +26,9 @@ import type { Agent, ProcessEvent, Round, RoundStatus, SessionMeta } from '@zooi
 import type { PendingQuestionDto } from '../../shared/protocol.js';
 import { HostedSessionNotifier, noteHandBackOrSettlement } from '../helpers/hostedSessionNotice.js';
 import { SessionModeStore } from '../../extension/host/sessionModeStore.js';
+// 派活账本核销挂点（判据 C）：落定系统事件必须核销，且与「能否通知创建者」解耦
+import { readDispatchLedger, recordDispatchLedger } from '../../extension/host/dispatchLedger.js';
+import { makeTempDir } from '../../__tests__/helpers/tmpDir.js';
 
 const TS = '2026-11-14T10:00:00.000Z';
 /** 创建者会话 id */
@@ -911,5 +914,47 @@ describe('HostedSessionNotifier · 唤醒档位与待办时效（HOSTED-NOTICE-K
     h.notifier.flushPending(CREATOR);
 
     expect(h.creatorQueue.mock.calls[0]?.[0] as string).toContain('刚刚产生');
+  });
+});
+
+describe('派活账本核销挂点（判据 C）', () => {
+  it('轮落定的系统回程核销账本：即使创建者不可通知，也照样从 pending 变 settled', () => {
+    const dir = makeTempDir('memora-notice-ledger-');
+    // 先记一条「已派给 CHILD」的在途活
+    recordDispatchLedger(dir, {
+      kind: 'send',
+      callerSessionId: CREATOR,
+      targetSessionId: CHILD,
+      targetTitle: '抓取任务',
+      text: '把抓取跑完',
+      createdAt: '2026-11-22T00:00:00.000Z',
+    });
+    const notifier = new HostedSessionNotifier({
+      // 元数据缺失 ⇒ resolveTarget 返回 undefined：通知投不出去，但落定事实仍然成立
+      readSessionMeta: () => undefined,
+      isManaged: () => true,
+      isAgentDriven: () => true,
+      getAgent: () => undefined,
+      readRound: () => undefined,
+      canWakeCreator: () => false,
+      wakeCreator: () => false,
+      projectPath: () => dir,
+    });
+
+    const delivered = notifier.noteFlowEnd({
+      sessionId: CHILD,
+      round: round('r-ledger', 'complete', []),
+      hostAborted: false,
+    });
+
+    // 通知没投（无创建者元数据），账本不能因此永远 pending
+    expect(delivered).toBe(false);
+    const [record] = readDispatchLedger(dir, { now: Date.parse('2026-11-22T00:10:00.000Z') });
+    expect(record).toMatchObject({
+      targetSessionId: CHILD,
+      status: 'settled',
+      roundId: 'r-ledger',
+      outcome: 'success',
+    });
   });
 });

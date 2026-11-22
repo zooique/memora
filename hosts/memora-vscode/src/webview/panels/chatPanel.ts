@@ -28,6 +28,8 @@ import {
 } from '../../extension/host/sessionModeStore.js';
 // 新建会话元数据拼装（出生来源 / 标题 / 角色包 / 范围声明）：单点外置，面板只留一行调用
 import { newSessionMeta, type CreateSessionOptions } from '../helpers/newSessionMeta.js';
+// 角色包名 → 展示名（纯查表）：为 max-lines 外置，面板只留调用
+import { roleDisplayName } from '../helpers/roleDisplayName.js';
 import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
 import { salvageInterruptedRounds } from '../../extension/host/interruptedSalvage.js';
 import { ingestImage } from '../../extension/host/imageIngest.js';
@@ -490,6 +492,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._runOps.isSessionIdle(sid) && !(sid === this._currentSessionId && this._composerHasText),
     // 档位由通知器随事实一起给：不同档的种子口径不同（第八切片 HOSTED-NOTICE-KIND-1）
     wakeCreator: (sid, kind) => this._runOps.wakeNoticeTurn(sid, kind),
+    // 派活账本（判据 C）：核销只挂这个系统落定回程；缺省不记账
+    projectPath: () => this.workspacePath,
   });
   /** 当前**显示会话**的 Agent（`_sessionAgents` 的一份投影；真正的实例归属表在 extension） */
   private _agent: Agent | undefined;
@@ -1168,21 +1172,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 角色包内部名 → UI 展示名（SSOT）
-   *
-   * 从内核 RolePackManager.listMeta() 反查 manifest.displayName（与工具名中文化
-   * 同一体验原则）。displayName 缺省时回退内部名（name）——显示名单一来源 =
-   * `displayName ?? name`，UI 层不另立硬编码映射。
-   *
-   * @param rolePack 角色包内部名（如 '白话方案设计师'）
-   * @returns UI 展示名（displayName 或回退 name）
-   */
-  private roleDisplayName(rolePack: string, agent: Agent | undefined = this._agent): string {
-    const meta = agent?.rolePackManager?.listMeta().find((m) => m.name === rolePack);
-    return meta?.displayName ?? rolePack;
-  }
-
-  /**
    * meta 取证包（关键调用参数快照）：role/llm 身份 + 本轮调用参数面（窗口 / 输出上限 /
    * 推理深度 / 适配器形态）——真机异常轮自带取参数面，免截图、口问即可离线破案。
    * ⚠️ 参数面记的是**生效值**而非用户配置值：输出上限由内核 `buildChatOptions` 在 per-LLM
@@ -1195,7 +1184,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     providerConfig: LlmProviderConfig | undefined,
     agent: Agent,
   ): ProcessMetaPayload {
-    const role = this.roleDisplayName(agent.rolePackManager?.activeName ?? '', agent) || 'AI';
+    const role = roleDisplayName(agent.rolePackManager?.activeName ?? '', agent) || 'AI';
     const llm = this._activeProviderDisplayName || this._providerStore.getActiveName() || '';
     // reasoning_effort 转达口径（流首**配置面**快照）：仅策略键 multiStepReasoning='manual' 发 'low'，
     // 其余不发送（缺省不入包）。⚠️ 非「实际发送面」——llmCaller 的 truncatedRetry 可在运行时置入
@@ -1241,7 +1230,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     this.postToSession(sessionId, {
       type: 'chat_role_pack',
-      rolePack: this.roleDisplayName(name),
+      rolePack: roleDisplayName(name, this._agent),
       traits: this.getActiveTraits(traitsAgent),
       team: activeTeamForProtocol(this._agent),
     });
@@ -2885,6 +2874,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         startFlow: (sessionId, factory, seed) => void this.runFlow(factory, seed, sessionId),
         // 派发交代上屏：与流式正文同一通道、同一消息形状（面板只做投递）
         note: (msg) => this.postToSession(callingSessionId, msg),
+        // 派活账本（判据 C）：受理成功后旁路记账；缺省不记账
+        projectPath: () => this.workspacePath,
       },
       input,
     );
@@ -2932,6 +2923,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         nextSessionId: newSessionId,
         // 登记创建者：必须早于首轮流（首轮可能立刻失败/被停，见 deps.onCreated 注释）
         onCreated: (sid, creator) => this._hostedNotifier.remember(sid, creator),
+        // 派活账本（判据 C）：建会话成功后旁路记账；缺省不记账
+        projectPath: () => this.workspacePath,
       },
       callingSessionId,
       rolePackName,

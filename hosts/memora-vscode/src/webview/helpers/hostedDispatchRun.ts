@@ -27,6 +27,8 @@ import type {
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { hasRoundPresenceProbe } from '../../extension/host/workspaceRoundStore.js';
 import { acquireDispatchWriteLease, type DispatchWriteLease } from './hostedDispatchLock.js';
+// 派活账本（判据 C）：旁路记「受理 → 落定 / 悬空」，失败不影响派发
+import { recordDispatchLedger } from '../../extension/host/dispatchLedger.js';
 import type { FlowSeed } from './sessionRuntime.js';
 
 // 本模块文案走 l10n（与面板同一套键面）
@@ -77,6 +79,12 @@ export interface HostedDispatchDeps {
     factory: (signal: AbortSignal) => AsyncGenerator<AgentChunk, void, unknown>,
     seed: FlowSeed,
   ) => void;
+  /**
+   * 项目根（派活账本落盘用；缺省 = 不记账——测试 / 旧装配零破坏）
+   *
+   * 路径推导仍走 `extension/host/projectDataDir.ts` 单点，本模块不拼目录名。
+   */
+  projectPath?: () => string;
   /**
    * 把一条正文段推进调用方会话并上屏（派发交代用）
    *
@@ -328,6 +336,27 @@ export async function dispatchHostedInputWith(
     );
     logger.info({ from: callingSessionId, to: targetSessionId }, '派发受理成功');
     noteAccepted();
+    // 旁路记账：只在受理成功后追加（被拒路径前面已 return，不会入账）。
+    // 任何异常都只 warn——账本坏了也不能让已经成功的派发变成失败。
+    try {
+      const projectPath = deps.projectPath?.();
+      if (projectPath) {
+        recordDispatchLedger(projectPath, {
+          kind: 'send',
+          callerSessionId: callingSessionId,
+          targetSessionId,
+          targetTitle,
+          text,
+          // 调用方当时的轮 id：只作追溯线索，不参与核销匹配
+          callerRoundId: deps.roundIds(callingSessionId).at(-1),
+        });
+      }
+    } catch (err) {
+      logger.warn(
+        { err, from: callingSessionId, to: targetSessionId },
+        '派活账本记账失败（不影响派发）',
+      );
+    }
     return { ok: true, accepted: true };
   } catch (err) {
     // 起流前就失败（装配 / 切会话抛错）：租约当场归还，不把临时锁漏在本面板

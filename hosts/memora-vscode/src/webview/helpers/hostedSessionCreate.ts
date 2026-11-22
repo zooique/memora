@@ -16,6 +16,8 @@ import * as vscode from 'vscode';
 import { logger } from '@zooique/memora';
 import type { Agent, AgentChunk, RoundMessage } from '@zooique/memora';
 import type { CreateSessionResult } from '../../extension/host/workSessionTools.js';
+// 派活账本（判据 C）：新建会话也入账，核销同样等目标轮的系统落定回程
+import { recordDispatchLedger } from '../../extension/host/dispatchLedger.js';
 
 // 本模块错误文案走 l10n（与面板同一套键面）
 const { l10n } = vscode;
@@ -60,6 +62,12 @@ export interface HostedSessionCreateDeps {
   onCreated?: (sessionId: string, callingSessionId: string) => void;
   /** 新会话 id 生成（形态单点，不在此拼接日期） */
   nextSessionId: () => string;
+  /**
+   * 项目根（派活账本落盘用；缺省 = 不记账——测试 / 旧装配零破坏）
+   *
+   * 路径推导仍走 `extension/host/projectDataDir.ts` 单点，本模块不拼目录名。
+   */
+  projectPath?: () => string;
 }
 
 /**
@@ -156,6 +164,22 @@ export async function createHostedSessionWith(
       origin: 'hosted',
     },
   );
+  // 旁路记账：首轮已交给目标会话（受理成功）才入账；失败路径前面已 return。
+  // 账本写坏只 warn，绝不让已成功的建会话变成失败。
+  try {
+    const projectPath = deps.projectPath?.();
+    if (projectPath) {
+      recordDispatchLedger(projectPath, {
+        kind: 'create',
+        callerSessionId: callingSessionId,
+        targetSessionId: sessionId,
+        targetTitle: title,
+        text,
+      });
+    }
+  } catch (err) {
+    logger.warn({ err, sessionId, callingSessionId }, '派活账本记账失败（不影响建会话）');
+  }
   logger.info({ sessionId, callingSessionId, title }, '工作会话创建成功');
   return { ok: true, sid: sessionId, title };
 }
