@@ -209,8 +209,8 @@ export const chatStyles = `
    * + 两处间距修正（margin-left 对齐对话内容柱 / margin-bottom 与输入卡留隙）；
    * 其余样式（边框/底色/字号/未读黄字+前导黄点）全部继承默认规则 ⇒ 单源、零坐标、
    * 零魔法数字对账。dockChip 静态链本就在 inputBar 之上，位置由布局结构天然保证，
-   * 不破坏 resolveDock「主位条/anchor 恒净」纪律（搬运锚 parent.insertBefore(e.el, dockChip)
-   * 不受影响）。文案「活动/+N」由 resolveDock 动态赋值，收起态正常显示 ⇒ 无语义孤点。 */
+   * 不破坏 dock.resolve()「主位条/anchor 恒净」纪律（搬运锚 parent.insertBefore(e.el, dockChip)
+   * 不受影响）。文案「活动/+N」由 dock.resolve() 动态赋值，收起态正常显示 ⇒ 无语义孤点。 */
   body.dock-collapsed .status-dock__chip.is-collapsed {
     align-self: flex-start;  /* 全宽 pill 收为内容宽短 pill，靠左；其余与展开态同源 */
     margin-left: var(--sp-5, 12px);   /* 左缘对齐对话内容柱（默认 8px 偏贴边） */
@@ -228,7 +228,7 @@ export const chatStyles = `
   }
   /* 展开动画（用户诉求 2026-10-07 续）：点击左侧小气泡后，从左侧自然扩展出去。
    * 纯 CSS、零 JS：animation 只挂在展开态 body:not(.dock-collapsed)，利用
-   * 「收起→展开时规则重新匹配才触发一次」的特性——重复 resolveDock 重排（展开态持续）
+   * 「收起→展开时规则重新匹配才触发一次」的特性——重复 dock.resolve() 重排（展开态持续）
    * 不会重放闪烁；收起态（dock-collapsed）不带 animation ⇒ 气泡常驻不闪。
    * - pill 用 clip-path 从左向右揭示（文字不被压扁，比 scaleX 自然）；
    * - 抽屉用 translateX 从左滑入，错层 40ms 制造「先长 pill、后滑抽屉」的层次。 */
@@ -251,7 +251,7 @@ export const chatStyles = `
     body:not(.dock-collapsed) .status-dock__chip,
     body:not(.dock-collapsed) .status-dock__panel { animation: none; }
   }
-  /* 控件段：被收纳活跃条的单实例容器（节点由 resolveDock 搬运，事件监听随节点保留）。
+  /* 控件段：被收纳活跃条的单实例容器（节点由 dock.resolve() 搬运，事件监听随节点保留）。
    * 条原样式自带外边距，段内统一收紧——子选择器兜底所有未来入段条，免枚举漂移。 */
   .status-dock__controls { display: flex; flex-direction: column; gap: var(--sp-2, 6px); }
   .status-dock__controls > * { margin: 0; }
@@ -632,7 +632,7 @@ export const chatStyles = `
   /* 确认审批卡：命令/脚本执行确认或 guest 写入时浮现于消息区底部（写文件默认不再确认）。
    * 浅底卡片 + 头部（工具/路径）+ 描述 + 可折叠 diff + 确认/拒绝按钮；
    * 确认用语义令牌 --status-pass、拒绝用 --status-fail —— 与工具执行状态色同源，不造新色。 */
-  /* 🔴 同盒替身（UI-CONFIRM-FIT-1，2026-10-22 真机反馈）：本卡在 resolveDock 里**替换**
+  /* 🔴 同盒替身（UI-CONFIRM-FIT-1，2026-10-22 真机反馈）：本卡在 dock.resolve() 里**替换**
    * #inputWrap（composer hidden、卡插 inputBar 前），所以它必须是「同一个盒子的另一副内容」，
    * 不是「旁边冒出的小卡片」。四组值与 #inputWrap 对齐，缺任何一组都会让替换瞬间盒子换形状：
    *   ① min-height   —— 高度差 ⇒ #messages(flex:1) 高度突变 ⇒ 内容整体跳动（用户描述
@@ -2755,7 +2755,7 @@ export const chatStyles = `
   /* 真机反馈（2026-10-24）：活动条原是流内 flex 条，每次弹出把 #messages(flex:1) 压矮
    * 约一行高、2.5s 后弹回 ⇒ 会话记录反复微跳（全轮 11 个发射点，正常一轮响 2-4 次），
    * 用户原话「蓝条影响会话记录显示」。浮层化后：主位为 activity 时本条不再是流内条，
-   * 由 resolveDock 搬进 #activityToastSlot（零高度定位锚，夹在消息区与抽屉区之间），
+   * 由 dock.resolve() 搬进 #activityToastSlot（零高度定位锚，夹在消息区与抽屉区之间），
    * 以绝对定位向上浮出。
    * 形态 = 全局通知 toast 同款（对齐 settings-toast：surface-card + 描边 + toast 阴影
    * + 圆角；error 换反馈色）——层级 --z-bar（tokens.ts 该层注释：「输入区与 toast：
@@ -2763,7 +2763,7 @@ export const chatStyles = `
    * inputValidation 蓝底——载体换「弹窗」后颜色语义随形式对齐（蓝底是流内条旧形态），
    * error 保持 fail-visible；被收进抽屉（#dockControls）时仍是流内条原形态（is-toast
    * 类只在浮层主位时存在，两形态不并存）。
-   * confirm 在场时浮层抑制不靠 CSS：activity 非 dock 主位 ⇒ 根本不进槽（见 resolveDock
+   * confirm 在场时浮层抑制不靠 CSS：activity 非 dock 主位 ⇒ 根本不进槽（见 dock.resolve()
    * 的 activityToast 判据，由 confirm 恒主位涌现）。 */
   #activityToastSlot {
     position: relative; /* 浮层定位块（唯一职责；零高度不占流） */
@@ -3414,7 +3414,7 @@ export const chatStyles = `
     border-top: var(--line-solid);
   }
   /* 段头「活动」已删（2026-10-08 SSOT 收口）：抽屉标签唯一真源 = dockChip 文案
-   * （resolveDock 单点动态赋值「活动/+N」），展开态 chip 紧邻面板上方，段头为第二份硬编码副本。
+   * （dock.resolve() 单点动态赋值「活动/+N」），展开态 chip 紧邻面板上方，段头为第二份硬编码副本。
    * 消费面三处已同步清：chatPanel 骨架 / chatViewTestEnv 镜像 / 本规则。 */
   .activity-list { padding: 0; }
   .activity-list__row {
