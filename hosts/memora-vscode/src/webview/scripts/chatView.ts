@@ -2011,6 +2011,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     // 缓存（finalize 合并流重建 QA 的数据源；重放路径同源累积，最终态一致）
     runtimeInteractiveInputs.push({ text, ts, kind, roundId, question, options, id: inputId });
+
+    // ASSISTANT-INPUT-BUBBLE-1（2026-11-22 真机）：助手形态（微信心智）里「用户说的话」
+    // 只有一种形态 = 普通用户气泡。运行时补充 / 提问回答都是用户亲口输入，走 append('user')
+    // 同一入口（含引用 / 复制 / 时间戳 / 轮归位），不再显示工作模式专属的「你补充」过程行。
+    // 作用域只用既有形态真源 document.body.dataset.form；工作模式逐字保留过程行形态
+    // （任务表内按 ts 归位、带 tag）。timeout / unanswered 是系统占位而非用户发言，
+    // 不并入气泡——它们仍走下方过程行，避免把 [ASK_ABORTED] 冒充成用户说的话。
+    // 重放与运行时共用本入口（buildReplayTimeline 各分支都调它），故历史补充也同形。
+    const assistantForm = document.body.dataset.form === 'assistant';
+    if (assistantForm && (kind === 'supplement' || kind === 'question-answer')) {
+      const bubble = append('user', text, ts, roundId);
+      if (inputId) bubble.dataset.inputId = inputId;
+      return;
+    }
+
     try {
       const item = qaRowView.renderQaItem(text, kind, question, options);
       const tsKey = ts ?? new Date().toISOString();
@@ -2024,7 +2039,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 就被连坐隐藏 = 用户以为「连续输入被吞」。形态是挂载常量，读 body[data-form]
       // 与 applyForm / getForm 同源；助手形态下挂载根置空 ⇒ 统一走下方消息流兜底
       // （上屏为可见的用户输入行，恢复 user-select 后可右键「引用回复」到输入区）。
-      const assistantForm = document.body.dataset.form === 'assistant';
       const flow = !assistantForm && flowEl?.isConnected ? flowEl : null;
       const rbDetails =
         !assistantForm && roundBlockEl?.isConnected

@@ -597,6 +597,8 @@ describe('HostedSessionNotifier · 等你作答（HOSTED-ASK-ROUTE-1）', () => 
     expect(text).toContain('不要阻塞任务');
     expect(text).toContain('别拖到超时让子会话自己代选');
     expect(text).not.toContain('请立即逐题作答');
+    // ASK-ANSWER-RECEIPT-1：事实层给作答入口，动作指令仍在种子；缺这行真机只写「已代答」不调用工具
+    expect(text).toContain('作答入口：answer_session_question（回执 answered=true 才算作答）');
     // 2026-11-21 订正（ASK-PROXY-PREFER-1）：真机「任选」退化为偏好题一律空串跳过 ⇒
     // 有选项优先代选；保留「只有无法判断才转述」作为退路，不可逆操作边界不放宽。
     expect(text).toContain('有选项时按题面与上下文直接代选一项并说明代选理由');

@@ -38,6 +38,14 @@ export const CONFIRM_SCRIPTS_KEY = 'memora.confirmScripts';
  */
 export const SEND_TO_SESSION_TOOL_NAME = 'send_to_session';
 export const CREATE_SESSION_TOOL_NAME = 'create_session';
+/**
+ * 代答在途提问的工具名（ASK-ANSWER-RECEIPT-1）
+ *
+ * 与上面两个名字同理：唤醒种子（webview 侧）与工具定义 / 注册（宿主侧）必须共用同一字面量。
+ * 真机 2026-11-22：种子只说「解除阻塞」不点名工具，模型两次在正文写「已代答」却没作答，
+ * 会话卡住；点名工具后两处不能各写一份，故名字落到本表。
+ */
+export const ANSWER_SESSION_QUESTION_TOOL_NAME = 'answer_session_question';
 
 /**
  * 未发送输入草稿在 `workspaceState` 里的键（`Record<sessionId | 空白页标记, string>`）

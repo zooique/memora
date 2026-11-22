@@ -15,6 +15,7 @@ import type { Agent, AgentChunk, ProcessEvent } from '@zooique/memora';
 import { toNoticeText } from '../../extension/host/noticeText.js';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import {
+  ANSWER_SESSION_QUESTION_TOOL_NAME,
   CREATE_SESSION_TOOL_NAME,
   INTERNAL_SEED_SENDER,
   SEND_TO_SESSION_TOOL_NAME,
@@ -449,16 +450,23 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
           'A managed session has just settled. The settlement notice in context includes an excerpt of what it actually delivered. Report what it delivered (quote the excerpt or summarize its key points — do not answer with which session, round id, or "success"), then one sentence on the outcome, and the next step or what you need me to decide.',
         ),
         // 待拍板：首句必须否掉「已落定」，并把处置优先级写成可执行的一条
+        // 2026-11-22 真机（ASK-ANSWER-RECEIPT-1）：只说「作出决定 / 解除阻塞」时，模型两次
+        // 在正文写「已代你拍板…等待已解除」却没调用应答工具，目标会话一直挂着提问。
+        // 种子必须点名工具与回执判据——与派发补派种子同一写法（正文只陈述事实，工具名插值常量）。
         'needs-answer': vscode.l10n.t(
-          'A managed session is waiting for your decision — it has NOT settled. The pending question and its options are in the fact notice above. Decide it and unblock the work: pick an option with a stated reason whenever the question and the context allow it; only pass it back to me when you genuinely cannot judge; never make an irreversible decision for me. Close with one sentence on what you decided.',
+          'A managed session is waiting for your decision — it has NOT settled. The pending question and its options are in the fact notice above. Decide it and unblock the work: pick an option with a stated reason whenever the question and the context allow it; only pass it back to me when you genuinely cannot judge; never make an irreversible decision for me. Close with one sentence on what you decided. IMPORTANT: only a {0} tool call whose receipt says answered=true actually answers the question; saying "answered" or "unblocked" in plain text does NOT unblock it. If you will not call the tool, say plainly that you did not answer and leave the question to me.',
+          ANSWER_SESSION_QUESTION_TOOL_NAME,
         ),
         // 交回：事实是「超界」，动作是三选一，不是汇报交付
         handback: vscode.l10n.t(
           'A managed session has handed the work back to you — it went beyond the assignment you gave it. The handback notice in context carries that original boundary. Decide which of the three you want (start a new assignment / merge it into the work you already have / hand it to me) and say why.',
         ),
         // 合并浮现：可能跨档，据实说「若干条 + 时间 + 可能已被取代」，不许假装单一档
+        // 合并档里可能夹着「等你拍板」这条事实（真机 fd9d13f3 就是它把模型骗成只写总结）。
+        // 条件句点名同一工具：有待决问题且允许代答 ⇒ 先答卷再总结；不许用正文冒充作答。
         pending: vscode.l10n.t(
-          'Several managed-session facts were queued while you were busy; they are now in context, oldest first. Each line starts with how long ago it was produced — a later line may already have superseded an earlier one, so read the age before acting and never treat an old settlement as the current state of that session. Handle them in the order that makes sense, then give me one short summary.',
+          'Several managed-session facts were queued while you were busy; they are now in context, oldest first. Each line starts with how long ago it was produced — a later line may already have superseded an earlier one, so read the age before acting and never treat an old settlement as the current state of that session. Handle them in the order that makes sense, then give me one short summary. If any fact is a pending question you are allowed to decide, call {0} with the answers before summarizing; plain-text "answered" claims do not unblock the question.',
+          ANSWER_SESSION_QUESTION_TOOL_NAME,
         ),
       };
       // seedId 带档位：重放 / 排查时一眼看出这一轮是被哪一档唤醒的（不再一律叫 settlement）

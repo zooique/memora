@@ -6,6 +6,8 @@
  * （与其它会话工具同一注册面），本文件不持有 sessionStore / 面板依赖。
  */
 import type { ToolDefinition } from '@zooique/memora';
+import { ANSWER_SESSION_QUESTION_TOOL_NAME } from '../../shared/constants.js';
+export { ANSWER_SESSION_QUESTION_TOOL_NAME };
 
 /**
  * 代答子会话提问工具名
@@ -20,7 +22,7 @@ import type { ToolDefinition } from '@zooique/memora';
  * 偏好题一律交空串跳过 ⇒ 题面 + 选项如实带回后**有选项应据题面代选一项并说明理由**；
  * 空串仍保留为「用户自助跳过 / 确实无法判断」的合法形态（判据不变），只是不再是首选。
  */
-export const ANSWER_SESSION_QUESTION_TOOL_NAME = 'answer_session_question';
+// 名字真源已上移到 shared/constants.ts（webview 唤醒种子与宿主工具共用），本文件只重导出。
 
 /**
  * 一条待答提问的对外事实（题面 + 选项）
@@ -104,7 +106,9 @@ export const ANSWER_SESSION_QUESTION_DEFINITION: ToolDefinition = {
     '带选项的题应按题面与上下文选一项并说明代选理由，只有确实无法判断时才留空或转述用户；' +
     '条数不等于当前题数时整批拒收（E_ARGS），回执同样带 questions 供你重答。' +
     '目标不在等待问答（已答 / 已超时 / 已收场）时回 answered=false，这不是错误。' +
-    'sid 必须来自 list_work_sessions；本工具不投递新任务，投递请用 send_to_session。',
+    'sid 必须来自 list_work_sessions；本工具不投递新任务，投递请用 send_to_session。' +
+    '只在正文写「已代答 / 等待已解除」不会解除目标会话的等待：必须调用本工具并拿到 answered=true，' +
+    '否则如实说你没有作答、把问题留给用户。',
   parameters: {
     type: 'object',
     properties: {

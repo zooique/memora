@@ -17,9 +17,15 @@ import {
   createChatRunControlOps,
   type ChatRunControlOpsDeps,
 } from '../panels/chatRunControlOps.js';
-import { INTERNAL_SEED_SENDER } from '../../shared/constants.js';
+import { ANSWER_SESSION_QUESTION_TOOL_NAME, INTERNAL_SEED_SENDER } from '../../shared/constants.js';
 
-vi.mock('vscode', () => ({ l10n: { t: (message: string) => message } }));
+// 占位符按真实 l10n 口径插值：种子里的工具名靠 {0} 注入，stub 不插值会把断言骗成假绿。
+vi.mock('vscode', () => ({
+  l10n: {
+    t: (message: string, ...args: unknown[]) =>
+      message.replace(/\{(\d+)\}/g, (_all, index: string) => String(args[Number(index)] ?? '')),
+  },
+}));
 
 /** 当前显示会话 id（用例固定值） */
 const CURRENT = '2026-11-14-session-current';
@@ -464,12 +470,20 @@ describe('托管事实主动浮现 — isSessionIdle / wakeNoticeTurn', () => {
     expect(needsAnswer.content).toContain('NOT settled');
     expect(needsAnswer.content).not.toContain('has just settled');
     expect(needsAnswer.content).toContain('waiting for your decision');
+    // ASK-ANSWER-RECEIPT-1：真机两次「正文写已代答但没调用工具 ⇒ 会话卡住」；
+    // 种子必须点名工具与回执，光说「作出决定 / 解除阻塞」不够。
+    expect(needsAnswer.content).toContain(ANSWER_SESSION_QUESTION_TOOL_NAME);
+    expect(needsAnswer.content).toContain('answered=true');
+    expect(needsAnswer.content).toContain('does NOT unblock');
     // 交回档：三选一裁决，不是交付汇报
     expect(handback.content).toContain('handed the work back');
     expect(handback.content).not.toContain('has just settled');
     // 合并浮现档：据实说「压着若干条 + 可能已被取代」，并给排序指令
     expect(pending.content).toContain('queued while you were busy');
     expect(pending.content).toContain('superseded');
+    // 合并档真机 fd9d13f3：里面夹着待拍板事实，模型只读成「给一句总结」⇒ 没作答。
+    expect(pending.content).toContain(ANSWER_SESSION_QUESTION_TOOL_NAME);
+    expect(pending.content).toContain('before summarizing');
     // 四档两两不同（防退化成共用一句）
     const unique = new Set([
       settlement.content,

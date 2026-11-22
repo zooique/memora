@@ -65,14 +65,26 @@ describe('助手窗微信心智对齐（ASSISTANT-WECHAT-UX-1）', () => {
     expect(sFooter!.querySelector('.msg-delete-icon')).not.toBeNull();
   });
 
-  it('② 补充输入上屏：交互行落消息流可见终位，不被隐藏的过程容器连坐', () => {
+  it('② 补充输入上屏：ASSISTANT-INPUT-BUBBLE-1 助手形态与普通用户气泡同形（self 形态过程行不变）', () => {
     driveRoundWithSupplement('assistant', 'r3');
-    const row = document.querySelector<HTMLElement>('.round-block__input');
-    expect(row).not.toBeNull();
-    expect(row!.textContent).toContain('我补充一句');
-    // 行是消息流直属（不在 .round-block / .process-flow 内）
-    expect(row!.closest('.round-block, .process-flow')).toBeNull();
-    expect(row!.parentElement).toBe(document.getElementById('messages'));
+    // 2026-11-22 真机：助手窗的「你补充」过程行像系统提示，不像用户说的话；
+    // 现统一走 append('user')，形态与首句用户输入完全一致（含引用按钮）。
+    const bubbles = [...document.querySelectorAll<HTMLElement>('.msg.user')];
+    const bubble = bubbles.find((el) => el.textContent?.includes('我补充一句'));
+    expect(bubble).toBeDefined();
+    expect(bubble!.closest('.round-block, .process-flow')).toBeNull();
+    expect(bubble!.parentElement?.classList.contains('msg-wrapper')).toBe(true);
+    expect(bubble!.parentElement?.querySelector('.msg-copy-icon')).not.toBeNull();
+    expect(document.querySelector('.round-block__input')).toBeNull();
+
+    // 工作模式逐字不变：仍按 ts 归位进过程容器的「你补充」行
+    driveRoundWithSupplement('self', 'r3-self');
+    const row = [...document.querySelectorAll<HTMLElement>('.round-block__input')].find((el) =>
+      el.textContent?.includes('我补充一句'),
+    );
+    expect(row).toBeDefined();
+    // 当前 l10n 默认语言下 tag = "You added"；工作模式保留原过程行形态（断言 tag 存在即可）
+    expect(row!.querySelector('.round-block__input-tag')).not.toBeNull();
   });
 
   it('② 源码守卫：助手形态挂载根置空 + 跳过 details 重建 + 不回收上屏行（三处同判据）', () => {
@@ -177,12 +189,12 @@ describe('助手窗微信心智对齐（ASSISTANT-WECHAT-UX-1）', () => {
       state: { phase: 'idle' },
       replay: true,
     });
-    const rows = [...document.querySelectorAll<HTMLElement>('.round-block__input')];
-    expect(rows.length).toBeGreaterThanOrEqual(1);
-    expect(rows.some((r) => r.textContent?.includes('重启前的补充'))).toBe(true);
-    // 上屏行不受隐藏过程容器连坐
-    const hit = rows.find((r) => r.textContent?.includes('重启前的补充'))!;
-    expect(hit.closest('.round-block, .process-flow')).toBeNull();
+    // 重放与运行时共用 appendInteractiveInput 入口 ⇒ 历史补充也收敛成普通用户气泡
+    const bubbles = [...document.querySelectorAll<HTMLElement>('.msg.user')];
+    const hit = bubbles.find((r) => r.textContent?.includes('重启前的补充'));
+    expect(hit).toBeDefined();
+    expect(hit!.closest('.round-block, .process-flow')).toBeNull();
+    expect(hit!.parentElement?.classList.contains('msg-wrapper')).toBe(true);
   });
 
   it('⑤ 源码守卫：footer 减法只改呈现层，真源表与右键菜单消费不变', () => {
