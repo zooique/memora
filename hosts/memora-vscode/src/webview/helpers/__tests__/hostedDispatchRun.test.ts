@@ -29,10 +29,7 @@ vi.mock('../../../extension/host/dispatchLedger.js', () => ({
       targetSessionId: entry.targetSessionId,
     });
   },
-  abortDispatchLedger: (
-    projectPath: string,
-    args: { targetSessionId: string },
-  ): void => {
+  abortDispatchLedger: (projectPath: string, args: { targetSessionId: string }): void => {
     ledgerSpies.aborted.push({ projectPath, targetSessionId: args.targetSessionId });
   },
 }));

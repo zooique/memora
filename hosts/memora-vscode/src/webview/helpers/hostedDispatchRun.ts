@@ -28,10 +28,7 @@ import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { hasRoundPresenceProbe } from '../../extension/host/workspaceRoundStore.js';
 import { acquireDispatchWriteLease, type DispatchWriteLease } from './hostedDispatchLock.js';
 // 派活账本（判据 C）：旁路记「受理 → 落定 / 悬空」，失败不影响派发
-import {
-  abortDispatchLedger,
-  recordDispatchLedger,
-} from '../../extension/host/dispatchLedger.js';
+import { abortDispatchLedger, recordDispatchLedger } from '../../extension/host/dispatchLedger.js';
 import type { FlowSeed } from './sessionRuntime.js';
 
 // 本模块文案走 l10n（与面板同一套键面）
