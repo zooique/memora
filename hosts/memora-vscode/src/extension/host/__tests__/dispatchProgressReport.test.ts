@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Round } from '@zooique/memora';
 import type { DispatchLedgerRecord } from '../dispatchLedger.js';
 import {
+  buildDispatchLedgerTurnContext,
   buildDispatchProgressReport,
   DISPATCH_PROGRESS_EXCERPT_CHARS,
   extractSubstantiveExcerpt,
@@ -174,6 +175,61 @@ describe('buildDispatchProgressReport', () => {
     expect(text).toContain('现在是这 5 件');
     expect(text).toContain('另有 3 条更早的没展开');
     expect(text).toContain('目标4');
+    expect(text).not.toContain('目标0');
+  });
+});
+
+describe('buildDispatchLedgerTurnContext', () => {
+  it('空账不注入（不给每个会话每轮塞「空账本」）', () => {
+    expect(buildDispatchLedgerTurnContext({ records: [] })).toBeUndefined();
+  });
+
+  it('四态措辞与计数：进行中 / 没回音 / 已完成 / 失败-未开始', () => {
+    const text = buildDispatchLedgerTurnContext({
+      records: [
+        record({ id: 'p', targetTitle: '在跑', status: 'pending', text: '整理销售数据' }),
+        record({ id: 'o', targetTitle: '没回音', status: 'orphaned' }),
+        record({
+          id: 's',
+          targetTitle: '写完了',
+          status: 'settled',
+          outcome: 'success',
+          roundId: 'round-s',
+        }),
+        record({ id: 'f', targetTitle: '挂了', status: 'settled', outcome: 'failed' }),
+        record({ id: 'a', targetTitle: '没起', status: 'settled', outcome: 'aborted' }),
+      ],
+      readRound: (roundId) =>
+        roundId === 'round-s'
+          ? round('好的，我先看一下。\n\n雨夜，铁匠铺的炉子还没熄。')
+          : undefined,
+      stamp: '18:12:03',
+    }) as string;
+    expect(text).toContain('[派活账本 · 内部上下文 · 快照 18:12:03]');
+    expect(text).toContain('用户没问就不要提');
+    // 时刻只给模型判断新旧，不许转述给用户
+    expect(text).toContain('不要向用户报时间');
+    expect(text).toContain('以时刻最新的为准');
+    expect(text).toContain('进行中 1；没回音 1；已完成 1；失败/未开始 2。');
+    expect(text).toContain('- 《在跑》· 进行中 · 派的是：整理销售数据');
+    expect(text).toContain('- 《没回音》· 没回音');
+    expect(text).toContain('- 《写完了》· 已完成 · 雨夜，铁匠铺');
+    expect(text).not.toContain('我先看一下');
+    expect(text).toContain('- 《挂了》· 失败');
+    expect(text).toContain('- 《没起》· 未开始（起流失败）');
+  });
+
+  it('上限：只列 N 条，其余折叠成一句', () => {
+    const records = Array.from({ length: 4 }, (_, index) =>
+      record({
+        id: `r-${index}`,
+        targetTitle: `目标${index}`,
+        createdAt: `2026-11-22T00:0${index}:00.000Z`,
+      }),
+    );
+    const text = buildDispatchLedgerTurnContext({ records, maxItems: 2 }) as string;
+    expect(text).toContain('（另有 2 条更早的未列出）');
+    expect(text).toContain('目标3');
     expect(text).not.toContain('目标0');
   });
 });

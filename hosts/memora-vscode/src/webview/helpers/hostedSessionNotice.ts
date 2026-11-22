@@ -72,7 +72,20 @@ import {
   type HandBackMessage,
 } from './handBackMessage.js';
 // 派活账本（判据 C）：核销只挂这里（系统落定回程），不看模型发言
-import { settleDispatchLedger } from '../../extension/host/dispatchLedger.js';
+import { readDispatchLedger, settleDispatchLedger } from '../../extension/host/dispatchLedger.js';
+// 每轮内部账本上下文（B 另一半）：与工具报告同源，只做防编造的背景数据
+import { buildDispatchLedgerTurnContext } from '../../extension/host/dispatchProgressReport.js';
+
+/**
+ * 同文快照连续跳过多少轮后强制重投一次
+ *
+ * 依据：内核替换式压缩默认保留最近 **5** 轮（`DEFAULT_REPLACE_KEEP_RECENT_ROUNDS = 5`），
+ * 超过这个量级，早先注入的 system 消息可能已被压缩/截断挤掉；此时若还按「内容没变就不投」
+ * 去重，模型手上就真的没有真数据，编造会复发。
+ *
+ * 这只是**投递节流**：整个 `ledgerContextState` 删掉，正确性不受影响，只是多几条重复注入。
+ */
+const LEDGER_CONTEXT_REFRESH_ROUNDS = 5;
 
 /**
  * 唤醒种子的档位（第八切片 HOSTED-NOTICE-KIND-1）
@@ -331,6 +344,14 @@ export class HostedSessionNotifier {
    */
   private readonly pendingReports = new Map<string, PendingReport[]>();
 
+  /**
+   * 账本快照投递节流（纯优化）：会话 → { 内容指纹, 连续跳过轮数 }
+   *
+   * 只影响「同文要不要再投一次」，不参与任何读取或判定；删掉它只是多几条重复注入，
+   * 正确性不受影响。进程内状态，不落盘、无定时器。
+   */
+  private readonly ledgerContextState = new Map<string, { fingerprint: string; skipped: number }>();
+
   constructor(private readonly deps: HostedSessionNoticeDeps) {}
 
   /**
@@ -411,6 +432,12 @@ export class HostedSessionNotifier {
         });
       }
     }
+    // 每轮内部账本上下文（B 另一半）：核销之后再取快照，下一轮首个 step 边界生效。
+    // 不唤醒、不落盘、界面零呈现——它是背景数据，不是「有结果回来了」的事件。
+    // 助手自己的轮也要注入（下面 resolveTarget 对无创建者的会话返回 undefined，但注入不依赖它）。
+    this.injectLedgerContext(input.sessionId);
+    const creator = this.childToCreator.get(input.sessionId);
+    if (creator && creator !== input.sessionId) this.injectLedgerContext(creator);
     const target = this.resolveTarget(input.sessionId);
     if (!target) return false;
     if (this.notified.has(key)) return false;
@@ -582,6 +609,9 @@ export class HostedSessionNotifier {
    * @param creator 刚收场的那个会话（通常只是子会话，无待办时立即返回）
    */
   flushPending(creator: string): void {
+    // 装配 / 唤醒时刻补一份账本快照：reload 后的第一轮没有「上一轮收场」，否则首问无真数据。
+    // 只补首次（assembly 模式）；后续轮次由 noteFlowEnd 的投递节流负责，避免同一轮重复注入。
+    this.injectLedgerContext(creator, 'assembly');
     const pending = this.pendingReports.get(creator);
     if (!pending || pending.length === 0) return;
     const loop = this.deps.getAgent(creator)?.agentLoop;
@@ -595,6 +625,53 @@ export class HostedSessionNotifier {
     for (const report of pending) loop.enqueueCommandResult(stampPending(report, now));
     // 合并浮现是**第四档**：可能跨落定 / 待拍板 / 交回，种子不许假装单一档
     this.deps.wakeCreator(creator, 'pending');
+  }
+
+  /**
+   * 给某个会话入队一份账本快照（下一轮内部上下文）
+   *
+   * 三条纪律：
+   *   - **每次现读** `readDispatchLedger`：不存摘要副本、不做第二真相源、不加读缓存；
+   *   - **不唤醒**：只 `enqueueCommandResult`，绝不调 `wakeCreator`——否则每轮收场都会自激起一轮；
+   *   - **空账不注入**：没有记录就返回 undefined，不给每个 Worker 每轮塞一句「空账本」。
+   *
+   * 投递节流（纯优化）：内容指纹没变时连续跳过，最多跳 {@link LEDGER_CONTEXT_REFRESH_ROUNDS}
+   * 轮后强制重投一次——防长会话压缩把旧快照挤掉后模型手上没真数据。删掉这段节流不影响正确性。
+   *
+   * @param sessionId 接收快照的会话（助手自己，或子会话的创建者）
+   * @param mode `turn` = 每轮收场；`assembly` = 实例装配（只补首次，解决 reload 后首问无快照）
+   */
+  private injectLedgerContext(sessionId: string, mode: 'turn' | 'assembly' = 'turn'): void {
+    const loop = this.deps.getAgent(sessionId)?.agentLoop;
+    if (!loop) return;
+    const projectPath = this.deps.projectPath?.();
+    if (!projectPath) return;
+    const records = readDispatchLedger(projectPath, { callerSessionId: sessionId });
+    if (records.length === 0) return;
+    const fingerprint = records
+      .map((r) => `${r.id}:${r.status}:${r.outcome ?? ''}:${r.roundId ?? ''}`)
+      .join('|');
+    const state = this.ledgerContextState.get(sessionId);
+    // 装配补投只做一次：reload 后第一轮没有「上一轮收场」，否则首问无真数据
+    if (mode === 'assembly' && state) return;
+    // 连续重复跳过；超过刷新轮数后重投一次（旧快照可能已被上下文压缩挤掉）
+    if (
+      state &&
+      state.fingerprint === fingerprint &&
+      state.skipped < LEDGER_CONTEXT_REFRESH_ROUNDS
+    ) {
+      state.skipped += 1;
+      return;
+    }
+    const text = buildDispatchLedgerTurnContext({
+      records,
+      // 只给模型判断新旧，不向用户报时间（见注入文本内的纪律行）
+      stamp: new Date().toTimeString().slice(0, 8),
+      ...(this.deps.readRound ? { readRound: this.deps.readRound } : {}),
+    });
+    if (!text) return;
+    this.ledgerContextState.set(sessionId, { fingerprint, skipped: 0 });
+    loop.enqueueCommandResult(text);
   }
 
   /**

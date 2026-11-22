@@ -957,4 +957,135 @@ describe('派活账本核销挂点（判据 C）', () => {
       outcome: 'success',
     });
   });
+
+  it('每轮内部账本上下文：落定后给创建者注入真数据，且不唤醒', () => {
+    const dir = makeTempDir('memora-notice-ledger-ctx-');
+    recordDispatchLedger(dir, {
+      kind: 'send',
+      callerSessionId: CREATOR,
+      targetSessionId: CHILD,
+      targetTitle: '抓取任务',
+      text: '把抓取跑完',
+      createdAt: '2026-11-22T00:00:00.000Z',
+    });
+    const queue = vi.fn();
+    const wake = vi.fn(() => true);
+    const notifier = new HostedSessionNotifier({
+      readSessionMeta: (sid) =>
+        sid === CHILD ? meta(CHILD, 'hosted', '抓取任务') : meta(CREATOR, 'user'),
+      // 创建者不可通知：本用例只验注入，不验落定通知
+      isManaged: () => false,
+      isAgentDriven: () => true,
+      getAgent: (sid) =>
+        sid === CREATOR
+          ? ({ agentLoop: { enqueueCommandResult: queue } } as unknown as Agent)
+          : undefined,
+      readRound: (id) =>
+        id === 'r-ctx'
+          ? round('r-ctx', 'complete', [], '好的，我先看一下。\n\n雨夜，铁匠铺的炉子还没熄。')
+          : undefined,
+      canWakeCreator: () => true,
+      wakeCreator: wake,
+      projectPath: () => dir,
+    });
+    notifier.remember(CHILD, CREATOR);
+
+    notifier.noteFlowEnd({
+      sessionId: CHILD,
+      round: round('r-ctx', 'complete', []),
+      hostAborted: false,
+    });
+
+    // 注入不是「有结果回来了」的事件：绝不唤醒
+    expect(wake).not.toHaveBeenCalled();
+    expect(queue).toHaveBeenCalled();
+    const text = queue.mock.calls.at(-1)?.[0] as string;
+    // 内容来自账本 + 目标轮原文：真数据，且跳过开场白
+    expect(text).toContain('[派活账本 · 内部上下文');
+    expect(text).toContain('已完成');
+    expect(text).toContain('雨夜，铁匠铺');
+    expect(text).not.toContain('我先看一下');
+    // 防多嘴纪律随注入文本一起到模型（system 层，不依赖工具描述）
+    expect(text).toContain('用户没问就不要提');
+  });
+
+  it('装配时补投一次账本快照（reload 后首问），重复 flush 不重复投', () => {
+    const dir = makeTempDir('memora-notice-ledger-assembly-');
+    recordDispatchLedger(dir, {
+      kind: 'send',
+      callerSessionId: CREATOR,
+      targetSessionId: CHILD,
+      targetTitle: '抓取任务',
+      text: '把抓取跑完',
+    });
+    const queue = vi.fn();
+    const notifier = new HostedSessionNotifier({
+      readSessionMeta: (sid) => meta(sid, 'user', '助手'),
+      isManaged: () => false,
+      isAgentDriven: () => true,
+      getAgent: (sid) =>
+        sid === CREATOR
+          ? ({ agentLoop: { enqueueCommandResult: queue } } as unknown as Agent)
+          : undefined,
+      readRound: () => undefined,
+      canWakeCreator: () => true,
+      wakeCreator: () => true,
+      projectPath: () => dir,
+    });
+    notifier.flushPending(CREATOR);
+    expect(queue).toHaveBeenCalledTimes(1);
+    // 装配补投只补首次：同一进程里再 flush 不重复
+    notifier.flushPending(CREATOR);
+    expect(queue).toHaveBeenCalledTimes(1);
+  });
+
+  it('同文快照连续跳过，超过刷新轮数后强制重投（防长会话压缩挤掉旧快照）', () => {
+    const dir = makeTempDir('memora-notice-ledger-throttle-');
+    recordDispatchLedger(dir, {
+      kind: 'send',
+      callerSessionId: CREATOR,
+      targetSessionId: CHILD,
+      targetTitle: '抓取任务',
+      text: '把抓取跑完',
+    });
+    const queue = vi.fn();
+    const notifier = new HostedSessionNotifier({
+      readSessionMeta: (sid) =>
+        sid === CHILD ? meta(CHILD, 'hosted', '抓取任务') : meta(CREATOR, 'user', '助手'),
+      isManaged: () => false,
+      isAgentDriven: () => true,
+      getAgent: (sid) =>
+        sid === CREATOR
+          ? ({ agentLoop: { enqueueCommandResult: queue } } as unknown as Agent)
+          : undefined,
+      readRound: () => undefined,
+      canWakeCreator: () => true,
+      wakeCreator: () => true,
+      projectPath: () => dir,
+    });
+    notifier.remember(CHILD, CREATOR);
+    // 第一次落定：注入一份
+    notifier.noteFlowEnd({
+      sessionId: CHILD,
+      round: round('r-settle', 'complete', []),
+      hostAborted: false,
+    });
+    expect(queue).toHaveBeenCalledTimes(1);
+    // 账本内容不变：连续 5 轮都跳过（skipped 记满 5）
+    for (let i = 0; i < 5; i += 1) {
+      notifier.noteFlowEnd({
+        sessionId: CREATOR,
+        round: round(`r-own-${i}`, 'complete', []),
+        hostAborted: false,
+      });
+    }
+    expect(queue).toHaveBeenCalledTimes(1);
+    // 超过 5 轮后的下一次机会强制重投（对齐内核压缩保留最近 5 轮）
+    notifier.noteFlowEnd({
+      sessionId: CREATOR,
+      round: round('r-own-5', 'complete', []),
+      hostAborted: false,
+    });
+    expect(queue).toHaveBeenCalledTimes(2);
+  });
 });

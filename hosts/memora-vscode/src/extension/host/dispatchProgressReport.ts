@@ -302,3 +302,102 @@ export function buildDispatchProgressReport(input: DispatchProgressReportInput):
   const tail = rest > 0 ? `\n（另有 ${rest} 条更早的没展开。）` : '';
   return `${header}\n${lines.join('\n')}${tail}`;
 }
+
+/** 每轮内部上下文最多列几条（比成品报告更紧，避免每轮吃太多上下文） */
+export const DISPATCH_TURN_CONTEXT_MAX_ITEMS = 6;
+
+/** 内部上下文里每条结果 / 派活摘要的字符上限 */
+export const DISPATCH_TURN_CONTEXT_TEXT_CHARS = 60;
+
+/** 每轮内部账本上下文的入参（记录由调用方现读账本得到，本函数不读盘） */
+export interface DispatchTurnContextInput {
+  /** 调用方派出去的账本记录（readDispatchLedger 原样结果） */
+  records: readonly DispatchLedgerRecord[];
+  /** 按 roundId 读目标轮（取已完成活的结果开头；缺省则不取正文） */
+  readRound?: (roundId: string) => Round | undefined;
+  /** 最多列几条（缺省 = {@link DISPATCH_TURN_CONTEXT_MAX_ITEMS}） */
+  maxItems?: number;
+  /** 快照时刻（HH:MM:SS；只给模型判断新旧，不许转述给用户） */
+  stamp?: string;
+}
+
+/**
+ * 把账本记录压成一段**内部上下文快照**（每轮注入，不进用户界面）
+ *
+ * 与 `buildDispatchProgressReport` 的分工：那份是给用户看的成品（长、带细节）；
+ * 这份是给模型看的背景数据（短、只防"说出账本里没有的记录"）。两者同源
+ * （同一批 `readDispatchLedger` 记录），不互为副本。
+ *
+ * 纪律写在注入文本自身（system 角色）：用户没问进度就不要提，防止模型在无关话题上多嘴。
+ *
+ * @param input 记录与读口
+ * @returns 注入文本；账本为空时 undefined（不给每个会话每轮塞一句"空账本"）
+ */
+export function buildDispatchLedgerTurnContext(
+  input: DispatchTurnContextInput,
+): string | undefined {
+  if (input.records.length === 0) return undefined;
+  const maxItems = input.maxItems ?? DISPATCH_TURN_CONTEXT_MAX_ITEMS;
+  const counts = {
+    pending: input.records.filter((r) => r.status === 'pending').length,
+    orphaned: input.records.filter((r) => r.status === 'orphaned').length,
+    success: input.records.filter((r) => r.status === 'settled' && r.outcome === 'success').length,
+    failed: input.records.filter(
+      (r) => r.status === 'settled' && (r.outcome === 'failed' || r.outcome === 'aborted'),
+    ).length,
+  };
+  // 新→旧：已落定看 settledAt，其余看派发时刻
+  const sorted = [...input.records].sort((a, b) => {
+    const aAt = a.settledAt ?? a.createdAt;
+    const bAt = b.settledAt ?? b.createdAt;
+    return aAt < bAt ? 1 : aAt > bAt ? -1 : 0;
+  });
+  const shown = sorted.slice(0, maxItems);
+  const rest = sorted.length - shown.length;
+  const lines = shown.map((record) => {
+    const title = record.targetTitle || record.targetSessionId;
+    const head = `- 《${title}》· `;
+    if (record.status === 'pending') {
+      return `${head}进行中 · 派的是：${clipForContext(record.text, DISPATCH_TURN_CONTEXT_TEXT_CHARS)}`;
+    }
+    if (record.status === 'orphaned') {
+      return `${head}没回音（超过 ${formatElapsed(DISPATCH_LEDGER_ORPHAN_TIMEOUT_MS)}）`;
+    }
+    if (record.outcome === 'aborted') return `${head}未开始（起流失败）`;
+    if (record.outcome === 'failed') {
+      const reason = readFailureReason(
+        record.roundId && input.readRound ? input.readRound(record.roundId) : undefined,
+      );
+      return `${head}失败 · ${clipForContext(reason ?? '没有留下原因', DISPATCH_TURN_CONTEXT_TEXT_CHARS)}`;
+    }
+    const round = record.roundId && input.readRound ? input.readRound(record.roundId) : undefined;
+    const excerpt = round?.assistantMessage?.content
+      ? extractSubstantiveExcerpt(round.assistantMessage.content)
+      : '';
+    return `${head}已完成 · ${
+      excerpt ? clipForContext(excerpt, DISPATCH_TURN_CONTEXT_TEXT_CHARS) : '没有留下正文'
+    }`;
+  });
+  const header =
+    `[派活账本 · 内部上下文${input.stamp ? ` · 快照 ${input.stamp}` : ''}] ` +
+    '数据来自系统账本，仅当用户主动问派活进度时使用；用户没问就不要提、不要复述本段。';
+  // 时刻只解决「同一轮多份快照谁新」，不向用户报流程元数据——用户要的是活干成什么样
+  const stampNote = input.stamp
+    ? '时刻只供你判断新旧，不要向用户报时间；同一轮内多份快照以时刻最新的为准。'
+    : '';
+  const summary = `进行中 ${counts.pending}；没回音 ${counts.orphaned}；已完成 ${counts.success}；失败/未开始 ${counts.failed}。`;
+  const tail = rest > 0 ? `（另有 ${rest} 条更早的未列出）` : '';
+  return [header, stampNote, summary, ...lines, tail].filter((line) => line.length > 0).join('\n');
+}
+
+/**
+ * 压成单行并截断（内部上下文用；不引入省略号以外的改写）
+ *
+ * @param text 原文
+ * @param max 字符上限
+ * @returns 折叠空白后的单行
+ */
+function clipForContext(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
+}
