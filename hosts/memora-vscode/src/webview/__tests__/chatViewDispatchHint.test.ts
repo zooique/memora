@@ -37,13 +37,15 @@ function makeRound(over: {
   processEvents?: unknown[];
   status?: RoundView['status'];
   origin?: RoundView['origin'];
+  /** 用户原文覆盖（零工具分支的意图门；缺省为扩写请求） */
+  userContent?: string;
 }): RoundView {
   return {
     id: over.id,
     userMessage: {
       id: `${over.id}-user`,
       role: 'user',
-      content: '把《井》扩写到 1000 字',
+      content: over.userContent ?? '把《井》扩写到 1000 字',
       timestamp: '2026-11-21T06:00:00.000Z',
     },
     assistantMessage: {
@@ -215,6 +217,54 @@ describe('派活承诺对账提示（DISPATCH-CLAIM-HINT-1）', () => {
     expect(document.querySelector(HINT_SELECTOR)).not.toBeNull();
   });
 
+  it('重放 · 助手形态：纯聊天零工具 ⇒ 不提示（零工具不是承诺）', () => {
+    mountChatView('assistant');
+    dispatchReplay(
+      makeRound({
+        id: 'pure-chat-zero-tool',
+        content: '5 + 9 = 14。',
+        userContent: '5+9 等于几？',
+      }),
+    );
+    expect(document.querySelector(HINT_SELECTOR)).toBeNull();
+  });
+
+  it('重放 · 助手形态：零工具 + 用户要求新开会话 ⇒ 提示（意图门）', () => {
+    mountChatView('assistant');
+    dispatchReplay(
+      makeRound({
+        id: 'zero-tool-intent',
+        content: '已经安排好了，稍等。',
+        userContent: '再新开一个会话，启动测试',
+      }),
+    );
+    expect(document.querySelector(HINT_SELECTOR)).not.toBeNull();
+  });
+
+  it('重放 · 助手形态：调了别的工具但声称会话已建 ⇒ 提示（创建断言分支）', () => {
+    mountChatView('assistant');
+    dispatchReplay(
+      makeRound({
+        id: 'create-claim-with-tool',
+        content: '新会话「测试」已创建。',
+        processEvents: readonlyToolEvents(),
+      }),
+    );
+    expect(document.querySelector(HINT_SELECTOR)).not.toBeNull();
+  });
+
+  it('重放 · 助手形态：已创建文件 ≠ 会话创建 ⇒ 不提示', () => {
+    mountChatView('assistant');
+    dispatchReplay(
+      makeRound({
+        id: 'create-file-not-session',
+        content: '已创建文件 stories/井.md。',
+        processEvents: readonlyToolEvents(),
+      }),
+    );
+    expect(document.querySelector(HINT_SELECTOR)).toBeNull();
+  });
+
   it('重放 · 助手形态：hosted 零工具轮 ⇒ 不提示（落定通知是常态）', () => {
     mountChatView('assistant');
     dispatchReplay(
@@ -370,6 +420,36 @@ describe('完成门判据：何时自动起一轮补派检查', () => {
         processEvents: readonlyToolEvents() as ProcessEvent[],
       }),
     ).toBe(false);
+  });
+
+  it('纯聊天零工具 ⇒ 不触发（零工具不是承诺）', () => {
+    expect(
+      shouldNudgeDispatchRepair({
+        ...base,
+        assistantMessage: { content: '5 + 9 = 14。' },
+        userMessage: { name: 'memora宝', content: '5+9 等于几？' },
+      }),
+    ).toBe(false);
+  });
+
+  it('零工具 + 用户要求新开会话 ⇒ 触发（意图门）', () => {
+    expect(
+      shouldNudgeDispatchRepair({
+        ...base,
+        assistantMessage: { content: '已经安排好了，稍等。' },
+        userMessage: { name: 'memora宝', content: '再新开一个会话，启动测试' },
+      }),
+    ).toBe(true);
+  });
+
+  it('调了别的工具但声称会话已建 ⇒ 触发（创建断言分支）', () => {
+    expect(
+      shouldNudgeDispatchRepair({
+        ...base,
+        assistantMessage: { content: '新会话「测试」已创建。' },
+        processEvents: readonlyToolEvents() as ProcessEvent[],
+      }),
+    ).toBe(true);
   });
 
   it('换说法 + 零 tool_start + 用户轮 ⇒ 触发（复发形态）', () => {

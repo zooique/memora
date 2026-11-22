@@ -11,8 +11,9 @@
  *
  * 两个判据同源：
  *   - 回执：直接复用会话卡解析 `dispatchedSidTextsFromEvents`（SSOT，不写第二份配对逻辑）；
- *   - 触发：窄词表 OR 本轮零 `tool_start`。词表只抓它认得的派发说法，零工具分支抓
- *     「换了说法但根本没调工具」的形态——两者的真源都是已落盘的结构化事实，不新增判据通道。
+ *   - 触发：派发话术 OR 会话创建话术 OR（零工具 AND 用户派活意图）。前两支抓措辞
+ *     命中，零工具分支抓「换了说法」的形态，但必须带用户意图门——纯聊天轮也零工具，
+ *     不能一律标成「未核到派发回执」。真源都是已落盘的结构化事实，不新增判据通道。
  *
  * 为什么保留词表分支：业务受理失败（内核 ok 但业务 ok=false）有 `tool_start`，零工具分支
  * 看不见它；删掉词表分支就是拿新形态覆盖旧能力，属带伤。
@@ -45,6 +46,56 @@ export const DISPATCH_HINT_CLASS = 'round-group__dispatch-hint';
 const DISPATCH_CLAIM_WORDS: readonly string[] = ['已派给', '派给', '已受理并派'];
 
 /**
+ * 会话创建义断言（按句判定：同一句里同时出现「会话」与完成词）
+ *
+ * 为什么不用固定窗口正则：真实正文常写成「新会话「名字」已创建」，名字长度不定，
+ * 固定 8~10 字窗口会漏。按句配对既覆盖名字夹在中间，又避免「已创建文件」误伤
+ * （句内没有「会话 / session」就不算）。
+ */
+const SESSION_WORD = /会话|session/i;
+const SESSION_CREATE_DONE = /已创建|已开|新建|创建了|开好了/;
+
+/**
+ * 用户是否在要求「派活 / 开新会话」——零工具分支的意图门
+ *
+ * 零工具本身不是承诺：纯聊天轮（「5+9 等于几」「能暂停吗」）也零工具。若只看
+ * 零工具，会把所有答问轮都标成「未核到派发回执」——这是实锤误伤（测试记录里
+ * 28 个零工具无承诺轮）。因此零工具分支必须再问一句：**用户这轮有没有让开/派**。
+ *
+ * 不读别的通道：用户原文本来就在 Round 里，不新增落盘字段、不新增协议。
+ */
+const DISPATCH_INTENT_PATTERNS: readonly RegExp[] = [
+  /派给|派活/,
+  /(?:安排|交给)[^。；\n]{0,8}(?:会话|它|他)/,
+  /(?:新开|再开|开一?个|新建|创建)[^。；\n]{0,8}(?:会话|session|测试)/,
+  /(?:会话|session)[^。；\n]{0,8}(?:新开|再开|新建|创建)/,
+];
+
+/**
+ * 正文里是否声称「已开 / 已建某个会话」
+ *
+ * @param assistantText 该轮终态正文
+ * @returns 任一命中断言即 true
+ */
+export function hasSessionCreationClaim(assistantText: string | undefined): boolean {
+  const text = assistantText ?? '';
+  return text
+    .split(/[。；\n]/)
+    .some((sentence) => SESSION_WORD.test(sentence) && SESSION_CREATE_DONE.test(sentence));
+}
+
+/**
+ * 用户原文是否在要求「派活 / 开新会话」
+ *
+ * @param userText 该轮用户消息正文
+ * @returns 命中任一意图模式即 true
+ */
+export function hasDispatchIntent(userText: string | undefined): boolean {
+  const text = userText ?? '';
+  return DISPATCH_INTENT_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+/**
  * 正文里是否声称「已派活」
  *
  * @param assistantText 该轮终态正文（实时取 turn_update 的 assistantMessage，重放取 RoundView）
@@ -66,16 +117,22 @@ function hasNoToolActivity(events: readonly ProcessEvent[]): boolean {
 }
 
 /**
- * 对账触发器：派发话术 OR 零工具动作
+ * 对账触发器：派发话术 OR 会话创建话术 OR（零工具 AND 用户有派活意图）
  *
- * 两个分支不可互相替代：前者保留业务受理失败（有 tool_start）的覆盖，后者覆盖
- * 换词后词表失明的零工具轮。都不读用户原话，不新增词表、不新增落盘字段。
+ * 三个分支不可互相替代：
+ *   - 派发话术：保留业务受理失败（有 tool_start）的覆盖；
+ *   - 会话创建话术：覆盖「调了别的工具，却声称会话已建」；
+ *   - 零工具 + 用户意图：覆盖换词后词表失明的复发形态，同时不误伤纯聊天轮。
+ * 都不新增词表通道外的判据，不新增落盘字段。
  */
-function hasDispatchClaimOrNoToolActivity(
+function shouldAuditDispatch(
   assistantText: string | undefined,
   events: readonly ProcessEvent[],
+  userText: string | undefined,
 ): boolean {
-  return hasDispatchClaim(assistantText) || hasNoToolActivity(events);
+  if (hasDispatchClaim(assistantText)) return true;
+  if (hasSessionCreationClaim(assistantText)) return true;
+  return hasNoToolActivity(events) && hasDispatchIntent(userText);
 }
 
 /** 完成门判据输入：只取判据需要的五个字段（Round 与测试替身同型） */
@@ -84,8 +141,8 @@ export interface DispatchRepairInput {
   status: string;
   /** 助手正文（派发措辞的触发器） */
   assistantMessage?: { content?: string } | undefined;
-  /** 用户消息（只读 name：识别内部种子轮，防补派检查自己再触发） */
-  userMessage?: { name?: string } | undefined;
+  /** 用户消息（name 识别内部种子轮；content 是零工具分支的意图门） */
+  userMessage?: { name?: string; content?: string } | undefined | null;
   /** 轮来源（零工具分支的门控：只审计用户发起的轮，系统通知轮零工具是常态） */
   origin?: Round['origin'];
   /** 进程事件（回执判据与零工具判据的唯一输入） */
@@ -116,7 +173,8 @@ export function shouldNudgeDispatchRepair(round: DispatchRepairInput): boolean {
   // 缺省按 'user' 解释，与协议 RoundView.origin 的存量兼容口径一致。
   if ((round.origin ?? 'user') !== 'user') return false;
   const events = round.processEvents ?? [];
-  if (!hasDispatchClaimOrNoToolActivity(round.assistantMessage?.content, events)) return false;
+  if (!shouldAuditDispatch(round.assistantMessage?.content, events, round.userMessage?.content))
+    return false;
   return dispatchedSidTextsFromEvents(events).length === 0;
 }
 
@@ -140,15 +198,17 @@ function hasAcceptedDispatchReceipt(events: readonly ProcessEvent[]): boolean {
  * @param assistantText 该轮终态正文
  * @param events 本轮过程事件
  * @param origin 轮来源（缺省按 'user' 解释）
+ * @param userText 用户原文（零工具分支的意图门）
  */
 function shouldShowDispatchClaimHint(
   assistantText: string | undefined,
   events: readonly ProcessEvent[],
   origin: Round['origin'],
+  userText: string | undefined,
 ): boolean {
   if ((origin ?? 'user') !== 'user') return false;
   return (
-    hasDispatchClaimOrNoToolActivity(assistantText, events) && !hasAcceptedDispatchReceipt(events)
+    shouldAuditDispatch(assistantText, events, userText) && !hasAcceptedDispatchReceipt(events)
   );
 }
 
@@ -184,6 +244,8 @@ export interface DispatchHintRound {
   /** 轮来源（零工具分支的门控，与完成门同源） */
   origin?: Round['origin'];
   assistantMessage?: { content: string } | null;
+  /** 用户原文（零工具分支的意图门；缺省视为无派活意图） */
+  userMessage?: { content?: string } | null;
   processEvents?: readonly ProcessEvent[];
 }
 
@@ -214,6 +276,7 @@ export function projectDispatchClaimHintInRound(
       round.assistantMessage?.content,
       round.processEvents ?? [],
       round.origin,
+      round.userMessage?.content,
     ),
   );
 }
