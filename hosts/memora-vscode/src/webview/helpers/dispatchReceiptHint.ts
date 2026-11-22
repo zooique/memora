@@ -29,10 +29,10 @@
 import type { ProcessEvent, Round } from '@zooique/memora';
 import * as l10n from '@vscode/l10n';
 import { isInternalSeedSender } from '../../shared/constants.js';
-import { dispatchedSidTextsFromEvents } from './processEventText.js';
+import { dispatchedSidTextsFromEvents, type DispatchedSidText } from './processEventText.js';
 
-/** 提示元素 class（幂等重建与测试定位共用） */
-export const DISPATCH_HINT_CLASS = 'round-group__dispatch-hint';
+/** 凭证行 class（与既有缺口提示同一位置族，语义相反：这条是「有回执」） */
+export const DISPATCH_RECEIPT_CLASS = 'round-group__dispatch-receipt';
 
 /**
  * 派发义窄词表（只收「明确说派给某处」的写法）
@@ -179,72 +179,77 @@ export function shouldNudgeDispatchRepair(round: DispatchRepairInput): boolean {
 }
 
 /**
- * 本轮是否有「业务受理成功」的派发回执
+ * 会话标题来源（结构最小接口）
  *
- * 直接复用会话卡解析——同一份 `tool_start` 配对 `tool_result` 的事实，不另写判据。
- *
- * @param events 本轮过程事件
+ * `createDispatchCardProjection` 的实例天然满足（已持 `dispatchedSessions` 快照），
+ * 故 chatView 直接传实例即可，无需在调用点再包一层 lambda（也避免双份接线）。
  */
-function hasAcceptedDispatchReceipt(events: readonly ProcessEvent[]): boolean {
-  return dispatchedSidTextsFromEvents(events).length > 0;
+export interface DispatchTitleSource {
+  /** sid → 会话标题；取不到返回 undefined（调用方降级显示 sid） */
+  titleFor(sid: string): string | undefined;
 }
 
 /**
- * 提示谓词（实时 / 重放共用）：对账触发 且 本轮无成功回执
+ * 本轮凭证文案（助手形态气泡下的一行）
  *
- * 无状态、每次从全量事件算，不做 seq 去重——重放 / 切会话结果一致。
- * hosted 轮同样零工具，是系统通知而非用户派活，不能拿它插提示。
+ * 只对**业务受理成功**的回执产出文本（判据 = 既有 `isAcceptedDispatchResult` 的消费面
+ * `dispatchedSidTextsFromEvents`，不新增判据、不读正文）。无回执 ⇒ undefined，调用方
+ * 一个字都不加——这是本批的核心：让没有凭证的轮看起来就是一句普通的话。
  *
- * @param assistantText 该轮终态正文
- * @param events 本轮过程事件
- * @param origin 轮来源（缺省按 'user' 解释）
- * @param userText 用户原文（零工具分支的意图门）
+ * 多条派发只取第一条：凭证是「这轮确实动过手」的物证，不是清单；要清单看会话卡。
+ *
+ * @param items 本轮成功盖章的 (sid, text, via) 列表
+ * @param titles 会话标题来源（取不到返回 undefined，降级显示 sid，不编造）
+ * @returns 一行短文案；无回执返回 undefined
  */
-function shouldShowDispatchClaimHint(
-  assistantText: string | undefined,
-  events: readonly ProcessEvent[],
-  origin: Round['origin'],
-  userText: string | undefined,
-): boolean {
-  if ((origin ?? 'user') !== 'user') return false;
-  return (
-    shouldAuditDispatch(assistantText, events, userText) && !hasAcceptedDispatchReceipt(events)
-  );
+export function dispatchReceiptText(
+  items: readonly DispatchedSidText[],
+  titles: DispatchTitleSource,
+): string | undefined {
+  const first = items[0];
+  if (!first) return undefined;
+  const title = titles.titleFor(first.sid) ?? first.sid;
+  return first.via === 'create'
+    ? l10n.t('Created session “{0}” · receipt confirmed', title)
+    : l10n.t('Dispatched to “{0}” · receipt confirmed', title);
 }
 
 /**
- * 幂等投影：先撤旧提示，再按判据决定是否挂一条
+ * 幂等投影：先撤旧凭证行，再按判据决定是否挂一条
  *
- * 只助手形态生效（与盖章卡同构；self 工作会话不显示）。插入位置在容器 footer 之前——
- * 底栏在助手形态默认 `opacity:0`（hover 才显形），提示不能跟着一起藏起来。
+ * 只助手形态生效（与盖章卡同构）；插入位置沿用既有位置族（footer 之前，常显）。
+ * 无凭证时**只撤不加**——不产生任何占位、灰字或提示。
  *
- * @param doc DOM 文档（由调用方注入，模块内不读全局 document）
- * @param group 该轮的 `.round-group` 容器（找不到则什么都不做）
- * @param show 是否显示（由 {@link shouldShowDispatchClaimHint} 算好）
+ * @param doc DOM 文档（调用方注入，模块内不读全局 document）
+ * @param group 该轮的 `.round-group` 容器
+ * @param text 凭证文案（undefined = 本轮无回执）
  */
-function applyDispatchClaimHint(doc: Document, group: HTMLElement | null, show: boolean): void {
+function applyDispatchReceipt(
+  doc: Document,
+  group: HTMLElement | null,
+  text: string | undefined,
+): void {
   if (!group) return;
-  group.querySelector(`.${DISPATCH_HINT_CLASS}`)?.remove();
-  if (!show || doc.body.dataset.form !== 'assistant') return;
-  const hint = doc.createElement('div');
-  hint.className = DISPATCH_HINT_CLASS;
-  // 文案 = 证据缺口，不是结论；textContent 走纯文本（无注入面）。
-  // 「会话派发」限定作用域：delegate_task 不在回执判据内，避免读者把两者混为一谈。
-  hint.textContent = l10n.t('No session dispatch receipt found for this turn');
+  group.querySelector(`.${DISPATCH_RECEIPT_CLASS}`)?.remove();
+  if (!text || doc.body.dataset.form !== 'assistant') return;
+  const line = doc.createElement('div');
+  line.className = DISPATCH_RECEIPT_CLASS;
+  // 纯文本（无注入面）；不长成卡片：单行、无图标、不可点
+  line.textContent = text;
   const foot = group.querySelector('.round-group__footer');
-  if (foot) group.insertBefore(hint, foot);
-  else group.appendChild(hint);
+  if (foot) group.insertBefore(line, foot);
+  else group.appendChild(line);
 }
 
 /** 投影所需的最小轮形状（RoundView 结构子集，避免 helper 依赖整个协议类型） */
 export interface DispatchHintRound {
   id: string;
-  /** 只对终态轮计算（中断轮不算「承诺已兑现」） */
+  /** 只对终态轮计算（中断轮的过程可能半截，凭证不以半截为据） */
   status: string;
-  /** 轮来源（零工具分支的门控，与完成门同源） */
+  /** 轮来源（保留字段：凭证不拘来源，但调用方与判据共用同一形状） */
   origin?: Round['origin'];
   assistantMessage?: { content: string } | null;
-  /** 用户原文（零工具分支的意图门；缺省视为无派活意图） */
+  /** 用户原文（保留字段：补派判据的意图门，凭证不读） */
   userMessage?: { content?: string } | null;
   processEvents?: readonly ProcessEvent[];
 }
@@ -252,31 +257,28 @@ export interface DispatchHintRound {
 /**
  * 轮级投影入口（重放 / 实时共用，避免 chatView 里出现两份接线）
  *
- * 按 `data-round-id` 在消息容器内定位该轮容器；非终态轮直接返回（同时在跑的轮不上提示，
- * 防止流式正文里出现「已派给」就闪一下）。
+ * 按 `data-round-id` 定位该轮容器；非终态轮直接返回。判据唯一：
+ * `dispatchedSidTextsFromEvents(events)` 非空 = 这轮确有业务受理成功的回执。
  *
  * @param doc DOM 文档
  * @param root 消息容器（`#messages`）
- * @param round 该轮（终态 / 正文 / 过程事件）
+ * @param round 该轮（终态 / 过程事件）
+ * @param titles 会话标题来源（传 `dispatchCards` 实例即可）
  */
-export function projectDispatchClaimHintInRound(
+export function projectDispatchReceiptInRound(
   doc: Document,
   root: ParentNode,
   round: DispatchHintRound,
+  titles: DispatchTitleSource,
 ): void {
   if (round.status !== 'complete') return;
   const group =
     Array.from(root.querySelectorAll<HTMLElement>('.round-group')).find(
       (el) => el.dataset.roundId === round.id,
     ) ?? null;
-  applyDispatchClaimHint(
+  applyDispatchReceipt(
     doc,
     group,
-    shouldShowDispatchClaimHint(
-      round.assistantMessage?.content,
-      round.processEvents ?? [],
-      round.origin,
-      round.userMessage?.content,
-    ),
+    dispatchReceiptText(dispatchedSidTextsFromEvents(round.processEvents ?? []), titles),
   );
 }

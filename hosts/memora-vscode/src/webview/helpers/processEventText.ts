@@ -287,6 +287,8 @@ export function dispatchedSidsFromEvents(events: readonly ProcessEvent[]): Set<s
 export interface DispatchedSidText {
   sid: string;
   text: string;
+  /** 派发形态（凭证条按形态换词：新建会话 / 派活；既有消费方不读此字段） */
+  via: 'create' | 'delegate';
 }
 
 /**
@@ -323,10 +325,11 @@ export function dispatchedSidTextsFromEvents(events: readonly ProcessEvent[]): D
     if (ev.type !== 'tool_result' || !isAcceptedDispatchResult(ev.payload)) continue;
     if (ev.payload.name === CREATE_SESSION_TOOL_NAME) {
       const sid = parseCreateSessionSid(ev.payload.summary ?? '');
-      if (sid) out.push({ sid, text: createTextByCall.get(ev.payload.toolCallId) ?? '' });
+      if (sid)
+        out.push({ sid, text: createTextByCall.get(ev.payload.toolCallId) ?? '', via: 'create' });
     } else if (ev.payload.name === SEND_TO_SESSION_TOOL_NAME) {
       const send = sendByCall.get(ev.payload.toolCallId);
-      if (send) out.push(send);
+      if (send) out.push({ ...send, via: 'delegate' });
     }
   }
   return out;

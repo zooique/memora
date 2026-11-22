@@ -274,7 +274,7 @@ describe('dispatchedSidTextsFromEvents（跨会话定位锚 DISPATCH-CARD-LOCATE
           },
         }),
       ]),
-    ).toEqual([{ sid: '2026-11-19-target', text: '请把加法算完' }]);
+    ).toEqual([{ sid: '2026-11-19-target', text: '请把加法算完', via: 'delegate' }]);
   });
 
   it('create_session 成功 → text 从 args、sid 从 summary；缺 text 时 text 为空串', () => {
@@ -302,7 +302,7 @@ describe('dispatchedSidTextsFromEvents（跨会话定位锚 DISPATCH-CARD-LOCATE
           },
         }),
       ]),
-    ).toEqual([{ sid: '2026-11-19-created', text: '新建后做减法' }]);
+    ).toEqual([{ sid: '2026-11-19-created', text: '新建后做减法', via: 'create' }]);
     // 缺 text：仍出卡（sid 有效），但定位锚为空串，点击退化看最新轮
     const noText = dispatchedSidTextsFromEvents([
       ev({
@@ -323,7 +323,7 @@ describe('dispatchedSidTextsFromEvents（跨会话定位锚 DISPATCH-CARD-LOCATE
         },
       }),
     ]);
-    expect(noText).toEqual([{ sid: '2026-11-19-x', text: '' }]);
+    expect(noText).toEqual([{ sid: '2026-11-19-x', text: '', via: 'create' }]);
   });
 
   it('受理失败 / 无 sid → 不产生锚；dispatchedSidsFromEvents 与之一致（单一真源）', () => {

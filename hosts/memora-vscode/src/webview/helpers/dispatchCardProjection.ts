@@ -31,6 +31,8 @@ export interface DispatchCardProjection {
   reset(): void;
   /** 用当前状态投影卡片到消息流（仅助手形态生效） */
   project(messages: HTMLElement): void;
+  /** sid → 会话标题（凭证条用；取自已推的会话快照，取不到返回 undefined，不编造） */
+  titleFor(sid: string): string | undefined;
 }
 
 /** 身份键带长度前缀，避免 sid/roundId 含分隔符时串键 */
@@ -79,6 +81,10 @@ export function createDispatchCardProjection(
       seen.clear();
       eventsByRound.clear();
       seqByRound.clear();
+    },
+    titleFor(sid) {
+      // 标题真源 = 宿主推来的会话快照（与卡片同源）；快照未到或会话已删 ⇒ undefined，由调用方决定降级
+      return sessions.find((s) => s.sid === sid)?.title;
     },
     project(messages) {
       if (!isAssistantForm()) return;

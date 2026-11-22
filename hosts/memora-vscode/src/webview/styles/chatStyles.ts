@@ -1036,7 +1036,10 @@ export const chatStyles = `
    * 刻意**不**挂进 .round-group__footer——助手形态底栏默认 opacity:0（hover 才显形），
    * 而本提示的全部价值是「被看见」，故作为容器的常显子元素、置于底栏之前。
    * 只由 dispatchReceiptHint.applyDispatchClaimHint（助手形态门控）插入，self 形态零 DOM。 */
-  .round-group__dispatch-hint {
+  /* 派发凭证 / 缺口提示共用位置族：轮容器内、底栏之前的常显子元素。
+   * 凭证（DISPATCH-RECEIPT-1）= 有回执的事实呈现；无回执的轮两个 class 都不出现。 */
+  .round-group__dispatch-hint,
+  .round-group__dispatch-receipt {
     margin-top: var(--sp-1, 4px);
     font-size: var(--font-sm, 11px);
     color: var(--text-secondary);
