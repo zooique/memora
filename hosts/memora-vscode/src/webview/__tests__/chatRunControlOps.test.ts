@@ -544,6 +544,9 @@ describe('完成门补派 — wakeDispatchRepair', () => {
       'actually call ${SEND_TO_SESSION_TOOL_NAME} (or ${CREATE_SESSION_TOOL_NAME})',
     );
     expect(src).not.toContain('actually call send_to_session (or create_session)');
+    // 种子只陈述系统见证的事实，不复述模型上轮的话术（防「我说过」记忆锚）
+    expect(src).toContain('ended without an accepted session-dispatch receipt');
+    expect(src).not.toContain('telling me the work had been dispatched');
   });
 });
 

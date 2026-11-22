@@ -72,7 +72,7 @@ description: 领域术语唯一定义处（turn / loop / step / planItem / round
 | **作品投影（workProjection）** | 项目级作品索引的一行（`.memora/work-projections.json`）：源文件相对路径 + 一句话描述 + 可选 `resident`。只读展示面 = 宿主设置面板「作品和规则」选项卡（2026-11-09 由侧边栏树迁入），单击行可打开原文件；**动作执行面** = `runWorkProjectionAction()`（动作集 `load\|open\|toggle\|unregister`），消费入口 = 文件右键 / QuickPick / 设置页行内按钮。登记**不在此执行面**（走 `agent.works.registerWork`）—— 「四入口共用执行面」是把两层折叠成一个词，勿再这样写 |
 | **项目规则（resident）** | 作品投影里 `resident === true` 的条目，正文每轮注入 system prompt。**严格布尔**：`"true"` / `1` 等一律视为未开启（fail-closed；误配进完整失效集但不进模型段首） |
 | **行为策略** | L2 策略层枚举项：角色的行为开关（理解确认 / 工具权限 / 记忆模式） |
-| **派活承诺对账（证据缺口提示）** | 助手正文声称已派活、本轮却查不到**会话派发**的业务受理回执（`send_to_session` / `create_session`）时，在助手形态轮尾显示的一句「本轮未核到会话派发回执」。只表达**证据缺口**，不是完成态判定；词表只作触发器、判据只认回执；`delegate_task` 不在回执口径内。不改正文 / `Round.status` / `metrics.success` |
+| **派活承诺对账（证据缺口提示）** | 助手正文声称已派活、**或本轮零 `tool_start`**，而本轮查不到**会话派发**的业务受理回执（`send_to_session` / `create_session`）时，在助手形态轮尾显示的一句「本轮未核到会话派发回执」。只表达**证据缺口**，不是完成态判定；触发器 = 派发词表 OR 零工具（词表抓不到换说法，零工具是结构化事实），判据只认回执；只审计 `origin='user'` 的轮（系统通知轮零工具是常态），自助形态不插；`delegate_task` 不在回执口径内。不改正文 / `Round.status` / `metrics.success` |
 | **预检停顿** | 回答前确认点：总结输入 → 提问确认 → 确认后进入回答中 |
 | **验收锚点** | 目标文档中的确定性检查项（文件存在 / 测试通过 / 清单勾选） |
 | **远期锚点** | 不实现、但约束接口形状的未来目标 |

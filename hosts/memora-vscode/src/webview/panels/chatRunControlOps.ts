@@ -472,13 +472,14 @@ export function createChatRunControlOps(deps: ChatRunControlOpsDeps): ChatRunCon
     wakeDispatchRepair(sessionId: string, sourceRoundId: string): boolean {
       // 只在托管会话里补派：与提示的助手形态同域，用户自建会话不打扰
       if (!deps.isManaged(sessionId)) return false;
-      // 种子只给「补派检查」口径：既不许复述旧承诺，也不许把「说了」当「做了」
+      // 种子只陈述系统见证的事实（本轮没有受理回执），不复述模型上轮的话术——
+      // 「你声称已派」会给模型一个「我确实说过」的记忆锚，反过来加固撒谎的形态。
       // 工具名插值真源（与回执判据 dispatchedSidTextsFromEvents 同源），不写死字面量
       const seedText = [
-        `You ended round ${sourceRoundId} telling me the work had been dispatched,`,
-        'but that round has no accepted session-dispatch receipt.',
-        `Do not restate it as done. Either actually call ${SEND_TO_SESSION_TOOL_NAME} (or ${CREATE_SESSION_TOOL_NAME}) for the session you named,`,
-        'or tell me plainly that it was not dispatched, and why.',
+        `Round ${sourceRoundId} ended without an accepted session-dispatch receipt.`,
+        'Do not treat the previous answer as evidence. If what I asked still needs an action,',
+        `actually call ${SEND_TO_SESSION_TOOL_NAME} (or ${CREATE_SESSION_TOOL_NAME}) with the right arguments;`,
+        'otherwise say plainly that no action was taken, and why.',
       ].join(' ');
       return startInternalSeedTurn(sessionId, `live-dispatch-repair-${sourceRoundId}`, seedText);
     },

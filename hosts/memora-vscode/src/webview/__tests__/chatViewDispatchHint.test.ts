@@ -3,7 +3,9 @@
  *
  * 被测事实：
  *   - 正文声称「已派给某会话」但本轮无业务受理回执 ⇒ 助手形态出现一句证据缺口提示；
+ *   - 正文换了说法（「会话已开 / 回执成功」）但本轮零 tool_start ⇒ 同样提示；
  *   - 有成功回执 / 回执业务失败两类分别「不提示 / 提示」；
+ *   - hosted 来源的零工具轮不提示（落定通知是常态，不是派活承诺）；
  *   - self 工作会话不插（与会话卡同构）；
  *   - 重放与实时共用同一谓词；同一轮多次 turn_update 只留一条。
  *
@@ -27,13 +29,14 @@ const HINT_TEXT = 'No session dispatch receipt found for this turn';
 /**
  * 构造单轮 RoundView（最小形状，够 renderReplayRound 与实时投影消费）
  *
- * @param over 覆盖项：id / 正文 / 过程事件 / 状态
+ * @param over 覆盖项：id / 正文 / 过程事件 / 状态 / 来源
  */
 function makeRound(over: {
   id: string;
   content: string;
   processEvents?: unknown[];
   status?: RoundView['status'];
+  origin?: RoundView['origin'];
 }): RoundView {
   return {
     id: over.id,
@@ -51,6 +54,7 @@ function makeRound(over: {
     },
     ...(over.processEvents ? { processEvents: over.processEvents as ProcessEvent[] } : {}),
     status: over.status ?? 'complete',
+    origin: over.origin ?? 'user',
     createdAt: '2026-11-21T06:00:00.000Z',
     completedAt: '2026-11-21T06:00:02.000Z',
   };
@@ -68,6 +72,22 @@ function dispatchReplay(view: RoundView): void {
     state: { phase: 'settled', roundId: view.id, status: view.status },
     replay: true,
   });
+}
+
+/** 一次只读查询的 tool_start（进了工具闭环，但没有派发回执） */
+function readonlyToolEvents(): unknown[] {
+  return [
+    {
+      type: 'tool_start',
+      seq: 0,
+      ts: '2026-11-21T06:00:01.000Z',
+      payload: {
+        toolCallId: 'c-read',
+        name: 'list_work_sessions',
+        args: '{}',
+      },
+    },
+  ];
 }
 
 /** 成功的 send_to_session 回执事件（业务 ok=true 的真实摘要形态） */
@@ -171,9 +191,39 @@ describe('派活承诺对账提示（DISPATCH-CLAIM-HINT-1）', () => {
     expect(document.querySelector(HINT_SELECTOR)).not.toBeNull();
   });
 
-  it('重放 · 助手形态：正文没有派发措辞 ⇒ 不提示（词表是触发器，不是完成判据）', () => {
+  it('重放 · 助手形态：有工具动作 + 正文没有派发措辞 ⇒ 不提示', () => {
     mountChatView('assistant');
-    dispatchReplay(makeRound({ id: 'no-claim', content: '已把三个版本的差异列在下面。' }));
+    dispatchReplay(
+      makeRound({
+        id: 'no-claim-with-tool',
+        content: '已把三个版本的差异列在下面。',
+        processEvents: readonlyToolEvents(),
+      }),
+    );
+    expect(document.querySelector(HINT_SELECTOR)).toBeNull();
+  });
+
+  it('重放 · 助手形态：换说法 + 零 tool_start ⇒ 提示（词表外的复发形态）', () => {
+    mountChatView('assistant');
+    dispatchReplay(
+      makeRound({
+        id: 'zero-tool-new-wording',
+        // 复刻复发轮 e4a18b0d：词表三词一个都不命中
+        content: '测试会话已开：「白话方案设计师 ask 测试」（挂在角色包下，回执成功）。',
+      }),
+    );
+    expect(document.querySelector(HINT_SELECTOR)).not.toBeNull();
+  });
+
+  it('重放 · 助手形态：hosted 零工具轮 ⇒ 不提示（落定通知是常态）', () => {
+    mountChatView('assistant');
+    dispatchReplay(
+      makeRound({
+        id: 'hosted-notice',
+        content: '有一条托管会话刚落定，结果如下。',
+        origin: 'hosted',
+      }),
+    );
     expect(document.querySelector(HINT_SELECTOR)).toBeNull();
   });
 
@@ -182,6 +232,13 @@ describe('派活承诺对账提示（DISPATCH-CLAIM-HINT-1）', () => {
     dispatchReplay(makeRound({ id: 'self-claim', content: '扩写任务已派给小说会话。' }));
     // 轮容器照常渲染，只是提示元素不插
     expect(document.querySelector('.round-group[data-round-id="self-claim"]')).not.toBeNull();
+    expect(document.querySelector(HINT_SELECTOR)).toBeNull();
+  });
+
+  it('重放 · self 形态：零工具轮同样不插（自助模式逻辑零改动）', () => {
+    mountChatView('self');
+    dispatchReplay(makeRound({ id: 'self-zero-tool', content: '测试会话已开，回执成功。' }));
+    expect(document.querySelector('.round-group[data-round-id="self-zero-tool"]')).not.toBeNull();
     expect(document.querySelector(HINT_SELECTOR)).toBeNull();
   });
 
@@ -225,8 +282,9 @@ describe('派活承诺对账提示（DISPATCH-CLAIM-HINT-1）', () => {
 /**
  * 完成门判据（DISPATCH-REPAIR-1）
  *
- * 与提示同源：同一词表 + 同一回执判据；额外排除内部种子轮（防补派检查自唤成环）。
- * 只判断「要不要起一轮补派」，不判断「模型一定会补」——它是概率修复，不是保证。
+ * 与提示同源：同一触发谓词（派发话术 OR 零 tool_start）+ 同一回执判据；额外排除
+ * 内部种子轮（防补派检查自唤成环）与 hosted 来源轮。只判断「要不要起一轮补派」，
+ * 不判断「模型一定会补」——它是概率修复，不是保证。
  */
 describe('完成门判据：何时自动起一轮补派检查', () => {
   /** 一次真实形状的成功派发事件对 */
@@ -275,6 +333,7 @@ describe('完成门判据：何时自动起一轮补派检查', () => {
     status: 'complete',
     assistantMessage: { content: '扩写任务已派给小说会话。' },
     userMessage: { name: 'memora宝' },
+    origin: 'user' as const,
     processEvents: [] as ProcessEvent[],
   };
 
@@ -303,12 +362,43 @@ describe('完成门判据：何时自动起一轮补派检查', () => {
     expect(shouldNudgeDispatchRepair({ ...base, status: 'interrupted' })).toBe(false);
   });
 
-  it('正文没有派发措辞 ⇒ 不触发', () => {
+  it('有工具动作 + 正文没有派发措辞 ⇒ 不触发', () => {
     expect(
       shouldNudgeDispatchRepair({
         ...base,
         assistantMessage: { content: '我把文件写好了。' },
+        processEvents: readonlyToolEvents() as ProcessEvent[],
       }),
     ).toBe(false);
+  });
+
+  it('换说法 + 零 tool_start + 用户轮 ⇒ 触发（复发形态）', () => {
+    expect(
+      shouldNudgeDispatchRepair({
+        ...base,
+        assistantMessage: { content: '测试会话已开，回执成功。' },
+      }),
+    ).toBe(true);
+  });
+
+  it('hosted 来源的零工具轮 ⇒ 不触发（落定通知不得起补派）', () => {
+    expect(
+      shouldNudgeDispatchRepair({
+        ...base,
+        assistantMessage: { content: '测试会话已开，回执成功。' },
+        origin: 'hosted',
+      }),
+    ).toBe(false);
+  });
+
+  it('origin 缺省（旧数据）按用户轮解释 ⇒ 触发', () => {
+    const legacy = { ...base };
+    delete (legacy as { origin?: string }).origin;
+    expect(
+      shouldNudgeDispatchRepair({
+        ...legacy,
+        assistantMessage: { content: '测试会话已开，回执成功。' },
+      }),
+    ).toBe(true);
   });
 });

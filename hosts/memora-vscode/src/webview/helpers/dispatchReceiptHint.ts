@@ -11,7 +11,11 @@
  *
  * 两个判据同源：
  *   - 回执：直接复用会话卡解析 `dispatchedSidTextsFromEvents`（SSOT，不写第二份配对逻辑）；
- *   - 措辞：窄词表（只作提示器输入，永远是启发式——换词 / 引用 / 假设 / 跨轮复述抓不全）。
+ *   - 触发：窄词表 OR 本轮零 `tool_start`。词表只抓它认得的派发说法，零工具分支抓
+ *     「换了说法但根本没调工具」的形态——两者的真源都是已落盘的结构化事实，不新增判据通道。
+ *
+ * 为什么保留词表分支：业务受理失败（内核 ok 但业务 ok=false）有 `tool_start`，零工具分支
+ * 看不见它；删掉词表分支就是拿新形态覆盖旧能力，属带伤。
  *
  * 呈现纪律：
  *   - 只助手形态（与盖章会话卡同构）；
@@ -21,7 +25,7 @@
  * 范围边界：只对 `status === 'complete'` 计算——中断轮是用户主动打断，正文可能半截，
  * 把半截断言当成「承诺」会明显增大误报；要放开须单独立项，不在此顺手扩。
  */
-import type { ProcessEvent } from '@zooique/memora';
+import type { ProcessEvent, Round } from '@zooique/memora';
 import * as l10n from '@vscode/l10n';
 import { isInternalSeedSender } from '../../shared/constants.js';
 import { dispatchedSidTextsFromEvents } from './processEventText.js';
@@ -51,7 +55,30 @@ export function hasDispatchClaim(assistantText: string | undefined): boolean {
   return DISPATCH_CLAIM_WORDS.some((word) => text.includes(word));
 }
 
-/** 完成门判据输入：只取判据需要的四个字段（Round 与测试替身同型） */
+/**
+ * 本轮是否零工具动作——结构化事实，真源 = `processEvents` 的 `tool_start`
+ *
+ * 不读正文：模型换了说法（「会话已开 / 回执成功」）词表一个词都不命中，但工具事件
+ * 有无是确定的。只认 `tool_start`：只读查询也算进了工具闭环，不再当「没动手」。
+ */
+function hasNoToolActivity(events: readonly ProcessEvent[]): boolean {
+  return !events.some((event) => event.type === 'tool_start');
+}
+
+/**
+ * 对账触发器：派发话术 OR 零工具动作
+ *
+ * 两个分支不可互相替代：前者保留业务受理失败（有 tool_start）的覆盖，后者覆盖
+ * 换词后词表失明的零工具轮。都不读用户原话，不新增词表、不新增落盘字段。
+ */
+function hasDispatchClaimOrNoToolActivity(
+  assistantText: string | undefined,
+  events: readonly ProcessEvent[],
+): boolean {
+  return hasDispatchClaim(assistantText) || hasNoToolActivity(events);
+}
+
+/** 完成门判据输入：只取判据需要的五个字段（Round 与测试替身同型） */
 export interface DispatchRepairInput {
   /** 轮终态（只有 complete 才参与对账） */
   status: string;
@@ -59,23 +86,26 @@ export interface DispatchRepairInput {
   assistantMessage?: { content?: string } | undefined;
   /** 用户消息（只读 name：识别内部种子轮，防补派检查自己再触发） */
   userMessage?: { name?: string } | undefined;
-  /** 进程事件（回执判据的唯一输入） */
+  /** 轮来源（零工具分支的门控：只审计用户发起的轮，系统通知轮零工具是常态） */
+  origin?: Round['origin'];
+  /** 进程事件（回执判据与零工具判据的唯一输入） */
   processEvents?: ProcessEvent[] | undefined;
 }
 
 /**
  * 完成门判据（DISPATCH-REPAIR-1）：这一轮是否该自动起一轮「补派检查」
  *
- * 与提示**同源**：同一措辞表（`hasDispatchClaim`）+ 同一回执判据
+ * 与提示**同源**：同一触发谓词（`hasDispatchClaimOrNoToolActivity`）+ 同一回执判据
  * （`dispatchedSidTextsFromEvents`），不写第二份。
  *
- * 三条排除：
+ * 四条排除：
  *   - 非 complete：中断 / 软暂停的正文可能半截，不当承诺；
  *   - 内部种子轮：补派检查自己也是内部种子，若再触发会无限自唤；
+ *   - 非用户来源：落定通知等 hosted 轮零工具是常态，不能拿它起补派；
  *   - 有受理回执：已派成功（含后续投递）不算缺口。
  *
- * 注意：这只是**概率修复**。词表抓不到换说法 / 引用 / 假设；它只负责「提醒模型去补」，
- * 绝不代替模型发送——真正的派发仍必须在补派轮里由模型调用工具完成。
+ * 注意：这只是**概率修复**。它只负责「提醒模型去补」，绝不代替模型发送——真正的
+ * 派发仍必须在补派轮里由模型调用工具完成。
  *
  * @param round 判据输入（只读，不改任何落盘状态）
  * @returns true = 需要起一轮补派检查
@@ -83,8 +113,11 @@ export interface DispatchRepairInput {
 export function shouldNudgeDispatchRepair(round: DispatchRepairInput): boolean {
   if (round.status !== 'complete') return false;
   if (isInternalSeedSender(round.userMessage?.name)) return false;
-  if (!hasDispatchClaim(round.assistantMessage?.content)) return false;
-  return dispatchedSidTextsFromEvents(round.processEvents ?? []).length === 0;
+  // 缺省按 'user' 解释，与协议 RoundView.origin 的存量兼容口径一致。
+  if ((round.origin ?? 'user') !== 'user') return false;
+  const events = round.processEvents ?? [];
+  if (!hasDispatchClaimOrNoToolActivity(round.assistantMessage?.content, events)) return false;
+  return dispatchedSidTextsFromEvents(events).length === 0;
 }
 
 /**
@@ -99,18 +132,24 @@ function hasAcceptedDispatchReceipt(events: readonly ProcessEvent[]): boolean {
 }
 
 /**
- * 提示谓词（实时 / 重放共用）：声称已派 且 本轮无成功回执
+ * 提示谓词（实时 / 重放共用）：对账触发 且 本轮无成功回执
  *
  * 无状态、每次从全量事件算，不做 seq 去重——重放 / 切会话结果一致。
+ * hosted 轮同样零工具，是系统通知而非用户派活，不能拿它插提示。
  *
  * @param assistantText 该轮终态正文
  * @param events 本轮过程事件
+ * @param origin 轮来源（缺省按 'user' 解释）
  */
 function shouldShowDispatchClaimHint(
   assistantText: string | undefined,
   events: readonly ProcessEvent[],
+  origin: Round['origin'],
 ): boolean {
-  return hasDispatchClaim(assistantText) && !hasAcceptedDispatchReceipt(events);
+  if ((origin ?? 'user') !== 'user') return false;
+  return (
+    hasDispatchClaimOrNoToolActivity(assistantText, events) && !hasAcceptedDispatchReceipt(events)
+  );
 }
 
 /**
@@ -142,6 +181,8 @@ export interface DispatchHintRound {
   id: string;
   /** 只对终态轮计算（中断轮不算「承诺已兑现」） */
   status: string;
+  /** 轮来源（零工具分支的门控，与完成门同源） */
+  origin?: Round['origin'];
   assistantMessage?: { content: string } | null;
   processEvents?: readonly ProcessEvent[];
 }
@@ -169,6 +210,10 @@ export function projectDispatchClaimHintInRound(
   applyDispatchClaimHint(
     doc,
     group,
-    shouldShowDispatchClaimHint(round.assistantMessage?.content, round.processEvents ?? []),
+    shouldShowDispatchClaimHint(
+      round.assistantMessage?.content,
+      round.processEvents ?? [],
+      round.origin,
+    ),
   );
 }
