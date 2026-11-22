@@ -81,9 +81,24 @@ function interjectAgentStub(items: string[]): Agent {
 interface HostCast {
   _agent: Agent;
   _view: unknown;
+  _sessionAgents: Map<string, Agent>;
+  /** 视图路由替身：只认 sid 绑定，捕获按会话投影的帧 */
+  _views: {
+    hasSession: (sessionId: string) => boolean;
+    post: (msg: unknown, primary: unknown, opts?: { sessionId?: string }) => unknown;
+  };
+  _flowGate: { run<T>(sessionId: string, fn: () => T): T };
   /** E4 批 1：原 _streaming / _abortController 单份字段已按会话命名空间化 */
   runtimeFor(sessionId?: string): { streaming: boolean; abortController?: AbortController };
-  sendInput(input: string, skillName?: string): Promise<void>;
+  sendInput(
+    input: string,
+    skillName?: string,
+    refs?: unknown,
+    injections?: unknown,
+    attachments?: unknown,
+    sessionId?: string,
+  ): Promise<void>;
+  syncPendingQueue(force?: boolean, sessionId?: string): void;
 }
 
 /** 装配：provider + postMessage 捕获 + resolveWebviewView 真实注册（路由驱动） */
@@ -209,5 +224,38 @@ describe('插话吸收时上屏 · 宿主出口（chatPanel）', () => {
     const h = setup(['甲补充']);
     h.receive({ type: 'remove_pending_item', index: 5 });
     expect(takeDiscarded(h.posted)).toBeNull();
+  });
+
+  it('助手会话 sid ≠ current：入队与消费在流内都按 sid 投影，给 webview 成对快照', async () => {
+    const sid = '2026-11-22-assistant';
+    const currentItems: string[] = [];
+    const sidItems: string[] = [];
+    const h = setup(currentItems);
+    h.cast._sessionAgents.set(sid, interjectAgentStub(sidItems));
+    h.cast.runtimeFor(sid).streaming = true;
+    h.cast.runtimeFor(sid).abortController = new AbortController();
+    // 先让侧栏会话投一个非空长度：单份缓存会据此把助手会话的入队误判成「长度未变」
+    currentItems.push('侧栏补充');
+    h.cast.syncPendingQueue(false);
+
+    const sidPosted: Array<Record<string, unknown>> = [];
+    h.cast._views = {
+      hasSession: (id) => id === sid,
+      post: (msg, _primary, opts) => {
+        if (opts?.sessionId === sid) sidPosted.push(msg as Record<string, unknown>);
+        return true;
+      },
+    };
+    await h.cast.sendInput('跨会话补充', undefined, undefined, undefined, undefined, sid);
+    // 消费发生在助手流的异步上下文里：旧「当前会话后台闸」会在此早退
+    h.cast._flowGate.run(sid, () => {
+      sidItems.length = 0;
+      h.cast.syncPendingQueue(false, sid);
+    });
+
+    const snapshots = sidPosted
+      .filter((m) => m.type === 'turn_update' && m.pendingQueue !== undefined)
+      .map((m) => m.pendingQueue);
+    expect(snapshots).toEqual([['跨会话补充'], []]);
   });
 });

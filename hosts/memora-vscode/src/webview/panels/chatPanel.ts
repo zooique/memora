@@ -450,9 +450,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       sessionId ? this.postTurnUpdateFor(sessionId) : this.postTurnUpdate(),
     runtimeFor: (sessionId) => this.runtimeFor(sessionId),
     askFor: (sessionId) => this.askFor(sessionId),
-    getAgent: (sessionId) =>
-      this._sessionAgents.get(sessionId) ??
-      (sessionId === this._currentSessionId ? this._agent : undefined),
+    getAgent: (sessionId) => this.agentFor(sessionId),
     currentSessionId: () => this.getCurrentSessionId(),
     isManaged: (id) => this.sessionModes.isManaged(id),
     runFlow: (factory, sessionId, seed) => this.runFlow(factory, seed, sessionId),
@@ -641,13 +639,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * `dispose()` 一次性解绑，避免监听器滞留（作用域自身保证只碰本面板那台实例）。
    */
   private readonly _noticeEventScope = new AgentEventScope();
-  /** 上次推送给 webview 的待发送区长度（长度变化才 post）；`undefined` = 从未投影过
+  /** 上次推送给 webview 的待发送区长度（按会话分片，长度变化才 post）；`undefined` = 从未投影过
    *  （agent 刚装配 / webview 重建）。与「已投影为空」是两种状态——折叠成 0 会让
    *  「从未投影过 + 清空到空」（如 resume 恢复后直接清）被长度守卫误拦，丢弃信号失去成对快照帧。
+   *  分片理由：助手窗会话与侧栏各有独立队列；单份缓存会让「长度未变」误吞另一会话的
+   *  入队 / 消费快照（live 补充输入不显示，关页重开才补齐）。
    *  背景：普通插话（thinking 态 interject）不触发 sessionResumed（resume 专有事件），
    *  队列消费后无「空通知」→ 待发送区弹窗残留；统一经 syncPendingQueue 长度变化检测，
    *  让「队列变空」这一真理源变化总能被推送（消费后必有后续 chunk 触发同步）。 */
-  private _lastPendingQueueLen: number | undefined = undefined;
+  private readonly _pendingQueueLens = new Map<string, number | undefined>();
   /**
    * 任务看板 / 后台任务 / 上下文占用三项快照投影（外置域，HOST-SPLIT-1 行数闸门）
    *
@@ -871,6 +871,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * 按会话取 Agent 实例（唯一入口）：显式表优先，当前显示会话回退 `this._agent`。
+   * 助手窗会话与侧栏并存时必须各取各的；同款表达式散点写会漂移（待发送区跨会话串台）。
+   */
+  private agentFor(sid: string): Agent | undefined {
+    return (
+      this._sessionAgents.get(sid) ?? (sid === this._currentSessionId ? this._agent : undefined)
+    );
+  }
+
+  /**
    * 取某会话的流运行态（缺省 = 当前会话）：同会话恒同一对象（引用相等），跨会话互不可见。
    * 批 1 调用方均为当前会话；批 2 起流内代码传显式 sessionId（防「流在 A、已切到 B」写错记录）。
    */
@@ -1089,8 +1099,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         this.post(fallbackNotice);
       }
     }
-    // 换 agent = 投影源切换（SSOT）：重置队列长度缓存，防旧会话残留致「长度未变」误判不推送（新 agent 首 sync 必推）
-    this._lastPendingQueueLen = undefined;
+    // 换 agent = 投影源切换（SSOT）：清空队列长度缓存，防旧会话残留致「长度未变」误判不推送（新 agent 首 sync 必推）
+    this._pendingQueueLens.clear();
     // 与 ensureAgent 懒装配路径同收口：注入即绑定（bindAgentNoticeEvents 内部先 off 再 on，幂等）
     this.bindAgentNoticeEvents();
     // 绑定路径守卫安全审计订阅（幂等，先取消旧订阅再绑新）
@@ -1137,9 +1147,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
   /** 推送三源技能清单到 chatView（composer 动态下拉 SSOT：与设置面板共用 listVisibleSkills） */
   private pushSkillList(sessionId: string = this._currentSessionId): void {
-    const agent =
-      this._sessionAgents.get(sessionId) ??
-      (sessionId === this._currentSessionId ? this._agent : undefined);
+    const agent = this.agentFor(sessionId);
     if (!agent || !this._configDir) return;
     // 顺带回种钉住技能名（只有 name，不带 DTO）：显示态由同批 skills 现查（禁用优先）
     const pinnedName = pinned.pinnedNameOfStore(this.sessionStore, sessionId);
@@ -2021,9 +2029,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 因此这里命中的通常是已装配实例。
    */
   private async ensureAgentForSession(sessionId: string): Promise<Agent | undefined> {
-    const existing =
-      this._sessionAgents.get(sessionId) ??
-      (sessionId === this._currentSessionId ? this._agent : undefined);
+    const existing = this.agentFor(sessionId);
     if (existing) return existing;
     if (!sessionId || !this._getAgent) return undefined;
     try {
@@ -2306,8 +2312,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     postTurnUpdate: (sid, live, replay) => this.postTurnUpdateFor(sid, live, replay),
     legacyHistory: (sid) => loadMessagesHistory(this.sessionStore, sid),
     titleFor: (sid) => sessionTitleFor(this.sessionStore, sid, vscode.l10n),
-    agentFor: (sid) =>
-      this._sessionAgents.get(sid) ?? (sid === this._currentSessionId ? this._agent : undefined),
+    agentFor: (sid) => this.agentFor(sid),
     activeRolePack: () => this._activeRolePack,
     readRolePack: (sid) => readSessionRolePackName(this.sessionStore, sid),
     postRolePack: (name, agent, sid) => this.postActiveRolePack(name, agent, sid),
@@ -2515,9 +2520,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * （本文件逼近 max-lines 基线、只降不升，纯投影不占行数）。
    */
   private pushRolePacks(sessionId: string = this._currentSessionId): void {
-    const agent =
-      this._sessionAgents.get(sessionId) ??
-      (sessionId === this._currentSessionId ? this._agent : undefined);
+    const agent = this.agentFor(sessionId);
     this.postToSession(
       sessionId,
       buildChatRolePacks(
@@ -2713,9 +2716,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 没有视图在看这条会话 ⇒ 不投影（后台代理会话的 IO 不白做；助手窗绑定它时照常投）
     if (!this.viewsMayShow(sessionId)) return;
     // 本会话实例：非显示会话没有 `_agent` 投影，按本地投影表取（生产由 agentForSession 保证命中）
-    const agent =
-      this._sessionAgents.get(sessionId) ??
-      (sessionId === this._currentSessionId ? this._agent : undefined);
+    const agent = this.agentFor(sessionId);
     const history = this._viewLoader
       ? loadRoundBasedHistory(this._viewLoader, this.sessionStore, sessionId)
       : [];
@@ -2959,9 +2960,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     sessionId: string = this._currentSessionId,
   ): Promise<void> {
     // 防御守卫（单一路由下 handleInput 已前置检查 Agent 就绪；此处局部收窄供 TS 控制流使用）
-    const agent =
-      this._sessionAgents.get(sessionId) ??
-      (sessionId === this._currentSessionId ? this._agent : undefined);
+    const agent = this.agentFor(sessionId);
     if (!agent) return;
     // 图片只随**新轮**发出（D13）+ IMG-8 三维限额兜底（同判据 shared/imageTurnLimits）：
     // 续接通道（插话/回答/暂停补充）内核不收 attachments ⇒ 整条拒发；新轮查张数/总字节/token。
@@ -3015,8 +3014,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         );
         return;
       }
-      // 待发送区刷新只属侧栏当前会话（宿主单份长度缓存，跨会话写会失真）
-      if (sessionId === this._currentSessionId) this.syncPendingQueue();
+      // 待发送区按本流会话投影：助手窗会话（sid ≠ current）同样要投——否则入队快照到不了
+      // 绑定视图，消费后 webview diff 无 prev 可比对，补充气泡永不出现（关页重放才补齐）。
+      this.syncPendingQueue(false, sessionId);
       return;
     }
     // ask 等待期：composer 的单条文本不是合法答题载荷——内核 answerQuestion 按序一对一，
@@ -3464,9 +3464,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         }
         // 待发送区同步（SSOT，防弹窗残留）：step 边界推进 = 队列消费的直接信号
         // ——interject 在 _handleInterrupt splice(0) 消费后，本 for-await 必然收到下一个 chunk，
-        // 此刻从内核读队列（已变空）→ 长度变化 → post 空 items → webview 隐藏待发送区。
-        // 普通插话（thinking 态 interject）不触发 sessionResumed，此处是它的唯一清空时机。
-        this.syncPendingQueue();
+        // 此刻从内核读本会话队列（已变空）→ 长度变化 → post 空 items → webview 隐藏待发送区
+        // 并把消失条目上屏为补充气泡。普通插话不触发 sessionResumed，此处是唯一清空时机。
+        this.syncPendingQueue(false, sessionId);
         // turn 边界检测 + 托管开轮输入随轮上屏（逻辑外置在 sessionRuntime，panel 只接线）
         const turnBoundary = advanceTurnBoundary(liveBuffer, chunk.roundId);
         if (turnBoundary.began) metaEmittedForRound = false;
@@ -3970,29 +3970,31 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._snapshots.postOccupancy();
   }
 
-  /** 待发送区同步守卫：
+  /** 待发送区同步守卫（按目标会话投影）：
    *  真理源 = 内核 queue（loop.pendingInterjections），宿主只做「长度变化检测」。
-   *  队列长度变化 → 触发 `postTurnUpdate()`（其内部读内核队列快照 → `turn_update.pendingQueue`），
-   *  不单发 `pending_queue_update`（统一走 turn_update 单通道）。
+   *  队列长度变化 → 触发 `postTurnUpdateFor(sessionId)`（其内部读该会话队列快照 →
+   *  `turn_update.pendingQueue`），不单发 `pending_queue_update`（统一走 turn_update 单通道）。
+   *  投送判据 = `viewsMayShow(sessionId)`：有视图绑这条会话就投（助手窗后台流照常收），
+   *  无视图不白做 IO；不再用「当前会话是不是后台流」近似，后者会把助手窗流挡在门外。
    *  清空时机不能只绑 sessionResumed（那是 resume 专有事件，普通插话不触发 →
    *  队列消费后无「空通知」→ 待发送区弹窗残留）；本守卫由调用方（入队/清空/删除/step 边界后 chunk）
    *  统一调用，队列变空必然触发长度变化 → post 空 pendingQueue → webview 隐藏。 */
-  private syncPendingQueue(force = false): void {
-    // 后台流不触碰 `_lastPendingQueueLen`（宿主单份缓存）：写入即让当前会话的「长度未变」
-    // 判据失真，表现为待发送区该刷新时不刷新（该形态无测试会红）
-    if (!this._agent || this.isBackgroundFlow()) return;
+  private syncPendingQueue(force = false, sessionId: string = this._currentSessionId): void {
+    if (!this.viewsMayShow(sessionId)) return;
+    const agent = this.agentFor(sessionId);
     // optional 调用：consumeFlow 主循环每 chunk 同步，测试桩可能缺该方法
     // （chatPanelHistory 的 mock agent 不实现 getPendingInterjections）——缺则跳过不阻断流
-    const items = this._agent.getPendingInterjections?.() ?? [];
+    const items = agent?.getPendingInterjections?.() ?? [];
     // 长度未变不重复投影（同一队列状态不刷屏）；入队/消费/清空/删除均改变长度 → 必触发一次。
     // `undefined`（从未投影过）恒不等于任何长度 → 首次 sync 恒推，覆盖「resume 恢复队列后
     // 直接清空」等从未投影场景——丢弃信号的成对快照帧不因长度恰好归零而丢失。
     // `force`：停止路径必须**无条件**重投影相位（队列长度未变时也要推），见 handleStop 尾注。
-    if (!force && items.length === this._lastPendingQueueLen) return;
-    this._lastPendingQueueLen = items.length;
+    const last = this._pendingQueueLens.get(sessionId);
+    if (!force && items.length === last) return;
+    this._pendingQueueLens.set(sessionId, items.length);
     // 不单发 pending_queue_update，由 turn_update.pendingQueue 统一承载
     // （此处不必传 live——待发送区是 turn 级展示，历史轮足够定位渲染输入）。
-    this.postTurnUpdate();
+    this.postTurnUpdateFor(sessionId);
   }
 
   /**
