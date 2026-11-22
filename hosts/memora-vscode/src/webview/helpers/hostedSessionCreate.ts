@@ -16,8 +16,8 @@ import * as vscode from 'vscode';
 import { logger } from '@zooique/memora';
 import type { Agent, AgentChunk, RoundMessage } from '@zooique/memora';
 import type { CreateSessionResult } from '../../extension/host/workSessionTools.js';
-// 派活账本（判据 C）：新建会话也入账，核销同样等目标轮的系统落定回程
-import { recordDispatchLedger } from '../../extension/host/dispatchLedger.js';
+// 派活账本（判据 C）：新建会话也入账；记账必须先于起流，起流失败要补 aborted 终态
+import { abortDispatchLedger, recordDispatchLedger } from '../../extension/host/dispatchLedger.js';
 
 // 本模块错误文案走 l10n（与面板同一套键面）
 const { l10n } = vscode;
@@ -142,30 +142,9 @@ export async function createHostedSessionWith(
   // 登记必须早于 startFlow（首轮流可能立即失败/被停，见 onCreated 注释）
   deps.onCreated?.(sessionId, callingSessionId);
   const agent = await deps.getAgent(sessionId);
-  await deps.startFlow(
-    sessionId,
-    // 第三参 undefined 与既有 chat 调用形态一致（缺口为「未指定工具白名单」）；
-    // dispatchedBy 记「谁开的这条会话」，与派发（send_to_session）在盘上可分辨
-    (signal) =>
-      agent.chat(text, signal, undefined, {
-        origin: 'hosted',
-        senderName,
-        dispatchedBy: { from: callingSessionId, via: 'create' },
-      }),
-    {
-      userMessage: {
-        // id 用毫秒时间戳（ISO 带冒号，不宜进 id）；timestamp 用 ISO（与 RoundMessage 同型）
-        id: `live-hosted-${sessionId}-${Date.now()}`,
-        role: 'user',
-        content: text,
-        timestamp: new Date().toISOString(),
-        name: senderName,
-      },
-      origin: 'hosted',
-    },
-  );
-  // 旁路记账：首轮已交给目标会话（受理成功）才入账；失败路径前面已 return。
-  // 账本写坏只 warn，绝不让已成功的建会话变成失败。
+  // 旁路记账必须先于 startFlow（缺陷 2 的直接修法）：首轮从起流到落定可能极快，
+  // 晚记会让 settle 落在 dispatch 之前，账本按行序配对时就找不到主人。
+  // sid 此时已确定；账本写坏只 warn，绝不让已成功的建会话变成失败。
   try {
     const projectPath = deps.projectPath?.();
     if (projectPath) {
@@ -179,6 +158,47 @@ export async function createHostedSessionWith(
     }
   } catch (err) {
     logger.warn({ err, sessionId, callingSessionId }, '派活账本记账失败（不影响建会话）');
+  }
+  try {
+    await deps.startFlow(
+      sessionId,
+      // 第三参 undefined 与既有 chat 调用形态一致（缺口为「未指定工具白名单」）；
+      // dispatchedBy 记「谁开的这条会话」，与派发（send_to_session）在盘上可分辨
+      (signal) =>
+        agent.chat(text, signal, undefined, {
+          origin: 'hosted',
+          senderName,
+          dispatchedBy: { from: callingSessionId, via: 'create' },
+        }),
+      {
+        userMessage: {
+          // id 用毫秒时间戳（ISO 带冒号，不宜进 id）；timestamp 用 ISO（与 RoundMessage 同型）
+          id: `live-hosted-${sessionId}-${Date.now()}`,
+          role: 'user',
+          content: text,
+          timestamp: new Date().toISOString(),
+          name: senderName,
+        },
+        origin: 'hosted',
+      },
+    );
+  } catch (err) {
+    // 起流失败 = 这笔派发永远不会有轮落定。必须补一条 aborted 终态，
+    // 否则记账前移后它只会停在 pending，一小时后被误判成悬空——同样是撒谎。
+    // 写终态本身失败也只 warn：不能让原始起流错误被账本错误盖掉。
+    try {
+      const projectPath = deps.projectPath?.();
+      if (projectPath) {
+        abortDispatchLedger(projectPath, { targetSessionId: sessionId });
+      }
+    } catch (abortErr) {
+      logger.warn(
+        { abortErr, sessionId, callingSessionId },
+        '派活账本中止留痕失败（不影响失败返回）',
+      );
+    }
+    // 保持既有失败语义：起流错误继续向上抛给调用方
+    throw err;
   }
   logger.info({ sessionId, callingSessionId, title }, '工作会话创建成功');
   return { ok: true, sid: sessionId, title };

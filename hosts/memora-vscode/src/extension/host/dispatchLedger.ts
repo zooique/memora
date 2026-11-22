@@ -20,7 +20,14 @@
  * 文件 = `<项目>/.memora/dispatch-ledger.jsonl`（目录经 `projectDataDir.ts` 单点推导）。
  * 两类事件各占一行：
  *   - `dispatch`：受理成功时追加（kind / 调用方 / 目标 / 标题 / 原文前缀 / 时刻）；
- *   - `settle`：目标轮落定时追加（targetSid / roundId / outcome / 时刻）。
+ *   - `settle`：有结局时追加（targetSid / roundId / outcome / 时刻）。
+ *
+ * 事件配对只认**文件行序**：JSONL 是 append-only，行顺序就是事件的真实顺序；
+ * `createdAt` / `settledAt` 只给人看，**不参与匹配**——时间戳表达「什么时候」，
+ * 不表达「先后」，跨进程或高精度并写时会骗人（真机曾出现 settle 早于 dispatch 的假象）。
+ * 另有两条写侧铁律：
+ *   - 无主 settle（同目标没有任何在途 dispatch）**不写**——账本里不该出现无主事件；
+ *   - 起流未成立的派发必须补写 `outcome: 'aborted'` 终态，否则一小时后会被误判悬空。
  *
  * 为什么不是整份 JSON 读改写：同一项目的多个 VS Code 窗口可同时写这份账，
  * 「读旧副本 → 改 → 整份覆盖」会让后写者吞掉先写者的账；追加写没有这个覆盖窗口。
@@ -57,8 +64,14 @@ export type DispatchLedgerKind = 'send' | 'create';
 /** 派活状态：在途 / 已核销 / 悬空（悬空是查询时按超时窗推导出来的） */
 export type DispatchLedgerStatus = 'pending' | 'settled' | 'orphaned';
 
-/** 核销结论（与通知器的落定三档同源，不另造第四档） */
-export type DispatchLedgerOutcome = 'success' | 'failed' | 'interrupted';
+/**
+ * 核销结论
+ *
+ * 前三档 = 通知器系统落定回程给出的结论（同一份判定，不在宿主另判一次）；
+ * `aborted` = 派发侧自身未起流（create 的 `startFlow` 抛错），没有轮可落定，
+ * 但也必须留下结局，否则这笔 pending 会在超时后被误判成悬空。
+ */
+export type DispatchLedgerOutcome = 'success' | 'failed' | 'interrupted' | 'aborted';
 
 /** 受理时写入账本的字段（不含状态；状态由 settle 事件 / 查询时推导） */
 export interface DispatchLedgerDispatchInput {
@@ -146,7 +159,8 @@ type DispatchLedgerEvent =
   | {
       type: 'settle';
       targetSessionId: string;
-      roundId: string;
+      /** 目标收场轮 id（系统落定必带；`aborted` 没有轮，故意缺省） */
+      roundId?: string;
       outcome: DispatchLedgerOutcome;
       settledAt: string;
     };
@@ -194,20 +208,56 @@ export function recordDispatchLedger(
  * 只由 `HostedSessionNotifier` 的落定回程调用；调用方不得拿模型发言、
  * 轮状态字符串或 UI 事件来核销。
  *
+ * **无主不写**：同一目标上找不到未结 dispatch 时直接返回——判在写之前，
+ * 不靠读侧过滤。零派发的普通对话轮走的就是这条路径，账本零新增。
+ *
  * @param projectPath 项目 / 工作区根
  * @param input 落定事实（目标 sid / roundId / 结论）
+ * @returns true = 真的追加了一条核销事件；false = 无主 / 参数不全，未写
  */
 export function settleDispatchLedger(
   projectPath: string,
   input: DispatchLedgerSettlementInput,
-): void {
+): boolean {
   // roundId 是核销的硬凭据：没有它就不是系统落定事件，宁可不记也不猜
-  if (!input.targetSessionId || !input.roundId) return;
-  appendLedgerEvent(projectPath, {
+  if (!input.targetSessionId || !input.roundId) return false;
+  return appendSettlementIfPending(projectPath, {
     type: 'settle',
     targetSessionId: input.targetSessionId,
     roundId: input.roundId,
     outcome: input.outcome,
+    settledAt: input.settledAt ?? new Date().toISOString(),
+  });
+}
+
+/** 派发中止入参（起流未成立：没有轮、没有 roundId，只有目标） */
+export interface DispatchLedgerAbortInput {
+  /** 起流失败的目标会话 id */
+  targetSessionId: string;
+  /** 中止时刻（缺省 = 现在；测试可注入固定值） */
+  settledAt?: string;
+}
+
+/**
+ * 给一笔「已记账但起流失败」的派发补终态（`outcome: 'aborted'`）
+ *
+ * 为什么必须做：`create` 的记账已前移到 `startFlow` 之前；若起流抛错，
+ * 这笔 pending 永远不会收到轮落定，一小时后会被查询侧误判成 `orphaned`——
+ * 那等于把「失败被标悬空」，同样是撒谎。写一条终态让它有结局。
+ *
+ * 同样受「无主不写」约束：没有对应 pending 时不追加（例如记账本身也失败了）。
+ *
+ * @param projectPath 项目 / 工作区根
+ * @param input 中止事实（目标 sid）
+ * @returns true = 真的追加了一条终态事件；false = 无在途 / 未写
+ */
+export function abortDispatchLedger(projectPath: string, input: DispatchLedgerAbortInput): boolean {
+  if (!input.targetSessionId) return false;
+  return appendSettlementIfPending(projectPath, {
+    type: 'settle',
+    targetSessionId: input.targetSessionId,
+    // aborted 没有目标轮，刻意不带 roundId（真落定的硬凭据仍然必须带）
+    outcome: 'aborted',
     settledAt: input.settledAt ?? new Date().toISOString(),
   });
 }
@@ -217,9 +267,9 @@ export function settleDispatchLedger(
  *
  * 折叠规则：
  *   - `dispatch` 生成一条 pending 记录；
- *   - `settle` 按 targetSid 匹配**最早的**未结记录（同一目标同一时刻最多一条在飞，
- *     因为目标在跑时再次派发会被 E_BUSY 拒），把它改成 settled；
- *   - 匹配不上任何 pending 的 settle（账本启用前的老落定 / 用户手工轮）直接忽略；
+ *   - `settle` 按**文件行序**匹配同一 target 上**第一条未结**的 dispatch
+ *     （行序才是事件顺序；时间戳不参与判定）；
+ *   - 匹配不上任何 pending 的 settle 直接忽略——写侧已拦无主事件，这里是旧账容错；
  *   - 剩余 pending 超过超时窗 ⇒ 输出时定性为 orphaned，但不回写盘。
  *
  * @param projectPath 项目 / 工作区根
@@ -230,46 +280,7 @@ export function readDispatchLedger(
   projectPath: string,
   query: DispatchLedgerQuery = {},
 ): DispatchLedgerRecord[] {
-  const events = readLedgerEvents(projectPath);
-  /** 受理记录（按文件顺序，等价于受理顺序） */
-  const records: DispatchLedgerRecord[] = [];
-  /** settle 事件（单独收集后按 settledAt 升序应用，容忍跨窗口追加交错） */
-  const settlements: Extract<DispatchLedgerEvent, { type: 'settle' }>[] = [];
-
-  for (const event of events) {
-    if (event.type === 'settle') {
-      settlements.push(event);
-      continue;
-    }
-    records.push({
-      id: event.id,
-      kind: event.kind,
-      callerSessionId: event.callerSessionId,
-      targetSessionId: event.targetSessionId,
-      targetTitle: event.targetTitle,
-      text: event.text,
-      ...(event.callerRoundId ? { callerRoundId: event.callerRoundId } : {}),
-      createdAt: event.createdAt,
-      status: 'pending',
-    });
-  }
-
-  // 按落定时刻升序应用（同一时刻保持文件顺序）：先结的账先占位，避免追加交错时错配
-  settlements.sort((a, b) => (a.settledAt < b.settledAt ? -1 : a.settledAt > b.settledAt ? 1 : 0));
-  for (const settlement of settlements) {
-    // 只核销「落定时刻之前已受理、且尚未核销」的同目标记录里最早的一条
-    const target = records.find(
-      (record) =>
-        record.targetSessionId === settlement.targetSessionId &&
-        record.status === 'pending' &&
-        record.createdAt <= settlement.settledAt,
-    );
-    if (!target) continue;
-    target.status = 'settled';
-    target.settledAt = settlement.settledAt;
-    target.roundId = settlement.roundId;
-    target.outcome = settlement.outcome;
-  }
+  const records = foldLedgerEvents(readLedgerEvents(projectPath));
 
   // 悬空只影响读出的状态，不写回盘：同一份账在不同时刻读到不同结论是预期行为
   const now = query.now ?? Date.now();
@@ -290,6 +301,71 @@ export function readDispatchLedger(
       query.targetSessionId ? record.targetSessionId === query.targetSessionId : true,
     )
     .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+}
+
+/**
+ * 按文件行序折叠事件（读路径与写侧护栏共用同一份配对判据）
+ *
+ * 为什么不能用时间戳：`createdAt` / `settledAt` 表达「什么时候」，
+ * 不表达「先后」；跨进程或高精度并写时会出现 settle 的 `settledAt` 早于
+ * dispatch 的 `createdAt`（真机缺陷 2）。JSONL 是 append-only，行顺序就是事件顺序。
+ *
+ * @param events 文件顺序的事件列表
+ * @returns pending / settled 记录（未做悬空推导）
+ */
+function foldLedgerEvents(events: DispatchLedgerEvent[]): DispatchLedgerRecord[] {
+  /** 受理记录（push 顺序 = 文件行序） */
+  const records: DispatchLedgerRecord[] = [];
+  for (const event of events) {
+    if (event.type === 'dispatch') {
+      records.push({
+        id: event.id,
+        kind: event.kind,
+        callerSessionId: event.callerSessionId,
+        targetSessionId: event.targetSessionId,
+        targetTitle: event.targetTitle,
+        text: event.text,
+        ...(event.callerRoundId ? { callerRoundId: event.callerRoundId } : {}),
+        createdAt: event.createdAt,
+        status: 'pending',
+      });
+      continue;
+    }
+    // 行序即事件顺序：同一 target 上第一条仍在途的 dispatch 就是这次终态的对象
+    const target = records.find(
+      (record) => record.targetSessionId === event.targetSessionId && record.status === 'pending',
+    );
+    if (!target) continue;
+    target.status = 'settled';
+    target.settledAt = event.settledAt;
+    target.outcome = event.outcome;
+    // aborted 没有轮；真落定才有 roundId
+    if (event.roundId) target.roundId = event.roundId;
+  }
+  return records;
+}
+
+/**
+ * 写侧护栏：有在途才允许追加终态事件（「判在写之前」）
+ *
+ * 账本里压根不该出现无主事件：零派发的普通对话轮、账本启用前的老落定、
+ * 用户手工轮，都必须在写入前被拦住，而不是留给读侧过滤。
+ *
+ * @param projectPath 项目 / 工作区根
+ * @param settlement 待追加的终态事件
+ * @returns true = 已追加；false = 无在途 / 读失败，未写
+ */
+function appendSettlementIfPending(
+  projectPath: string,
+  settlement: Extract<DispatchLedgerEvent, { type: 'settle' }>,
+): boolean {
+  const hasPending = foldLedgerEvents(readLedgerEvents(projectPath)).some(
+    (record) =>
+      record.targetSessionId === settlement.targetSessionId && record.status === 'pending',
+  );
+  if (!hasPending) return false;
+  appendLedgerEvent(projectPath, settlement);
+  return true;
 }
 
 /**
@@ -372,11 +448,14 @@ function isLedgerEvent(value: unknown): value is DispatchLedgerEvent {
   if (event.type === 'settle') {
     return (
       typeof event.targetSessionId === 'string' &&
-      typeof event.roundId === 'string' &&
+      (event.roundId === undefined || typeof event.roundId === 'string') &&
       (event.outcome === 'success' ||
         event.outcome === 'failed' ||
-        event.outcome === 'interrupted') &&
-      typeof event.settledAt === 'string'
+        event.outcome === 'interrupted' ||
+        event.outcome === 'aborted') &&
+      typeof event.settledAt === 'string' &&
+      // 真落定必须带轮；aborted 没有轮，是唯一允许缺省 roundId 的结论
+      (event.outcome === 'aborted' || typeof event.roundId === 'string')
     );
   }
   return false;

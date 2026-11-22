@@ -399,6 +399,7 @@ export class HostedSessionNotifier {
     // 派活账本核销（判据 C）：系统落定事实成立即核销，与「要不要通知创建者」解耦。
     // 必须放在 resolveTarget 之前——创建者不可通知时它会返回 undefined，
     // 但目标轮已落定的事实仍然成立，账本不能因此永远停在 pending。
+    // 无在途派发的轮（普通对话）由账本内部先判空再写，这里无需预判。
     if (!this.settlementRecorded.has(key)) {
       this.settlementRecorded.add(key);
       const projectPath = this.deps.projectPath?.();

@@ -20,6 +20,8 @@ vi.mock('vscode', () => ({
 
 import { createHostedSessionWith, type HostedSessionCreateDeps } from '../hostedSessionCreate.js';
 import { newSessionMeta } from '../newSessionMeta.js';
+import { makeTempDir } from '../../../__tests__/helpers/tmpDir.js';
+import { readDispatchLedger } from '../../../extension/host/dispatchLedger.js';
 
 /** 建会话依赖替身：只记录调用，不碰会话文件 */
 function makeDeps(overrides: Partial<HostedSessionCreateDeps> = {}): {
@@ -98,5 +100,62 @@ describe('newSessionMeta · workOrder 与 workStatus 落盘补丁', () => {
     expect(patch.origin).toBe('user');
     expect('workOrder' in patch).toBe(false);
     expect('workStatus' in patch).toBe(false);
+  });
+});
+
+describe('createHostedSessionWith · 派活账本时序（缺陷 2 回归）', () => {
+  it('记账早于 startFlow：起流被调用时账本里已有 dispatch', async () => {
+    const dir = makeTempDir('memora-create-ledger-');
+    /** 起流瞬间读到的账本条数（证明 dispatch 已落盘） */
+    let rowsAtFlowStart = -1;
+    const { deps } = makeDeps({
+      projectPath: () => dir,
+      startFlow: () => {
+        rowsAtFlowStart = readDispatchLedger(dir).length;
+      },
+    });
+
+    const result = await createHostedSessionWith(
+      deps,
+      'calling',
+      'writer',
+      '标题',
+      '正文',
+      'Memora',
+      [],
+    );
+
+    expect(result.ok).toBe(true);
+    expect(rowsAtFlowStart).toBe(1);
+    expect(readDispatchLedger(dir)[0]).toMatchObject({
+      kind: 'create',
+      targetSessionId: 'sid-fixed',
+      status: 'pending',
+    });
+  });
+
+  it('startFlow 抛错 → 落 aborted 终态，超时后也不会被判悬空', async () => {
+    const dir = makeTempDir('memora-create-ledger-');
+    const { deps } = makeDeps({
+      projectPath: () => dir,
+      startFlow: () => {
+        throw new Error('flow-boom');
+      },
+    });
+
+    await expect(
+      createHostedSessionWith(deps, 'calling', 'writer', '标题', '正文', 'Memora', []),
+    ).rejects.toThrow('flow-boom');
+
+    // now 放到远未来：aborted 是终态，不能被超时窗改判成 orphaned
+    const rows = readDispatchLedger(dir, { now: Date.parse('2030-01-01T00:00:00.000Z') });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      kind: 'create',
+      targetSessionId: 'sid-fixed',
+      status: 'settled',
+      outcome: 'aborted',
+    });
+    expect(rows[0].roundId).toBeUndefined();
   });
 });
