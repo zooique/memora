@@ -8,7 +8,8 @@
  * 变异靶标：
  *   - noteRound 改回 sid 单键后到覆盖 ⇒ 「同会话两轮两卡」用例红；
  *   - noteRound 按 sid 全局去重 ⇒ 同一会话第二轮卡丢失，红；
- *   - setSnapshot 直接造卡（不看 turn 表）⇒ 「只有快照不出卡」红；
+ *   - 不在跑也无轮锚却仍造卡 ⇒ 「不凭存在性编卡」红；
+ *   - running 会话无轮锚时不造卡 ⇒ 「turn 起流即出卡」与「回执到位重排」两条红；
  *   - reset 不清 ⇒ 跨会话残留红；project 去 form 门 ⇒ self 出卡红。
  */
 // @vitest-environment jsdom
@@ -66,12 +67,38 @@ function cardsOf(m: HTMLElement, sid: string): HTMLElement[] {
 }
 
 describe('createDispatchCardProjection 盖章卡投影状态', () => {
-  it('只有会话快照不出卡：卡身份来自具体 turn，不凭存在性编卡', () => {
+  it('只有快照、又不在跑 ⇒ 不出卡：不凭存在性编卡（旧边界保留）', () => {
     const p = createDispatchCardProjection(() => true);
     const m = messages();
-    p.setSnapshot([{ sid: 's1', title: '会话一', via: 'delegate' }], ['s1']);
+    p.setSnapshot([{ sid: 's1', title: '会话一', via: 'delegate' }], []);
     p.project(m);
     expect(m.querySelector('.dispatch-session-card')).toBeNull();
+  });
+
+  it('DISPATCH-CARD-LIVE-1：快照 + 正在跑 + 无轮锚 ⇒ 先出无锚卡，不等 tool_result', () => {
+    const p = createDispatchCardProjection(() => true);
+    const m = messages();
+    p.setSnapshot([{ sid: 's1', title: '会话一', via: 'create' }], ['s1']);
+    p.project(m);
+    const cards = cardsOf(m, 's1');
+    expect(cards).toHaveLength(1);
+    expect(cards[0].getAttribute('data-dispatch-round')).toBeNull();
+    expect(cards[0].classList.contains('is-running')).toBe(true);
+  });
+
+  it('DISPATCH-CARD-LIVE-1：回执到位后按轮重排，不留下第二张卡', () => {
+    const p = createDispatchCardProjection(() => true);
+    const m = messages();
+    p.setSnapshot([{ sid: 's1', title: '会话一', via: 'create' }], ['s1']);
+    p.project(m);
+    expect(cardsOf(m, 's1')).toHaveLength(1);
+    expect(p.noteRound('r2', sendEvents('s1'))).toBe(true);
+    p.project(m);
+    const cards = cardsOf(m, 's1');
+    expect(cards).toHaveLength(1);
+    expect(cards[0].getAttribute('data-dispatch-round')).toBe('r2');
+    const r2Group = m.querySelector<HTMLElement>('.round-group[data-round-id="r2"]')!;
+    expect(r2Group.nextElementSibling).toBe(cards[0]);
   });
 
   it('noteRound 登记一次派活 ⇒ 卡插在该轮之后', () => {

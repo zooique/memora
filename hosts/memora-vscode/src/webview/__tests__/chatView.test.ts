@@ -12687,16 +12687,23 @@ describe('块类型标与折叠箭头（批次三）', () => {
     const card = () => messages().querySelector<HTMLElement>('.dispatch-session-card');
     expect(card()).toBeNull();
 
-    // 快照只给存在性/真名，不凭空造卡：卡身份来自具体 turn 事件
-    dispatch({
-      type: 'session_activity',
-      runningIds: ['2026-11-18-target'],
-      pendingIds: [],
-      badgeCount: 0,
-      titleById: {},
-      dispatchedSessions: [{ sid: '2026-11-18-target', title: '统计目录文件数', via: 'delegate' }],
-    });
+    // 快照给存在性/真名；不在跑 ⇒ 不凭存在性编卡。正在跑但轮锚未到 ⇒ 先出无锚卡
+    // （DISPATCH-CARD-LIVE-1：create_session 的 tool_result 要等首轮收场，不能晚一个 turn）。
+    const activity = (runningIds: string[]) =>
+      dispatch({
+        type: 'session_activity',
+        runningIds,
+        pendingIds: [],
+        badgeCount: 0,
+        titleById: {},
+        dispatchedSessions: [{ sid: '2026-11-18-target', title: '统计目录文件数', via: 'delegate' }],
+      });
+    activity([]);
     expect(card()).toBeNull();
+    activity(['2026-11-18-target']);
+    expect(card()).not.toBeNull();
+    expect(card()!.getAttribute('data-dispatch-round')).toBeNull();
+    expect(card()!.classList.contains('is-running')).toBe(true);
 
     dispatchLiveDispatch('2026-11-18-target', 'live-r1', 'delegate');
     expect(card()).not.toBeNull();

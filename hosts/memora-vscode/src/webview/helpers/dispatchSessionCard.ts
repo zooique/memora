@@ -96,12 +96,14 @@ export function removeDispatchCards(messages: HTMLElement): number {
  *   - 该轮的节点已不在流里 ⇒ 卡落流尾兜底（仍属对话内容，不脱离）；
  *   - 存在性与展示名只认当前快照：会话从盖章列表移除 ⇒ 不再渲染。
  *
- * 顺序：按 entries 的登记时序（replay 逐轮 / 实时事件流时序），同轮多张卡依次接龙。
+ * 顺序：按快照顺序（宿主已按最近 turn 时间降序），同会话多轮按 entries 登记时序接龙。
+ * 回执未到但**正在跑**的会话先出一张无锚卡落流尾——存在性不依赖 tool_result（DISPATCH-CARD-LIVE-1）；
+ * 不在跑且无轮锚的会话仍不凭存在性编卡（旧判据保留，防残留快照凭空插卡）。
  *
  * @param messages 消息流容器（#messages）
- * @param sessions 盖章会话列表（真源 = session_activity.dispatchedSessions）
+ * @param sessions 盖章会话列表（真源 = session_activity.dispatchedSessions，**存在性唯一闸门**）
  * @param runningIds 正在跑流的会话 id（真源 = session_activity.runningIds）
- * @param entries 卡片身份列表（真源 = webview 现场解析的 sid + roundId）
+ * @param entries 轮锚点列表（真源 = webview 现场解析的 sid + roundId；只决定卡插在哪轮，不决定出不出卡）
  */
 export function renderDispatchCards(
   messages: HTMLElement,
@@ -111,35 +113,43 @@ export function renderDispatchCards(
 ): void {
   removeDispatchCards(messages);
   const running = new Set(runningIds);
-  const bySid = new Map(sessions.map((s) => [s.sid, s]));
   const seen = new Set<string>();
   /** 每个锚点轮的"最后插入位"——同轮多张卡依次接龙，保持登记顺序 */
   const anchorCursor = new Map<string, Element>();
+  // entries 只按 sid 归集轮锚，存在性仍只认快照。create_session 的 tool_result 要等首轮
+  // runFlow 收场才回执（hostedSessionCreate 在 await startFlow 后才 return），若拿 entries
+  // 当存在性闸门，卡片会晚一个 turn 才上屏；而快照在受理瞬间（onCreated 记账本）已含该 sid。
+  const anchorsBySid = new Map<string, DispatchCardEntry[]>();
   for (const entry of entries) {
-    const meta = bySid.get(entry.sid);
-    if (!meta) continue; // 快照已移除该会话 ⇒ 不编卡
-    const key = `${entry.sid.length}:${entry.sid}:${entry.roundId ?? ''}`;
-    if (seen.has(key)) continue; // 同一 turn 同一会话幂等；不再按 sid 全局去重
+    const list = anchorsBySid.get(entry.sid);
+    if (list) list.push(entry);
+    else anchorsBySid.set(entry.sid, [entry]);
+  }
+
+  /** 落一张卡；anchor 缺省 = 回执未到，先落流尾，回执到位后由同函数按锚重排（不产第二张） */
+  const place = (meta: DispatchedSessionView, anchor?: DispatchCardEntry): void => {
+    const key = `${meta.sid.length}:${meta.sid}:${anchor?.roundId ?? ''}`;
+    if (seen.has(key)) return; // 同一 turn 同一会话幂等；不再按 sid 全局去重
     seen.add(key);
     const card = buildDispatchSessionCard(
       messages.ownerDocument,
-      entry.sid,
-      entry.roundId,
-      entry.text,
+      meta.sid,
+      anchor?.roundId,
+      anchor?.text,
     );
     const name = card.querySelector<HTMLElement>('.dispatch-session-card__name');
-    const title = meta.title || entry.sid; // 真名为空回落 sid，不写空串冒充
+    const title = meta.title || meta.sid; // 真名为空回落 sid，不写空串冒充
     if (name) name.textContent = title;
     card.title = title;
     card.setAttribute('aria-label', title);
-    card.classList.toggle('is-running', running.has(entry.sid));
+    card.classList.toggle('is-running', running.has(meta.sid));
     card.dataset.via = meta.via;
 
-    const anchorRound = entry.roundId;
+    const anchorRound = anchor?.roundId;
     if (anchorRound && anchorCursor.has(anchorRound)) {
       anchorCursor.get(anchorRound)!.after(card);
       anchorCursor.set(anchorRound, card);
-      continue;
+      return;
     }
     // 不用 CSS.escape（jsdom/部分 webview 无此 API）：直接比对 dataset，天然防特殊字符注入
     const anchorNodes = anchorRound
@@ -158,5 +168,17 @@ export function renderDispatchCards(
     } else {
       messages.appendChild(card);
     }
+  };
+
+  for (const meta of sessions) {
+    const anchors = anchorsBySid.get(meta.sid);
+    if (!anchors?.length) {
+      // 只在「正在跑」时先出无锚卡：turn 起流瞬间快照已含身份（onCreated 记账本）且
+      // runningIds 已置位，不必等 tool_result；不跑的会话仍按旧判据不凭存在性编卡
+      // （重启后的历史会话 / reset 后残留快照不会被凭空插一张指向它的卡）。
+      if (running.has(meta.sid)) place(meta);
+      continue;
+    }
+    for (const anchor of anchors) place(meta, anchor);
   }
 }
