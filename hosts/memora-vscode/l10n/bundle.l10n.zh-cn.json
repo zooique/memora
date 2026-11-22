@@ -968,6 +968,8 @@
   "Delegate task: {0}": "派发子任务 · {0}",
   "Dispatched to “{0}” · receipt confirmed": "已派给「{0}」· 有回执",
   "Created session “{0}” · receipt confirmed": "已新建会话「{0}」· 有回执",
+  "Dispatched to {0} sessions (incl. “{1}”) · receipt confirmed": "已派给 {0} 个会话（含「{1}」）· 有回执",
+  "Created {0} sessions (incl. “{1}”) · receipt confirmed": "已新建 {0} 个会话（含「{1}」）· 有回执",
   "Tools ×{0} ({1})": "工具×{0}（{1}）",
   "Tools ×{0}": "工具×{0}",
   "Thinking · step {0}": "思考 · 第 {0} 步",

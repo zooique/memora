@@ -196,7 +196,8 @@ export interface DispatchTitleSource {
  * `dispatchedSidTextsFromEvents`，不新增判据、不读正文）。无回执 ⇒ undefined，调用方
  * 一个字都不加——这是本批的核心：让没有凭证的轮看起来就是一句普通的话。
  *
- * 多条派发只取第一条：凭证是「这轮确实动过手」的物证，不是清单；要清单看会话卡。
+ * 多条派发合并为一行并报总数：总数直接取 items.length（同一份已算好的结果，不重算、不新增
+ * 事实源）；单派走原键原句，多派另有键（≥2 才用，「等 N 个」的计数歧义由此规避）。
  *
  * @param items 本轮成功盖章的 (sid, text, via) 列表
  * @param titles 会话标题来源（取不到返回 undefined，降级显示 sid，不编造）
@@ -209,9 +210,19 @@ export function dispatchReceiptText(
   const first = items[0];
   if (!first) return undefined;
   const title = titles.titleFor(first.sid) ?? first.sid;
-  return first.via === 'create'
-    ? l10n.t('Created session “{0}” · receipt confirmed', title)
-    : l10n.t('Dispatched to “{0}” · receipt confirmed', title);
+  // 单派（绝大多数情况）：文案逐字不变，不被多派计数污染成「等 1 个」
+  if (items.length === 1) {
+    return first.via === 'create'
+      ? l10n.t('Created session “{0}” · receipt confirmed', title)
+      : l10n.t('Dispatched to “{0}” · receipt confirmed', title);
+  }
+  // 多派：总数前置 + 「含」指出被命名的那一条，规避「等 N 个」的两派读法
+  const count = String(items.length);
+  // 全部 create 才说「已新建」；混合轮一律「已派给」——说成「新建 N 个」是撒谎
+  const allCreated = items.every((it) => it.via === 'create');
+  return allCreated
+    ? l10n.t('Created {0} sessions (incl. “{1}”) · receipt confirmed', count, title)
+    : l10n.t('Dispatched to {0} sessions (incl. “{1}”) · receipt confirmed', count, title);
 }
 
 /**

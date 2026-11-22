@@ -968,6 +968,8 @@
   "Delegate task: {0}": "",
   "Dispatched to “{0}” · receipt confirmed": "",
   "Created session “{0}” · receipt confirmed": "",
+  "Dispatched to {0} sessions (incl. “{1}”) · receipt confirmed": "",
+  "Created {0} sessions (incl. “{1}”) · receipt confirmed": "",
   "Tools ×{0} ({1})": "",
   "Tools ×{0}": "",
   "Thinking · step {0}": "",

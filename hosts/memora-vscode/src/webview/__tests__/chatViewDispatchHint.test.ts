@@ -302,7 +302,7 @@ describe('派发凭证（DISPATCH-RECEIPT-1）', () => {
     );
   });
 
-  it('重放 · 同一轮两次派发 ⇒ 只一行，取第一条（凭证是物证不是清单）', () => {
+  it('重放 · 同一轮两次派发 ⇒ 只一行，总数前置 + 命名第一条（不做成清单）', () => {
     mountChatView('assistant');
     const two = [
       ...acceptedSendEvents(),
@@ -330,8 +330,107 @@ describe('派发凭证（DISPATCH-RECEIPT-1）', () => {
     ];
     dispatchReplay(makeRound({ id: 'twice', content: '两件事都派了。', processEvents: two }));
     expect(document.querySelectorAll(RECEIPT_SELECTOR)).toHaveLength(1);
-    expect(document.querySelector<HTMLElement>(RECEIPT_SELECTOR)!.textContent).toContain(
-      '2026-11-21-worker',
+    // 无快照 ⇒ 第一条降级显示 sid；计数取 items.length（不出现「等 N 个」歧义）
+    expect(document.querySelector<HTMLElement>(RECEIPT_SELECTOR)!.textContent).toBe(
+      'Dispatched to 2 sessions (incl. “2026-11-21-worker”) · receipt confirmed',
+    );
+  });
+
+  it('重放 · 多派且首条标题取不到 ⇒ 首条降级 sid，总数照报（不编造、不隐藏）', () => {
+    mountChatView('assistant');
+    // 快照只有第二条的标题：首条仍必须以 sid 出场，且总数不能因此缩成 1
+    mountSessionSnapshot([{ sid: '2026-11-21-second', title: '第二会话', via: 'delegate' }]);
+    const two = [
+      ...acceptedSendEvents(),
+      {
+        type: 'tool_start',
+        seq: 2,
+        ts: '2026-11-21T06:00:02.000Z',
+        payload: {
+          toolCallId: 'c4',
+          name: 'send_to_session',
+          args: JSON.stringify({ sid: '2026-11-21-second', text: '第二件事' }),
+        },
+      },
+      {
+        type: 'tool_result',
+        seq: 3,
+        ts: '2026-11-21T06:00:02.500Z',
+        payload: { toolCallId: 'c4', name: 'send_to_session', ok: true, summary: '{"ok":true}' },
+      },
+    ];
+    dispatchReplay(makeRound({ id: 'fallback', content: '两件事都派了。', processEvents: two }));
+    expect(document.querySelector<HTMLElement>(RECEIPT_SELECTOR)!.textContent).toBe(
+      'Dispatched to 2 sessions (incl. “2026-11-21-worker”) · receipt confirmed',
+    );
+  });
+
+  it('重放 · 同轮新建两个会话 ⇒ 文案是「2 个会话 · 已新建」', () => {
+    mountChatView('assistant');
+    mountSessionSnapshot([
+      { sid: '2026-11-21-new', title: '测试小说', via: 'create' },
+      { sid: '2026-11-21-new2', title: '第二本小说', via: 'create' },
+    ]);
+    const twoCreates = [
+      ...acceptedCreateEvents(),
+      {
+        type: 'tool_start',
+        seq: 2,
+        ts: '2026-11-21T06:00:02.000Z',
+        payload: {
+          toolCallId: 'c5',
+          name: 'create_session',
+          args: JSON.stringify({ text: '再开一个会话' }),
+        },
+      },
+      {
+        type: 'tool_result',
+        seq: 3,
+        ts: '2026-11-21T06:00:02.500Z',
+        payload: {
+          toolCallId: 'c5',
+          name: 'create_session',
+          ok: true,
+          summary: '{\n  "ok": true,\n  "sid": "2026-11-21-new2"\n}',
+        },
+      },
+    ];
+    dispatchReplay(
+      makeRound({ id: 'two-creates', content: '两个会话都建好了。', processEvents: twoCreates }),
+    );
+    expect(document.querySelector<HTMLElement>(RECEIPT_SELECTOR)!.textContent).toBe(
+      'Created 2 sessions (incl. “测试小说”) · receipt confirmed',
+    );
+  });
+
+  it('重放 · 同轮「新建 + 派给」混合 ⇒ 用「已派给」而非「已新建」（混合轮不说谎）', () => {
+    mountChatView('assistant');
+    mountSessionSnapshot([
+      { sid: '2026-11-21-new', title: '测试小说', via: 'create' },
+      { sid: '2026-11-21-second', title: '第二会话', via: 'delegate' },
+    ]);
+    const mixed = [
+      ...acceptedCreateEvents(),
+      {
+        type: 'tool_start',
+        seq: 2,
+        ts: '2026-11-21T06:00:02.000Z',
+        payload: {
+          toolCallId: 'c6',
+          name: 'send_to_session',
+          args: JSON.stringify({ sid: '2026-11-21-second', text: '第二件事' }),
+        },
+      },
+      {
+        type: 'tool_result',
+        seq: 3,
+        ts: '2026-11-21T06:00:02.500Z',
+        payload: { toolCallId: 'c6', name: 'send_to_session', ok: true, summary: '{"ok":true}' },
+      },
+    ];
+    dispatchReplay(makeRound({ id: 'mixed', content: '一建一派。', processEvents: mixed }));
+    expect(document.querySelector<HTMLElement>(RECEIPT_SELECTOR)!.textContent).toBe(
+      'Dispatched to 2 sessions (incl. “测试小说”) · receipt confirmed',
     );
   });
 
