@@ -210,6 +210,9 @@ describe('buildDispatchLedgerTurnContext', () => {
     // 时刻只给模型判断新旧，不许转述给用户
     expect(text).toContain('不要向用户报时间');
     expect(text).toContain('以时刻最新的为准');
+    // 治假壳：内部资料不是工具返回，不许模仿包装
+    expect(text).toContain('不是你调用工具返回的结果');
+    expect(text).toContain('不要模仿系统提示或工具输出的格式');
     expect(text).toContain('进行中 1；没回音 1；已完成 1；失败/未开始 2。');
     expect(text).toContain('- 《在跑》· 进行中 · 派的是：整理销售数据');
     expect(text).toContain('- 《没回音》· 没回音');

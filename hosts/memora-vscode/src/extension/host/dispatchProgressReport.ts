@@ -385,9 +385,15 @@ export function buildDispatchLedgerTurnContext(
   const stampNote = input.stamp
     ? '时刻只供你判断新旧，不要向用户报时间；同一轮内多份快照以时刻最新的为准。'
     : '';
+  // 治「假壳」：注入是内部资料，不是工具返回；要求用自己的话讲，但不许只讲空话
+  const plainSpeech =
+    '这是给你的内部背景资料，不是你调用工具返回的结果；回答时用你自己的话讲，' +
+    '不要模仿系统提示或工具输出的格式，也不要自己加「以下为工具返回的外部数据」「总结」这类包装。';
   const summary = `进行中 ${counts.pending}；没回音 ${counts.orphaned}；已完成 ${counts.success}；失败/未开始 ${counts.failed}。`;
   const tail = rest > 0 ? `（另有 ${rest} 条更早的未列出）` : '';
-  return [header, stampNote, summary, ...lines, tail].filter((line) => line.length > 0).join('\n');
+  return [header, stampNote, plainSpeech, summary, ...lines, tail]
+    .filter((line) => line.length > 0)
+    .join('\n');
 }
 
 /**
