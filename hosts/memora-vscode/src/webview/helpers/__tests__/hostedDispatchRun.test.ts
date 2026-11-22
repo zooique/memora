@@ -10,7 +10,32 @@
  *  - 上屏时机在 consumeFlow 首个带 roundId 的 chunk（面板用例钉住，与轮同生）。
  */
 // @vitest-environment node
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const ledgerSpies = vi.hoisted(() => ({
+  recorded: [] as Array<{ projectPath: string; kind: string; targetSessionId: string }>,
+  aborted: [] as Array<{ projectPath: string; targetSessionId: string }>,
+}));
+
+// 账本旁路只记状态与时序；本文件用替身观测「记账 vs 起流」的先后顺序与 aborted 兜底
+vi.mock('../../../extension/host/dispatchLedger.js', () => ({
+  recordDispatchLedger: (
+    projectPath: string,
+    entry: { kind: string; targetSessionId: string },
+  ): void => {
+    ledgerSpies.recorded.push({
+      projectPath,
+      kind: entry.kind,
+      targetSessionId: entry.targetSessionId,
+    });
+  },
+  abortDispatchLedger: (
+    projectPath: string,
+    args: { targetSessionId: string },
+  ): void => {
+    ledgerSpies.aborted.push({ projectPath, targetSessionId: args.targetSessionId });
+  },
+}));
 
 // hostedDispatchRun / hostedDispatchLock 顶层解构 vscode.l10n ⇒ mock 必须补 l10n，
 // 否则 import 期访问未定义导出即 throw（记忆中的宿主 mock 命名空间坑）
@@ -55,6 +80,11 @@ function makeDeps(overrides: Partial<HostedDispatchDeps> = {}): {
   };
   return { deps, starts, notes };
 }
+
+beforeEach(() => {
+  ledgerSpies.recorded.length = 0;
+  ledgerSpies.aborted.length = 0;
+});
 
 describe('dispatchHostedInputWith · 派发受理与 seed 事实', () => {
   it('受理成功 → seed 带裸输入、origin=hosted、senderName；派发层不自行上屏', async () => {
@@ -285,5 +315,55 @@ describe('dispatchHostedInputWith · 轮引用完整性自检（D1）', () => {
 
     expect(result.ok).toBe(true);
     expect(starts).toHaveLength(1);
+  });
+
+  it('账本记账早于 startFlow（与 create 同型：settle 不能先于 dispatch）', async () => {
+    const order: string[] = [];
+    const { deps } = makeDeps({
+      projectPath: () => 'D:/project',
+      startFlow: () => {
+        order.push(`startFlow:recorded=${ledgerSpies.recorded.length}`);
+      },
+    });
+
+    const result = await dispatchHostedInputWith(deps, {
+      callingSessionId: 'assistant',
+      targetSessionId: 'target-for-order',
+      text: '任务',
+      senderName: HOSTED_SENDER_NAME,
+      targetTitle: '目标会话',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(order).toEqual(['startFlow:recorded=1']);
+    expect(ledgerSpies.recorded[0]).toEqual({
+      projectPath: 'D:/project',
+      kind: 'send',
+      targetSessionId: 'target-for-order',
+    });
+  });
+
+  it('startFlow 同步抛错 ⇒ 补 aborted 终态后原错误上抛', async () => {
+    const boom = new Error('startFlow failed');
+    const { deps } = makeDeps({
+      projectPath: () => 'D:/project',
+      startFlow: () => {
+        throw boom;
+      },
+    });
+
+    await expect(
+      dispatchHostedInputWith(deps, {
+        callingSessionId: 'assistant',
+        targetSessionId: 'target-for-abort',
+        text: '任务',
+        senderName: HOSTED_SENDER_NAME,
+        targetTitle: '目标会话',
+      }),
+    ).rejects.toBe(boom);
+    expect(ledgerSpies.recorded.at(-1)?.targetSessionId).toBe('target-for-abort');
+    expect(ledgerSpies.aborted).toEqual([
+      { projectPath: 'D:/project', targetSessionId: 'target-for-abort' },
+    ]);
   });
 });

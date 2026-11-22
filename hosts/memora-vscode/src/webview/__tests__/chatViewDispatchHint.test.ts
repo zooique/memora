@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import type { ProcessEvent } from '@zooique/memora';
 import type { RoundView } from '../../shared/protocol.js';
 import { INTERNAL_SEED_SENDER } from '../../shared/constants.js';
-import { shouldNudgeDispatchRepair } from '../helpers/dispatchReceiptHint.js';
+import { shouldNudgeDispatchRepair } from '../helpers/dispatchRepairGate.js';
 import { dispatch, mountChatView } from './helpers/chatViewTestEnv.js';
 
 /** 凭证行选择器（与 helper 常量同值；测试侧写死以锁契约） */
@@ -519,13 +519,40 @@ describe('派发凭证（DISPATCH-RECEIPT-1）', () => {
     dispatch(turnUpdate);
     expect(document.querySelectorAll(RECEIPT_SELECTOR)).toHaveLength(1);
   });
+
+  it('凭证只认回执：进行中轮（status=pending）有受理回执也显示', () => {
+    mountChatView('assistant');
+    // 先按实时形态建出该轮的 DOM 容器（done 之前的 chunk 用 roundId 归属）
+    dispatch({ type: 'user', text: '派一个活', ts: '2026-11-22T06:00:00.000Z' });
+    dispatch({
+      type: 'chunk',
+      content: '正在派发，回执已到',
+      ts: '2026-11-22T06:00:02.000Z',
+      roundId: 'pending-receipt',
+    });
+    dispatch({ type: 'done', roundId: 'pending-receipt' });
+    dispatch({
+      type: 'turn_update',
+      rounds: [
+        makeRound({
+          id: 'pending-receipt',
+          content: '正在派发，回执已到',
+          processEvents: acceptedSendEvents(),
+          status: 'pending',
+        }),
+      ],
+      state: { phase: 'settled', roundId: 'pending-receipt', status: 'pending' },
+    });
+    expect(document.querySelectorAll(RECEIPT_SELECTOR)).toHaveLength(1);
+  });
 });
 
 /**
- * 完成门判据（DISPATCH-REPAIR-1）——本批**未改一行**，保留原覆盖证明补派轮仍活着
+ * 完成门判据（DISPATCH-REPAIR-1）——判据已按运行边界外置到宿主侧 `dispatchRepairGate`，
+ * 覆盖原样保留；成功收场判据改调内核 `isRoundSuccessful`，不再自写状态字面量。
  *
- * 与凭证同源：同一触发谓词 + 同一回执判据；额外排除内部种子轮（防自唤成环）与
- * hosted 来源轮。只判断「要不要起一轮补派」，不判断「模型一定会补」。
+ * 与凭证同一回执真源；额外排除内部种子轮（防自唤成环）与 hosted 来源轮。
+ * 只判断「要不要起一轮补派」，不判断「模型一定会补」。
  */
 describe('完成门判据：何时自动起一轮补派检查', () => {
   /** 一次真实形状的成功派发事件对 */
@@ -571,7 +598,7 @@ describe('完成门判据：何时自动起一轮补派检查', () => {
 
   /** 判据输入底座：正常用户轮 + 完成 + 声称已派 */
   const base = {
-    status: 'complete',
+    status: 'complete' as const,
     assistantMessage: { content: '扩写任务已派给小说会话。' },
     userMessage: { name: 'memora宝' },
     origin: 'user' as const,

@@ -28,7 +28,10 @@ import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { hasRoundPresenceProbe } from '../../extension/host/workspaceRoundStore.js';
 import { acquireDispatchWriteLease, type DispatchWriteLease } from './hostedDispatchLock.js';
 // 派活账本（判据 C）：旁路记「受理 → 落定 / 悬空」，失败不影响派发
-import { recordDispatchLedger } from '../../extension/host/dispatchLedger.js';
+import {
+  abortDispatchLedger,
+  recordDispatchLedger,
+} from '../../extension/host/dispatchLedger.js';
 import type { FlowSeed } from './sessionRuntime.js';
 
 // 本模块文案走 l10n（与面板同一套键面）
@@ -310,36 +313,12 @@ export async function dispatchHostedInputWith(
     // ⑤.5 开轮回声不在这里推：它必须**随轮建立**上屏（DISPATCH-USER-ECHO-1）。
     //     轮建立前推孤立气泡没有归属（buildLiveTurn 以 roundId 为界），ready 重放会被
     //     resetChatView 清掉；现由 consumeFlow 在首个带 roundId 的 chunk 上屏（seed 同源）。
-    // ⑥ 走既有流通路：attachments 不传（派发通道不收图）；opts 让内核把本轮 origin 落 'hosted'、
-    //    消息名落 senderName，并把「谁派来」记到 Round.dispatchedBy（重启后工作台靠它反查）
-    deps.startFlow(
-      targetSessionId,
-      (signal) =>
-        agent.chat(text, signal, undefined, {
-          origin: 'hosted',
-          senderName,
-          dispatchedBy: { from: callingSessionId, via: 'delegate' },
-        }),
-      {
-        // seed = 上屏与 live 投影用的裸输入：**没有**注入信封，与落盘原文同值。
-        // 盖章统一 = 助手身份名（2026-11-20 拍板）：不再按来源会话取名——`Round.dispatchedBy`
-        // 仍是纯数据（数据层有归属价值），但不参与任何上屏文案，避免同一事实两个名字源。
-        userMessage: {
-          id: `live-hosted-${now}`,
-          role: 'user',
-          content: text,
-          timestamp: now,
-          name: senderName,
-        },
-        origin: 'hosted',
-      },
-    );
-    logger.info({ from: callingSessionId, to: targetSessionId }, '派发受理成功');
-    noteAccepted();
-    // 旁路记账：只在受理成功后追加（被拒路径前面已 return，不会入账）。
-    // 任何异常都只 warn——账本坏了也不能让已经成功的派发变成失败。
+    // 旁路记账必须先于 startFlow（与 create 同型）：首轮从起流到落定可能极快，晚记会让
+    // settle 落在 dispatch 之前，账本按行序配对就找不到主人。被拒路径前面已 return，
+    // 不会入账；账本写坏只 warn，不让已受理的派发变成失败。
+    let projectPath: string | undefined;
     try {
-      const projectPath = deps.projectPath?.();
+      projectPath = deps.projectPath?.();
       if (projectPath) {
         recordDispatchLedger(projectPath, {
           kind: 'send',
@@ -357,6 +336,49 @@ export async function dispatchHostedInputWith(
         '派活账本记账失败（不影响派发）',
       );
     }
+    // ⑥ 走既有流通路：attachments 不传（派发通道不收图）；opts 让内核把本轮 origin 落 'hosted'、
+    //    消息名落 senderName，并把「谁派来」记到 Round.dispatchedBy（重启后工作台靠它反查）
+    try {
+      deps.startFlow(
+        targetSessionId,
+        (signal) =>
+          agent.chat(text, signal, undefined, {
+            origin: 'hosted',
+            senderName,
+            dispatchedBy: { from: callingSessionId, via: 'delegate' },
+          }),
+        {
+          // seed = 上屏与 live 投影用的裸输入：**没有**注入信封，与落盘原文同值。
+          // 盖章统一 = 助手身份名（2026-11-20 拍板）：不再按来源会话取名——`Round.dispatchedBy`
+          // 仍是纯数据（数据层有归属价值），但不参与任何上屏文案，避免同一事实两个名字源。
+          userMessage: {
+            id: `live-hosted-${now}`,
+            role: 'user',
+            content: text,
+            timestamp: now,
+            name: senderName,
+          },
+          origin: 'hosted',
+        },
+      );
+    } catch (err) {
+      // 起流同步抛错 = 这笔派发永远不会有轮落定。补 aborted 终态，否则记账前移后
+      // 它只会停在 pending，一小时后被误判「没回音」——同样是把失败说成没结果。
+      // 写终态本身失败也只 warn：不能让原始起流错误被账本错误盖掉。
+      try {
+        if (projectPath) {
+          abortDispatchLedger(projectPath, { targetSessionId });
+        }
+      } catch (abortErr) {
+        logger.warn(
+          { abortErr, from: callingSessionId, to: targetSessionId },
+          '派活账本中止留痕失败（不影响失败返回）',
+        );
+      }
+      throw err;
+    }
+    logger.info({ from: callingSessionId, to: targetSessionId }, '派发受理成功');
+    noteAccepted();
     return { ok: true, accepted: true };
   } catch (err) {
     // 起流前就失败（装配 / 切会话抛错）：租约当场归还，不把临时锁漏在本面板

@@ -588,7 +588,7 @@ describe('完成门入口 — maybeWakeDispatchRepair 判据输入合并', () =>
 
   /** 基础源轮：完成 + 声称已派 + 非种子 + 盘面无事件 */
   const round = {
-    status: 'complete',
+    status: 'complete' as const,
     assistantMessage: CLAIM,
     userMessage: { name: 'memora宝' },
     processEvents: [] as ProcessEvent[],

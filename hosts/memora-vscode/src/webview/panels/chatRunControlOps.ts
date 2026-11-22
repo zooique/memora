@@ -30,11 +30,11 @@ import { stopHostedSession } from '../helpers/hostedSessionStop.js';
 import { pauseHostedSession, resumeHostedSession } from '../helpers/hostedSessionRunControl.js';
 // 本轮运行时种子（开轮上屏素材；单一类型源在会话级运行态模块）
 import type { FlowSeed } from '../helpers/sessionRuntime.js';
-// 完成门判据与提示同源（同一词表 + 同一回执判据）；本文件只做门控与起轮
+// 完成门判据（宿主侧，与凭证共用同一回执真源）；本文件只做门控与起轮
 import {
   shouldNudgeDispatchRepair,
   type DispatchRepairInput,
-} from '../helpers/dispatchReceiptHint.js';
+} from '../helpers/dispatchRepairGate.js';
 // 判据输入的事件合并单点（与 step 检查点 / 流尾 / live 重放同一 seq 幂等语义）
 import { mergeProcessEvents } from '../helpers/processEventMerge.js';
 // 唤醒档位：由通知器声明「这次是哪一档事实」，本域只按档位给种子（档位不散、文案不散）
