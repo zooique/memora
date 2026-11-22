@@ -85,21 +85,18 @@ import {
 export type WakeKind = 'settlement' | 'needs-answer' | 'handback' | 'pending';
 
 /**
- * 压着待浮现的一条事实（第八切片：带身份与产生时刻）
+ * 压着待浮现的一条事实（第八切片：只带产生时刻）
  *
- * 模块头原来写「只存正文、不存轮身份」是当时的如实设计（去重键在受理时已记，不需要它防重）。
- * 真机证明还需要**排序与归属**：多条压在一起时，没有时刻就没有先后，没有 sid 就只能让模型
- * 从正文里自己拼故事。故补身份与时刻——补的是「被丢掉的事实」，不改任何判据。
+ * 真机证明缺的是**先后**而不是**归属**：正文本身就带 `sid=` 与会话标题，模型仍把几分钟前的
+ * 落定读成「此刻」；多条压在一起时，没有时刻就没有先后。故只补时刻。
+ *
+ * 身份（会话 / 轮 / 档位）曾随本轮一并加过，复审确认为只写不读的僵尸字段：释放侧恒按
+ * 「合并浮现」单档唤醒，而正文早已自带归属 ⇒ 已删。留一条纪律：**别把「以后可能要用」
+ * 当理由往待办里塞字段**，它只会让下一个人以为释放逻辑真的按它分支。
  */
 interface PendingReport {
   /** 已拼好的通知正文（原样保留，释放时只在前面加时间，不改写） */
   text: string;
-  /** 事实属于哪条会话（与正文里的 sid 同源，供将来按会话分组；不另造摘要） */
-  sessionId: string;
-  /** 事实归属的轮（待拍板档没有轮 id，如实缺省） */
-  roundId?: string;
-  /** 档位（释放时据此声明是合并浮现） */
-  kind: WakeKind;
   /** 产生时刻（毫秒）：释放时折算成「N 分钟前」，让模型能排先后 */
   at: number;
 }
@@ -395,8 +392,6 @@ export class HostedSessionNotifier {
       text,
       key,
       kind: 'settlement',
-      sessionId: input.sessionId,
-      roundId: round.id,
     });
   }
 
@@ -460,7 +455,6 @@ export class HostedSessionNotifier {
       text,
       key: undefined,
       kind: 'settlement',
-      sessionId: input.sessionId,
     });
   }
 
@@ -492,7 +486,6 @@ export class HostedSessionNotifier {
       text,
       key,
       kind: 'needs-answer',
-      sessionId: input.sessionId,
     });
   }
 
@@ -518,7 +511,6 @@ export class HostedSessionNotifier {
       text,
       key,
       kind: 'handback',
-      sessionId,
     });
     // deliver 在未装配 / 忙时压待办也返回 false，但已记去重键 ⇒ 视为受理
     return delivered || this.notified.has(key);
@@ -581,19 +573,17 @@ export class HostedSessionNotifier {
     text: string;
     key: string | undefined;
     kind: WakeKind;
-    sessionId: string;
-    roundId?: string;
   }): boolean {
     const { creator, text, key, kind } = delivery;
     if (key) this.notified.add(key);
     const loop = this.deps.getAgent(creator)?.agentLoop;
     // 实例未装配（或刚被摘）：先压待办，等实例就位再放；不丢、也不装作已送达
     if (!loop) {
-      this.enqueuePending(delivery);
+      this.enqueuePending(creator, text);
       return false;
     }
     if (!this.deps.canWakeCreator(creator)) {
-      this.enqueuePending(delivery);
+      this.enqueuePending(creator, text);
       return true;
     }
     loop.enqueueCommandResult(text);
@@ -604,27 +594,16 @@ export class HostedSessionNotifier {
   }
 
   /**
-   * 把一条待浮现事实压进创建者的待办（同一轮重复信号不会重复排队：去重键在 `deliver` 入口就记了）
+   * 把一条待浮现正文压进创建者的待办（同一轮重复信号不会重复排队：去重键在 `deliver` 入口就记了）
    *
-   * @param delivery 已受理的投递（正文 + 身份 + 档位；产生时刻在此刻落章）
+   * @param creator 创建者会话
+   * @param text 已受理的正文（产生时刻在此刻落章）
    */
-  private enqueuePending(delivery: {
-    creator: string;
-    text: string;
-    kind: WakeKind;
-    sessionId: string;
-    roundId?: string;
-  }): void {
-    const report: PendingReport = {
-      text: delivery.text,
-      sessionId: delivery.sessionId,
-      ...(delivery.roundId ? { roundId: delivery.roundId } : {}),
-      kind: delivery.kind,
-      at: Date.now(),
-    };
-    const queue = this.pendingReports.get(delivery.creator);
+  private enqueuePending(creator: string, text: string): void {
+    const report: PendingReport = { text, at: Date.now() };
+    const queue = this.pendingReports.get(creator);
     if (queue) queue.push(report);
-    else this.pendingReports.set(delivery.creator, [report]);
+    else this.pendingReports.set(creator, [report]);
   }
 }
 
