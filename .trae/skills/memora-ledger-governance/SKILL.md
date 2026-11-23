@@ -58,6 +58,8 @@ agent_created: false
 | 迁档归档 | fold + hygiene | 折走的条目若归档查无副本即红 |
 | 发版前核对 | 两者 + receipt | 发行动作本身另有技能，见真源索引 |
 | 改了对外文档 | `npm run docs:links` | **改完再跑**——先跑后改等于白跑 |
+| 删除 / 迁走某个 .md | `npm run docs:dangling` | 最近 20 笔删除的 .md 是否仍被**活文档**引用；已挂 local-ci full 档（归档快照 / 文件头自述历史稿豁免） |
+| 找一条账 / 按到期日盘点 | ——（只读工具） | `node scripts/ledger-query.mjs <关键词>`；`--id <ID>` / `--due 2026-12` / `--stats`。直接解析台账，不落索引文件 |
 
 ## 台账剪枝（瘦身）范式
 

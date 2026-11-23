@@ -66,6 +66,7 @@
     "terminology:changed": "tsx scripts/terminology-carrier-snapshot.ts --changed",
     "docs:links": "tsx scripts/check-publish-links.ts",
     "docs:links:repo": "tsx scripts/check-publish-links.ts --repo",
+    "docs:dangling": "node scripts/doc-ref-scan.mjs --dangling",
     "rules:refs": "tsx scripts/check-rule-refs.ts",
     "scan:docs:refs": "node scripts/doc-ref-scan.mjs",
     "scan:docs:refs:check": "node scripts/doc-ref-scan.mjs --check",

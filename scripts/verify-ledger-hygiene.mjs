@@ -103,6 +103,9 @@
  *      实测腐化率不低（同日一轮清洗捞出 6 处过期事实）。已按五波补「到期复查」，此后 ⑭ 是
  *      观察区**唯一**的复核消费机制（旧的「每版 Go/No-Go 逐行核对」已废止：它挂在 4.0.0 之后
  *      再没出现过的文档上，8 个版本 0 次执行）。
+ *      ⚠️ **排除面（2026-11-23 补）**：已收口（✅ 等）/ 🗄 封存条目**不设时钟**（真源 = 台账头部
+ *      「到期处置」例外条款），其正文残留的旧日期不参与到期判定——此前只豁免了 ⑬，⑭ 会把
+ *      封存条目里残留的过期日期报成红（封存动作等于天天被催），属静默假红面。
  *
  *   ⑮ **顶层条目 ID 撞名**（2026-10-30 补）：全台账任一顶层 ID 出现两次及以上 ⇒ 红
  *      （只报第二条及以后，第一条是原名）。为什么补：按 ID 索引的判据（⑧ 的 byId、
@@ -111,6 +114,22 @@
  *      实证：`D1-MCP` 在观察区有本体、在注记类区有指针且同 ID ⇒ 118 个条目首行、
  *      去重仅 117，且 ⑬ 取到的是指针行的时间而非常被剪枝的本体行时间。
  *      存量：`D1-MCP` 指针已改 `D1-MCP-PTR` ⇒ 0 命中后才建的本闸。
+ *
+ *   ⑯ **单日到期堆积**（2026-11-23 补）：观察区内**活跃条目**（未收口、未封存）同一天到期
+ *      > 15 条 ⇒ 红。病因实证：2026-12-01 一波积 43 条，其中 32 条自登记起**从未被复查过**
+ *      ——批量到场 ⇒ 复查必然走过场（要么敷衍改期、要么一刀封存）。阈值 15 的依据：
+ *      历史正常波次 1-8 条/日、异常波次 27-43 条/日。
+ *      **口径 = 全量**（不区分新登记）：本闸建立当天已把三批存量错峰到 ≤15 条/日（12-01
+ *      43→3 逐条分流；12-22 27→14 + 13@2027-01-05；2027-01-12 29→14 + 15@2027-01-26）
+ *      ⇒ 满足「存量清零后才建硬闸」（与 ⑫ 同理）。**不学 ⑬ 的存量豁免**：堆积可机械错峰，
+ *      不像 ⑬ 那样需要逐条判断出口；豁免只会让三批存量在到期日被 ⑭ 一次性逼着走过场。
+ *      ⚠️ 排除面与 ⑬/⑭ 同源：已收口 / 🗄 封存退出时点循环，其正文残留的僵尸日期不参与
+ *      计数——否则几年前的旧日期会把真实堆积的形态淹掉。
+ *   ⑰ **封存条目含机检字段**（2026-11-23 补）：🗄 封存条目的正文里出现 `机检：<命令>`
+ *      ⇒ 红——能写成可执行命令的条目不该封存（判据真源 = 台账头部「机检字段」条：
+ *      **能机检的不封存，要等人的不挂钟**）。这条防的是「为了过门而把可机检项偷懒封存」。
+ *      ⚠️ 形态按**实测写法**取（`机检：` 裸冒号，不要求加粗）：台账既有 7 条机检命令都写成
+ *      行尾「机检：\`grep …\`」，判据要求加粗形态 = 对着不存在的写法判红（假闸）。
  *
  * 档位（2026-10-27 由告警升硬闸，兑现上一版写明的升档条件）：
  *   当初挂 required:false 是为 0.2.0 区的存量欠账/假指针让路，避免门一建就被绕。
@@ -200,6 +219,28 @@ const EXPIRY_RE = /到期复查\s*(\d{4}-\d{2}-\d{2})/;
  *    从秒级拖到分钟级 = 逼人绕过它。误报的处置文案已分两路（见 ⑬ 的 `rewritten` 分支）。
  */
 const GATE13_BORN_AT = 1793315659;
+
+/**
+ * 「退出时点循环」的封存标记 —— ⑬⑭⑯ 三处豁免的**唯一判据**。
+ *
+ * 判据真源 = 台账头部「到期处置」例外条款：**✅ 已销项与 🗄 封存不设时钟**
+ * （前者等发版归档，后者按设计退出时点循环）。
+ *
+ * 🔴 **不能塞进 `CLOSED_RE`**（2026-11-23 补缺实证：此前 ⑬ 注释声称映射了 🗄，实现没有）：
+ *    `CLOSED_RE` 同时是 ⑧ 的输入，⑧ 会把「已收口 + 跨发版线 + 无归档副本」判成漏归档
+ *    ⇒ 封存条目（按设计不归档，如 `MCP-SERVER-1`）立刻假红。
+ *    「免时钟」与「该归档」是两个判据面，宁可三处各自 `SEALED_RE.test()`，也不折叠回同一正则。
+ */
+const SEALED_RE = /🗄/u;
+
+/**
+ * ⑰ 机检字段形态：正文出现 `机检：<命令>`（形态真源 = 台账头部「登记规范」的「机检字段」条）。
+ * 按实测写法取裸冒号——不要求加粗（理由见文件头 ⑰ 的形态说明）。
+ */
+const PROBE_RE = /机检[：:]/;
+
+/** ⑯ 单日到期堆积上限（条/日）。依据见文件头 ⑯：正常波次 1-8 条、异常波次 27-43 条。 */
+const MAX_PER_DAY = 15;
 
 /** ⑭ 到期判定基准：今天（`YYYY-MM-DD`，UTC）。日期串可直接字典序比较，故不转 Date。 */
 function todayISO() {
@@ -688,6 +729,8 @@ function diagnose(text, opts = {}) {
   const overdue = []; // ⑭ 观察项复查日已过期仍未处置
   const dupIds = []; // ⑮ 顶层条目 ID 撞名
   const allIds = []; // ⑮ 的全量条目（跨区）
+  const expiryNew = []; // ⑯ 新登记口径的到期日（用于单日堆积判定）
+  const sealedWithProbe = []; // ⑰ 封存条目却带「机检」字段
   const closedCands = []; // ⑧ 的候选：观察区内已收口、标题行无归档指针、且 ### 轴在白名单内
   const axisUnknown = []; // ⑧ 的结构前置：已收口观察条落在白名单外的 ### 区（不再静默跳过）
   let itemTotal = 0;
@@ -776,9 +819,10 @@ function diagnose(text, opts = {}) {
         const body = lines.slice(it.start, it.end).join('\n');
         const born = timing.byId.get(it.id)?.headTime ?? null;
         const isNew = !headIds.has(it.id) || (born !== null && born >= GATE13_BORN_AT);
-        // 已收口条目免时钟：纪律真源 = 台账头部「到期处置」例外条款（✅ 已销项 / 🗄 封存），此处只做同源映射不重复枚举。
+        // 已收口 / 🗄 封存免时钟（唯一判据 = 文件头 SEALED_RE 常量 + 台账头部「到期处置」例外条款）；
         //    否则「销项当轮」即被催补日期（2026-11-01 P13 实证：✅ 完成被 ⑬ 判红）。
-        if (isNew && !isClosedHead(it.head) && !EXPIRY_RE.test(body)) {
+        const timeRetired = isClosedHead(it.head) || SEALED_RE.test(it.head);
+        if (isNew && !timeRetired && !EXPIRY_RE.test(body)) {
           // 文案分两路（两种红、处置动作不同）：ID 已在 HEAD ⇒ 老条目被改写（多为剪枝 / 搬家
           // 刷新 blame），该做的是「确认它还有没有出口」；ID 不在 HEAD ⇒ 真新登记，该做的是
           // 「补一条出口」。混成一句话会让人以为门认错了条目。
@@ -792,7 +836,16 @@ function diagnose(text, opts = {}) {
           });
         }
         const m = EXPIRY_RE.exec(body);
-        if (m && m[1] < todayISO()) {
+        // ⑯ 收集：**全量活跃条目**（不区分新登记；三批存量已于建门当天错峰，理由见文件头 ⑯）。
+        //    排除已收口 / 封存（timeRetired）——其残留旧日期是僵尸字段，计入会淹掉真实堆积。
+        if (m && !timeRetired) expiryNew.push({ ...it, sec: sec.title, date: m[1] });
+        // ⑰ 收集：封存条目带「机检」字段 = 自相矛盾（真源 = 台账头部「能机检的不封存」）。
+        if (SEALED_RE.test(it.head) && PROBE_RE.test(body)) {
+          sealedWithProbe.push({ ...it, sec: sec.title });
+        }
+        // 已收口 / 🗄 封存不设时钟（timeRetired 与 ⑬ 同源，见文件头 ⑭ 排除面）；
+        //    若不排除，封存条目正文残留的旧日期会让它天天被判过期。
+        if (m && !timeRetired && m[1] < todayISO()) {
           overdue.push({
             ...it,
             sec: sec.title,
@@ -819,6 +872,21 @@ function diagnose(text, opts = {}) {
     }
   }
 
+  // ⑯ 单日到期堆积：同一天的活跃到期项 > MAX_PER_DAY ⇒ 红（口径与排除面见文件头 ⑯）。
+  //    piled 是**按日期聚合**的项、没有单条行号 ⇒ 不设 `start`（报告对无 start 的项只打 why，
+  //    设成 0 会渲染出「行1 … undefined行」的假行号，2026-11-23 实测）。
+  const dayCount = new Map();
+  for (const it of expiryNew) dayCount.set(it.date, (dayCount.get(it.date) ?? 0) + 1);
+  const piled = [];
+  for (const [date, n] of dayCount) {
+    if (n <= MAX_PER_DAY) continue;
+    piled.push({
+      id: date,
+      sec: '观察 / 待拍板',
+      why: `${date} 单日到期 ${n} 条 > 上限 ${MAX_PER_DAY}——批量到场会让复查走过场；把超额条目改期到当前最少的日期，或按「能机检的不封存 / 要等人的不挂钟」先分流`,
+    });
+  }
+
   const blanks = hasBlankRuns(lines);
   const clones = checkClones(lines);
   const anchors = checkAnchors(lines, sections);
@@ -843,6 +911,8 @@ function diagnose(text, opts = {}) {
     noExpiry,
     overdue,
     dupIds,
+    piled,
+    sealedWithProbe,
     clones,
     anchors,
     releasedSections,
@@ -868,6 +938,9 @@ function report(r) {
   if (r.noExpiry.length) problems.push(['⑬观察项缺到期复查（新登记 / 被改写）', r.noExpiry]);
   if (r.overdue.length) problems.push(['⑭复查日已过期未处置', r.overdue]);
   if (r.dupIds.length) problems.push(['⑮顶层条目 ID 撞名', r.dupIds]);
+  if (r.piled.length) problems.push(['⑯单日到期堆积', r.piled]);
+  if (r.sealedWithProbe.length)
+    problems.push(['⑰封存条目含机检字段（能机检却封存）', r.sealedWithProbe]);
   if (r.clones.length) problems.push(['⑩跨条目逐字克隆', r.clones]);
   if (r.anchors.length) problems.push(['⑪结构锚点缺失', r.anchors]);
 
@@ -885,7 +958,7 @@ function report(r) {
 
   if (problems.length === 0) {
     console.log(
-      '✅ [ledger-hygiene] 十四类判据全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0 / 版本索引三方一致 / 待执行均有完成判据 / 版本索引↔README 归档表一致 / 无落态跨版未归档且轴归属齐备 / 观察区条目体量未超限 / 新登记观察项均有到期复查 / 无过期未处置复查日 / 无 ID 撞名 / 无跨条目逐字克隆 / 结构锚点齐备）',
+      '✅ [ledger-hygiene] 十六类判据全部通过（欠账 0 / 假指针 0 / 错置 0 / 连续空行 0 / 版本索引三方一致 / 待执行均有完成判据 / 版本索引↔README 归档表一致 / 无落态跨版未归档且轴归属齐备 / 观察区条目体量未超限 / 新登记观察项均有到期复查 / 无过期未处置复查日 / 无 ID 撞名 / 单日到期无堆积 / 封存项均无机检字段 / 无跨条目逐字克隆 / 结构锚点齐备）',
     );
     return 0;
   }
@@ -918,6 +991,8 @@ function report(r) {
       '\n   ⑬ 给新登记观察项补一行「到期复查 YYYY-MM-DD」（建门前的存量豁免，不回填；建门后新登记一律要写）；' +
       '\n   ⑭ 复查日过期即处置（台账头部「到期处置」三选一）：维持·改期（须补本轮实测作新证据）/ 升档 📌 / 封存·归档（默认）；' +
       '\n   ⑮ 撞名的**后一条**改 ID（通常改指针 / 衍生条目，保本体 ID 不变 ⇒ 外部引用不断）；' +
+      `\n   ⑯ 单日到期项 > ${MAX_PER_DAY} 条：把超额条目改期到当前条目最少的日期（别默认填最近波次日），或先按「能机检的不封存 / 要等人的不挂钟」分流；` +
+      '\n   ⑰ 封存条目里写了「机检」：能写成可执行命令的条目不该封存 ⇒ 改「补机检行 + 维持改期」，或删掉机检行（说明它其实不可机检）；' +
       '\n   ⑩ 同一事实只准在一处登记：真源留一处，其余改指针（形态参照 LEDGER-AXIS-1 → LEDGER-DUP-GUARD-1 的并入写法）；' +
       '\n   ⑪ 补回缺失的结构区/轴标题——真源 = 台账头部「排序原则」与「双轨规则」，先读台账头部再动结构。' +
       '\n   本闸已是硬闸（local-ci required:true）——存量回涨时先把存量清零，不许把档位调回去。',
@@ -1185,6 +1260,21 @@ function selfTest() {
         ),
       pick: (r) => idsOf(r.noExpiry),
     },
+    // ⑬d 反例控制：新登记 **🗄 封存** 条目不带复查日不该报（2026-11-23 补）。
+    //    台账头部明文「🗄 封存（按设计已退出时点循环）不设时钟」，但 CLOSED_RE 不含 🗄
+    //    （它同时是 ⑧ 的输入，见判据处的注释）⇒ 这条豁免若丢了，封存动作会被 ⑬ 直接判红，
+    //    「到期处置三选一」里的封存选项等于走不通。探针锁住实现，防将来有人把 SEALED_RE 删掉。
+    {
+      label: '⑬d新登记封存项无复查日不误报',
+      probe: 'ZZ-SEALED-1',
+      invert: true,
+      mutate: (t) =>
+        t.replace(
+          anchor,
+          `${anchor}\n\n- **ZZ-SEALED-1** — 自检注入｜🗄 封存（自检探针 · 按设计退出时点循环）\n  本条刻意不写复查日期。`,
+        ),
+      pick: (r) => idsOf(r.noExpiry),
+    },
     // ⑭：复查日已过期（2020）⇒ 必须红。带日期 ⇒ 不触发 ⑬（互不污染，便于定位）。
     {
       label: '⑭复查日已过期',
@@ -1208,6 +1298,20 @@ function selfTest() {
         ),
       pick: (r) => idsOf(r.overdue),
     },
+    // ⑭c 反例控制：🗄 封存条目里**残留的过期日期**不该报（2026-11-23 补）。
+    //    真源 = 台账头部「🗄 封存（按设计已退出时点循环）不设时钟」；封存只是改状态行，
+    //    正文旧日期通常不会被删 ⇒ 若 ⑭ 不豁免，封存动作等于天天被催「已过期」。
+    {
+      label: '⑭c封存项残留过期日期不误报',
+      probe: 'ZZ-SEALED-OVERDUE-1',
+      invert: true,
+      mutate: (t) =>
+        t.replace(
+          anchor,
+          `${anchor}\n\n- **ZZ-SEALED-OVERDUE-1** — 自检注入（封存 + 旧日期残留）｜🗄 封存（自检探针）\n  到期复查 2020-01-01`,
+        ),
+      pick: (r) => idsOf(r.overdue),
+    },
     // ⑮：注入两条**同 ID** 的顶层条目 ⇒ 撞名必须被抓。
     //    注入在观察区，两条都带复查日 ⇒ 不触发 ⑬/⑭，避免用例互相污染。
     {
@@ -1219,6 +1323,31 @@ function selfTest() {
           `${anchor}\n\n- **ZZ-DUP-1** — 自检注入（撞名第一条）｜⏳ 观察\n  到期复查 2099-12-31\n\n- **ZZ-DUP-1** — 自检注入（撞名第二条）｜⏳ 观察\n  到期复查 2099-12-31`,
         ),
       pick: (r) => idsOf(r.dupIds),
+    },
+    // ⑯：注入 16 条同日新登记（> 上限 15）⇒ 堆积必须被抓。
+    //    每条带未来复查日 ⇒ 不触发 ⑬/⑭；ID 各异 ⇒ 不触发 ⑮（判据互不污染）。
+    {
+      label: '⑯单日到期堆积',
+      probe: '2099-03-01',
+      mutate: (t) => {
+        const extra = Array.from(
+          { length: MAX_PER_DAY + 1 },
+          (_, i) => `- **ZZ-PILE-${i + 1}** — 自检注入（堆积）｜⏳ 观察\n  到期复查 2099-03-01`,
+        ).join('\n\n');
+        return t.replace(anchor, `${anchor}\n\n${extra}`);
+      },
+      pick: (r) => new Set(r.piled.map((x) => x.id)),
+    },
+    // ⑰：注入 1 条「🗄 封存 + 机检字段」的矛盾条目 ⇒ 必须被抓。
+    {
+      label: '⑰封存条目含机检字段',
+      probe: 'ZZ-SEALED-PROBE-1',
+      mutate: (t) =>
+        t.replace(
+          anchor,
+          `${anchor}\n\n- **ZZ-SEALED-PROBE-1** — 自检注入（封存 + 机检）｜🗄 封存（自检）\n  机检：\`echo 1\``,
+        ),
+      pick: (r) => idsOf(r.sealedWithProbe),
     },
     // ⑪a：删掉一个结构区标题（实吞事故形态 #2：## 注记类 被吞）⇒ 必须红
     {
@@ -1275,7 +1404,7 @@ function selfTest() {
 
   console.log(
     allOk
-      ? '\n✅ 自检通过：十四类判据（①–⑧ + ⑩⑪⑫⑬⑭⑮；⑨ 为刻意否决记录、无判据体）均可捕获新命中\n   ⚠️ ⑬ 的「提交后」一相不在此覆盖内（伪造不出 blame 时间）⇒ 改 ⑬ 后必须做隔离仓库双相实测'
+      ? '\n✅ 自检通过：十六类判据（①–⑧ + ⑩⑪⑫⑬⑭⑮⑯⑰；⑨ 为刻意否决记录、无判据体）均可捕获新命中\n   ⚠️ ⑬ 的「提交后」一相不在此覆盖内（伪造不出 blame 时间）⇒ 改 ⑬ 后必须做隔离仓库双相实测'
       : '\n❌ 自检失败：存在失明判据',
   );
   return allOk ? 0 : 1;

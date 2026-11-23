@@ -332,6 +332,18 @@ const ALL_STEPS = [
     required: true,
     presets: ['full'],
   },
+  // 删除清算：最近 20 笔提交删掉的 .md 是否仍被**活文档**引用（确定性 git + FS 扫描，秒级）。
+  // 为什么 docs:links 不够：它只认 `](...)` 链接，而文档里大量引用是反引号路径 / 纯文本文件名
+  // ⇒ 删文件后这类指针腐烂是静默的。本步补同族盲区；归档快照与文件头自述历史稿豁免（见脚本注释）。
+  {
+    id: 'docs:dangling',
+    name: '文档删除清算（已删 .md 的残留引用）',
+    holdsTestLock: false,
+    cmd: 'npm run docs:dangling',
+    cwd: ROOT,
+    required: true,
+    presets: ['full'],
+  },
   // 术语载体集合漂移：同族半补丁（改了函数名漏改事件名 / 只挡一半）的机械化防线。
   // 集合基线锁在 scripts/terminology-carrier-snapshot.ts，冻结例外由术语锚点 §3 派生（确定性 FS 扫描，秒级）。
   {
