@@ -116,6 +116,14 @@ function setupInput() {
   roundStore.load();
   const store = new WorkspaceSessionStore(dir, roundStore);
   store.load();
+  // 测试自给会话元数据：mount() 固定用 '2026-09-23-test'，装配与恢复路径会查 store。
+  // 曾依赖 __dirname 下 gitignored 的 .memora/sessions/2026-09-23-test.json 残留——
+  // 本地「假绿」、CI 干净 checkout 必红（2026-11-23 0.12.0 发版实证 4 红 + 4 skip）。
+  store.createSession({
+    sessionId: '2026-09-23-test',
+    updatedAt: '2026-09-23T00:00:00.000Z',
+    messageCount: 0,
+  });
   const provider = new MemoraChatViewProvider(
     { fsPath: '/mock/uri' } as never,
     store,
