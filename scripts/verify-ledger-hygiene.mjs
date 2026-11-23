@@ -729,7 +729,9 @@ function diagnose(text, opts = {}) {
   const overdue = []; // ⑭ 观察项复查日已过期仍未处置
   const dupIds = []; // ⑮ 顶层条目 ID 撞名
   const allIds = []; // ⑮ 的全量条目（跨区）
-  const expiryNew = []; // ⑯ 新登记口径的到期日（用于单日堆积判定）
+  // ⑯ 活跃条目的到期日（**全量口径**：存量与新登记一视同仁，只排除已收口 / 🗄 封存——理由见文件头 ⑯）。
+  // 变量名带 Active 而非 New：⑯ 刻意不区分新登记，名字若带 New 会诱导后来者「顺手加上 isNew」。
+  const expiryActive = [];
   const sealedWithProbe = []; // ⑰ 封存条目却带「机检」字段
   const closedCands = []; // ⑧ 的候选：观察区内已收口、标题行无归档指针、且 ### 轴在白名单内
   const axisUnknown = []; // ⑧ 的结构前置：已收口观察条落在白名单外的 ### 区（不再静默跳过）
@@ -838,7 +840,7 @@ function diagnose(text, opts = {}) {
         const m = EXPIRY_RE.exec(body);
         // ⑯ 收集：**全量活跃条目**（不区分新登记；三批存量已于建门当天错峰，理由见文件头 ⑯）。
         //    排除已收口 / 封存（timeRetired）——其残留旧日期是僵尸字段，计入会淹掉真实堆积。
-        if (m && !timeRetired) expiryNew.push({ ...it, sec: sec.title, date: m[1] });
+        if (m && !timeRetired) expiryActive.push({ ...it, sec: sec.title, date: m[1] });
         // ⑰ 收集：封存条目带「机检」字段 = 自相矛盾（真源 = 台账头部「能机检的不封存」）。
         if (SEALED_RE.test(it.head) && PROBE_RE.test(body)) {
           sealedWithProbe.push({ ...it, sec: sec.title });
@@ -876,7 +878,7 @@ function diagnose(text, opts = {}) {
   //    piled 是**按日期聚合**的项、没有单条行号 ⇒ 不设 `start`（报告对无 start 的项只打 why，
   //    设成 0 会渲染出「行1 … undefined行」的假行号，2026-11-23 实测）。
   const dayCount = new Map();
-  for (const it of expiryNew) dayCount.set(it.date, (dayCount.get(it.date) ?? 0) + 1);
+  for (const it of expiryActive) dayCount.set(it.date, (dayCount.get(it.date) ?? 0) + 1);
   const piled = [];
   for (const [date, n] of dayCount) {
     if (n <= MAX_PER_DAY) continue;
@@ -1348,6 +1350,41 @@ function selfTest() {
           `${anchor}\n\n- **ZZ-SEALED-PROBE-1** — 自检注入（封存 + 机检）｜🗄 封存（自检）\n  机检：\`echo 1\``,
         ),
       pick: (r) => idsOf(r.sealedWithProbe),
+    },
+    // ⑯b 口径锁：**存量条目也计入**堆积（2026-11-23 补 · 自检盲区实证）。
+    //    为什么必需：上面 ⑯ 的探针注入的全是**新 ID** ⇒ 若有人把 ⑯ 的收集条件退回
+    //    「仅新登记」（加上 `&& isNew`），注入的 16 条照样全是新条目 ⇒ 探针仍绿、自检报通过，
+    //    而「老条目堆积」当场失明。实测确认过这个盲区：退回 isNew 后 ⑯ 探针仍 ✅「被捕获」。
+    //    构造：MAX_PER_DAY 条新 ID + 1 条**复用真实存量 ID**（同日）⇒ 全量 16 条 > 15；
+    //    退回 isNew 时只计 15 条 ⇒ 不红 ⇒ 本探针红，用它把「全量口径」钉住。
+    {
+      label: '⑯b存量条目计入堆积口径',
+      probe: '2099-03-02',
+      mutate: (t) => {
+        // 存量探针必须同时满足「ID 在 HEAD」与「首行 blame 早于建门时点」，否则按 ⑬ 的定义
+        // 它就是新登记 ⇒ 退回 isNew 口径时照样被计入 ⇒ 本探针静默失明。
+        // 故这里**断言而非静默**：stockId 被归档 / 改写后必须红，提示重挑探针（选法与 ⑬c 同源）。
+        const born = baseTiming.byId.get(stockId)?.headTime;
+        if (
+          !baseTiming.headIds?.has(stockId) ||
+          born === null ||
+          born === undefined ||
+          born >= GATE13_BORN_AT
+        ) {
+          throw new Error(
+            `自检失明：存量探针 ${stockId} 已不满足「HEAD 存量」形态，⑯b 口径锁失效——请重挑探针 ID`,
+          );
+        }
+        const fresh = Array.from(
+          { length: MAX_PER_DAY },
+          (_, i) =>
+            `- **ZZ-PILE-B-${i + 1}** — 自检注入（堆积·新条目）｜⏳ 观察\n  到期复查 2099-03-02`,
+        ).join('\n\n');
+        // 复用存量 ID ⇒ 该行落入 headIds 且 blame 老 ⇒ isNew=false，只有全量口径会计入它
+        const stock = `- **${stockId}** — 自检注入（堆积·存量口径锁，复用 HEAD 已有 ID）｜⏳ 观察\n  到期复查 2099-03-02`;
+        return t.replace(anchor, `${anchor}\n\n${fresh}\n\n${stock}`);
+      },
+      pick: (r) => new Set(r.piled.map((x) => x.id)),
     },
     // ⑪a：删掉一个结构区标题（实吞事故形态 #2：## 注记类 被吞）⇒ 必须红
     {

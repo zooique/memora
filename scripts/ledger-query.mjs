@@ -9,6 +9,8 @@
  *   - **不落索引文件**：每次直接解析台账文本（单文件 < 100KB，解析 < 50ms），不生成第二真源。
  *   - **只读不判**：结构与归档校验归 verify-ledger-hygiene.mjs / verify-ledger-fold.mjs，
  *     本脚本只做定位与展示，不输出任何「合规 / 违规」结论。
+ *     同理**不复制**hygiene 的豁免判据（已收口 / 🗄 封存免时钟）⇒ 到期分布按**全量**展示：
+ *     宁可多列封存条目的僵尸日期，也不在这边造第二份判据。「真有多少活跃到期项」以门为准。
  *   - **口径与台账格式契约同源**：`## ` = 区、`- **ID**` = 条目、`｜` = 状态段分隔
  *     （格式真源 = 台账头部「形态说明」）。
  *
@@ -27,7 +29,11 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 /** 台账相对路径（唯一真理源） */
 const LEDGER_REL = 'tasks/待完成任务.md';
-/** 到期复查日期形态（与 verify-ledger-hygiene.mjs 的 EXPIRY_RE 同源） */
+/**
+ * 到期复查日期形态 —— **必须与 verify-ledger-hygiene.mjs 的 EXPIRY_RE 逐字一致**（本文件是复制方）。
+ * 台账改日期写法时两处要同时改：本脚本不是判据，只改一处不会有任何门变红，
+ * 只会让检索结果**静默少列**（漂移无报警 ⇒ 故写成动作指令，而不是「同源」这类状态描述）。
+ */
 const EXPIRY_RE = /到期复查\s*(\d{4}-\d{2}-\d{2})/;
 /** 条目首行形态：`- **ID** — 标题｜状态`（ID 捕获组去见 parseLedger） */
 const ITEM_RE = /^- \*\*(.+?)\*\*/;
@@ -165,7 +171,9 @@ function byDue(prefix) {
       console.log(`${m[1]}  ${locate(it, sec)}  ${it.head.trim().slice(0, 130)}`);
     }
   }
-  console.log(`\n到期 ${prefix}* 共 ${hits} 条`);
+  console.log(
+    `\n到期 ${prefix}* 共 ${hits} 条（全量口径：含已收口 / 🗄 封存条目的历史日期，它们不设时钟——活跃口径以 hygiene 门为准）`,
+  );
   return hits;
 }
 
@@ -199,7 +207,7 @@ function stats() {
   console.log(
     `\n状态粗分（首行符号，非判据）：观察 ${buckets.观察} / 待执行 ${buckets.待执行} / 已完成 ${buckets.已完成} / 封存 ${buckets.封存} / 其它 ${buckets.其它}`,
   );
-  console.log('\n到期日分布：');
+  console.log('\n到期日分布（全量口径：含已收口 / 🗄 封存条目的历史日期；门 ⑯ 只计活跃条目）：');
   for (const [d, n] of [...dueCount].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
     console.log(`  ${d}  ${n} 条`);
   }

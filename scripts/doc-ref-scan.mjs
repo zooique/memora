@@ -26,6 +26,13 @@ import { join, basename, extname, relative, sep } from 'node:path';
 const ROOT = process.cwd();
 
 // 扫描排除目录：与 .gitignore 同源（含 coverage-tmp，原一次性脚本漏排的变体目录）
+// 🔴 运行时目录必须排除（2026-11-23 审查发现：此前只排了构建产物，漏了 `.memora*`）：
+//   `.memora/` 被 .gitignore 第 53 行忽略、`git ls-files` 查无（不入库、换机即无），
+//   但其中 `.memora/outputs/*.txt` 是会话输出文本 ⇒ 若不排除：
+//     ① 分诊把它当「活文档引用者」⇒ 十几篇过程稿的「有引用」其实是**本机缓存冒充存活依据**，
+//        清理运行时目录后它们立刻变零引用（结论随缓存漂移）；
+//     ② `--dangling` 把缓存里残留的旧文件名报成悬空引用 ⇒ 假红。
+//   判据与 .gitignore 同源：那里列为「运行时生成、开发项目不应包含」的目录，这里一律不扫。
 const EXCLUDE_DIRS = new Set([
   'node_modules',
   '.git',
@@ -36,6 +43,10 @@ const EXCLUDE_DIRS = new Set([
   'tmp',
   'coverage',
   'coverage-tmp',
+  // —— 宿主/开发时生成的运行时目录（.gitignore 第 49-77 行）——
+  '.memora',
+  '.memora-data',
+  '.memora-sprite',
 ]);
 
 const TEXT_EXT = new Set([
@@ -295,7 +306,11 @@ if (process.argv.includes('--dangling')) {
     ),
   ];
   // 判据：命中行 ±2 行窗口内出现处置词 ⇒ 是「记录删除」而非「失效指针」。
-  // 治理 README 是清理记录的真源所在，整篇豁免（记账职责由 isLedgerHit 承担）。
+  // 治理 README **整篇豁免**（L307）：这三份是清理记录的天然载体，其引用多为「已删 / 已处置」
+  // 记账，逐条判会因记账措辞多变而大量误报。
+  // ⚠️ 诚实登记漏检面（2026-11-23 订正）：整篇跳过的意思是**这三份里的真失效指针本闸看不见**。
+  //    旧注释写「记账职责由 isLedgerHit 承担」是假事实——`isLedgerHit` 只服务于分诊模式
+  //    （报告里的记账归类），--dangling 段没有调用它；把另一个模式的函数当成这里的覆盖 = 措辞折叠。
   const DISPOSAL = /(删|已随|已退役|已失效|原指|原「|原'|历史陈述|当时口径|临时文档|清理)/;
   const GOVERNANCE = /^(tasks\/README\.md|deliverables\/README\.md|tasks\/archive\/README\.md)$/;
   // 文件头全篇定性（历史过程稿 / 快照）——见文件头「两处文件级豁免」②
