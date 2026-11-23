@@ -8,7 +8,9 @@
 >
 > 本文件 2026-10-19 起按 `CHLOG-TRIM-1` 精简：只记「改了什么 + 为什么 + 对消费者的影响」；逐批拍板过程、变异验证收据、台账叙事的 SSOT 在仓库台账 `tasks/待完成任务.md` 对应 ID 条目（npm 包不含），此处只留 ID 锚保交叉引用。
 
-## [Unreleased]
+## [7.4.0] · 2026-11-23
+
+> **版本判定（SEMVER-GATE-1）**：形态 4（协议 / 入口扩张 ⇒ minor）。取证对已发布 `@zooique/memora@7.3.0` 的 npm 实物解包，与本版 `dist/**/*.d.ts` 逐行对拍：声明 +8 / −1（−1 为内部 `buildSystemPromptPrefix` 签名加两个可选参数的同名替换），主入口零删除；无公开类型收紧、无合法输入语义反转。异步授权三态从未进入 7.3.0，回撤不构成 breaking。
 
 ### Removed（内核）
 
@@ -16,6 +18,7 @@
 
 ### Added（内核）
 
+- **托管 Worker 的会话边界 / 状态 / 交回规则进入内核数据面**（P1 Router/Worker · `HAND-BACK-UNREACHABLE-1` · **消费者可感知 · 公开面扩张**）：`SessionMeta.workOrder?` 记录语义边界（解决什么、不解决什么，与 `declaredPaths?` 的技术范围正交），`workStatus?` 取 `'working' | 'blocked' | 'completed' | 'failed'` 四值；内核每轮把 `workOrder` 原文零解释投影给本会话 Worker（`buildWorkOrderContextBlock`），宿主经新增 `AgentOptions.delegationRuleProvider?` 提供交回规则文本——只在存在 `workOrder` 时成段注入，解决「协议原先只在 Router 工具描述里、Worker 收不到」的缺口。**对消费者**：三字段均可选，不传 / 旧会话行为逐字不变；`workOrder` 是事实边界不是权限，`workStatus` 由宿主事件钩子写、Worker loop 不写；读侧遇缺省如实降级，不猜边界或状态。内部 `buildSystemPromptPrefix` 追加两个可选段参数，旧调用不变。
 - **工具 allow-only 排他轴**（`KERNEL-TOOL-ALLOW-ONLY-1` · **消费者可感知 · 公开面扩张**）：新增 `AgentOptions.allowOnlyTools?: readonly string[]` 与 `ToolExecutor.setToolAllowOnly(...)`。此前表达「只给这几个工具」只能写 deny 补集，而 `isToolExposed` 先走 `customTools` / 常驻集，新工具与 MCP 桥接工具默认漏进封闭工具面（危险方向是漏，不是缺）。新轴判定排在 `isToolExposed` 首行：未列入的工具既不进提示词清单 / `chatOpts.tools`，执行闸也拒绝硬点名；`customTools` 与 `DEFAULT_EXPOSED_TOOLS` 常驻集不再豁免。空数组 `[]` 是「一个都不给」的显式形态而非默认值。与 `denyTools` 语义互斥，两者同时给出时装配期抛错（fail-closed，避免同一工具两处裁决）。**对消费者**：`undefined`（默认）行为逐字不变；宿主可据此装配封闭工具面（如助手会话只给会话管理工具），宿主接入见台账 `HOSTED-ROUTER-TOOL-SURFACE-1`，不在本版。
 
 ## [7.3.0] · 2026-11-16
