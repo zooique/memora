@@ -15,14 +15,15 @@
 | 1 | 校验 tag ↔ package.json version | `TAG="${GITHUB_REF_NAME#v}"` 必须等于 `package.json` version | **第二道防线**；第一道是 `v[0-9]*` 触发收紧，两道都要 |
 | 2 | 校验 CHANGELOG 标题带发布日期 | `scripts/verify-changelog-version.mjs` | 标题须含合法日历日期 + 发布日 ±1 天窗口；**只挂本流程，不进 local-ci**（开发期版本区合法写「未发布」） |
 | 3 | 校验随包文档无发布态陈述 | `scripts/verify-publish-docs.mjs` | 从 `package.json` `files` 白名单自动发现 md；CHANGELOG 走上一道专用闸 |
-| 4 | 格式检查 | `npm run format:check` | 2026-10-23 补；此前缺此步致 b6bb727a 发布时 format 红未拦 |
+| 4 | 治理门 | `npm run ci:local -- --preset=governance` | 2026-11-23 接入，**已含**原先单独的 `format:check`（2026-10-23 补齐，实证 b6bb727a）；tag 是本仓唯一自动触发入口，治理门原只挂本地钩子（可被 `LEFTHOOK=0` / `--no-verify` 绕过）；步骤清单唯一收口 = `scripts/local-ci.mjs`，workflow 只传 preset |
 | 5 | TypeScript 类型检查 | `npm run typecheck` | `tsc --noEmit` 双配置 |
 | 6 | ESLint | `npm run lint` | `--max-warnings 0` |
 | 7 | 单元测试（串行） | `npm test -- --no-file-parallelism` | 贴合本地真形态，避 I/O 假红 |
 | 8 | 生产构建验证 | `npm run build` | dist 由 `prepack`(build:clean) 在 publish 前自动重建，幂等 |
 | 9 | 暂存发布 | `npx -y npm@latest stage publish` | **OIDC 免令牌**；进入 staging，待本人 2FA 审批后才公开 |
 
-> 门禁范围对齐本地：typecheck / lint / 测试 / 构建 / format。本地 `local-ci --preset=full` 的步数**不写死**于技能（门禁自身声明「步数由运行时打印」），以 `scripts/local-ci.mjs` 为唯一真源。
+> 门禁范围对齐本地：治理门 / typecheck / lint / 测试 / 构建。本地 `local-ci --preset=full` 的步数**不写死**于技能（门禁自身声明「步数由运行时打印」），以 `scripts/local-ci.mjs` 为唯一真源。
+> ⚠️ 治理门依赖完整 git 历史与 tag（`docs:dangling` 查删除、⑬ blame、⑧/⑤ 判发版线）⇒ `actions/checkout` 必须 `fetch-depth: 0` + `fetch-tags: true`，浅克隆会让这些判据 fail-open 成假绿。
 
 ## 认证：npm Trusted Publisher（OIDC，免长期令牌）
 

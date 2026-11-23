@@ -9,10 +9,13 @@
 #     两道都要有（触发层切断噪音，护栏层保证即使触发了也不会误发）。
 #   - 宿主轴走另一个 workflow（`host-release.yml`，`vscode@*`），与本机轴触发集合互斥。
 #
-# 门禁范围：typecheck / lint / 单元测试（串行，贴合本地真形态）/ 生产构建 / **format:check**。
+# 门禁范围：治理门 / typecheck / lint / 单元测试（串行，贴合本地真形态）/ 生产构建。
 #   ⚠️ format:check 是 2026-10-23 补齐的：此前发布链不含该步，实证后果 = 提交 b6bb727a
 #   （发布那一刻工作区 format:check 是红的，发布链没拦住，只能事后补一笔纯格式提交）。
 #   补齐后「发布链 ≥ 本地门禁」，不再出现「本地红、发布链绿」。
+#   2026-11-23 起 format:check 由**治理门**（`--preset=governance`）承载：tag 是本仓唯一的
+#   自动触发入口，而治理门此前只挂本地钩子（可被 `LEFTHOOK=0` / `--no-verify` 绕过）。
+#   步骤清单唯一收口仍是 `scripts/local-ci.mjs`，本文件只传 preset、不复制命令。
 #   另加三道**发布专属**前置护栏（本地门禁不跑，因其在开发期会稳定假红）：
 #     ① tag ↔ package.json version 一致（防宿主 tag 误触发内核发布）；
 #     ② CHANGELOG 目标版本标题须带**合法发布日期且落在发布日窗口内**
@@ -68,6 +71,14 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+        with:
+          # 治理门需要完整历史与 tag（2026-11-23 补）：
+          #   - docs:dangling 靠 `git log --diff-filter=D` 找最近删除的 .md；
+          #   - ledger:hygiene ⑬ 靠 blame 判「建门后新登记」、⑧ 靠 tag 判是否跨发版线、
+          #     ⑤ 靠 tag 做「版本索引 ↔ 归档文件 ↔ tag」三方一致。
+          # 浅克隆 / 缺 tag 时这些判据会走各自的 fail-open 分支（查不到就跳过）⇒ 门全绿但失明。
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: 安装 pnpm（读取 packageManager 字段，避免版本冲突）
         uses: pnpm/action-setup@v4
@@ -108,9 +119,13 @@ jobs:
       - name: 校验随包文档无发布态陈述
         run: node scripts/verify-publish-docs.mjs
 
-      # 补齐本地门禁（此前发布链缺此步，实证见头注 b6bb727a）。置于 typecheck 前：最快、最先失败。
-      - name: 格式检查
-        run: npm run format:check
+      # 治理门（2026-11-23 补）：tag 是本仓**唯一**自动触发的门禁入口，而治理门此前只挂
+      # 本地钩子（可被 `LEFTHOOK=0` / `--no-verify` 绕过）⇒ 断链 / 悬空引用 / 台账越界可随发版
+      # 直达远端且无事后发现机制。步骤清单只在 `scripts/local-ci.mjs`，本文件只传 preset。
+      # 本档已含 format:check（即 2026-10-23 补齐的那道，实证见头注 b6bb727a）⇒ 替代原单独的
+      # 格式步，同一条检查不再留两个清单。置于 typecheck 前：静态扫描最先失败。
+      - name: 治理门（文档/台账/规则/格式）
+        run: npm run ci:local -- --preset=governance
 
       - name: TypeScript 类型检查
         run: npm run typecheck

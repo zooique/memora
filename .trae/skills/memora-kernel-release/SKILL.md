@@ -97,7 +97,7 @@ $env:RELEASE_DATE = 'YYYY-MM-DD'; npm run verify:changelog; npm run verify:publi
   - `npm run verify:publish-docs`（`scripts/verify-publish-docs.mjs`：随包 md 无发布态陈述）——**Step 1 改过随包 md 后必重跑**
   - `npm run format:check`（prettier）
   - 另跑 `npm run typecheck` / `npm run lint` / `npm test` 兜底（虽 local-ci 会跑，tag 前确认省一次 CI 往返）。
-- 🔴 **预检退出码禁接管道取**：Bash 里 `npm run format:check | tail` 拿到的是 `tail` 的退出码（5.2.0 实证：`FMT_EXIT=0` 假绿、真实 EXIT=1，拦路的是宿主文件格式伤——带伤打 tag 必被 release.yml format 步打红）。写法 = 重定向到文件后 `echo $?`。
+- 🔴 **预检退出码禁接管道取**：Bash 里 `npm run format:check | tail` 拿到的是 `tail` 的退出码（5.2.0 实证：`FMT_EXIT=0` 假绿、真实 EXIT=1，拦路的是宿主文件格式伤——带伤打 tag 必被 release.yml 治理门（含 `format:check`）打红）。写法 = 重定向到文件后 `echo $?`。
 - 任一项失败 ⇒ 修完重跑，勿带伤打 tag。
 
 ### Step 3：归档台账（必须在 tag 前提交，状态标「待上架」）
@@ -136,7 +136,7 @@ $env:RELEASE_DATE = 'YYYY-MM-DD'; npm run verify:changelog; npm run verify:publi
 2. `git tag -a vX.Y.Z -F <msgfile> && git push origin main vX.Y.Z`（中文 tag 信息经 Write 工具写 UTF-8 msgfile 避开 shell 引号坑；**单次命令同时推 main + tag**，origin 双 URL 一次同步两远端）。
    - ⚠️ 仓库 origin 双推 gitee+github，GitHub 收到 tag 触发 `release.yml`；gitee 端无对应 workflow，不重复发。
    - 数字带口径：`git rev-parse vX.Y.Z` 返回 **annotated tag object** 的 sha（**非** commit）；查 tag 指向哪个 commit 用 `git rev-parse 'vX.Y.Z^{commit}'`。
-3. 流水线（`release.yml`，详见 `references/release-gates.md`）：校验 tag↔version → `verify:changelog` → `verify:publish-docs` → `format:check` → typecheck → lint → 串行 test → build → `npx npm@latest stage publish`（**OIDC 免令牌暂存**）。
+3. 流水线（`release.yml`，详见 `references/release-gates.md`）：校验 tag↔version → `verify:changelog` → `verify:publish-docs` → 治理门（`--preset=governance`，含 `format:check`）→ typecheck → lint → 串行 test → build → `npx npm@latest stage publish`（**OIDC 免令牌暂存**）。
 4. **本人 2FA 审批**：登录 npmjs.com → Staged Packages → Approve（硬前提：npm 账号已启用 2FA；Trusted Publisher 已登记 `release.yml`）。
    - ⚠️ 不要在 npm 勾「允许 npm 发布」= 跳过审批直接上架（供应链风险）；本流程走 staged + 2FA 拦截。
 
