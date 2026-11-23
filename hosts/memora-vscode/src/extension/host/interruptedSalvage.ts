@@ -34,8 +34,8 @@ export interface InterruptedSalvageDeps {
 }
 
 /**
- * 崩溃恢复的停止原因：内核 `AbortStopReason` 早已预留 `'interrupted'`（流式中断），
- * 本打捞正是它等的那个产生点——**不新增枚举值**，只启用已声明的语义。
+ * 崩溃恢复的停止原因：内核 `AbortStopReason` 预留 `'interrupted'`，当前唯一产生点就是本打捞
+ *（语义 = 进程异常退出后由宿主收场恢复，**不是**通用流式中断）——不新增枚举值，只启用已声明的语义槽。
  *
  * 跨层契约（改前先读）：`'interrupted'` 的**唯一生产者就是这里**，宿主据此把它映射成
  * 「异常退出后恢复」（`shared/interruptReason.ts`）。若内核将来新增流式中断产生点，
