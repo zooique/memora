@@ -43,6 +43,7 @@ import {
   buildSystemPromptPrefix,
   buildEnvironmentContextBlock,
   buildWorkOrderContextBlock,
+  buildDelegationRuleContextBlock,
 } from '@/agent/assembler.js';
 import { estimateTokensMessages } from '@/agent/contextManager.js';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
@@ -252,6 +253,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       allowOnlyTools: opts.allowOnlyTools,
       // 宿主环境提供者（可选）：system prompt 注入运行环境事实段（命令执行能力方案 §10.4-②）
       environmentProvider: opts.environmentProvider,
+      // 越界交回规则提供者（可选）：宿主提供固定协议文本；内核仅在存在 workOrder 时投影
+      delegationRuleProvider: opts.delegationRuleProvider,
       // 脚本执行 node 路径（可选）：宿主注入真实 node 路径，避免无独立 node 时 ENOENT
       scriptNodePath: opts.scriptNodePath,
       // 禁用技能清单（配置形态启停）：透传装配 → SkillManager 过滤 L1/L2/L3
@@ -1662,8 +1665,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     );
     // 本会话职责边界段（托管派活 mandate）：同步读当前会话 SessionMeta（内存 Map，零 IO）。
     // 真机 T5：App 只把边界落 workOrder、Worker 首轮只拿 text ⇒ Worker 不知道边界存在而越界改文件；
-    // 这里只投影边界内容，不注入 [HAND_BACK] 协议（交回协议仍只在 Router 工具描述里）。
+    // HAND-BACK-UNREACHABLE-1：协议原先只在 Router 工具描述里，Worker 收不到 ⇒ 只知边界、
+    // 不会交回。现由宿主常量注入（delegationRuleProvider），仍只在「有边界」时投影。
     const workOrderContext = buildWorkOrderContextBlock(this.readCurrentWorkOrder());
+    const delegationRuleContext = workOrderContext
+      ? buildDelegationRuleContextBlock(this.#config.delegationRuleProvider?.() ?? '')
+      : '';
     const newPrefix = buildSystemPromptPrefix(
       rolePackPrompt,
       globalSkillList,
@@ -1672,6 +1679,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       environmentContext,
       residentRulesContext,
       workOrderContext,
+      delegationRuleContext,
     );
     this.loop.refreshRolePackPrefix(newPrefix);
     // 角色包底盘占用随切换实时更新（不依赖跑 prepare）：装配此刻即确定的真值

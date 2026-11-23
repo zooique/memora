@@ -495,6 +495,10 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       // ToolExecutor.isToolExposed 首行；与 denyTools 语义互斥，空数组 = 显式一个都不给。
       // 默认 undefined ⇒ 现有消费者逐字不变。
       'allowOnlyTools',
+      // 2026-11-23 新增（HAND-BACK-UNREACHABLE-1 · 越界交回规则，非 Breaking）：
+      // 定性 = 真能力（非 no-op 谎报）：宿主提供交回协议文本，内核仅在会话有 workOrder
+      // 时作为独立系统段投影给 Worker；缺省 undefined ⇒ 不注入，既有提示词逐字不变。
+      'delegationRuleProvider',
       'disabledSkills',
       'enableContextSummary',
       'environmentProvider',

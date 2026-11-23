@@ -64,14 +64,29 @@ import {
 } from './answerSessionQuestionTool.js';
 
 /**
+ * Worker 越界交回协议（宿主唯一真源）
+ *
+ * 两条消费面共用同一字面量，改措辞只改这一处：
+ *   ① Router 工具描述（`WORK_SESSION_TOOL_DISCIPLINE`）——告诉派活方 Worker 会怎么交回；
+ *   ② Worker 系统提示（`assemble.ts` 的 `delegationRuleProvider`）——让 Worker 自己知道
+ *      存在「超出边界就交回」这个出口（台账 `HAND-BACK-UNREACHABLE-1` 的根因就是这条缺失）。
+ *
+ * 措辞保持主语中立（不写「Router / Worker」），嵌进两边语境都成立；
+ * 格式真源 = `handBackMessage.ts` 的 B6/B9（`[HAND_BACK] reason: …`）。
+ */
+export const HAND_BACK_PROTOCOL =
+  '任务超出职责边界（mandate）时，不要继续执行：把交回消息作为本轮唯一输出，首字符写 [HAND_BACK] reason: <一句话>。';
+
+/**
  * 主控工具的岗位纪律（HOSTED-CONFIRM-SOFT-1 判据 ④ · 「岗位三层」第②层：工具契约不可换）
  *
  * 三条沿用 SOFT-1 定案原文，不在此另造判据：不推送、不发布；遇到先提醒；用户明确要求 = 授权。
  * 真相链：设计 = 定案 §4.2 P1 / B7；待办 = `HOSTED-CONFIRM-SOFT-1` ④。
  * 唯一消费面 = `create_session` / `send_to_session` 的 description——模型每次调用前读到。
  * 刻意不进 `Agent.chat()` 的 input：input 会原样落盘成轮的用户消息，注入纪律会让
- * live 投影（原文）与重启后的落盘历史（带纪律）显示漂移；Worker 侧送达需内核提示词注入位，
- * 不在宿主批内夹带（见台账补记）。
+ * live 投影（原文）与重启后的落盘历史（带纪律）显示漂移。
+ * Worker 侧交回规则不在这里，"怎么交回"由 `HAND_BACK_PROTOCOL` 经装配期
+ * `delegationRuleProvider` 注入 Worker 系统段（2026-11-23，`HAND-BACK-UNREACHABLE-1`）。
  * P2 Hand back 两句同在本常量（Worker 交回格式 + Router 三选一），不另造第二份纪律真源。
  * 第五句（派活状态以成功回执为准）出自 `ASSISTANT-EMPTY-ACK-1`：真机见助手 thought 写了
  * 「Send to session」却未发 tool_call、正文照抄上一轮「已接受」话术（软约束偶发幻觉）。
@@ -84,7 +99,8 @@ import {
 const WORK_SESSION_TOOL_DISCIPLINE =
   '岗位纪律（不可违反）：不推送、不发布；遇到先提醒；用户明确要求 = 授权。' +
   '开活 / 派活时把边界写进 mandate；不把推送 / 发布 / 发版这类不可逆操作交给 Worker。' +
-  'Worker 发现超出 mandate 时，把交回消息作为本轮唯一输出，首字符写 [HAND_BACK] reason: <一句话>。' +
+  'Worker 的交回纪律：' +
+  HAND_BACK_PROTOCOL +
   '收到交回后你决定转新活（create_session）/ 合并到现有活（send_to_session）/ 转述用户。' +
   '派活 / 开活的状态以工具成功回执为准：拿到回执才算已安排 / 已接受，未拿到时是已发起、等待受理。' +
   '调用 create_session / send_to_session 之前，必须先用正文（不是过程旁白、不是动作预告）告诉用户：' +

@@ -64,6 +64,7 @@ import {
   type RolePackBrief,
   type SessionHistoryFacts,
   type WorkSessionToolDeps,
+  HAND_BACK_PROTOCOL,
 } from './workSessionTools.js';
 // 代答回调契约（工具面独立模块）：与工具 handler 同一联合类型
 import type { HostedQuestionAnswerer } from './answerSessionQuestionTool.js';
@@ -597,6 +598,10 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     environmentProvider: createVscodeEnvironmentProvider({
       answerLanguage: options.answerLanguage,
     }),
+    // 越界交回规则（HAND-BACK-UNREACHABLE-1）：宿主常量注入，内核仅在会话存在 workOrder
+    // 时作为独立系统段投影给 Worker——协议原先只在 Router 工具描述里，Worker 收不到。
+    // 与工具纪律共用 `HAND_BACK_PROTOCOL` 同一字面量，改措辞只改一处。
+    delegationRuleProvider: () => HAND_BACK_PROTOCOL,
     // 工作区信任态（现读快照）：内核常驻规则层 fail-closed 闸的唯一入参；
     // 缺省 = undefined ⇒ 内核按未信任处理（不读任何常驻正文）
     workspaceTrusted,

@@ -2952,6 +2952,43 @@ describe('Agent · 作品投影实时刷新（workProjectionGenerated → loop �
     expect(refreshSpy).toHaveBeenCalled();
     refreshSpy.mockRestore();
   });
+
+  it('有职责边界时注入宿主交回规则；无边界时整段缺席（HAND-BACK-UNREACHABLE-1）', async () => {
+    const refreshSpy = vi.spyOn(AgentLoop.prototype, 'refreshRolePackPrefix');
+    agent = new TestableAgent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      messages: {
+        abortedByUser: '用户取消了对话',
+        maxIterationsReached: '\n\n[已达到最大迭代次数]',
+        recentConversationLabel: '[最近对话]',
+        userLabel: '用户',
+        assistantLabel: '助手',
+      },
+      delegationRuleProvider: () => '任务超出职责边界时写 [HAND_BACK] reason: <一句话>。',
+    });
+    await agent.init();
+    const sm = agent.sessionManager!;
+    const metaSpy = vi.spyOn(sm, 'getSessionMeta').mockReturnValue(undefined);
+
+    // 无 workOrder（自助 / 普通会话）→ 交回规则段不出现
+    refreshSpy.mockClear();
+    agent.emitWorkProjectionGenerated();
+    expect(refreshSpy.mock.calls.at(-1)![0]).not.toContain('## 本会话交回规则');
+
+    // 有 workOrder（托管 Worker）→ 边界段与交回规则段同时出现
+    metaSpy.mockReturnValue({ workOrder: '只允许改 a.md' } as never);
+    agent.emitWorkProjectionGenerated();
+    const prefix = refreshSpy.mock.calls.at(-1)![0];
+    expect(prefix).toContain('## 本会话职责边界');
+    expect(prefix).toContain('## 本会话交回规则');
+    expect(prefix).toContain('[HAND_BACK]');
+    refreshSpy.mockRestore();
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════

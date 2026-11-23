@@ -115,8 +115,9 @@ const SKILL_WRITE_LOCATION_PROMPT = `## 技能落点
 /**
  * 将托管派活的会话边界（`SessionMeta.workOrder`）格式化为 system prompt 注入段
  *
- * 只送边界内容，不送交回协议：Worker 真机失败的原因是「不知道边界存在」，
- * 而不是「不知道怎么交回」（`[HAND_BACK]` 协议只在 Router 工具描述里，本段不重复）。
+ * 只送边界内容，不送交回协议：交回规则由宿主常量经 `buildDelegationRuleContextBlock`
+ * 单独成段投影（2026-11-23 订正——原注释假定「Worker 只是不知道边界、不用告诉它怎么
+ * 交回」，`HAND-BACK-UNREACHABLE-1` 证伪：协议原先只在 Router 工具描述里，Worker 收不到）。
  * 零解释转发：workOrder 原文原样入段，不追加行为脚本；空/纯空白 → 空串
  * （调用方 filter(Boolean) 自动跳过，非托管会话 prompt 不出现空壳段）。
  *
@@ -131,6 +132,22 @@ export function buildWorkOrderContextBlock(workOrder?: string): string {
     '派活方给本会话设定的任务边界（只读事实，不是权限声明）：',
     text,
   ].join('\n');
+}
+
+/**
+ * 将宿主提供的「越界交回规则」格式化为 system prompt 注入段
+ *
+ * 与 `buildWorkOrderContextBlock` 同构：零解释转发宿主常量原文，内核不解析协议、
+ * 不裁决格式（`[HAND_BACK]` 的语义归宿主）。是否注入由调用方判定——只有本会话
+ * 存在职责边界（workOrder）时才传本段，自助 / 普通会话不出现该段。
+ *
+ * @param rule 宿主提供的交回规则文本（`delegationRuleProvider()` 产出）
+ * @returns 「## 本会话交回规则」段落（可能为空串）
+ */
+export function buildDelegationRuleContextBlock(rule?: string): string {
+  const text = rule?.trim();
+  if (!text) return '';
+  return ['## 本会话交回规则', text].join('\n');
 }
 
 /**
@@ -183,13 +200,14 @@ export function buildEnvironmentContextBlock(
  *   1. 角色包 L1 persona + 技能清单（rolePackPrompt）
  *   2. 项目规则段（residentRulesContext，可选：清单里 resident=true 的条目正文）
  *   3. 本会话职责边界段（workOrderContext，可选：托管派活的 SessionMeta.workOrder）
- *   4. 全局技能 L1 清单（globalSkillList）
- *   5. 技能落点固定段（SKILL_WRITE_LOCATION_PROMPT）
- *   6. 作品投影装配注入块（workProjectionContext，可选：极简元数据清单，AI 按需 read_file）
- *   7. 运行环境事实段（environmentContext，可选：宿主上报的 OS/shell/运行时）
- *   8. 当前时间戳
- *   9. Turn 起始策略固定段
- *   10. 分隔线
+ *   4. 本会话交回规则段（delegationRuleContext，可选：宿主常量，仅在存在职责边界时注入）
+ *   5. 全局技能 L1 清单（globalSkillList）
+ *   6. 技能落点固定段（SKILL_WRITE_LOCATION_PROMPT）
+ *   7. 作品投影装配注入块（workProjectionContext，可选：极简元数据清单，AI 按需 read_file）
+ *   8. 运行环境事实段（environmentContext，可选：宿主上报的 OS/shell/运行时）
+ *   9. 当前时间戳
+ *   10. Turn 起始策略固定段
+ *   11. 分隔线
  *
  * 必须包含全局技能清单和时间戳——若只拼接 rolePackPrompt，
  * 首次角色切换后全局技能永久不可见。
@@ -202,6 +220,7 @@ export function buildEnvironmentContextBlock(
  * @param environmentContext 运行环境事实段（可选；由 buildEnvironmentContextBlock 格式化宿主快照产出）
  * @param residentRulesContext 项目规则段（可选；由 ResidentRulesManager.contextBlock() 产出，空串不注入）
  * @param workOrderContext 本会话职责边界段（可选；由 buildWorkOrderContextBlock 投影 SessionMeta.workOrder，空串不注入）
+ * @param delegationRuleContext 本会话交回规则段（可选；由 buildDelegationRuleContextBlock 投影宿主常量，仅在有职责边界时传入）
  * @returns 完整的 systemPromptPrefix
  */
 export function buildSystemPromptPrefix(
@@ -212,6 +231,7 @@ export function buildSystemPromptPrefix(
   environmentContext?: string,
   residentRulesContext?: string,
   workOrderContext?: string,
+  delegationRuleContext?: string,
 ): string {
   const systemPrefixParts = [
     rolePackPrompt,
@@ -221,6 +241,9 @@ export function buildSystemPromptPrefix(
     // 本会话职责边界段：会话级约束，紧跟项目规则（同为「约束类」资料），
     // 在技能清单之前；未派活 / 空 mandate 时空串，filter(Boolean) 自动跳过。
     workOrderContext,
+    // 本会话交回规则段：紧贴职责边界（上下句关系），只有存在边界时才有意义；
+    // 宿主常量文本，内核零解释投影，空串自动跳过。
+    delegationRuleContext,
     globalSkillList,
     // 技能落点提示（固定事实段）：紧贴技能清单，模型看完「有哪些技能」即看到「新技能写哪」。
     // 无条件注入（无技能时用户仍可能要求创建技能）；SSOT = SKILL_WRITE_LOCATION_PROMPT。

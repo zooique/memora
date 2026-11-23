@@ -26,6 +26,7 @@ import {
   buildSystemPromptPrefix,
   buildEnvironmentContextBlock,
   buildWorkOrderContextBlock,
+  buildDelegationRuleContextBlock,
 } from '@/agent/assembler.js';
 import type { AssembleInput, AgentHooks } from '@/agent/assembler.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
@@ -1294,7 +1295,7 @@ describe('buildWorkOrderContextBlock · 会话职责边界注入', () => {
     const block = buildWorkOrderContextBlock('只盘点 docs，不改任何文件');
     expect(block).toContain('## 本会话职责边界');
     expect(block).toContain('只盘点 docs，不改任何文件');
-    // 本轮只送边界、不送交回格式：协议符仍只在 Router 工具描述里
+    // 边界段只送边界：协议由独立段承载（见下方 buildDelegationRuleContextBlock）
     expect(block).not.toContain('[HAND_BACK]');
   });
 
@@ -1317,6 +1318,44 @@ describe('buildWorkOrderContextBlock · 会话职责边界注入', () => {
 
     const withoutOrder = buildSystemPromptPrefix('persona', 'skills', 'zh-CN');
     expect(withoutOrder).not.toContain('## 本会话职责边界');
+  });
+});
+
+// ─── buildDelegationRuleContextBlock · 越界交回规则段（HAND-BACK-UNREACHABLE-1）──
+
+describe('buildDelegationRuleContextBlock · 交回规则注入', () => {
+  it('空 / 纯空白 → 空串（宿主未提供规则时不注入空壳段）', () => {
+    expect(buildDelegationRuleContextBlock(undefined)).toBe('');
+    expect(buildDelegationRuleContextBlock('   \n ')).toBe('');
+  });
+
+  it('原文入段：含独立标题与宿主文本（内核零解释转发）', () => {
+    const block = buildDelegationRuleContextBlock('超出边界时首字符写 [HAND_BACK] reason: …');
+    expect(block).toContain('## 本会话交回规则');
+    expect(block).toContain('[HAND_BACK]');
+  });
+
+  it('经 buildSystemPromptPrefix 注入：紧跟职责边界段、在全局技能清单之前', () => {
+    const prefix = buildSystemPromptPrefix(
+      'persona',
+      '## 可用技能\n- skill-a',
+      'zh-CN',
+      undefined,
+      undefined,
+      undefined,
+      buildWorkOrderContextBlock('只盘点，不改文件'),
+      buildDelegationRuleContextBlock('超出边界时写 [HAND_BACK]'),
+    );
+    const orderIdx = prefix.indexOf('## 本会话职责边界');
+    const ruleIdx = prefix.indexOf('## 本会话交回规则');
+    const skillsIdx = prefix.indexOf('## 可用技能');
+    expect(ruleIdx).toBeGreaterThan(orderIdx);
+    expect(skillsIdx).toBeGreaterThan(ruleIdx);
+  });
+
+  it('无职责边界时不出现交回规则段（调用方门控）', () => {
+    const prefix = buildSystemPromptPrefix('persona', 'skills', 'zh-CN');
+    expect(prefix).not.toContain('## 本会话交回规则');
   });
 });
 
