@@ -282,6 +282,9 @@ export function toStopReason(derived: InterruptReason): WorkbenchStopReason {
     case 'unavailable':
       // 取不到原因就如实标取不到：不回落「用户停止」
       return { kind: 'unavailable' };
+    case 'recovered':
+      // 进程异常退出后由打捞恢复：既不是用户停，也不是错误，单列一档
+      return { kind: 'recovered' };
   }
 }
 

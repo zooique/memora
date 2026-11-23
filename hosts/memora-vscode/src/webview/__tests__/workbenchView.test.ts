@@ -444,6 +444,7 @@ describe('workbenchView — 状态显示纪律', () => {
           job('s-timeout', { kind: 'stopped', stop: { kind: 'timeout' } }),
           job('s-error', { kind: 'stopped', stop: { kind: 'error', message: 'upstream 502' } }),
           job('s-unknown-reason', { kind: 'stopped', stop: { kind: 'unavailable' } }),
+          job('s-recovered', { kind: 'stopped', stop: { kind: 'recovered' } }),
         ],
       }),
     );
@@ -455,6 +456,7 @@ describe('workbenchView — 状态显示纪律', () => {
       'Request timed out',
       'Ended by an error: upstream 502',
       'Reason unavailable',
+      'Recovered after an unexpected exit',
     ]);
     // 内部码一个都不许**直接**出现在界面上：主标签 / 副行必须是人话，
     // 不得把枚举值（queued / unsettled / stopped …）原样打印出来。
@@ -474,6 +476,7 @@ describe('workbenchView — 状态显示纪律', () => {
       'timeout',
       'error',
       'unavailable',
+      'recovered',
     ];
     for (const text of rendered) {
       expect(enumValues).not.toContain(text);

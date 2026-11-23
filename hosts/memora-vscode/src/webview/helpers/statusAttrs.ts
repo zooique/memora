@@ -37,31 +37,33 @@ const CURSOR_STATUS_LABEL: Record<CursorStatus, string> = {
 };
 
 /**
- * 终态三档（data-terminus 输出域，与运行态 data-status 通道严格分离，2026-10-19）。
- * 渲染位点（TERMINUS-SSOT-1，2026-10-31 收口）：三档终态均由 round-group 底栏 :has 消费
- * （已完成=淡勾 / 用户中断=中性文字 / 异常中断=红字）；无容器兜底轮由载体尾自足承接
+ * 终态四档（data-terminus 输出域，与运行态 data-status 通道严格分离，2026-10-19）。
+ * 渲染位点（TERMINUS-SSOT-1，2026-10-31 收口）：各档终态均由 round-group 底栏 :has 消费
+ * （已完成=淡勾 / 用户中断=中性文字 / 异常中断=红字 / 崩溃恢复=中性文字）；无容器兜底轮由载体尾自足承接
  * （见 chatStyles 载体尾规则）。写入时机 = 收场消息与重放：`done` 按盘面 `roundStatus`
  * 定格（complete → 已完成；显式非 complete 且已定义 → 异常中断；缺省按已完成处理，兼容回放）；
  * 中断轮与重放中断轮由 `appendInterruptedRow` 调 `decideTerminus` 定格。中断档位依据 =
  * 该轮 processEvents：有 `error` 事件优先判 `error-interrupted`，无则看 `aborted`
- * （`stopReason === 'user'` → 用户中断，其余 → 异常中断）。
+ * （`stopReason === 'user'` → 用户中断，`'interrupted'` → 崩溃恢复，其余 → 异常中断）。
  * `error` **协议消息**分支本身不写终态：原因句走平铺错误行，终态归随后的 `done`。
  *
  * 语义极限（如实登记，非缺陷）：盘面 `RoundStatus.interrupted` 合并了「用户停」与「内核失败」
- * 两种事实，二者靠过程事件（aborted / error）区分；崩溃打捞轮两者皆无（进程没来得及写），
- * 按定案「等同用户点停止」显「用户中断」。**不得**在展示层再补一条判据（那会造第二个真相源）。
+ * 两种事实，二者靠过程事件（aborted / error）区分。**崩溃打捞轮也可分**：死掉的进程写不了，
+ * 但重启后的宿主打捞时**知道**自己在收场一个没跑完的轮，会补写 `aborted(stopReason:'interrupted')`
+ * （见 `extension/host/interruptedSalvage.ts`）。历史遗留的无标记中断轮仍按定案显「用户中断」。
  *
- * 若将来真要分「崩溃 / 失败 / 用户停」，两条边界须先分清（否则会把「补写点」错做成「拆档位」）：
+ * 若将来还要细分「失败 / 用户停」，边界须先分清（否则会把「补写点」错做成「拆档位」）：
  *   - **运行期失败**可分——前提是内核**补 `error` 写入点**（当前 `error` 档零生产者，运行时失败
  *     并轨 `interrupted`），而不是改 `interrupted` 的语义；
- *   - **崩溃打捞轮**不可分——进程已死、无人可写，加任何字段都救不回，属**信息丢失**而非判据缺失，
- *     展示层只能按定案显「用户中断」。
+ *   - **无标记的中断轮**（本机制上线前的历史轮）**不可分**——信息从未落盘，展示层只能按定案显
+ *     「用户中断」；不为它们做回溯补写（那会把「展示猜测」写成「事实」）。
  * 且**拆 `RoundStatus` 档位本身是破坏式变更**：`isRoundSettled` 把 `interrupted` 当「定案正常收场」
  * 的落脚点会随之消失，历史轮也无法回溯重标 ⇒ 不可作为「想显示得更准」的手段。
  */
 export type TerminusInterruptKind =
   | 'user-interrupted' // 终态：用户主动停止（载体 = 中断轮宿主块，底栏文字标签）
-  | 'error-interrupted';
+  | 'error-interrupted'
+  | 'recovered-interrupted'; // 终态：进程异常退出后由宿主打捞恢复（用户没按停，也不是错误）
 
 export type TerminusKind =
   | 'completed' // 终态：底栏 time 之后淡勾（正文尾不再显示）
@@ -73,6 +75,7 @@ const TERMINUS_LABEL: Record<TerminusKind, string> = {
   completed: 'Completed',
   'user-interrupted': 'Stopped by user',
   'error-interrupted': 'Interrupted by error',
+  'recovered-interrupted': 'Interrupted after an unexpected exit',
 };
 
 /**

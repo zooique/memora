@@ -200,6 +200,9 @@ function describeStopper(derived: ReturnType<typeof deriveInterruptReason>): str
     case 'unavailable':
       // 取不到就如实标取不到：不回落「用户停」，也不用 unknown 当垃圾桶
       return '原因不可知（本轮以中断收场，但未收到停止原因）';
+    case 'recovered':
+      // 宿主重启后打捞收场：用户没按停，也不是错误——如实说「进程异常退出」
+      return '进程异常退出后恢复';
   }
 }
 

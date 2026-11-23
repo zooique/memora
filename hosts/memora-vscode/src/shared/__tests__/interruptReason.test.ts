@@ -1,7 +1,7 @@
 /**
  * 中断原因投影单测（`shared/interruptReason.ts`）
  *
- * 钉住「原因只写真实可测的」：用户停 / 超时 / 异常 / 取不到 四档，以及
+ * 钉住「原因只写真实可测的」：用户停 / 超时 / 异常 / 崩溃恢复 / 取不到 五档，以及
  * 「无事件 ≠ 用户停」这条与 `decideTerminus` 展示兜底刻意分家的边界。
  */
 import { describe, expect, it } from 'vitest';
@@ -48,8 +48,13 @@ describe('deriveInterruptReason', () => {
     expect(deriveInterruptReason([aborted('timeout')]).stopper).toBe('timeout');
   });
 
+  it("aborted + stopReason='interrupted' → 崩溃恢复（不冒充用户停、也不算异常）", () => {
+    const r = deriveInterruptReason([aborted('interrupted')]);
+    expect(r.stopper).toBe('recovered');
+    expect(r.source?.type).toBe('aborted');
+  });
+
   it('aborted 但 stopReason 是未登记值 / 缺省 → 如实取不到（不冒充任何人）', () => {
-    expect(deriveInterruptReason([aborted('interrupted')]).stopper).toBe('unavailable');
     expect(deriveInterruptReason([aborted('connection')]).stopper).toBe('unavailable');
     // 旧数据没有 stopReason：保留原始事件，但仍不编造「用户停」
     const legacy = deriveInterruptReason([aborted()]);

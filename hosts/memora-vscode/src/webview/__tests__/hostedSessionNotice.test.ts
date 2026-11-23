@@ -335,6 +335,29 @@ describe('HostedSessionNotifier', () => {
     expect(text).not.toContain('用户主动停止');
   });
 
+  it('崩溃恢复（打捞补 aborted/interrupted）→ 结论归中断并说明进程异常退出，不冒充用户停或失败', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));
+    h.rounds.set(
+      'r-rec',
+      round('r-rec', 'interrupted', [
+        {
+          type: 'aborted',
+          seq: 1,
+          ts: TS,
+          payload: { reason: 'host-restart-salvage', stopReason: 'interrupted' },
+        },
+      ]),
+    );
+    h.notifier.remember(CHILD, CREATOR);
+
+    expect(h.notifier.noteSettledFlow(CHILD, 'r-rec', false, false)).toBe(true);
+    const text = h.creatorQueue.mock.calls[0][0] as string;
+    expect(text).toContain('进程异常退出后恢复');
+    expect(text).not.toContain('用户主动停止');
+    expect(text).not.toContain('异常终止');
+  });
+
   it('暂停不是终态 / 创建者已非托管 → 都不通知', () => {
     const h = harness();
     h.metas.set(CHILD, meta(CHILD, 'hosted', '抓取任务'));

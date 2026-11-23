@@ -395,17 +395,20 @@ export function decideTerminus(events: ProcessEvent[]): {
   }
   if (derived.source?.type === 'aborted') {
     // 判据字段 = stopReason（reason 是自由文本描述，如 'User cancelled the conversation'）
+    const reason = stopReasonLabel(derived.source.payload);
+    // 崩溃恢复单列一档：既不是用户停，也不是错误（打捞补写的 aborted 事件，stopReason='interrupted'）
+    if (derived.stopper === 'recovered') return { kind: 'recovered-interrupted', reason };
     return derived.stopper === 'user'
-      ? { kind: 'user-interrupted', reason: stopReasonLabel(derived.source.payload) }
-      : { kind: 'error-interrupted', reason: stopReasonLabel(derived.source.payload) };
+      ? { kind: 'user-interrupted', reason }
+      : { kind: 'error-interrupted', reason };
   }
-  // 兜底案归「用户中断」（TERMINUS-SSOT-1，2026-10-31）：interrupted 收场的唯一运行时来源 =
-  // handleStop（生产唯一 abort() 调用点 = `chatRunControlOps.handleStop`，chatPanel 只委托；
-  // paused 案 abandonOnStop 同属用户停）+ 崩溃打捞轮
-  // （messageHistory 定案「崩溃残留轮 = 等同于用户点停止的正常 turn」）——两来源数据面同构，
-  // 展示面跟随同一事实；旧 null 案「不猜终态」令底栏无标签、停止行「对话已中断」孤悬上方
-  // （真机主诉）。旧 null 返回域退役，签名随之收窄。语义键仍放法定口袋 stopReason
-  //（TERM-REASON-1 沿革）：查得「对话已中断」译文，reason 供停止行/复制源兜底。
+  // 兜底案归「用户中断」（TERMINUS-SSOT-1，2026-10-31）：无任何终止事件时无可测成因。
+  // 生产来源只剩两类：① handleStop（生产唯一 abort() 调用点 = `chatRunControlOps.handleStop`；
+  // paused 案 abandonOnStop 同属用户停）；② **本机制上线前**遗留的崩溃打捞轮（盘上无标记）。
+  // 新打捞轮已在上游补 `aborted(stopReason:'interrupted')`，走上一分支判「崩溃恢复」，
+  // 不再落到这里；为历史无标记轮做回溯补写会把「展示猜测」写成「事实」，不做。
+  // 旧 null 案「不猜终态」令底栏无标签、停止行「对话已中断」孤悬上方（真机主诉）。
+  // 语义键仍放法定口袋 stopReason（TERM-REASON-1 沿革）：查得「对话已中断」译文，reason 供停止行/复制源兜底。
   return {
     kind: 'user-interrupted',
     reason: stopReasonLabel({ stopReason: 'interrupted', reason: 'interrupted' }),

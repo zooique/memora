@@ -105,7 +105,7 @@ describe('projectSessionStatus — 主四档与边缘事实', () => {
     expect(status).toEqual({ kind: 'unsettled' });
   });
 
-  it('被中止 → 带已落地的原因（用户停 / 超时 / 异常原文 / 取不到）', () => {
+  it('被中止 → 带已落地的原因（用户停 / 超时 / 崩溃恢复 / 异常原文 / 取不到）', () => {
     const interrupted = (events: ProcessEvent[]) =>
       projectSessionStatus(
         ports({
@@ -119,6 +119,11 @@ describe('projectSessionStatus — 主四档与边缘事实', () => {
     expect(interrupted([aborted('timeout')])).toEqual({
       kind: 'stopped',
       stop: { kind: 'timeout' },
+    });
+    // 崩溃打捞补的 'interrupted' 必须落到独立档——映射成 user/timeout 都是编造原因
+    expect(interrupted([aborted('interrupted')])).toEqual({
+      kind: 'stopped',
+      stop: { kind: 'recovered' },
     });
     expect(
       interrupted([{ type: 'error', seq: 1, ts: TS, payload: { message: 'upstream 502' } }]),

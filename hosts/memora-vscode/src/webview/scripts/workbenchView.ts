@@ -393,6 +393,9 @@ function describeStop(stop: WorkbenchStopReason): string {
         : l10n.t('Ended by an error');
     case 'unavailable':
       return l10n.t('Reason unavailable');
+    case 'recovered':
+      // 进程中断后恢复：不冒充用户停、也不冒充错误
+      return l10n.t('Recovered after an unexpected exit');
   }
 }
 

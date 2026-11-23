@@ -59,6 +59,7 @@ import { WorkspaceRoundStore } from '../workspaceRoundStore.js';
 import { WorkspaceStorage } from '../workspaceStorage.js';
 import { salvageInterruptedRounds } from '../interruptedSalvage.js';
 import { deriveNarrateText } from '../../../shared/narrateText.js';
+import { deriveInterruptReason } from '../../../shared/interruptReason.js';
 
 /** 宿主根（本文件在 src/extension/host/__tests__ 下） */
 const HOST_ROOT = join(import.meta.dirname, '..', '..', '..', '..');
@@ -263,6 +264,18 @@ describe('跨重启恢复：真杀进程 → 重启打捞 → 升级为正常 st
     const after = roundStore.getById(crashedRoundId)!;
     expect(after.status).toBe('interrupted');
     expect(after.completedAt).toBeTruthy();
+
+    // 成因真落盘（HOST-INTERRUPT-CAUSE-1）：打捞必须在收场前把「为什么停」写进 processEvents。
+    // 只断言 status 不够——写入顺序一旦变成「先收场后补标记」，标记会被 store-first 收场覆盖，
+    // 单测（假 store）与这里的 status 断言都仍绿，而三处消费面会静默降级成「原因取不到」。
+    const salvageMark = (after.processEvents ?? []).find(
+      (e) => e.type === 'aborted' && e.payload.stopReason === 'interrupted',
+    );
+    expect(salvageMark, '打捞标记未落盘：aborted(stopReason=interrupted) 缺失').toBeDefined();
+    // 跨层同源：宿主消费面用的就是这条共享派生（不是测试里另写一遍映射）
+    expect(deriveInterruptReason(after.processEvents ?? [])).toMatchObject({
+      stopper: 'recovered',
+    });
 
     // 端到端「重启后能看见」：宿主加载链正是 loadMessages → roundIds → RoundStore。
     // 注意 loadMessages 收的是 (date, session) 两段，内部再拼回 `date-session`（buildSessionId

@@ -30,8 +30,9 @@ export type WorkbenchJobKind =
  * 被中止的停手者分档（与 `shared/interruptReason.ts` 的 `InterruptStopper` 同源）
  *
  * `unavailable` = 本轮确实以中断收场，但没有任何可判定的原因（如实标，不伪造）。
+ * `recovered` = 进程异常退出后由宿主打捞恢复（用户没按停止，也不是错误）。
  */
-export type WorkbenchStopKind = 'user' | 'timeout' | 'error' | 'unavailable';
+export type WorkbenchStopKind = 'user' | 'timeout' | 'error' | 'recovered' | 'unavailable';
 
 /** 被中止的原因（只有 `kind === 'stopped'` 携带） */
 export interface WorkbenchStopReason {

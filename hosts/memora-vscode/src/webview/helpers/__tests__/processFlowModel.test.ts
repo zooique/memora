@@ -195,16 +195,22 @@ describe('stopReasonLabel / decideTerminus', () => {
     expect(v.reason.length).toBeGreaterThan(0);
   });
 
-  it('aborted + stopReason=user = 用户中断；其余 stopReason = 异常中断', () => {
+  it('aborted + stopReason=user = 用户中断；interrupted = 崩溃恢复；其余 = 异常中断', () => {
     expect(decideTerminus([event('aborted', 1, { reason: 'x', stopReason: 'user' })]).kind).toBe(
       'user-interrupted',
     );
     expect(decideTerminus([event('aborted', 2, { reason: 'x', stopReason: 'timeout' })]).kind).toBe(
       'error-interrupted',
     );
+    // 崩溃打捞轮补写的标记：单列一档，既不冒充用户停，也不冒充错误
+    expect(
+      decideTerminus([
+        event('aborted', 3, { reason: 'host-restart-salvage', stopReason: 'interrupted' }),
+      ]).kind,
+    ).toBe('recovered-interrupted');
   });
 
-  it('无 error / aborted = 用户中断（TERMINUS-SSOT-1 改判：interrupted 收场唯一来源 = handleStop 用户停 + 打捞轮「等同用户停」定案；旧 null 不猜终态令底栏无标签，已退役）', () => {
+  it('无 error / aborted = 用户中断（TERMINUS-SSOT-1：兜底只剩 handleStop 与上线前的无标记历史轮）', () => {
     const v = decideTerminus([toolStart(1, 'a')]);
     expect(v.kind).toBe('user-interrupted');
     // TERM-REASON-1 收口（2026-10-29）沿革保持：兜底案语义键放法定口袋 stopReason ⇒ 查得译文。

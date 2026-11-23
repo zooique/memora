@@ -25,10 +25,13 @@ type AbortedEvent = Extract<ProcessEvent, { type: 'aborted' }>;
  * - `user`：宿主 abort（生产唯一调用点 = 用户点停止）或 `stopReason==='user'`
  * - `timeout`：`stopReason==='timeout'`（LLM 请求 / chat 锁超时）
  * - `error`：`error` 事件（异常终止，带回原始错误文本）
+ * - `recovered`：`aborted` 事件的 `stopReason === 'interrupted'`——宿主重启时发现该轮未收场，
+ *   由**打捞进程**补写的「异常退出后恢复」标记（`interruptedSalvage`）。与 user 严格分开：
+ *   用户没按停止，是进程先死了
  * - `unavailable`：本轮确实以中断收场，但**没有任何可判定的原因**。如实标「取不到」，
  *   不并入 user、也不叫 unknown（名字即结论，不能被当成垃圾桶）
  */
-export type InterruptStopper = 'user' | 'timeout' | 'error' | 'unavailable';
+export type InterruptStopper = 'user' | 'timeout' | 'error' | 'recovered' | 'unavailable';
 
 /** 原因投影结果 */
 export interface InterruptReason {
@@ -68,7 +71,9 @@ export function deriveInterruptReason(
     const stopReason = aborted.payload.stopReason;
     if (stopReason === 'user') return { stopper: 'user', source: aborted };
     if (stopReason === 'timeout') return { stopper: 'timeout', source: aborted };
-    // 'interrupted' / 'connection' 目前无生产者；未登记值同样不冒充任何人
+    // 'interrupted' 的唯一生产者 = 崩溃打捞（宿主重启时补写）⇒ 归「异常退出后恢复」
+    if (stopReason === 'interrupted') return { stopper: 'recovered', source: aborted };
+    // 'connection' 目前无生产者；未登记值同样不冒充任何人
     return { stopper: 'unavailable', source: aborted };
   }
 
