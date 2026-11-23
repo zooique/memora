@@ -30,28 +30,34 @@ const KEY_SEP = ': '; // 冒号+空格
 /**
  * 正则判定：以 [HAND_BACK] 开头即认定为 Hand back 消息
  *
+ * 判定前剔除前导空白：模型流式输出常在整轮正文前留空行/空格，若按原样
+ * `startsWith` 判定会把合法交回**静默漏判**为普通落定（假阴性），
+ * 交回通知发不出去。只放宽「前导空白」，不放宽「必须在最前」——
+ * 正文先说话、代码围栏包裹等一律不认（协议要求交回是整轮唯一输出）。
+ *
  * 不做完整字段校验——那是 parseHandBackMessage 的职责；
  * isHandBackMessage 只回答"这条是不是 Hand back 消息"，让宿主消费面能快速分流。
  */
 export function isHandBackMessage(text: string): boolean {
-  return text.startsWith(PREFIX);
+  return text.trimStart().startsWith(PREFIX);
 }
 
 /**
  * 解析 Hand back 消息文本 → HandBackMessage 结构化对象
  *
  * 解析规则（设计文档 B6/B9 同源）：
- *   1. 切掉 PREFIX 前缀
+ *   1. 剔除前导空白后切掉 PREFIX 前缀
  *   2. 按 FIELD_SEP 切字段（顺序不固定）
  *   3. 每字段按 KEY_SEP 切键值，trim 后填空
  *   4. payload 字段值尝试 JSON.parse，失败当普通字符串（B9 兼容两种格式）
  *
- * @returns 结构化对象；如果文本不以 PREFIX 开头或解析全空，返回 null
+ * @returns 结构化对象；如果文本（剔除前导空白后）不以 PREFIX 开头或解析全空，返回 null
  */
 export function parseHandBackMessage(text: string): HandBackMessage | null {
-  if (!isHandBackMessage(text)) return null;
+  const trimmedText = text.trimStart();
+  if (!trimmedText.startsWith(PREFIX)) return null;
 
-  const body = text.slice(PREFIX.length).trim();
+  const body = trimmedText.slice(PREFIX.length).trim();
   if (!body) return null;
 
   const fields = body.split(FIELD_SEP);

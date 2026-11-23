@@ -23,6 +23,14 @@ describe('handBackMessage', () => {
       expect(isHandBackMessage('HAND_BACK reason: x')).toBe(false);
       expect(isHandBackMessage('')).toBe(false);
     });
+    it('前导空白（换行 / 空格）不影响识别 → true', () => {
+      expect(isHandBackMessage('\n\n[HAND_BACK] reason: 超出范围')).toBe(true);
+      expect(isHandBackMessage('   [HAND_BACK] reason: 超出范围')).toBe(true);
+    });
+    it('正文先说话 / 代码围栏包裹 → false（必须在最前，保持协议严格）', () => {
+      expect(isHandBackMessage('已完成盘点。[HAND_BACK] reason: x')).toBe(false);
+      expect(isHandBackMessage('```\n[HAND_BACK] reason: x\n```')).toBe(false);
+    });
   });
 
   // ── parseHandBackMessage：纯文本版（B6） ──
@@ -55,6 +63,15 @@ describe('handBackMessage', () => {
     it('未知字段 → 忽略（未来扩张）', () => {
       const result = parseHandBackMessage('[HAND_BACK] reason: x | unknown: y');
       expect(result).toEqual({ reason: 'x' });
+    });
+    it('前导换行 / 空格仍能解析出 reason（真机常见流式空白）', () => {
+      expect(parseHandBackMessage('\n\n[HAND_BACK] reason: 超出边界')).toEqual({
+        reason: '超出边界',
+      });
+      expect(parseHandBackMessage('  [HAND_BACK] reason: 超出边界 | suggestion: 新建')).toEqual({
+        reason: '超出边界',
+        suggestion: '新建',
+      });
     });
   });
 
