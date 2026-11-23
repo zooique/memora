@@ -703,8 +703,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //             var(--dim-2xl) 的「提示卡最大宽高」既有语义）+3（2026-10-28，
     //             实数经 scripts/count-token-refs.mjs 实锤同步）
     //             IMG-7：聊天记录缩略图 .msg-attachment 的 max-width/max-height 引
-    //             var(--dim-xl)/var(--dim-lg) +2（2026-10-28，同上实锤同步；D30 原文 240 宽在
-    //             刻度里无档，按「不造并列值」复用邻近档，故此处是刻度复用不是新增刻度）
+    //             var(--dim-lg)/var(--dim-lg) +2（2026-10-28 初引 dim-xl/dim-lg；2026-11-24
+    //             用户真机反馈图片噪音大，宽度由 dim-xl(280) 收至 dim-lg(160)、家族计数不变，
+    //             同上实锤同步；D30 原文 240 宽在刻度里无档，按「不造并列值」复用邻近档）
     //             27：COPY-2 右键菜单 .ctxmenu min-width 引 var(--dim-lg)（contextMenuStyles，
     //             原稿裸值 148px 在刻度里无档，按「不造并列值」复用邻近档）+1（2026-10-30）
     //             DIM-28（0.9.0 会话级钉住）：.skill-chip.is-large 的 max-width 引 var(--dim-3xl)
@@ -775,6 +776,15 @@ describe('浮层宽度必须带视口兜底（IMG-11 回归锁）', () => {
     const block = blockOf(chatStyles(), '.image-chip-tip__img');
     expect(block).toContain('max-width: 100%');
     expect(block).not.toMatch(/max-width:\s*var\(--dim-2xl\);/);
+  });
+
+  it('正文缩略图宽度上限锁 160（IMG-7 降噪 · 2026-11-24，防回退 dim-xl 全门失明）', () => {
+    // 家族计数守卫对 dim-xl→dim-lg 的令牌互换失明（计数都记 var(--dim- 一次），
+    // 故必须精确钉引用名：否则有人把宽度改回 280，噪音回归却无任何门变红。
+    const block = blockOf(chatStyles(), '.msg-attachment');
+    expect(block).toContain('max-width: min(var(--dim-lg), 100%)');
+    expect(block).toContain('max-height: var(--dim-lg)');
+    expect(block).not.toContain('var(--dim-xl)');
   });
 });
 

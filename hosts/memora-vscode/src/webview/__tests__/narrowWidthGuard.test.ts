@@ -7,7 +7,7 @@
  *  唯一可行的方向是**内容自己带兜底**：宽度上限必须能随视口收缩。
  *
  * 该类伤在同一个仓库已复发三次，且每次都是靠人肉 grep 事后发现：
- *   ① 正文缩略图 `.msg-attachment`（IMG-7，固定 280 上限）；
+ *   ① 正文缩略图 `.msg-attachment`（IMG-7，原固定 280 上限，2026-11-24 收至 160）；
  *   ② 输入区浮层 `.image-chip-tip`（IMG-11，固定 320 上限）；
  *   ③ 本轮一次性扫出四处同族未修面（`.round-nav__list` / `.context-ring__tip` /
  *      `.session-history .treedd__menu` 的 min 压 max / `.treedd__menu` 只有下限没有上限）。
