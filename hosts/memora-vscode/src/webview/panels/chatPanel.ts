@@ -1189,7 +1189,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 推理深度 / 适配器形态）——真机异常轮自带取参数面，免截图、口问即可离线破案。
    * ⚠️ 参数面记的是**生效值**而非用户配置值：输出上限由内核 `buildChatOptions` 在 per-LLM
    * 配置与角色包策略 `act.outputLimit` 间取更小值（宿主不重算），只记配置面会把「我配了 64K」当成
-   * 「真的发了 64K」——真机排雷已因此得出过错误结论（详见 tasks/审查-空响应根因排雷与优化方案-20260929.md）。
+   * 「真的发了 64K」——真机排雷已因此得出过错误结论（定案见 ADR-035：取证面记生效值、不记配置快照）。
    * @param providerConfig 流首取的激活 Provider 配置快照（仅作为 agent 未装配时的回落来源）
    * @param agent 本流实例（`consumeFlow` 按会话取）：轮级角色只认它的实际激活包，不认显示会话的 `_activeRolePack`；缺省仅测试直驱。
    */
