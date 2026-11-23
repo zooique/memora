@@ -163,9 +163,9 @@ export function isRetryableToolError(input: ToolOutcome | string): boolean {
 export type ToolStatus = 'ok' | 'failed' | 'blocked';
 
 /**
- * blocked 的原因（**13 值穷尽 · 与 status 正交**——只回答「为什么没成功」）。
+ * blocked 的原因（**12 值穷尽 · 与 status 正交**——只回答「为什么没成功」）。
  *
- * 为什么是独立维度而非第 4 个 status 值：13 种主动挡下**全部是「没成功」**，无例外；
+ * 为什么是独立维度而非第 4 个 status 值：12 种主动挡下**全部是「没成功」**，无例外；
  * 它们之间差别回答的是「为什么没成功」。两个正交问题硬塞一个字段 ⇒ 字段随护栏增加
  * 持续膨胀且语义退化。新增值须对应真实新语义，**禁止硬塞进既有值**。
  */
