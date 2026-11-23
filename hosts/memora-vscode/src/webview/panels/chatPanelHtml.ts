@@ -45,6 +45,9 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string, form: UiForm
          首帧无会话在跑 ⇒ hidden，等 turn_update / 过程事件到达才显形。自助形态整条身份条隐藏。 -->
     <span id="assistantState" class="assistant-mode-bar__state" hidden></span>
     <button id="assistantWorkbenchBtn" class="assistant-mode-bar__link" type="button">${vscode.l10n.t('Workbench')}</button>
+    <!-- ASSISTANT-RESET-UI-1：重置助手会话（清空历史回空态）。仅 assistant 形态可见
+         （self 形态整条身份条 CSS 隐藏）。危险操作，宿主侧有确认弹窗（与删除同级强度）。 -->
+    <button id="assistantResetBtn" class="assistant-mode-bar__link" type="button" title="${vscode.l10n.t('Reset assistant session')}" aria-label="${vscode.l10n.t('Reset assistant session')}">${vscode.l10n.t('Reset')}</button>
   </div>
   <!-- 助手页内嵌工作台抽屉（INLINE-WORKBENCH-1）：点身份条「工作台」就地展开，
        不再开独立 editor tab。默认 hidden，收到 workbench_snapshot 后由 chatView 展开。

@@ -1056,7 +1056,8 @@ export const chatStyles = `
    * 左端。无标签轮 time 独占右端，与 space-between 原效果一致。 */
   .round-group:has([data-terminus='completed']) .round-group__footer::after,
   .round-group:has([data-terminus='user-interrupted']) .round-group__footer::after,
-  .round-group:has([data-terminus='error-interrupted']) .round-group__footer::after {
+  .round-group:has([data-terminus='error-interrupted']) .round-group__footer::after,
+  .round-group:has([data-terminus='recovered-interrupted']) .round-group__footer::after {
     font-size: var(--font-xs, 10px);
     line-height: 1;
   }
@@ -1076,6 +1077,11 @@ export const chatStyles = `
     content: var(--terminus-label, '');
     color: var(--text-secondary, #9aa0a6);
   }
+  /* 「崩溃恢复」→ 中性文字标签（进程异常退出后由宿主收场：既非用户停、也非错误） */
+  .round-group:has([data-terminus='recovered-interrupted']) .round-group__footer::after {
+    content: var(--terminus-label, '');
+    color: var(--text-secondary, #9aa0a6);
+  }
   /* 「异常中断」→ 红字标签（中断轮案：锁超时等异常轮 footer 恒显形，标签在场；
    * 流错误案 footer 隐藏期该规则不可见，正文尾红字自足承接，两相位不重复） */
   .round-group:has([data-terminus='error-interrupted']) .round-group__footer::after {
@@ -1086,10 +1092,16 @@ export const chatStyles = `
    * 宿主块 data-terminus（见 appendInterruptedRow / TerminusKind 载体契约）。无 roundId 的兜底轮
    * （早期错误/早停，ensureRoundGroup 不建容器）容器缺席 ⇒ 上方 :has 底栏规则无处匹配，
    * 终态既无底栏标签、正文尾又无兜底 ⇒ 静默消失。此处由宿主块尾自足承接，保证「轮已收场」
-   * 这个事实恒有展示位（与「异常中断」正文尾兜底同一相位机制，统一到三档）。
+   * 这个事实恒有展示位（与「异常中断」正文尾兜底同一相位机制，统一到四档）。
    * 有容器轮由底栏承接，下方压制宿主块尾避免双显（「单一位点」纪律）。
    * 文案取载体自身的 data-terminus-label（与底栏标签同一次 l10n 解析，见 statusAttrs）。 */
   .msg.assistant[data-terminus='user-interrupted']::after {
+    content: attr(data-terminus-label);
+    margin-left: var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px); line-height: 1;
+    color: var(--text-secondary, #9aa0a6);
+  }
+  .msg.assistant[data-terminus='recovered-interrupted']::after {
     content: attr(data-terminus-label);
     margin-left: var(--sp-2, 6px);
     font-size: var(--font-xs, 10px); line-height: 1;
@@ -1102,6 +1114,7 @@ export const chatStyles = `
     color: var(--danger, #f14c4c);
   }
   .round-group .msg.assistant[data-terminus='user-interrupted']::after,
+  .round-group .msg.assistant[data-terminus='recovered-interrupted']::after,
   .round-group .msg.assistant[data-terminus='error-interrupted']::after {
     content: none;
   }
@@ -1812,30 +1825,32 @@ export const chatStyles = `
     max-height: 40vh;
     overflow-y: auto;
   }
-  /* 抽屉关闭按钮：绝对定位到右上角，不占 flex 一行（说明/座位/任务列表版式不动）；
-     纯文字 × + aria-label，令牌全复用既有族，零新增色源。 */
-  body[data-form='assistant'] .assistant-workbench-drawer { position: relative; }
-  body[data-form='assistant'] .awb-close {
-    position: absolute;
-    top: var(--sp-1, 4px);
-    right: var(--sp-2, 6px);
+  /* 抽屉头部行（UI-SEAT-AUDIT）：说明文字 + 「在 tab 打开」按钮 flex 行尾——
+     原「关闭」按钮绝对定位右上角，改文字按钮后会盖住长文案，故改 flex 行。
+     令牌全复用既有族，零新增色源。 */
+  body[data-form='assistant'] .awb-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--sp-2, 6px);
+  }
+  body[data-form='assistant'] .awb-open-tab {
     border: none;
     border-radius: var(--radius-sm, 2px);
     background: transparent;
     color: var(--text-secondary);
     font: inherit;
     cursor: pointer;
-    min-width: var(--sp-8, 24px);
-    min-height: var(--sp-8, 24px);
+    padding: var(--sp-1, 4px) var(--sp-2, 6px);
+    white-space: nowrap;
+    flex-shrink: 0;
   }
-  body[data-form='assistant'] .awb-close:hover {
+  body[data-form='assistant'] .awb-open-tab:hover {
     background: var(--surface-hover);
     color: var(--text-primary);
   }
   /* 就地视图说明行：复用既有次要文字令牌，零新增色源；不占交互、不参与座位/状态判据 */
   body[data-form='assistant'] .awb-hint { color: var(--text-secondary); }
-  /* 给右上角关闭按钮留出文字空间（说明行右侧留白，避免长文案顶到 ×） */
-  body[data-form='assistant'] .awb-hint { padding-right: var(--sp-8, 24px); }
   body[data-form='assistant'] .awb-seat {
     display: flex;
     align-items: center;

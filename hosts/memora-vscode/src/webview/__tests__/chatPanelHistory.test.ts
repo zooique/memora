@@ -517,6 +517,95 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(notice[0]?.message).toContain('The current session is not in history');
   });
 
+  // ── ASSISTANT-RESET-UI-1：助手会话重置（不走 delete_session 当前会话保护，专门路径）──
+  it('handleResetAssistant：确认后删助手会话 + 清指针 + 向助手窗投 clear_ok 回空态', async () => {
+    const { store, roundStore, provider, posted } = setup();
+    const { agent } = agentStub();
+    provider.setAgent(agent);
+    seedSession(store, roundStore, 'assistant-1', [
+      { role: 'user', content: 'hi', ts: '2026-11-21T00:00:00.000Z' },
+    ]);
+    // 设助手身份指针（唯一身份真源 = workspaceState，经 sessionModes 这一既有读口）
+    const cast = provider as unknown as {
+      sessionModes: {
+        set: (id: string, mode: 'managed' | 'self') => void;
+        listManagedSessionIds: () => string[];
+      };
+    };
+    cast.sessionModes.set('assistant-1', 'managed');
+    expect(provider.getAssistantSessionId()).toBe('assistant-1');
+    // 注册附加视图（模拟助手窗）捕获 postToExtras 投递
+    const extraPosted: Array<{ type: string }> = [];
+    const extra = {
+      postMessage: (m: { type: string }) => {
+        extraPosted.push(m);
+        return Promise.resolve(true);
+      },
+    } as never;
+    provider.registerAdditionalView(extra, {
+      sessionId: () => provider.getAssistantSessionId(),
+    });
+
+    vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('Reset' as never);
+    await (provider as unknown as { handleResetAssistant(): Promise<void> }).handleResetAssistant();
+
+    // 会话已删 + 指针已清（清指针由 cleanupAfterSessionDelete 内 sessionModes.delete 单点承担）
+    expect(store.getSessionMeta('assistant-1')).toBeUndefined();
+    expect(cast.sessionModes.listManagedSessionIds()).toEqual([]);
+    // 助手窗收到 clear_ok 回空态（与 hostedSeat.handleReady 空态同构）
+    expect(extraPosted.some((m) => m.type === 'clear_ok')).toBe(true);
+    // 侧栏收到成功反馈
+    const notice = ofType<{ type: string; message: string }>(posted, 'notice');
+    expect(notice.some((n) => n.message === 'Assistant session reset')).toBe(true);
+  });
+
+  it('handleResetAssistant：无助手会话（空态）→ no-op（不弹确认、不新增消息）', async () => {
+    const { provider, posted } = setup();
+    const { agent } = agentStub();
+    provider.setAgent(agent);
+    expect(provider.getAssistantSessionId()).toBeUndefined();
+    const before = posted.length; // setup / setAgent 已投的消息不计入本次判据
+    await (provider as unknown as { handleResetAssistant(): Promise<void> }).handleResetAssistant();
+    expect(vi.mocked(vscode.window.showWarningMessage)).not.toHaveBeenCalled();
+    expect(posted.length).toBe(before); // 不新增任何消息
+  });
+
+  it('handleResetAssistant：确认取消 → 不删会话、不清指针', async () => {
+    const { store, roundStore, provider } = setup();
+    const { agent } = agentStub();
+    provider.setAgent(agent);
+    seedSession(store, roundStore, 'assistant-1', [{ role: 'user', content: 'hi', ts: 't1' }]);
+    const cast = provider as unknown as {
+      sessionModes: {
+        set: (id: string, mode: 'managed' | 'self') => void;
+        listManagedSessionIds: () => string[];
+      };
+    };
+    cast.sessionModes.set('assistant-1', 'managed');
+    vi.mocked(vscode.window.showWarningMessage).mockResolvedValue(undefined as never);
+    await (provider as unknown as { handleResetAssistant(): Promise<void> }).handleResetAssistant();
+    expect(store.getSessionMeta('assistant-1')).toBeDefined();
+    expect(cast.sessionModes.listManagedSessionIds()).toEqual(['assistant-1']);
+  });
+
+  it('handleResetAssistant：流式生成中 → 拒绝重置（不弹确认，给提示）', async () => {
+    const { store, roundStore, provider, posted } = setup();
+    const { agent } = agentStub();
+    provider.setAgent(agent);
+    seedSession(store, roundStore, 'assistant-1', [{ role: 'user', content: 'hi', ts: 't1' }]);
+    const cast = provider as unknown as {
+      sessionModes: { set: (id: string, mode: 'managed' | 'self') => void };
+      runtimeFor: (id: string) => { streaming: boolean };
+    };
+    cast.sessionModes.set('assistant-1', 'managed');
+    cast.runtimeFor('assistant-1').streaming = true; // 模拟流式中
+    await (provider as unknown as { handleResetAssistant(): Promise<void> }).handleResetAssistant();
+    expect(vi.mocked(vscode.window.showWarningMessage)).not.toHaveBeenCalled();
+    expect(store.getSessionMeta('assistant-1')).toBeDefined();
+    const notice = ofType<{ type: string; message: string }>(posted, 'notice');
+    expect(notice.some((n) => n.message.includes('Generating'))).toBe(true);
+  });
+
   it('新建会话 → 进入草稿页（不生成会话 id / 不装配 / 不落盘）', async () => {
     const { provider, posted } = setup();
     const { agent } = agentStub();

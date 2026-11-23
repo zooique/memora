@@ -14,6 +14,7 @@ import * as vscode from 'vscode';
 import { getSessionDisplayName, splitSessionId } from '@zooique/memora';
 import { confirmModal } from '../../extension/host/ui/confirmModal.js';
 import type { HostSessionStore } from '../../extension/host/sessionStore.js';
+import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 
 /**
  * 目标会话正被另一个窗口持有时的统一提示（创建 / 切换 / 分叉 / 历史动作共用一句）
@@ -53,6 +54,32 @@ export interface SessionHistoryDeps {
   archiveMode: () => string | undefined;
   /** 请求内核归档（fire-and-forget，成败走既有事件） */
   requestArchive: (date: string, session: string) => Promise<void>;
+}
+
+/**
+ * 重置助手会话的依赖（ASSISTANT-RESET-UI-1）
+ *
+ * 与 SessionHistoryDeps 不同源：重置是独立动作（不走 deleteSession 的当前会话保护），
+ * 故独立 deps，不污染通用删除/归档的必填字段。store / isStreaming / softDeleteMemories
+ * 与 SessionHistoryDeps 同字段（能力复用，非数据共享——见 single-truth-source §复用四问）。
+ */
+export interface ResetAssistantDeps {
+  /** 助手会话 id（无 = 已空态，无会话可重置） */
+  assistantSessionId: () => string | undefined;
+  /** 目标会话是否流式中（重置会删会话文件，与在途落盘冲突） */
+  isStreaming: (sessionId?: string) => boolean;
+  /** 会话存储（删会话） */
+  store: HostSessionStore;
+  /** 删除后联动软删被回收轮的摘要（与 deleteSession 同源） */
+  softDeleteMemories: (removedIds: string[]) => void;
+  /** 删除后的实例/内存态清理（chatPanel 注入 cleanupAfterSessionDelete，含清指针） */
+  cleanupAfterDelete: (sessionId: string) => Promise<void>;
+  /** 向助手窗（附加视图）投消息（回空态骨架用） */
+  postToExtras: (message: ExtensionToWebviewMessage) => void;
+  /** 重推模型/技能清单（回空态后，fire-and-forget） */
+  pushProviders: () => unknown;
+  /** 可见反馈 */
+  notify: (level: 'info' | 'error', message: string) => void;
 }
 
 /**
@@ -113,6 +140,43 @@ export async function deleteSessionAction(
     if (oneShotLock) deps.store.releaseSessionLock(sessionId);
   }
   deps.pushList();
+}
+
+/**
+ * 重置助手会话（ASSISTANT-RESET-UI-1）
+ *
+ * 与 deleteSession 的差别：通用删除链保护当前会话不可删（本文件判据），而助手窗要重置的
+ * 就是当前助手会话 ⇒ 直接走底层 store.deleteSession + 既有清理，绕过保护；本函数自带重置
+ * 确认（与删除同级强度，唯一 confirmModal 入口）。清指针由 cleanupAfterDelete 内的
+ * sessionModes.delete 单点承担。重置后向助手窗投空态骨架（与 hostedSeat.handleReady 空态
+ * 分支同构），首次发送由 hostedSeat.handleInput 重建会话。
+ *
+ * @param deps 重置依赖（见 ResetAssistantDeps）
+ */
+export async function resetAssistantAction(deps: ResetAssistantDeps): Promise<void> {
+  const sid = deps.assistantSessionId();
+  if (!sid) return; // 已空态，无会话可重置
+  // 运行时守卫：与 deleteSession 同判据——重置会删会话文件，与在途落盘冲突
+  if (deps.isStreaming(sid)) {
+    deps.notify('info', vscode.l10n.t('Generating, please wait before resetting the assistant'));
+    return;
+  }
+  const confirmed = await confirmModal({
+    message: vscode.l10n.t(
+      'Reset the assistant session? This clears all assistant conversation history and cannot be undone.',
+    ),
+    confirmLabel: vscode.l10n.t('Reset'),
+  });
+  if (!confirmed) return;
+  // 直接删（绕过 deleteSessionAction 的 currentSessionId 保护：重置就是要删当前助手会话）
+  const removedIds = deps.store.deleteSession(sid);
+  deps.softDeleteMemories(removedIds);
+  await deps.cleanupAfterDelete(sid); // 含清助手会话指针（sessionModes.delete 单点）
+  // 回空态：指针已清 ⇒ 助手窗投空态骨架（与 hostedSeat.handleReady 空态分支同构）
+  deps.postToExtras({ type: 'clear_ok' });
+  deps.postToExtras({ type: 'session_title', title: vscode.l10n.t('Assistant') });
+  void deps.pushProviders();
+  deps.notify('info', vscode.l10n.t('Assistant session reset'));
 }
 
 /**

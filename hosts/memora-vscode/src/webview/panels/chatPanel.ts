@@ -128,8 +128,12 @@ import {
   archiveSessionAction,
   deleteSessionAction,
   restoreSessionAction,
+  resetAssistantAction,
   type SessionHistoryDeps,
 } from '../helpers/sessionHistoryActions.js';
+// 待发队列操作（清空 / 删单条）：读写顺序 + 丢弃信号 + 快照契约归并，面板只注入窄依赖
+// pendingQueueDeps() 返回类型由调用点 dispatchPendingQueueAction 的参数契约结构校验，不重复标注
+import { dispatchPendingQueueAction } from '../helpers/pendingQueueActions.js';
 // 角色包 → 能力徽章 / team 的纯投影（含能力三态判定出口），本面板只负责投递
 import {
   capabilityBadgePayload,
@@ -1327,11 +1331,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     } else if (msg.type === 'input') {
       // 输入统一入口：宿主按当前 turn 相位单一路由，错位输入丢弃并落宿主日志留痕
       void this.handleInput(msg);
-    } else if (msg.type === 'assistant_open_workbench') {
-      // 助手形态输入区上方的「工作台」入口：选座逻辑全在既有命令里（当前托管会话 → 唯一
-      // 托管会话 → QuickPick → 如实说没有），本处只转达点击，不自己判断看哪一条。
-      // 失败可见性收口在命令实现里：旧实现只 `void` 吞掉 rejection，真机表现为「点了没反应」。
+    } else if (msg.type === 'assistant_open_workbench' || msg.type === 'open_workbench_tab') {
+      // 两入口同一命令（差异段为零 ⇒ 合并，不重复 executeCommand）：助手输入区上方按钮
+      // （assistant_open_workbench，助手座由 hostedPanel 拦截走抽屉，本处兜底直达）/ 抽屉
+      // 「在 tab 打开」（open_workbench_tab，hostedPanel 不拦截 ⇒ 直达）。选座逻辑全在既有
+      // 命令里（当前托管会话 → 唯一托管会话 → QuickPick → 如实说没有），本处只转达点击，
+      // 不自己判断看哪一条；失败可见性收口在命令实现里（旧实现只 `void` 吞 rejection = 点了没反应）。
       void vscode.commands.executeCommand('memora.openWorkbench');
+    } else if (msg.type === 'reset_assistant') {
+      // 助手重置入口（不走 delete_session 当前会话保护；实现见 resetAssistantAction）
+      void this.handleResetAssistant();
     } else if (msg.type === 'composer_state') {
       this._composerHasText = msg.hasText;
       // 用户把输入框清空 = 硬触发点：此前因「正在打字」压着的落定汇报立刻浮现
@@ -1406,32 +1415,24 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     } else if (msg.type === 'pause') {
       // 暂停生成：调 agent.requestPause()（step 边界软暂停）暂停当前流
       this.handlePause();
-    } else if (msg.type === 'clear_pending_queue') {
-      // 清理由内核 clearPendingInterjections 原子操作 + getter 读，宿主不维护镜像副本
-      //  （坑：手动镜像双写易出错）
-      // 先读后清：丢弃信号需要被丢条目文本（webview diff 据此分流「消失 = 丢弃不上屏」）
-      const before = this._agent?.getPendingInterjections?.() ?? [];
-      const cleared = this._agent?.clearPendingInterjections() ?? 0;
-      if (cleared > 0) {
-        this.post({
-          type: 'notice',
-          level: 'info',
-          message: l10n.t('Cleared {0} pending message(s)', cleared),
-        });
-        this.postPendingDiscardedFor(this._currentSessionId, before);
-      }
-      this.syncPendingQueue();
-    } else if (msg.type === 'remove_pending_item') {
-      // 删除单条 interject（待发送区某条的独立 × 按钮）：
-      // 内核 removePendingInterject 内部已做越界检查，宿主直接调内核 +
-      // 从内核读当前值渲染（SSOT 源头 = loop.pendingInterjections）
-      // 先读后删：按 index 取被删文本，删除成功才发丢弃信号（失败 = 队列未变，零信号）
-      const before = this._agent?.getPendingInterjections?.() ?? [];
-      const removed = before[msg.index];
-      const ok = this._agent?.removePendingInterject(msg.index) ?? false;
-      if (ok && removed !== undefined)
-        this.postPendingDiscardedFor(this._currentSessionId, [removed]);
-      this.syncPendingQueue();
+    } else if (msg.type === 'clear_pending_queue' || msg.type === 'remove_pending_item') {
+      // 待发队列清理/删单条：读写顺序 + 丢弃信号 + 快照契约归并到 pendingQueueActions
+      // （两分支共用同一份契约，改一处即可；判据见该模块头注释）
+      // deps 接线单次使用，内联不抽方法——逻辑与不变量在 helper，已单测钉死顺序
+      dispatchPendingQueueAction(msg, {
+        getPending: () => this._agent?.getPendingInterjections?.() ?? [],
+        clearAll: () => this._agent?.clearPendingInterjections() ?? 0,
+        removeOne: (index: number) => this._agent?.removePendingInterject(index) ?? false,
+        postClearedNotice: (count: number) =>
+          this.post({
+            type: 'notice',
+            level: 'info',
+            message: l10n.t('Cleared {0} pending message(s)', count),
+          }),
+        postDiscarded: (items: readonly string[]) =>
+          this.postPendingDiscardedFor(this._currentSessionId, items),
+        sync: () => this.syncPendingQueue(),
+      });
     } else if (msg.type === 'polish_input') {
       // 文本润色（输入框入口）：调 agent.polish(text) 润色输入框内容，
       // 回执 polish_input_result（无 msgId——输入框润色不回写单条消息）
@@ -1793,6 +1794,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // E4 批 2：删除成功（会话元数据已不存在）⇒ 回收该会话实例（登记表 unregister + close），
     // 否则后面对同 id 的取用会拿到「挂在已删会话上」的活实例（写盘无归属）
     if (this.sessionStore.getSessionMeta(sessionId)) return; // 用户取消 / 锁占用 / 失败：实例保留
+    await this.cleanupAfterSessionDelete(sessionId);
+  }
+
+  /** 删除会话后的实例/内存态清理（handleDeleteSession 与 handleResetAssistant 共用；含清助手指针） */
+  private async cleanupAfterSessionDelete(sessionId: string): Promise<void> {
     this._sessionAgents.delete(sessionId);
     await this._releaseAgent?.(sessionId);
     // 助手会话身份指针随会话一起失效：删掉它后助手窗应回空态，不能让指针指向一条不存在的会话
@@ -1814,6 +1820,19 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._rolePackFallbackNotified.delete(sessionId); // 回落提示去重键同生命周期收口
     this._composerDrafts.forget(sessionId); // 会话永久删除：它的未发送草稿一起清（不留垃圾键）
     this.refreshSessionActivity(); // 摘除后立即重推快照（角标 / 列表标识随之熄灭）
+  }
+
+  /** 重置助手会话（ASSISTANT-RESET-UI-1）：薄包装，实现见 resetAssistantAction。
+   *  公共能力（store / isStreaming / softDeleteMemories / notify）展开自 historyDeps——
+   *  同能力不双写（SSOT 复用四问），避免两份字段漂移；此处只补重置差异段。 */
+  private async handleResetAssistant(): Promise<void> {
+    await resetAssistantAction({
+      ...this.historyDeps(),
+      assistantSessionId: () => this.getAssistantSessionId(),
+      cleanupAfterDelete: (sessionId) => this.cleanupAfterSessionDelete(sessionId),
+      postToExtras: (msg) => this._views.postToExtras(msg),
+      pushProviders: () => this.pushProviders(),
+    });
   }
 
   /** 移入留存区（薄包装：实现在 `helpers/sessionHistoryActions`） */
@@ -2357,37 +2376,30 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * @param text 待润色的文本（输入框当前内容）
    */
   private async handlePolishInput(text: string): Promise<void> {
+    // 失败回执形状单点（3 处失败出口共用：改字段只改一处，避免漂移）
+    const fail = (message: string): void => {
+      this.post({ type: 'polish_input_result', ok: false, message });
+    };
     const agent = await this.getAgentOrWarn();
     if (!agent) {
-      this.post({
-        type: 'polish_input_result',
-        ok: false,
-        message: l10n.t('Memora: Agent is not ready; retry shortly'),
-      });
+      fail(l10n.t('Memora: Agent is not ready; retry shortly'));
       return;
     }
     const polisher = agent.polish;
     if (!polisher) {
-      this.post({
-        type: 'polish_input_result',
-        ok: false,
-        message: l10n.t('Polish service unavailable'),
-      });
+      fail(l10n.t('Polish service unavailable'));
       return;
     }
     try {
       const result = await polisher.polish(text);
-      if (result.changed && result.polished) {
-        this.post({ type: 'polish_input_result', ok: true, text: result.polished });
-      } else {
-        this.post({ type: 'polish_input_result', ok: true, text });
-      }
-    } catch (err) {
+      // 成功回执同形状，仅 text 不同（润色生效取 polished，否则原样回传）
       this.post({
         type: 'polish_input_result',
-        ok: false,
-        message: toNoticeText(err),
+        ok: true,
+        text: result.changed && result.polished ? result.polished : text,
       });
+    } catch (err) {
+      fail(toNoticeText(err));
     }
   }
 

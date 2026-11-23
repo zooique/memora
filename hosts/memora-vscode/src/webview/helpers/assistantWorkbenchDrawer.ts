@@ -27,6 +27,8 @@ export interface AssistantWorkbenchDrawerDeps {
   document: Document;
   /** 「去这个会话」回调（chatView 注入既有 switch_session 出口） */
   openSession: (sessionId: string) => void;
+  /** 在独立 editor tab 打开工作台看板（chatView 注入：上行 open_workbench_tab；UI-SEAT-AUDIT） */
+  openInTab: () => void;
   /** 关闭抽屉回调（chatView 注入：直接置 drawer.hidden，展开态真源 = DOM 属性，零 JS 状态） */
   onClose: () => void;
 }
@@ -116,20 +118,25 @@ export function createAssistantWorkbenchDrawer(
       const drawer = document.getElementById('assistantWorkbenchDrawer');
       if (!drawer) return;
 
-      const close = document.createElement('button');
-      close.type = 'button';
-      close.className = 'awb-close';
-      close.textContent = l10n.t('Close');
-      close.setAttribute('aria-label', l10n.t('Close'));
-      close.addEventListener('click', () => deps.onClose());
+      // UI-SEAT-AUDIT：抽屉里原「关闭」按钮冗余（身份条工作台按钮 = toggle 已能开关），
+      // 改为「在独立 tab 打开」直达入口——原 hint 指向命令面板太隐蔽，按钮化后可见即达。
+      // 开 tab 后顺手收抽屉（工作台按钮可再展开）。类名随语义改 awb-open-tab（CSS 同步）。
+      const openInTab = document.createElement('button');
+      openInTab.type = 'button';
+      openInTab.className = 'awb-open-tab';
+      openInTab.textContent = l10n.t('Open in a tab');
+      openInTab.setAttribute('aria-label', l10n.t('Open in a tab'));
+      openInTab.addEventListener('click', () => {
+        deps.openInTab();
+        deps.onClose();
+      });
 
       // 就地视图说明（两入口分工可见）：点身份条「工作台」看到的是助手页内嵌投影，
-      // 常驻并排看板在命令面板。只指向命令面板、不硬编码命令标题——命令标题真源在
-      // package.nls 的 command.openWorkbench.title，此处复述会产生第二份可漂移文案。
+      // 常驻并排看板点上方按钮在独立 tab 打开。不再指向命令面板（UI-SEAT-AUDIT 收口）。
       const hint = document.createElement('div');
       hint.className = 'awb-hint';
       hint.textContent = l10n.t(
-        'Inline view. To keep a workbench open side by side, use the Command Palette.',
+        'Inline view. To keep a workbench open side by side, open it in a tab.',
       );
 
       const seat = document.createElement('div');
@@ -174,8 +181,13 @@ export function createAssistantWorkbenchDrawer(
         list.appendChild(empty);
       }
 
-      // close 置末（绝对定位不影响视觉），保住「说明行为首节点」的既有判据
-      drawer.replaceChildren(hint, seat, list, close);
+      // 头部行：说明文字 + 「在 tab 打开」按钮（flex 行尾，避免绝对定位盖住长文案；
+      // 「说明行为首节点」判据仍成立——head 是首节点，hint 是 head 首子节点）
+      const head = document.createElement('div');
+      head.className = 'awb-head';
+      head.appendChild(hint);
+      head.appendChild(openInTab);
+      drawer.replaceChildren(head, seat, list);
     },
   };
 }

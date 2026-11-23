@@ -10276,9 +10276,10 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(tokenSrc).toMatch(/--dim-lg:\s*160px/);
   });
 
-  it('🔴 源码级守卫：终态标签收口底栏（三档 :has 规则 + 正文尾压制 + 宿主尾兜底 + 键面/文案分离）', () => {
+  it('🔴 源码级守卫：终态标签收口底栏（四档 :has 规则 + 正文尾压制 + 宿主尾兜底 + 键面/文案分离）', () => {
     // 形态定案（2026-10-13 终态标签收口底栏，布局返修同日）：completed/user-interrupted/
-    // error-interrupted 三态标签挂 round-group 底栏 ::after（time 之后），正文尾回归光标纯度。
+    // error-interrupted/recovered-interrupted 四态标签挂 round-group 底栏 ::after（time 之后），
+    // 正文尾回归光标纯度。recovered 档 = 崩溃恢复（打捞补写的 aborted，见 interruptedSalvage）。
     // B9-A 起属性值与文案分离：选择器用语言无关键（data-terminus）、可见文案走
     // data-terminus-label / --terminus-label（见 statusAttrs）——本守卫同时锁这两条通道。
     // jsdom 不算计算样式，读生产样式表源码断言（与活动限高守卫同范式）——删任一档规则即红。
@@ -10286,8 +10287,13 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       join(__dirname, '..', 'styles', 'chatStyles.ts'),
       'utf-8',
     ) as string;
-    // 三档标签位点齐全（载体泛匹配 [data-terminus]，有正文挂 body、中断轮挂宿主）
-    for (const term of ['completed', 'user-interrupted', 'error-interrupted']) {
+    // 四档标签位点齐全（载体泛匹配 [data-terminus]，有正文挂 body、中断轮挂宿主）
+    for (const term of [
+      'completed',
+      'user-interrupted',
+      'error-interrupted',
+      'recovered-interrupted',
+    ]) {
       expect(styleSrc).toContain(`:has([data-terminus='${term}']) .round-group__footer::after`);
     }
     // 键面禁回退：属性值里不得再出现任何 CJK（否则「翻译文案 = 改选择器」，换语言即断样式）
@@ -10330,7 +10336,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
     expect(errSuppress?.[1] ?? '').toMatch(/content:\s*none/);
     // 中断终态「容器外」兜底（宿主块尾）：用户中断/异常中断各一条内容规则 + 容器内压制规则
     // ——无 roundId 的中断轮容器缺席，宿主体尾是唯一展示位（与上文 body 兜底同一相位机制）
-    for (const term of ['user-interrupted', 'error-interrupted']) {
+    for (const term of ['user-interrupted', 'error-interrupted', 'recovered-interrupted']) {
       const hostTail = styleSrc.match(
         new RegExp(`\\.msg\\.assistant\\[data-terminus='${term}'\\]::after\\s*\\{([^}]*)\\}`),
       );
@@ -12991,7 +12997,7 @@ describe('块类型标与折叠箭头（批次三）', () => {
     });
   });
 
-  it('工作台抽屉可关闭：× 按钮置 hidden；再点顶部按钮 toggle 折叠/展开，展开态真源=DOM', () => {
+  it('工作台抽屉「在 tab 打开」按钮上行 open_workbench_tab 并收抽屉；顶部按钮 toggle 折叠/展开，展开态真源=DOM', () => {
     const { postMessage } = mountChatView('assistant');
     const drawer = () => document.getElementById('assistantWorkbenchDrawer') as HTMLElement;
     const btn = () => document.getElementById('assistantWorkbenchBtn') as HTMLButtonElement;
@@ -13015,13 +13021,13 @@ describe('块类型标与折叠箭头（批次三）', () => {
     btn().click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'assistant_open_workbench' });
 
-    // 快照到达 → 展开；× 关闭 → 置 hidden，不产生上行消息
+    // 快照到达 → 展开；点「在 tab 打开」→ 上行 open_workbench_tab + 置 hidden（UI-SEAT-AUDIT）
     dispatch(snapshotMsg);
     expect(drawer().hidden).toBe(false);
     postMessage.mockClear();
-    (drawer().querySelector('.awb-close') as HTMLButtonElement).click();
+    (drawer().querySelector('.awb-open-tab') as HTMLButtonElement).click();
     expect(drawer().hidden).toBe(true);
-    expect(postMessage).not.toHaveBeenCalled();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'open_workbench_tab' });
 
     // 再点顶部按钮：抽屉隐藏 → 重新请求快照（不折叠）
     btn().click();

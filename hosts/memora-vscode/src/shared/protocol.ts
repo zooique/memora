@@ -980,6 +980,22 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'workbench_open_session'; sessionId: string }
   /**
+   * 工作台抽屉「在独立 tab 打开」（W→E，ASSISTANT-RESET-UI-1 同批收口）
+   *
+   * 来源 = 助手窗工作台抽屉展开后的入口按钮。与 `assistant_open_workbench` 的差别：
+   * 后者被 hostedPanel 拦截成「就地展开抽屉快照」（INLINE-WORKBENCH-1 定案，拦截按
+   * `type === 'assistant_open_workbench'` 硬匹配），本消息不被拦截 ⇒ 直达 chatPanel 调
+   * `memora.openWorkbench` 命令开独立 editor tab（常驻并排看板）。两者最终走同一命令、
+   * 选座判据全在命令里（真源单点），本消息只多一个「绕过抽屉拦截」的差异段。
+   *
+   * 取舍（SSOT · 已知非最优）：更纯的做法是给 `assistant_open_workbench` 加可选
+   * `seat: 'drawer' | 'tab'` 字段（同一意图的座位参数），无需新 type；但那要改 hostedPanel
+   * 的拦截判据（`type` 匹配 → `type + seat` 匹配），触碰 INLINE-WORKBENCH-1 的稳定闸。
+   * 当前选新 type = 零触碰拦截层、回归风险更低，代价是 type 枚举多一项。留待独立复核
+   * 裁决是否收敛为字段形态（见台账 UI-SEAT-AUDIT-20261118-1 ③ 张力登记）。
+   */
+  | { type: 'open_workbench_tab' }
+  /**
    * 打开助手工作台（W→E）
    *
    * 来源 = 助手形态输入区上方那行小字旁的「工作台」入口。为什么不复用 `open_*` 系列：
@@ -988,6 +1004,15 @@ export type WebviewToExtensionMessage =
    * 宿主执行该命令即可——webview 不得自己判断该看哪一条会话（第二真理源）。
    */
   | { type: 'assistant_open_workbench' }
+  /**
+   * 重置助手会话（W→E，ASSISTANT-RESET-UI-1）
+   *
+   * 来源 = 助手窗身份条的「重置」入口。助手会话按 HOSTED-SEAT-SESSION-1 从工作列表
+   * 排除，无删除入口 ⇒ 测试 / 日常需要清空助手会话时无路可走。本消息触发宿主：
+   * 取当前助手指针 → 确认 → 删会话 + 清指针（sessionModes.delete 单点）→ 回空态，
+   * 首次发送重建。不走通用 delete_session 链（那条保护当前会话不可删）。
+   */
+  | { type: 'reset_assistant' }
   /**
    * 输入框是否有未发送文本（W→E，翻转时才上行）
    *

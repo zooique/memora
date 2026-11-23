@@ -98,8 +98,13 @@ import { join } from 'node:path';
  *  2026-11-21 跨会话定位订正（`DISPATCH-CARD-LOCATE-1`）：`switch_session` / `focus_round`
  *  各加可选 `text`（派活原文，跨会话定位锚），均为既有 type 的可选字段，不新增 type ⇒
  *  阈值仍 147（只记沿革，不调阈值）。
+ *  2026-11-21 助手重置 + 工作台 tab 入口（`ASSISTANT-RESET-UI-1` + `UI-SEAT-AUDIT`）+2：
+ *  新增 `reset_assistant`（W→E 助手会话重置：删会话回空态，不走 delete_session 的当前会话保护）
+ *  与 `open_workbench_tab`（W→E 抽屉开独立 editor tab：hostedPanel 拦截 assistant_open_workbench
+ *  走抽屉，故需独立消息直达 executeCommand）。两条语义正交不可合并，也无法搭既有通道便车。
+ *  实测 148，阈值同口径重算 149（当前计数 + 1 余量）。
  */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 147;
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 149;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {

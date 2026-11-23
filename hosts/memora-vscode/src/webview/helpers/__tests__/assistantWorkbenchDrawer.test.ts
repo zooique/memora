@@ -7,8 +7,8 @@
  *      stopped 出「Stopped」，边缘态（queued/unreadable）不出徽记；
  *   ③ 空态按 coverage 分档措辞：unreadable = 「历史读不到」，complete 才说「还没有」；
  *   ④ 点击「去这个会话」走注入的 openSession 回调（chatView 接 switch_session），零新增 type；
- *   ⑤ 顶部就地视图说明行点明两入口分工（就地 / 命令面板常驻）；
- *   ⑥ 抽屉关闭按钮点击走注入的 onClose 回调（chatView 置 drawer.hidden，零新状态/协议）；
+ *   ⑤ 顶部就地视图说明行点明两入口分工（就地 / 独立 tab 常驻）；
+ *   ⑥ 「在 tab 打开」按钮点击走 openInTab + onClose（UI-SEAT-AUDIT：原关闭按钮改语义）；
  *   ⑦ 副行明细复刻 describeStatus.detail：无徽记的 queued/unreadable 仍出状态语义，措辞同源。
  */
 // @vitest-environment jsdom
@@ -49,9 +49,10 @@ function job(sessionId: string, status: WorkbenchJobStatus): WorkbenchJob {
 function mount() {
   document.body.innerHTML = '<section id="assistantWorkbenchDrawer"></section>';
   const openSession = vi.fn();
+  const openInTab = vi.fn();
   const onClose = vi.fn();
-  const drawer = createAssistantWorkbenchDrawer({ document, openSession, onClose });
-  return { drawer, openSession, onClose };
+  const drawer = createAssistantWorkbenchDrawer({ document, openSession, openInTab, onClose });
+  return { drawer, openSession, openInTab, onClose };
 }
 
 describe('INLINE-WORKBENCH-1 · 助手页内嵌工作台抽屉', () => {
@@ -129,30 +130,37 @@ describe('INLINE-WORKBENCH-1 · 助手页内嵌工作台抽屉', () => {
     const { drawer } = mount();
     drawer.render(snapshot({ jobs: [job('s-running', { kind: 'running' })] }));
     const host = document.getElementById('assistantWorkbenchDrawer') as HTMLElement;
-    expect(host.firstElementChild?.classList.contains('awb-hint')).toBe(true);
+    // 说明行被 awb-head 包裹（flex 行：hint + 「在 tab 打开」按钮），head 是首节点
+    expect(host.firstElementChild?.classList.contains('awb-head')).toBe(true);
     expect(host.querySelector('.awb-hint')?.textContent).toBe(
-      'Inline view. To keep a workbench open side by side, use the Command Palette.',
+      'Inline view. To keep a workbench open side by side, open it in a tab.',
     );
     // 说明行不重复命令标题（真源 = package.nls 的 command.openWorkbench.title）
     expect(host.querySelector('.awb-hint')?.textContent).not.toContain('Memora:');
   });
 
-  it('关闭按钮点击走 onClose 回调（chatView 置 drawer.hidden，零新状态/协议）', () => {
-    const { drawer, onClose } = mount();
+  it('「在 tab 打开」按钮点击走 openInTab + onClose（UI-SEAT-AUDIT：原关闭按钮改语义）', () => {
+    const { drawer, openInTab, onClose } = mount();
     drawer.render(snapshot());
     const host = document.getElementById('assistantWorkbenchDrawer') as HTMLElement;
-    const close = host.querySelector<HTMLButtonElement>('.awb-close');
-    expect(close).not.toBeNull();
-    expect(close?.type).toBe('button');
-    expect(close?.getAttribute('aria-label')).toBe('Close');
-    close?.click();
+    const btn = host.querySelector<HTMLButtonElement>('.awb-open-tab');
+    expect(btn).not.toBeNull();
+    expect(btn?.type).toBe('button');
+    expect(btn?.getAttribute('aria-label')).toBe('Open in a tab');
+    btn?.click();
+    expect(openInTab).toHaveBeenCalledOnce();
     expect(onClose).toHaveBeenCalledOnce();
   });
 
   it('容器不存在时静默跳过（self 形态无该节点），不抛错', () => {
     document.body.innerHTML = '';
     const openSession = vi.fn();
-    const drawer = createAssistantWorkbenchDrawer({ document, openSession, onClose: vi.fn() });
+    const drawer = createAssistantWorkbenchDrawer({
+      document,
+      openSession,
+      openInTab: vi.fn(),
+      onClose: vi.fn(),
+    });
     expect(() => drawer.render(snapshot())).not.toThrow();
   });
 });
