@@ -1032,13 +1032,17 @@ export const chatStyles = `
    * 加类、settleRoundFooter 移除。提问（turn_update 的 waiting/ask）等待回答期间容器 footer
    * 不显示——底部只留 ask-inline 交互块；回答 resume 完成（done）后与不提问场景底部栏统一。 */
   .round-group__footer.is-pending { display: none; }
-  /* 派发凭证（DISPATCH-RECEIPT-1）：轮容器内、底栏之前的常显子元素。
-   * 刻意**不**挂进 .round-group__footer——助手形态底栏默认 opacity:0（hover 才显形），
-   * 而凭证的全部价值是「被看见」。只由 dispatchReceiptHint 投影插入，self 形态零 DOM；
-   * 无回执的轮不产生该元素。 */
-  .round-group__dispatch-receipt {
-    margin-top: var(--sp-1, 4px);
-    font-size: var(--font-sm, 11px);
+  /* 派发凭证（DISPATCH-RECEIPT-1 · ASSISTANT-UI-DECLUTTER-1）：底栏内的次要文字 span，
+   * 位于操作按钮与时间戳之间。与其他提示性文字同归底栏、保持 UI 简洁；随底栏显形
+   * （助手形态 hover 才显，用户 2026-11-23 拍板接受）。只由 dispatchReceiptHint 投影
+   * 插入，self 形态零 DOM；无回执的轮不产生该元素。min-width:0 + ellipsis 防长会话名
+   * 挤破底栏（与窄窗口令纪律一致，零新增色源）。 */
+  .round-group__footer .round-group__dispatch-receipt {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-xs, 10px);
     color: var(--text-secondary);
   }
   .round-group__actions { display: inline-flex; align-items: center; gap: var(--sp-1, 4px); }
@@ -1825,16 +1829,26 @@ export const chatStyles = `
     max-height: 40vh;
     overflow-y: auto;
   }
-  /* 抽屉头部行（UI-SEAT-AUDIT）：说明文字 + 「在 tab 打开」按钮 flex 行尾——
+  /* 抽屉头部行（UI-SEAT-AUDIT）：说明文字 + 动作组 flex 行尾——
      原「关闭」按钮绝对定位右上角，改文字按钮后会盖住长文案，故改 flex 行。
-     令牌全复用既有族，零新增色源。 */
+     ASSISTANT-UI-DECLUTTER-1：动作组收「重置 / 在 tab 打开」两钮（重置在左），
+     窄窗整组换行不与长 hint 互挤。令牌全复用既有族，零新增色源。 */
   body[data-form='assistant'] .awb-head {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--sp-2, 6px);
   }
-  body[data-form='assistant'] .awb-open-tab {
+  body[data-form='assistant'] .awb-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1, 4px);
+    flex-shrink: 0;
+  }
+  /* 两钮共用形态（ASSISTANT-UI-DECLUTTER-1）：语义中性类名，视觉单点定义；
+     重置与在 tab 打开靠 textContent / aria-label / data-awb-action 区分，不靠第二套样式。
+     危险确认在宿主侧，本面不强化红色（收纳的本意是降噪）。 */
+  body[data-form='assistant'] .awb-action {
     border: none;
     border-radius: var(--radius-sm, 2px);
     background: transparent;
@@ -1843,9 +1857,8 @@ export const chatStyles = `
     cursor: pointer;
     padding: var(--sp-1, 4px) var(--sp-2, 6px);
     white-space: nowrap;
-    flex-shrink: 0;
   }
-  body[data-form='assistant'] .awb-open-tab:hover {
+  body[data-form='assistant'] .awb-action:hover {
     background: var(--surface-hover);
     color: var(--text-primary);
   }

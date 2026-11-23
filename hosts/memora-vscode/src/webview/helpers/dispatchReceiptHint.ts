@@ -1,9 +1,14 @@
 /**
- * 派发凭证行（DISPATCH-RECEIPT-1）——事实呈现 + 幂等 DOM 投影
+ * 派发凭证（DISPATCH-RECEIPT-1 起 · ASSISTANT-UI-DECLUTTER-1 收口）——事实呈现 + 幂等 DOM 投影
  *
  * 解决的问题：助手嘴上说「已派」而用户看不到系统事实。本模块只在**业务受理成功**
  * 时挂一行凭证；无回执的轮一个字不加，DOM 与普通对话轮逐节点一致。凭证不是完成态
  * 判定——不改助手正文、不改 `Round.status`、不改 `metrics.success`。
+ *
+ * ASSISTANT-UI-DECLUTTER-1：凭证从「气泡下常显独立行」收进容器底栏
+ * `.round-group__footer`（actions 与 time 之间），与其他提示性文字同归底栏、保持 UI 简洁。
+ * 挂载形态随之变化：助手形态底栏默认 hover 才显形（user 已拍板接受），self 形态仍不投影。
+ * 判据、文案、幂等语义与两个调用点一字未动。
  *
  * 唯一判据 = `dispatchedSidTextsFromEvents` 非空（既有回执解析，单源）。
  * 不读正文、不读轮状态、不读用户意图：中断 / 进行中的轮只要有受理回执也显示，
@@ -16,7 +21,7 @@ import * as l10n from '@vscode/l10n';
 import { dispatchedSidTextsFromEvents, type DispatchedSidText } from './processEventText.js';
 import type { ProcessEvent } from '@zooique/memora';
 
-/** 凭证行 class（气泡下的常显单行，不长成卡片、无图标、不可点） */
+/** 凭证 class（底栏内的单行提示，不长成卡片、无图标、不可点） */
 export const DISPATCH_RECEIPT_CLASS = 'round-group__dispatch-receipt';
 
 /**
@@ -67,9 +72,11 @@ export function dispatchReceiptText(
 }
 
 /**
- * 幂等投影：先撤旧凭证行，再按判据决定是否挂一条
+ * 幂等投影：先撤旧凭证（含历史「group 直系」形态的漏网节点），再按判据决定是否挂一条
  *
- * 只助手形态生效（与盖章卡同构）；插入位置沿用既有位置族（footer 之前，常显）。
+ * 只助手形态生效（与盖章卡同构）；ASSISTANT-UI-DECLUTTER-1 后插入位置 = 底栏内
+ * `.round-group__actions` 与 `.msg-time` 之间——与其他提示性文字同归底栏。底栏缺席时
+ * 降级挂容器末尾（不丢凭证；正常时序底栏由 ensureRoundGroup 同步建出）。
  * 无凭证时**只撤不加**——不产生任何占位、灰字或提示。
  *
  * @param doc DOM 文档（调用方注入，模块内不读全局 document）
@@ -82,14 +89,20 @@ function applyDispatchReceipt(
   text: string | undefined,
 ): void {
   if (!group) return;
-  group.querySelector(`.${DISPATCH_RECEIPT_CLASS}`)?.remove();
+  // 先撤全部旧形态（含历史 group 直系行），防改动前后 DOM 共存两份凭证
+  group.querySelectorAll(`.${DISPATCH_RECEIPT_CLASS}`).forEach((old) => old.remove());
   if (!text || doc.body.dataset.form !== 'assistant') return;
-  const line = doc.createElement('div');
+  const line = doc.createElement('span');
   line.className = DISPATCH_RECEIPT_CLASS;
   line.textContent = text;
   const foot = group.querySelector('.round-group__footer');
-  if (foot) group.insertBefore(line, foot);
-  else group.appendChild(line);
+  if (!foot) {
+    group.appendChild(line);
+    return;
+  }
+  const time = foot.querySelector('.msg-time');
+  if (time) foot.insertBefore(line, time);
+  else foot.appendChild(line);
 }
 
 /** 投影所需的最小轮形状（避免 helper 依赖整个协议类型） */

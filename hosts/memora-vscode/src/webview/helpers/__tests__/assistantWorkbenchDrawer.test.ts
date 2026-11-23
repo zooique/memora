@@ -9,7 +9,9 @@
  *   ④ 点击「去这个会话」走注入的 openSession 回调（chatView 接 switch_session），零新增 type；
  *   ⑤ 顶部就地视图说明行点明两入口分工（就地 / 独立 tab 常驻）；
  *   ⑥ 「在 tab 打开」按钮点击走 openInTab + onClose（UI-SEAT-AUDIT：原关闭按钮改语义）；
- *   ⑦ 副行明细复刻 describeStatus.detail：无徽记的 queued/unreadable 仍出状态语义，措辞同源。
+ *   ⑦ 副行明细复刻 describeStatus.detail：无徽记的 queued/unreadable 仍出状态语义，措辞同源；
+ *   ⑧ ASSISTANT-UI-DECLUTTER-1：重置收进本抽屉、位于「在 tab 打开」左侧、共用 awb-action
+ *      形态，点击走 onReset；身份条不再持有重置节点（源码级守卫）。
  */
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
@@ -50,9 +52,16 @@ function mount() {
   document.body.innerHTML = '<section id="assistantWorkbenchDrawer"></section>';
   const openSession = vi.fn();
   const openInTab = vi.fn();
+  const onReset = vi.fn();
   const onClose = vi.fn();
-  const drawer = createAssistantWorkbenchDrawer({ document, openSession, openInTab, onClose });
-  return { drawer, openSession, openInTab, onClose };
+  const drawer = createAssistantWorkbenchDrawer({
+    document,
+    openSession,
+    openInTab,
+    onReset,
+    onClose,
+  });
+  return { drawer, openSession, openInTab, onReset, onClose };
 }
 
 describe('INLINE-WORKBENCH-1 · 助手页内嵌工作台抽屉', () => {
@@ -143,13 +152,33 @@ describe('INLINE-WORKBENCH-1 · 助手页内嵌工作台抽屉', () => {
     const { drawer, openInTab, onClose } = mount();
     drawer.render(snapshot());
     const host = document.getElementById('assistantWorkbenchDrawer') as HTMLElement;
-    const btn = host.querySelector<HTMLButtonElement>('.awb-open-tab');
+    const btn = host.querySelector<HTMLButtonElement>('[data-awb-action="open-tab"]');
     expect(btn).not.toBeNull();
     expect(btn?.type).toBe('button');
     expect(btn?.getAttribute('aria-label')).toBe('Open in a tab');
     btn?.click();
     expect(openInTab).toHaveBeenCalledOnce();
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('ASSISTANT-UI-DECLUTTER-1：重置收进头部动作组、居左、共用 awb-action，点击走 onReset 且不关抽屉', () => {
+    const { drawer, onReset, onClose } = mount();
+    drawer.render(snapshot());
+    const host = document.getElementById('assistantWorkbenchDrawer') as HTMLElement;
+    const actions = host.querySelector<HTMLElement>('.awb-actions');
+    expect(actions).not.toBeNull();
+    const buttons = [...actions!.querySelectorAll<HTMLButtonElement>('button')];
+    expect(buttons.map((b) => b.dataset.awbAction)).toEqual(['reset', 'open-tab']);
+    for (const b of buttons) expect(b.classList.contains('awb-action')).toBe(true);
+    const reset = buttons[0];
+    expect(reset.type).toBe('button');
+    expect(reset.textContent).toBe('Reset');
+    expect(reset.getAttribute('aria-label')).toBe('Reset assistant session');
+    expect(reset.title).toBe('Reset assistant session');
+    reset.click();
+    expect(onReset).toHaveBeenCalledOnce();
+    // 重置不是「离开抽屉」：确认弹窗在宿主侧，抽屉保留待用户裁决；与 open-tab 的 onClose 区分
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('容器不存在时静默跳过（self 形态无该节点），不抛错', () => {
@@ -159,9 +188,35 @@ describe('INLINE-WORKBENCH-1 · 助手页内嵌工作台抽屉', () => {
       document,
       openSession,
       openInTab: vi.fn(),
+      onReset: vi.fn(),
       onClose: vi.fn(),
     });
     expect(() => drawer.render(snapshot())).not.toThrow();
+  });
+});
+
+describe('ASSISTANT-UI-DECLUTTER-1 · 重置入口收纳（源码级机检：生产 HTML + 样式）', () => {
+  it('生产骨架与测试骨架均无身份条重置节点，避免第二入口回流', () => {
+    for (const file of [
+      join(__dirname, '..', '..', 'panels', 'chatPanelHtml.ts'),
+      join(__dirname, '..', '..', '__tests__', 'helpers', 'chatViewTestEnv.ts'),
+    ]) {
+      const src = readFileSync(file, 'utf8');
+      expect(src, file).not.toContain('assistantResetBtn');
+    }
+    const view = readFileSync(join(__dirname, '..', '..', 'scripts', 'chatView.ts'), 'utf8');
+    expect(view).not.toContain("getElementById('assistantResetBtn')");
+    expect(view).toContain("onReset: () => vscode.postMessage({ type: 'reset_assistant' })");
+  });
+
+  it('CSS：awb-action 为两钮唯一共用形态，旧 awb-open-tab 选择器已退役', () => {
+    const style = readFileSync(
+      join(__dirname, '..', '..', 'styles', 'chatStyles.ts'),
+      'utf8',
+    ).replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(style).toContain("body[data-form='assistant'] .awb-action {");
+    expect(style).toContain("body[data-form='assistant'] .awb-actions {");
+    expect(style).not.toMatch(/\.awb-open-tab/);
   });
 });
 

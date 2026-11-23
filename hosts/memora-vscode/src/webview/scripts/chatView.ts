@@ -228,8 +228,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const assistantWorkbenchBtn = document.getElementById(
     'assistantWorkbenchBtn',
   ) as HTMLButtonElement;
-  // ASSISTANT-RESET-UI-1：重置助手会话入口（身份条按钮，仅 assistant 形态可见）
-  const assistantResetBtn = document.getElementById('assistantResetBtn') as HTMLButtonElement;
+  // ASSISTANT-UI-DECLUTTER-1：重置入口已收进工作台抽屉，由抽屉 onReset 注入同一上行出口；
+  // 身份条不再持有该按钮（低频危险操作不占常驻位）。
   /**
    * 自助形态的输入占位原文（**只在这里取一次**）
    *
@@ -427,6 +427,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // UI-SEAT-AUDIT：抽屉「在独立 tab 打开」入口——上行 open_workbench_tab，宿主执行
     // memora.openWorkbench 开 editor tab（与身份条按钮同命令、选座判据同源）
     openInTab: () => vscode.postMessage({ type: 'open_workbench_tab' }),
+    // ASSISTANT-UI-DECLUTTER-1：与原身份条按钮同一出口（协议 type 与宿主确认链零改动）
+    onReset: () => vscode.postMessage({ type: 'reset_assistant' }),
     onClose: () => hideWorkbenchDrawer(document),
   });
   // 下拉选择器与问答回顾行（CHATVIEW-SLIM-3 首刀）：零状态 DOM 构造，deps 注入
@@ -3926,10 +3928,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   assistantWorkbenchBtn.addEventListener('click', () => {
     if (shouldOpenWorkbench(document)) vscode.postMessage({ type: 'assistant_open_workbench' });
   });
-  // ASSISTANT-RESET-UI-1：重置助手会话——只转达点击，宿主侧做确认 + 删除 + 回空态
-  assistantResetBtn?.addEventListener('click', () =>
-    vscode.postMessage({ type: 'reset_assistant' }),
-  );
+  // ASSISTANT-UI-DECLUTTER-1：重置接线已随按钮移入抽屉 deps.onReset（见上 createAssistantWorkbenchDrawer），
+  // 宿主侧确认 + 删除 + 回空态不变；本层不再持有身份条按钮引用。
   // 历史按钮：开合由 treedd 管理（initDropdowns），本层只负责「打开时重置浏览态并请求最新列表」
   //（动作体收口于容器 openFresh；「视图重置挂打开时机、不挂数据下发」的论证见容器模块头 ②）
   historyBtn.addEventListener('click', () => {

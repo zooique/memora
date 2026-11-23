@@ -29,6 +29,12 @@ export interface AssistantWorkbenchDrawerDeps {
   openSession: (sessionId: string) => void;
   /** 在独立 editor tab 打开工作台看板（chatView 注入：上行 open_workbench_tab；UI-SEAT-AUDIT） */
   openInTab: () => void;
+  /**
+   * 重置助手会话（ASSISTANT-UI-DECLUTTER-1）：chatView 注入既有 `reset_assistant` 上行。
+   * 低频危险操作从身份条收进本抽屉，与「在 tab 打开」共用 awb-action 形态；确认弹窗
+   * 与删除语义全在宿主侧，本面只转达点击，零新增协议。
+   */
+  onReset: () => void;
   /** 关闭抽屉回调（chatView 注入：直接置 drawer.hidden，展开态真源 = DOM 属性，零 JS 状态） */
   onClose: () => void;
 }
@@ -120,16 +126,31 @@ export function createAssistantWorkbenchDrawer(
 
       // UI-SEAT-AUDIT：抽屉里原「关闭」按钮冗余（身份条工作台按钮 = toggle 已能开关），
       // 改为「在独立 tab 打开」直达入口——原 hint 指向命令面板太隐蔽，按钮化后可见即达。
-      // 开 tab 后顺手收抽屉（工作台按钮可再展开）。类名随语义改 awb-open-tab（CSS 同步）。
+      // 开 tab 后顺手收抽屉（工作台按钮可再展开）。
+      // ASSISTANT-UI-DECLUTTER-1：两钮共用语义中性的 awb-action 形态（css 单点）；
+      // 区分靠 textContent / aria-label / data-awb 动作名，不靠两套视觉类。
       const openInTab = document.createElement('button');
       openInTab.type = 'button';
-      openInTab.className = 'awb-open-tab';
+      openInTab.className = 'awb-action';
+      openInTab.dataset.awbAction = 'open-tab';
       openInTab.textContent = l10n.t('Open in a tab');
       openInTab.setAttribute('aria-label', l10n.t('Open in a tab'));
       openInTab.addEventListener('click', () => {
         deps.openInTab();
         deps.onClose();
       });
+
+      // ASSISTANT-UI-DECLUTTER-1：重置入口从身份条移来，低频危险操作不占常驻位；
+      // 位于「在 tab 打开」左侧（DOM 序 = 视觉序）。危险确认留宿主侧，本面只转达。
+      const reset = document.createElement('button');
+      reset.type = 'button';
+      reset.className = 'awb-action';
+      reset.dataset.awbAction = 'reset';
+      reset.textContent = l10n.t('Reset');
+      const resetLabel = l10n.t('Reset assistant session');
+      reset.title = resetLabel;
+      reset.setAttribute('aria-label', resetLabel);
+      reset.addEventListener('click', () => deps.onReset());
 
       // 就地视图说明（两入口分工可见）：点身份条「工作台」看到的是助手页内嵌投影，
       // 常驻并排看板点上方按钮在独立 tab 打开。不再指向命令面板（UI-SEAT-AUDIT 收口）。
@@ -181,12 +202,17 @@ export function createAssistantWorkbenchDrawer(
         list.appendChild(empty);
       }
 
-      // 头部行：说明文字 + 「在 tab 打开」按钮（flex 行尾，避免绝对定位盖住长文案；
-      // 「说明行为首节点」判据仍成立——head 是首节点，hint 是 head 首子节点）
+      // 头部行：说明文字 + 动作组（重置在左 / 在 tab 打开在右），flex 行尾避免绝对定位
+      // 盖住长文案。「说明行为首节点」判据不变——head 是首节点，hint 是 head 首子节点。
+      // 两按钮收进 awb-actions 容器：窄窗时整组换行，不与长 hint 互相挤压。
+      const actions = document.createElement('div');
+      actions.className = 'awb-actions';
+      actions.appendChild(reset);
+      actions.appendChild(openInTab);
       const head = document.createElement('div');
       head.className = 'awb-head';
       head.appendChild(hint);
-      head.appendChild(openInTab);
+      head.appendChild(actions);
       drawer.replaceChildren(head, seat, list);
     },
   };

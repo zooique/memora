@@ -21,7 +21,6 @@ const HTML = `
     <span class="assistant-mode-bar__tag"><span class="assistant-mode-bar__dot" aria-hidden="true"></span>Assistant mode</span>
     <span id="assistantState" class="assistant-mode-bar__state" hidden></span>
     <button id="assistantWorkbenchBtn" class="assistant-mode-bar__link" type="button">Workbench</button>
-    <button id="assistantResetBtn" class="assistant-mode-bar__link" type="button" title="Reset assistant session" aria-label="Reset assistant session">Reset</button>
   </div>
   <!-- 助手页内嵌工作台抽屉（INLINE-WORKBENCH-1）：与生产骨架同步 -->
   <section id="assistantWorkbenchDrawer" class="assistant-workbench-drawer" hidden></section>

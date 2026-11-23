@@ -1,12 +1,13 @@
 /**
- * 派发凭证行 / 补派判据（DISPATCH-RECEIPT-1 起）——重放 / 实时 / 形态门控 / 幂等 / 骨架比对
+ * 派发凭证 / 补派判据（DISPATCH-RECEIPT-1 起 · ASSISTANT-UI-DECLUTTER-1 收口）——重放 / 实时 / 形态门控 / 幂等 / 骨架比对
  *
  * 被测事实：
- *   - 本轮**有业务受理成功**的 send_to_session / create_session 回执 ⇒ 助手形态气泡下出现一行凭证；
+ *   - 本轮**有业务受理成功**的 send_to_session / create_session 回执 ⇒ 助手形态底栏内出现一行凭证；
  *   - 无回执的轮**一个字都不加**：DOM 骨架与一条普通对话轮逐节点一致（强断言，防「换了个 class 又长回来」）；
  *   - 业务失败（内核 ok + 摘要 ok=false）不产生凭证——受理失败不能盖章；
  *   - hosted / self 形态不产生凭证（凭证只归助手会话）；
- *   - 重放与实时共用同一投影函数；同一轮多次 turn_update 只留一条。
+ *   - 重放与实时共用同一投影函数；同一轮多次 turn_update 只留一条；
+ *   - ASSISTANT-UI-DECLUTTER-1：凭证挂底栏 actions 与 time 之间、随底栏显形（不再常显独立行）。
  *
  * 注意：本文件不再断言「未核到回执」提示——那条 DOM 投影已撤（提示是猜出来的告警，
  * 凭证才是事实呈现）。`shouldNudgeDispatchRepair`（补派轮判据）在本文件后半保持原样被覆盖。
@@ -255,10 +256,13 @@ describe('派发凭证（DISPATCH-RECEIPT-1）', () => {
     const line = document.querySelector<HTMLElement>(RECEIPT_SELECTOR);
     expect(line).not.toBeNull();
     expect(line!.textContent).toBe('Dispatched to “小说会话” · receipt confirmed');
-    // 位置契约：容器直接子元素、footer 之前（常显，不随底栏 hover 隐藏）
+    // 位置契约（ASSISTANT-UI-DECLUTTER-1）：footer 内、actions 与 time 之间；
+    // 与其他提示性文字同归底栏，助手形态随底栏 hover 显形（不再常显独立行）。
     const group = document.querySelector<HTMLElement>('.round-group[data-round-id="accepted"]')!;
-    expect(line!.parentElement).toBe(group);
-    expect(group.lastElementChild?.classList.contains('round-group__footer')).toBe(true);
+    const footer = group.querySelector<HTMLElement>('.round-group__footer')!;
+    expect(line!.parentElement).toBe(footer);
+    expect(footer.querySelector('.round-group__actions')?.nextElementSibling).toBe(line);
+    expect(line!.nextElementSibling?.classList.contains('msg-time')).toBe(true);
   });
 
   it('重放 · create_session 受理成功 ⇒ 文案是「已新建会话」', () => {

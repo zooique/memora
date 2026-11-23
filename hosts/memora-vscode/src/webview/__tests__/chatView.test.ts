@@ -13025,7 +13025,7 @@ describe('块类型标与折叠箭头（批次三）', () => {
     dispatch(snapshotMsg);
     expect(drawer().hidden).toBe(false);
     postMessage.mockClear();
-    (drawer().querySelector('.awb-open-tab') as HTMLButtonElement).click();
+    (drawer().querySelector('[data-awb-action="open-tab"]') as HTMLButtonElement).click();
     expect(drawer().hidden).toBe(true);
     expect(postMessage).toHaveBeenCalledWith({ type: 'open_workbench_tab' });
 
@@ -13039,6 +13039,32 @@ describe('块类型标与折叠箭头（批次三）', () => {
     btn().click();
     expect(drawer().hidden).toBe(true);
     expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it('ASSISTANT-UI-DECLUTTER-1：抽屉重置按钮上行 reset_assistant（宿主确认链不变），抽屉不自行关闭', () => {
+    const { postMessage } = mountChatView('assistant');
+    const drawer = document.getElementById('assistantWorkbenchDrawer') as HTMLElement;
+    dispatch({
+      type: 'workbench_snapshot',
+      snapshot: {
+        orchestrator: { name: 'Memora', sessionId: 'agent-1', title: '代理会话', managed: true },
+        jobs: [],
+        seatSource: 'live' as const,
+        filteredCount: 0,
+        foreignDispatches: 0,
+        coverage: 'complete' as const,
+        missingCount: 0,
+        coverageReasons: [],
+        scan: { maxRounds: 60, totalRounds: 0, scannedRounds: 0 },
+      },
+    });
+    expect(drawer.hidden).toBe(false);
+    const reset = drawer.querySelector<HTMLButtonElement>('[data-awb-action="reset"]');
+    expect(reset).not.toBeNull();
+    reset!.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'reset_assistant' });
+    // 「重置」由宿主确认弹窗裁决：webview 不自作主张收抽屉（与 open-tab 的 onClose 区分）
+    expect(drawer.hidden).toBe(false);
   });
 
   it('delegate 截断标注三态：字段 true/false 为权威，字段缺失退回旧长度兜底', () => {
