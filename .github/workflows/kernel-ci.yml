@@ -6,16 +6,18 @@
 #   - 手动触发（workflow_dispatch） ← 保留，随时可恢复 CI
 #
 # 检查项（**范围 ≠ 本地门禁**，见下方「等价物」）：
+#   - 治理门（文档死链 / 删除清算 / 术语载体 / 规则引用 / 台账卫生 / 格式）
+#     ← 由 `npm run ci:local -- --preset=governance` 提供，本文件**不复制步骤名**
 #   - TypeScript 类型检查（tsc --noEmit）
 #   - ESLint 代码规范检查
 #   - Vitest 单元测试（不含覆盖率闸门）
 #   - 生产构建（tsc + tsc-alias）
 #
 # ⚠️ 等价物（ADR-032，2026-09-16）：本流水线的**自动触发已停用**（见下方 `on:` 注释）。
-#   当前门禁的等价物 = `npm run ci:local`（本地，10 步）。它**多出**四项本流水线没有的检查：
-#   覆盖率闸门、宿主（hosts/memora-vscode）typecheck/lint/test、宿主构建、dist 契约
-#   （宿主 bundle 与内核 dist 同代）。故**不要**把本文件当成「门禁清单」的 SSOT——
-#   步骤清单的唯一收口是 `scripts/local-ci.mjs`。
+#   当前门禁的等价物 = `npm run ci:local`（本地；步数以运行时打印为准，不在注释里写死）。
+#   它**多出**这些本流水线没有的检查：覆盖率闸门、宿主（hosts/memora-vscode）
+#   typecheck/lint/test、宿主构建、dist 契约（宿主 bundle 与内核 dist 同代）、ledger:fold。
+#   故**不要**把本文件当成「门禁清单」的 SSOT——步骤清单的唯一收口是 `scripts/local-ci.mjs`。
 #
 # 说明：内核是纯逻辑库，零 native 依赖，
 #   仅需 ubuntu-latest + Node.js 22 LTS 即可完成全部检查。
@@ -59,6 +61,15 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+        with:
+          # 治理门要完整历史与 tag（2026-11-23 补）：
+          #   - docs:dangling 用 `git log --diff-filter=D` 找最近删除的 .md；
+          #   - ledger:hygiene 的 ⑬ 要 blame 条目首行时间、⑧ 要判「是否跨过发版线」；
+          #   - ⑤/⑧ 还要 git tag 存在（默认 checkout 不取 tag）。
+          # 浅克隆（默认 depth=1）或缺 tag 时，上述判据会走各自的 fail-open 分支
+          # （「查不到就跳过」）⇒ 门全绿但实际失明 = 假绿，故必须取全。
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: 安装 pnpm
         uses: pnpm/action-setup@v4
@@ -75,6 +86,14 @@ jobs:
 
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
+
+      # 治理门：步骤清单**只在** `scripts/local-ci.mjs`，本文件只传 `--preset`
+      # （禁止在此复制命令清单——复制即第二真源，与 lefthook.yml 同一条纪律）。
+      # 为什么要有这一道：本地钩子可被 `LEFTHOOK=0` / `--no-verify` 绕过（拍板设计），
+      # 而此前断链 / 悬空引用 / 台账越界**只挂本地钩子** ⇒ 可直达远端且无事后发现机制。
+      # 放在类型检查之前：本档全是秒级静态扫描，先跑能让格式/文档类问题最快反馈。
+      - name: 治理门（文档/台账/规则/格式）
+        run: npm run ci:local -- --preset=governance
 
       - name: TypeScript 类型检查
         run: npm run typecheck

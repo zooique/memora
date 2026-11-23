@@ -34,12 +34,20 @@
  *   node scripts/local-ci.mjs                 # ≡ --preset=full（全量；步数由运行时打印，注释不写死）
  *   node scripts/local-ci.mjs --preset=fast   # 快档：两侧 tsc + 两侧 lint + 秒级守卫（≈50s，挂 pre-commit）
  *   node scripts/local-ci.mjs --preset=full   # 全档（挂 pre-push）
+ *   node scripts/local-ci.mjs --preset=governance # 治理档：文档/台账/规则/格式守卫（秒级，供 CI 远端复核）
  *   node scripts/local-ci.mjs --kernel-only   # 只跑内核（≈ CI 原范围 + 覆盖率）
  *   node scripts/local-ci.mjs --skip-cov      # 跳过覆盖率闸门（省 ~40s）
  *   node scripts/local-ci.mjs --skip-build    # 跳过生产构建
  *   node scripts/local-ci.mjs --skip-cov --skip-build   # 最快内环
  *   node scripts/local-ci.mjs --from=host:test# 从指定步骤开始
  *   node scripts/local-ci.mjs --audit         # 额外跑依赖安全审计（允许失败）
+ *
+ * 为什么有 governance 档（2026-11-23 补）：治理门此前**只挂本地钩子**，而 lefthook 自己写明
+ *   `LEFTHOOK=0` / `--no-verify` 都能绕、且「推送绕过 full 是拍板设计」⇒ 断链 / 悬空引用 / 台账越界
+ *   可直达远端且无事后发现机制。CI 侧若直接写三条 npm 命令，就又造了一份「要跑什么」的清单
+ *   （与 lefthook 复制步骤同罪）——故收成一个 preset，workflow 只传 `--preset=governance`。
+ *   本档刻意**不含**：全量测试 / 宿主构建（CI 的 kernel job 不装宿主依赖）、ledger:fold
+ *   （其 --since=origin/main 基准在手动触发 / 特性分支上不可靠）、audit（workflow 已有独立一步）。
  *
  * 分层（ADR-032）：
  *   步骤定义**只在本文件**，钩子只是触发器（`lefthook.yml` 传 --preset）。分层判据：
@@ -330,7 +338,7 @@ const ALL_STEPS = [
     cmd: 'npm run docs:links:repo',
     cwd: ROOT,
     required: true,
-    presets: ['full'],
+    presets: ['full', 'governance'],
   },
   // 删除清算：最近 20 笔提交删掉的 .md 是否仍被**活文档**引用（确定性 git + FS 扫描，秒级）。
   // 为什么 docs:links 不够：它只认 `](...)` 链接，而文档里大量引用是反引号路径 / 纯文本文件名
@@ -342,7 +350,7 @@ const ALL_STEPS = [
     cmd: 'npm run docs:dangling',
     cwd: ROOT,
     required: true,
-    presets: ['full'],
+    presets: ['full', 'governance'],
   },
   // 术语载体集合漂移：同族半补丁（改了函数名漏改事件名 / 只挡一半）的机械化防线。
   // 集合基线锁在 scripts/terminology-carrier-snapshot.ts，冻结例外由术语锚点 §3 派生（确定性 FS 扫描，秒级）。
@@ -353,7 +361,7 @@ const ALL_STEPS = [
     cmd: 'npm run terminology:check',
     cwd: ROOT,
     required: true,
-    presets: ['full'],
+    presets: ['full', 'governance'],
   },
   // 规则裸路径引用有效性：规则文件移动/重命名后，反引号/纯文本形态的 `.trae/rules/*.md` 引用
   // 不在 docs:links 扫描面内（其判据只认 `](...)` 且剥离行内代码）→ 补这条同族盲区（确定性 FS 扫描，秒级）。
@@ -364,7 +372,7 @@ const ALL_STEPS = [
     cmd: 'npm run rules:refs',
     cwd: ROOT,
     required: true,
-    presets: ['full'],
+    presets: ['full', 'governance'],
   },
   // 短语类穷尽扫描（MEM-PURGE-1 血训）：类谎报的「无 head 全量枚举 + 逐条分类」断根。
   // 缺口动因：验证「扫全」曾用带 `head_limit` 的临时 grep → 命中被截断即漏判，同会话内二次复发。
@@ -377,7 +385,7 @@ const ALL_STEPS = [
     cmd: 'npm run scan:phrase:check',
     cwd: ROOT,
     required: true,
-    presets: ['full'],
+    presets: ['full', 'governance'],
   },
   // 台账销项同步（告警档）：实现性提交携带台账条目 ID、但区间内 tasks/ 无对应变更 → 告警。
   // 缺口实证：TERM-FDBK-1 随 feat 提交落地、同批 docs 提交没碰台账 → 台账仍挂「待排期」，
@@ -391,7 +399,7 @@ const ALL_STEPS = [
     cmd: 'node scripts/verify-ledger-receipt.mjs',
     cwd: ROOT,
     required: false,
-    presets: ['full'],
+    presets: ['full', 'governance'],
   },
   // 台账结构卫生（**硬闸**）：归档纪律的分诊从**人工闸**升级为机检。
   // 缺口实证：归档脚本按人肉 `--ids` 白名单跑 ⇒ 0.2.0 区 140 个 ID 只归档了 40 个；
@@ -417,7 +425,7 @@ const ALL_STEPS = [
     cmd: 'npm run verify:ledger-hygiene',
     cwd: ROOT,
     required: true,
-    presets: ['fast', 'full'],
+    presets: ['fast', 'full', 'governance'],
   },
   // 模态确认框唯一入口闸（`MODAL-DUP-CANCEL-1` 两段均已闭合）：
   //   窄闸 —— 任何 `modal: true` 调用不得自拼「取消 / Cancel」item（VS Code 自带系统级
@@ -434,7 +442,7 @@ const ALL_STEPS = [
     cmd: 'npm run verify:modal-cancel',
     cwd: ROOT,
     required: true,
-    presets: ['fast', 'full'],
+    presets: ['fast', 'full', 'governance'],
   },
   // 台账折叠结清（硬闸）：防「整区折叠时条目凭空蒸发」。
   // 缺口实证：2026-10-26 归元把 5.0.0 / 5.1.0 / 宿主 0.x 四个版本区折叠成索引表的一行，
@@ -461,7 +469,7 @@ const ALL_STEPS = [
     cmd: 'npm run format:check',
     cwd: ROOT,
     required: true,
-    presets: ['full'],
+    presets: ['full', 'governance'],
   },
   {
     id: 'audit',
@@ -590,14 +598,16 @@ function selfCheckStepLockGuard() {
   }
 }
 
-// 启动即校验：**任何档位**（fast / full）都在选步骤之前红，不留「只有 full 才查」的盲区
+// 启动即校验：**任何档位**（fast / full / governance）都在选步骤之前红，不留「只有 full 才查」的盲区
 assertStepsDeclareTestLock(ALL_STEPS);
 selfCheckStepLockGuard();
 
 function selectSteps() {
   const preset = argOf('preset') ?? 'full';
-  if (preset !== 'fast' && preset !== 'full') {
-    console.error(`[local-ci] --preset=${preset} 无效。可选：fast | full`);
+  // 治理档（governance）只含秒级静态守卫，用于 CI 远端复核——理由与「不含哪些步」见文件头同名段。
+  const VALID_PRESETS = ['fast', 'full', 'governance'];
+  if (!VALID_PRESETS.includes(preset)) {
+    console.error(`[local-ci] --preset=${preset} 无效。可选：${VALID_PRESETS.join(' | ')}`);
     process.exit(2);
   }
   let steps = ALL_STEPS.filter((s) => s.presets.includes(preset));

@@ -630,7 +630,10 @@ const BASELINE_TEXT: readonly string[] = [
   // 对应 code 层项已随收回文案作废而移除——两层基线各自独立，勿同步增删。
   'stepped',
   'steps',
-  'term-unify-turn-step-loop',
+  // 2026-11-23 移除一项：对应的术语统一历史档已按文档处置删除（内容全并入术语锚点，
+  // 见台账 DOC-ZERO-REF-1 的处置收据）⇒ 该载体随文件消失，非「历史档被改写」。
+  // ⚠️ 勿把该文件名写回本文件：本文件虽被本脚本自排除（`SELF_REL`），却在 `docs:dangling`
+  //    的 `.ts` 扫描面内——不带处置词的裸文件名会被判成「已删文档的残留引用」。
   'toolStep',
   'toolStepLimit',
   'updatePlanStepStatus',
