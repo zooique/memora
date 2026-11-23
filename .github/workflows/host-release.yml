@@ -150,6 +150,18 @@ jobs:
         run: npm run test
         working-directory: hosts/memora-vscode
 
+      # CHANGELOG 宿主段发布日期校验（台账 CHLOG-VERSION-HOST-AXIS-1）：
+      #   脚本已支持宿主轴（tag ref 前缀 `vscode@` 自动识别进宿主模式；RELEASE=1 进发版模式）。
+      #   此前只挂内核 release.yml，host-release.yml 未调用 ⇒ 宿主段日期写错 CI 不红，只能人肉。
+      #   与内核 release.yml 同构（SSOT），仅多 `if: push`——宿主有 workflow_dispatch 预演，
+      #   预演时 GITHUB_REF_NAME 是分支名不带 `vscode@` 前缀，脚本会误走内核模式假红。
+      #   脚本自行定位仓库根（import.meta.url），故不加 working-directory。
+      - name: 校验 CHANGELOG 宿主段发布日期
+        if: github.event_name == 'push'
+        env:
+          RELEASE: '1'
+        run: node scripts/verify-changelog-version.mjs
+
       - name: 打包 vsix
         run: npm run package
         working-directory: hosts/memora-vscode

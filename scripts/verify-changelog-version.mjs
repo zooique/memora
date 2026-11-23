@@ -46,11 +46,14 @@
  *          标题仍写「未发布」时跳过（内核先发、宿主未发是合法状态）。
  *      两种模式下 `[Unreleased]` 都豁免日期判断（它没有发布日）。
  *
- * ⚠️ CI 接线欠账（台账 CHLOG-VERSION-HOST-AXIS-1）：本脚本当前只挂 `release.yml`（内核轴），
- *   `host-release.yml` 尚未调用 ⇒ 宿主模式在 CI 里不会自动跑，只能手动执行：
- *   `RELEASE_AXIS=host RELEASE_DATE=YYYY-MM-DD node scripts/verify-changelog-version.mjs`。
+ * ✅ CI 接线（台账 CHLOG-VERSION-HOST-AXIS-1，2026-11-21 收口）：本脚本已同时挂
+ *   `release.yml`（内核轴）与 `host-release.yml`（宿主轴）。宿主侧在「校验 CHANGELOG 宿主段
+ *   发布日期」步调用，置 `RELEASE=1` 进发版模式，并加 `if: github.event_name == 'push'`——
+ *   workflow_dispatch 预演时 `GITHUB_REF_NAME` 是分支名、不带 `vscode@` 前缀，脚本会误走
+ *   内核模式假红，故预演刻意跳过。宿主轴自动识别：tag ref 前缀 `vscode@` ⇒ 进宿主模式。
+ *   本地手动复盘仍可：`RELEASE_AXIS=host RELEASE_DATE=YYYY-MM-DD node scripts/verify-changelog-version.mjs`。
  *
- * 挂点（**刻意只挂 release.yml**）：
+ * 挂点（**刻意只挂发版流水线**：`release.yml` = 内核轴，`host-release.yml` = 宿主轴）：
  *   不进 `local-ci`（pre-push）：开发期版本区**合法地**写着「未发布」（`deliverables/内核变更报告-4.0.0发布后至今-20261017.md`
  *   明确「保持不动——5.0.0 未发布，『未发布』是事实」），进 pre-push 会**稳定假红** ⇒ 噪音门禁必腐烂。
  *   正确挂点 = 「版本确定要出包」这一刻，即 release.yml。
