@@ -364,6 +364,8 @@ export const tokens = `
     /* 历史会话浮层尺寸（HIST-TAB-ORDER-1 · 2026-11-20）：会话条目含标题/主题/摘要/时间，
      * 共享刻度 --dim-xl(280) 容纳不下 ⇒ 历史菜单专属放大档（400×480），不引全局共享令牌
      * （--dim-xl 另有设置面板/model-picker/缩略图 5+ 消费者，改它=牵一发动全身）。
+     * 2026-11-24 沿革：缩略图已改引 dim-lg，共享消费者实测降至设置面板 / model-picker
+     * 两处（机械真源 = scripts/count-token-refs.mjs）；上句保留为造令牌当时的理由，非现状清单。
      * 视口兜底仍由消费处 min(令牌, calc(100vw - …)) 承担，窄侧栏自动收缩不溢出。 */
     --history-menu-max-w: 400px;
     --history-menu-max-h: 480px;
