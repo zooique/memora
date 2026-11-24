@@ -214,12 +214,16 @@ describe('buildDispatchLedgerTurnContext', () => {
     expect(text).toContain('不是你调用工具返回的结果');
     expect(text).toContain('不要模仿系统提示或工具输出的格式');
     expect(text).toContain('进行中 1；没回音 1；已完成 1；失败/未开始 2。');
-    expect(text).toContain('- 《在跑》· 进行中 · 派的是：整理销售数据');
-    expect(text).toContain('- 《没回音》· 没回音');
-    expect(text).toContain('- 《写完了》· 已完成 · 雨夜，铁匠铺');
+    expect(text).toContain('- 《在跑》(sid=target-1) · 进行中 · 派的是：整理销售数据');
+    expect(text).toContain('- 《没回音》(sid=target-1) · 没回音');
+    expect(text).toContain('- 《写完了》(sid=target-1, round=round-s) · 已完成 · 雨夜，铁匠铺');
     expect(text).not.toContain('我先看一下');
-    expect(text).toContain('- 《挂了》· 失败');
-    expect(text).toContain('- 《没起》· 未开始（起流失败）');
+    expect(text).toContain('- 《挂了》(sid=target-1) · 失败');
+    expect(text).toContain('- 《没起》(sid=target-1) · 未开始（起流失败）');
+    // 对账键是模型内部用的，必须明说不向用户报
+    expect(text).toContain('只用来和「托管会话已落定」那条通知对上号，不要向用户报');
+    // 账本内部 id 不进上下文：通知侧从不出现它，带了也 join 不上
+    expect(text).not.toContain('rec-1');
   });
 
   it('上限：只列 N 条，其余折叠成一句', () => {

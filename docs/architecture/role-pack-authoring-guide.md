@@ -68,6 +68,8 @@
 > **content 零声明**：`persona.md` / `rules.md` / `skills/` 全部约定俗成，manifest **不注册内容路径**（防路径写错静默丢内容）。
 >
 > **字段上限 SSOT**：上表的数量/长度上限以 `src/role-pack/validator.ts` 为唯一真理源（`MAX_MANIFEST_SKILLS` / `MAX_CAPABILITIES` / `MAX_MANIFEST_TOOLS` / `MAX_HANDOFF_PROMPT_LEN` / `MAX_META_STRING_LEN`）。超限时校验报 error（开发期拒绝、跳过装载）；运行时兜底**仅 `handoffPrompt`** 按 `MAX_HANDOFF_PROMPT_LEN` 截断（宽容容错），其余上限无运行时消费（2026-09-19 订正原「运行时按上限截断兜底」泛化失实）。
+>
+> **派活语义（子会话不继承父包）**：派活建会话时 `rolePack` 必填，由派活方为这条活**显式指定队员角色**；子会话按被指定的那个包装配（该包自己的 `persona` / `rules` / `skills` 与自身 `strategy` 键），**不继承父会话的角色包**，也没有 `inherit` / `parentRolePack` 这类令牌。跨会话只传文本：首轮指令 `text` + 语义边界 `mandate`（落会话的 `workOrder`），父包的策略键与工具面一律不随文本下传。因此包作者不要指望「父包声明了什么，子会话就有什么」——子会话需要什么，就在**它自己**的包里声明。
 
 ### 2.4 rules.md 写法（ADR-025 档 3：规则语义对齐）
 

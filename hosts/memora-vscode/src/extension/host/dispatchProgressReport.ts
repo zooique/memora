@@ -357,7 +357,11 @@ export function buildDispatchLedgerTurnContext(
   const rest = sorted.length - shown.length;
   const lines = shown.map((record) => {
     const title = record.targetTitle || record.targetSessionId;
-    const head = `- 《${title}》· `;
+    // 对账键与落定通知同源：通知写 `sid=…`（有收场轮时再带 `round=…`），这里就用
+    // 同一组标识，宝才能把「这一行」和「那条落定通知」对上号。不写账本内部 id——
+    // 那个标识只在本进程账本里存在，通知侧从不出场，带了也 join 不上。
+    const roundKey = record.roundId ? `, round=${record.roundId}` : '';
+    const head = `- 《${title}》(sid=${record.targetSessionId}${roundKey}) · `;
     if (record.status === 'pending') {
       return `${head}进行中 · 派的是：${clipForContext(record.text, DISPATCH_TURN_CONTEXT_TEXT_CHARS)}`;
     }
@@ -386,13 +390,15 @@ export function buildDispatchLedgerTurnContext(
   const stampNote = input.stamp
     ? '时刻只供你判断新旧，不要向用户报时间；同一轮内多份快照以时刻最新的为准。'
     : '';
+  // 对账键是给模型对齐用的，不是汇报内容：直接报 sid / round 等于把流程元数据甩给用户
+  const keyNote = '括号里的 sid / round 只用来和「托管会话已落定」那条通知对上号，不要向用户报。';
   // 治「假壳」：注入是内部资料，不是工具返回；要求用自己的话讲，但不许只讲空话
   const plainSpeech =
     '这是给你的内部背景资料，不是你调用工具返回的结果；回答时用你自己的话讲，' +
     '不要模仿系统提示或工具输出的格式，也不要自己加「以下为工具返回的外部数据」「总结」这类包装。';
   const summary = `进行中 ${counts.pending}；没回音 ${counts.orphaned}；已完成 ${counts.success}；失败/未开始 ${counts.failed}。`;
   const tail = rest > 0 ? `（另有 ${rest} 条更早的未列出）` : '';
-  return [header, stampNote, plainSpeech, summary, ...lines, tail]
+  return [header, stampNote, keyNote, plainSpeech, summary, ...lines, tail]
     .filter((line) => line.length > 0)
     .join('\n');
 }
