@@ -16,6 +16,8 @@
 - **角色包专属工具：manifest `tools` 声明 + 三键批准闸**（`PACKTOOL-1` · **消费者可感知 · 公开面扩张**）：包可在 manifest 声明专属脚本工具（≤50 项，`impl.type` 仅 `script`），装配期 realpath 防逃逸（Windows 大小写归一）、扩展名推 runtime、算脚本 sha256——任一失败**整包拒绝装载**（坏声明是 error 不是 warning）。**声明 ≠ 授权**：只有批准记录按「包名 + 工具名 + 脚本 hash」三键全等命中才注册给模型，脚本一改 hash 即失效、须重新批准；注册强制 `confirmPolicy:'audit'`（免弹窗不免审计）；批内同名冲突全量放弃、逐个报冲突名；切包先清后注册不残留。执行复用 `runSkillScript`：参数经 stdin 收 JSON、stdout 必须 JSON（非 JSON / 空输出报工具错误且**不回原文**）。新增公开类型 `RolePackTool` / `RolePackToolApproval` 与 `Agent.setRolePackToolApprovals()`；`reloadConfig('rolePack')` 重载后按新 hash 重放工具面。**对消费者**：无 `tools` 声明的包零变化；`runSkillScript` 的 `stdinData` 为可选第 8 参，缺省行为逐字不变。
 - **首个助手角色包 `memora宝`**（`ROLEPACK-KIND-CONSUMER-1` · **消费者可感知 · 新增随包资源**）：manifest 声明 `kind: assistant`，工具面只放 `orchestrate` 组（会话管理），不含写盘 / 执行 / 挂起工具；`persona.md` / `rules.md` 承载 Router 调度纪律（派活只写 mandate、提问代答、如实回报、不可逆操作交回用户）；`rules.md` 另定四段式汇报（结论 / 证据 / 未闭合 / 下一步）、证据三来源标注、「受理 ≠ 完成」，提问代答对不可逆题留用户决定（`ASSISTANT-REPORT-GRADE-1`）。**对消费者**：角色包列表会多出该条目；它是独立包，`memora助手` 保持工作角色包与兜底契约身份不变，工作会话降级链零变化；助手会话绑定与宿主名单退役的判据见台账 `ROLEPACK-KIND-CONSUMER-1`。
 
+- **派活字段契约订正：追认 `text` 并补齐必填性**（`DESIGN-B2-TEXT-DRIFT-1` · **消费者可感知 · 随包规则订正**）：`memora宝` 的规则原写「title / paths 可选」，与派活工具的实际契约相悖——`rolePack` / `title` / `text` / `paths` 四键必填，其中 `text` 是 Worker 首轮唯一收到的指令（`mandate` 落 `workOrder` 作语义边界，不回传首轮）。已改为「四键必填 + `mandate` 派活时必填」（不填 `mandate` 就没有 `workOrder`，Worker 收不到交回与自报两段），并写明 `text` 只写「这一轮做什么」，不写文件 / 命令 / 实现路径。同时删去「证据来源含『我自核』」——助手包没有读工具，该来源不存在。**对消费者**：按旧规则省略 title / paths 会被工具直接拒收；其余包的派活行为零变化。
+
 ## [Unreleased] · 宿主
 
 ### Added（宿主）
@@ -23,6 +25,7 @@
 - **角色包工具批准入口**（`PACKTOOL-1` · **消费者可感知 · 新增入口**）：新配置 `memora.approvedPackTools`（**application 用户级，禁项目级**——项目级可被他人提交、静默把第三方脚本授予模型）+ 命令「批准角色包工具」（`memora.approvePackTools`：QuickPick 多选当前激活包的工具、写回三键记录，取消勾选即撤销）。装配期注入 + 配置变更即时同步，批准后无需重开会话。**对消费者**：未批准的包内工具对模型不可见；脚本更新后批准自动失效需重新批准。
 - **助手会话固定接入 `memora宝` + 角色包选择只列工作包**（`ROLEPACK-KIND-CONSUMER-1` · **消费者可感知 · 〔开发中〕托管簇**）：助手会话建档与旧数据矫正改指独立的 `kind: assistant` 包 `memora宝`（固定包名真源在宿主 `shared/rolePackKind.ts`，不改内核兜底包契约）；`memora助手` 保持工作包与兜底身份。设置页角色列表 / 聊天页角色列表 / 主控 `list_role_packs` 三处按 `RolePackMeta.kind` 白名单过滤，助手包不进任何选择面（未知工种亦不展示，fail-closed）。**对消费者**：普通会话不再能选到助手包、避免空工具面；助手人格由助手包承载；宝可只读核对会话的语义边界与路径范围（`list_work_sessions` 返回新增 `workOrder` / `declaredPaths`），复用会话改按「摘要或最近派发至少一项可核」判定，不再因缺归档摘要就新建重复活（`WORKSESSION-BRIEF-SCOPE-1` / `SUMMARY-ROUTE-CRITERIA-1`）；宿主工具名单仍在，名单退役须待真机验收（判据见台账）。
 - **派活账本上下文补对账键**（`DISPATCH-LEDGER-ID-1` · **消费者可感知 · 〔开发中〕托管簇**）：每轮注入给模型内部用的账本快照，每条前面带目标会话 `sid`（该条已有收场轮时再带 `round`），与「托管会话已落定」通知**同一组标识**——同一轮派多条活也能逐条对上号；注入文本另明说这些标识只供对账、不向用户报。**对消费者**：回执与工具契约零变化（不新增字段、不碰 100 字符 sid 互锁、不暴露账本内部 id），宝汇报「这活现在怎样了」不再靠标题猜。
+- **派活收场自报四件事**（`WORKER-ARTIFACT-VISIBLE-1` · **消费者可感知 · 〔开发中〕托管簇**）：Worker 的系统段除「越界交回」外新增一条——收场汇报**首段**写清四件事：三态（做完了 / 部分做完 / 没做成）、改了哪些文件（路径，≤5 个）、验证命令与结果（命令原文 + 退出码或通过数，没跑则明写「没验证」）、未闭合项。动因：派活方没有读工具，它判断「完成」只靠 Worker 正文的「实质开头 + 截断」投影，证据写在末尾等于没写。**对消费者**：宝转述「已完成」时能带上可回源的证据，且仍无读权限、只能标「未独立复核」；不填 `mandate` 派活时该段与交回协议一样不投影（两者同一注入点）。
 
 ## [0.12.0] · 2026-11-23 · 宿主
 

@@ -464,6 +464,22 @@ function createProviderRouter(provider: LlmProvider): ProviderRouter {
 }
 
 /**
+ * Worker 收场自报契约（宿主唯一真源，唯一消费面 = 本文件的 `delegationRuleProvider`）
+ *
+ * 首段即给：派活方无读工具（S1），判断完成只靠正文「实质开头 + 截断」投影
+ * （`extractSubstantiveExcerpt`）⇒ 证据写在末尾等于没写。
+ * 只收四项、不收「提交号 / 行号」：Worker 不落 git 写（B7），行号会漂移且禁行号定位。
+ * 与 `HAND_BACK_PROTOCOL` 同一注入点合并投影：仅在有 `workOrder` 时生效，
+ * 故 mandate 不填时交回与自报两段都到不了 Worker。
+ */
+const WORKER_REPORT_PROTOCOL =
+  '收场汇报的首段就写清四件事，不要写「详见下文」、不要把证据放到后文：' +
+  '① 三态选一——做完了 / 部分做完 / 没做成；' +
+  '② 改了哪些文件（路径，最多列 5 个）；' +
+  '③ 验证命令与结果（命令原文 + 退出码或通过数），没跑就明写「没验证」；' +
+  '④ 未闭合项（没有就写「无」）。';
+
+/**
  * 装配并初始化 memora Agent（薄壳，功能定位由内置角色包承载）
  *
  * @returns 已 init 的 Agent 实例
@@ -603,7 +619,10 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // 越界交回规则（HAND-BACK-UNREACHABLE-1）：宿主常量注入，内核仅在会话存在 workOrder
     // 时作为独立系统段投影给 Worker——协议原先只在 Router 工具描述里，Worker 收不到。
     // 与工具纪律共用 `HAND_BACK_PROTOCOL` 同一字面量，改措辞只改一处。
-    delegationRuleProvider: () => HAND_BACK_PROTOCOL,
+    // 收场自报（WORKER-ARTIFACT-VISIBLE-1）：派活方无读工具，只能拿正文摘录，且摘录取
+    // 「实质开头」⇒ 证据必须在首段。两段同一注入点，不新造第二个纪律真源；代价是二者
+    // 同条件生效——派活不填 mandate 无 workOrder 时都不投影（纪律层要求必填，见包规则）。
+    delegationRuleProvider: () => [HAND_BACK_PROTOCOL, WORKER_REPORT_PROTOCOL].join('\n'),
     // 工作区信任态（现读快照）：内核常驻规则层 fail-closed 闸的唯一入参；
     // 缺省 = undefined ⇒ 内核按未信任处理（不读任何常驻正文）
     workspaceTrusted,
