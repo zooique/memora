@@ -597,3 +597,124 @@ describe('validateManifest：kind 与组名闭集（§7.6 锚点 2）', () => {
     expect(findByCode(shapeOk.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(0);
   });
 });
+
+describe('validateManifest：tools 声明形状（§8.7 锚点 9）', () => {
+  /**
+   * 构造一份合法的包内工具声明（各用例按需覆写字段）
+   *
+   * @param over 覆盖字段（用于构造各类非法形态）
+   * @returns manifest.tools 的单项
+   */
+  const validTool = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    name: 'pack_echo',
+    description: '把输入原样回显',
+    parameters: {
+      type: 'object',
+      properties: { text: { type: 'string', description: '要回显的文本' } },
+      required: ['text'],
+    },
+    impl: { type: 'script', path: 'scripts/echo.mjs' },
+    ...over,
+  });
+
+  it('合法声明（含缺省 group/readonly）→ 无 tools 类错误', () => {
+    const result = validate({ tools: [validTool()] });
+    expect(result.valid).toBe(true);
+    expect(
+      result.issues.filter((i) => i.code.startsWith('TOOL') || i.code.startsWith('INVALID_TOOL')),
+    ).toHaveLength(0);
+  });
+
+  it('tools 非数组 → TOOLS_NOT_ARRAY error（坏声明阻塞装载，不是 warning）', () => {
+    const result = validate({ tools: 'scripts/echo.mjs' });
+    expect(findByCode(result.issues, 'TOOLS_NOT_ARRAY')).toHaveLength(1);
+    expect(findByCode(result.issues, 'TOOLS_NOT_ARRAY')[0]?.severity).toBe('error');
+    expect(result.valid).toBe(false);
+  });
+
+  it('超过 50 项 → TOOLS_TOO_MANY error', () => {
+    const many = Array.from({ length: 51 }, (_, i) =>
+      validTool({ name: `pack_tool_${i}`, impl: { type: 'script', path: `scripts/t${i}.mjs` } }),
+    );
+    const result = validate({ tools: many });
+    expect(findByCode(result.issues, 'TOOLS_TOO_MANY')).toHaveLength(1);
+    expect(result.valid).toBe(false);
+  });
+
+  it('工具名非法 → INVALID_TOOL_DECL；重名 → DUPLICATE_TOOL_NAME', () => {
+    const badName = validate({ tools: [validTool({ name: '9bad-name' })] });
+    expect(findByCode(badName.issues, 'INVALID_TOOL_DECL').length).toBeGreaterThan(0);
+
+    const dup = validate({ tools: [validTool(), validTool()] });
+    expect(findByCode(dup.issues, 'DUPLICATE_TOOL_NAME')).toHaveLength(1);
+    expect(dup.valid).toBe(false);
+  });
+
+  it('description 空 / group 越界 / readonly 非布尔 → INVALID_TOOL_DECL', () => {
+    expect(
+      findByCode(
+        validate({ tools: [validTool({ description: '   ' })] }).issues,
+        'INVALID_TOOL_DECL',
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(
+      findByCode(validate({ tools: [validTool({ group: 'write' })] }).issues, 'INVALID_TOOL_DECL')
+        .length,
+    ).toBeGreaterThan(0);
+    expect(
+      findByCode(validate({ tools: [validTool({ readonly: 'yes' })] }).issues, 'INVALID_TOOL_DECL')
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('声明确认策略（confirmPolicy）→ TOOL_CONFIRM_POLICY_FORBIDDEN error（§8.9 R2）', () => {
+    const result = validate({ tools: [validTool({ confirmPolicy: 'never' })] });
+    expect(findByCode(result.issues, 'TOOL_CONFIRM_POLICY_FORBIDDEN')).toHaveLength(1);
+    expect(findByCode(result.issues, 'TOOL_CONFIRM_POLICY_FORBIDDEN')[0]?.severity).toBe('error');
+    expect(result.valid).toBe(false);
+  });
+
+  it('parameters 形状错误 → INVALID_TOOL_PARAMETERS（type 非 object / 参数缺说明 / required 点名不存在）', () => {
+    const badType = validate({
+      tools: [validTool({ parameters: { type: 'array', properties: {}, required: [] } })],
+    });
+    expect(findByCode(badType.issues, 'INVALID_TOOL_PARAMETERS').length).toBeGreaterThan(0);
+
+    const badProp = validate({
+      tools: [
+        validTool({
+          parameters: { type: 'object', properties: { text: { type: 'string' } }, required: [] },
+        }),
+      ],
+    });
+    expect(findByCode(badProp.issues, 'INVALID_TOOL_PARAMETERS').length).toBeGreaterThan(0);
+
+    const missingReq = validate({
+      tools: [
+        validTool({
+          parameters: {
+            type: 'object',
+            properties: { text: { type: 'string', description: 't' } },
+            required: ['nope'],
+          },
+        }),
+      ],
+    });
+    expect(findByCode(missingReq.issues, 'INVALID_TOOL_PARAMETERS').length).toBeGreaterThan(0);
+  });
+
+  it('impl 越界 → INVALID_TOOL_IMPL（type 非 script / path 空）', () => {
+    expect(
+      findByCode(
+        validate({ tools: [validTool({ impl: { type: 'mcp', path: 'x' } })] }).issues,
+        'INVALID_TOOL_IMPL',
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(
+      findByCode(
+        validate({ tools: [validTool({ impl: { type: 'script', path: '   ' } })] }).issues,
+        'INVALID_TOOL_IMPL',
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+});

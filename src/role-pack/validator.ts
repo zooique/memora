@@ -7,7 +7,7 @@
  * 纯函数、无 IO 依赖（能力「是否已登记」查 capabilityMap 的登记表，不复制名单）。
  */
 
-import { STRATEGY_KEY_RULES } from './strategyKeys.js';
+import { STRATEGY_KEY_RULES, TOOL_GROUPS, TOOL_NAME_PATTERN } from './strategyKeys.js';
 import { isRegisteredCapability } from './capabilityMap.js';
 
 /** 校验严重级别：error=拒绝加载 / warning=可装载但提示 */
@@ -53,6 +53,7 @@ const MANIFEST_KEYS: ReadonlySet<string> = new Set([
   'strategy',
   'skills',
   'capabilities',
+  'tools',
   'handoffPrompt',
 ]);
 
@@ -84,6 +85,8 @@ const CAPABILITY_PATTERN = /^[a-z]+:[a-zA-Z0-9._-]+$/;
 const MAX_MANIFEST_SKILLS = 50;
 /** capabilities 最大数量：防止能力声明面膨胀 */
 const MAX_CAPABILITIES = 50;
+/** tools 最大数量：角色包专属工具上限（与 skills / capabilities 同量级，防声明面膨胀） */
+const MAX_MANIFEST_TOOLS = 50;
 /** handoffPrompt 最大长度（字符）：接手话术防巨型注入 prompt（rolePackManager 截断兜底复用） */
 export const MAX_HANDOFF_PROMPT_LEN = 2000;
 /** 元数据字符串字段（name/description/author 等）最大长度（字符） */
@@ -483,7 +486,250 @@ function validateManifestCapabilities(
 }
 
 /**
- * 校验 manifest.json：必填/版本、合规分档、策略键、skills/capabilities。
+ * 校验包内工具声明（manifest.tools，§8 角色包专属工具）。
+ *
+ * **只校验形状与闭集**（纯函数无 IO）：脚本是否存在 / 是否逃逸包目录 / hash 计算全部归
+ * `rolePackManager` 装配期（§8.9 R8，两层不得越界）。
+ *
+ * 判据（每条都 fail-closed，error 级拒绝装载）：
+ * - 条目必须是对象，`name` 合法且不重复（重名 = 后者静默覆盖前者，模型看到哪个不确定）；
+ * - `description` 非空（空描述会让模型无法判断何时调用）；
+ * - `group` 缺省合法，显式值必须在三组闭集内（写错静默归 act = 分组判据失效）；
+ * - `readonly` 缺省合法，显式值必须是布尔；
+ * - `parameters`：`type === 'object'`、`properties` 是非空对象且每项有非空 `description`、
+ *   `required` 是数组且每项必须出现在 `properties` 里（否则模型填的参数永远校验不过）；
+ * - `impl`：`type` 必须是 `'script'`（本期闭集）、`path` 非空字符串；
+ * - **禁止声明 `confirmPolicy`**（§8.9 R2）：包作者自选「不被审查」等于审查失效，装配期强制 audit。
+ */
+function validateManifestTools(toolsNode: unknown, issues: RolePackValidationIssue[]): void {
+  if (toolsNode === undefined) return;
+  if (!Array.isArray(toolsNode)) {
+    issues.push({
+      severity: 'error',
+      code: 'TOOLS_NOT_ARRAY',
+      path: 'tools',
+      message: 'tools 必须是对象数组（每项 = 一个包内工具声明）',
+    });
+    return;
+  }
+
+  // 数量上限：工具声明面防膨胀
+  if (toolsNode.length > MAX_MANIFEST_TOOLS) {
+    issues.push({
+      severity: 'error',
+      code: 'TOOLS_TOO_MANY',
+      path: 'tools',
+      message: `tools 最多 ${MAX_MANIFEST_TOOLS} 项（当前 ${toolsNode.length}）`,
+    });
+  }
+
+  /** 已声明的工具名（重名检测：重名会让后一项静默覆盖前一项） */
+  const seenNames = new Set<string>();
+  /** 工具分组闭集（用于 group 校验；由 TOOL_GROUPS 派生，不复制名单） */
+  const toolGroupSet: ReadonlySet<string> = new Set(TOOL_GROUPS);
+
+  toolsNode.forEach((item, index) => {
+    const itemPath = `tools[${index}]`;
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+      issues.push({
+        severity: 'error',
+        code: 'INVALID_TOOL_DECL',
+        path: itemPath,
+        message: `tools[${index}] 必须是对象`,
+      });
+      return;
+    }
+    const record = item as Record<string, unknown>;
+
+    // ── name：必填 + 格式 + 不重复 ──
+    const name = record['name'];
+    if (typeof name !== 'string' || !TOOL_NAME_PATTERN.test(name)) {
+      issues.push({
+        severity: 'error',
+        code: 'INVALID_TOOL_DECL',
+        path: `${itemPath}.name`,
+        message: `tools[${index}].name 必须是合法的工具名（字母或下划线开头，只含字母数字下划线），当前：${String(name)}`,
+      });
+    } else if (seenNames.has(name)) {
+      issues.push({
+        severity: 'error',
+        code: 'DUPLICATE_TOOL_NAME',
+        path: `${itemPath}.name`,
+        message: `tools 内工具名 "${name}" 重复声明（后者会静默覆盖前者）`,
+      });
+    } else {
+      seenNames.add(name);
+    }
+
+    // ── description：非空字符串（模型据此决定何时调用） ──
+    const description = record['description'];
+    if (typeof description !== 'string' || description.trim() === '') {
+      issues.push({
+        severity: 'error',
+        code: 'INVALID_TOOL_DECL',
+        path: `${itemPath}.description`,
+        message: `tools[${index}].description 必须是非空字符串（模型据此判断何时调用该工具）`,
+      });
+    }
+
+    // ── group：缺省合法，显式值必须在三组闭集内 ──
+    const group = record['group'];
+    if (group !== undefined && (typeof group !== 'string' || !toolGroupSet.has(group))) {
+      issues.push({
+        severity: 'error',
+        code: 'INVALID_TOOL_DECL',
+        path: `${itemPath}.group`,
+        message: `tools[${index}].group 必须是 ${TOOL_GROUPS.join(' | ')}（缺省 act），当前：${String(group)}`,
+      });
+    }
+
+    // ── readonly：缺省合法，显式值必须是布尔 ──
+    const readonly = record['readonly'];
+    if (readonly !== undefined && typeof readonly !== 'boolean') {
+      issues.push({
+        severity: 'error',
+        code: 'INVALID_TOOL_DECL',
+        path: `${itemPath}.readonly`,
+        message: `tools[${index}].readonly 必须是布尔值（缺省 false = 写工具）`,
+      });
+    }
+
+    // ── confirmPolicy：禁止声明（装配期强制 audit，作者不得自选不过闸） ──
+    if ('confirmPolicy' in record) {
+      issues.push({
+        severity: 'error',
+        code: 'TOOL_CONFIRM_POLICY_FORBIDDEN',
+        path: `${itemPath}.confirmPolicy`,
+        message:
+          'manifest.tools 不得声明 confirmPolicy：包内工具一律由内核强制 audit（过闸 + 审计），' +
+          '作者自选「不被审查」会使审批闸失效',
+      });
+    }
+
+    // ── parameters：object + properties 非空 + required ⊂ properties ──
+    const parameters = record['parameters'];
+    if (typeof parameters !== 'object' || parameters === null || Array.isArray(parameters)) {
+      issues.push({
+        severity: 'error',
+        code: 'INVALID_TOOL_PARAMETERS',
+        path: `${itemPath}.parameters`,
+        message: `tools[${index}].parameters 必须是对象（{ type: 'object', properties, required }）`,
+      });
+    } else {
+      const params = parameters as Record<string, unknown>;
+      if (params['type'] !== 'object') {
+        issues.push({
+          severity: 'error',
+          code: 'INVALID_TOOL_PARAMETERS',
+          path: `${itemPath}.parameters.type`,
+          message: `tools[${index}].parameters.type 必须是 "object"（当前：${String(params['type'])}）`,
+        });
+      }
+      const properties = params['properties'];
+      const propertyNames = new Set<string>();
+      if (typeof properties !== 'object' || properties === null || Array.isArray(properties)) {
+        issues.push({
+          severity: 'error',
+          code: 'INVALID_TOOL_PARAMETERS',
+          path: `${itemPath}.parameters.properties`,
+          message: `tools[${index}].parameters.properties 必须是对象（参数名 → { type, description }）`,
+        });
+      } else {
+        for (const [propName, propVal] of Object.entries(properties)) {
+          propertyNames.add(propName);
+          if (typeof propVal !== 'object' || propVal === null || Array.isArray(propVal)) {
+            issues.push({
+              severity: 'error',
+              code: 'INVALID_TOOL_PARAMETERS',
+              path: `${itemPath}.parameters.properties.${propName}`,
+              message: `参数 "${propName}" 必须是对象（{ type, description }）`,
+            });
+            continue;
+          }
+          const prop = propVal as Record<string, unknown>;
+          if (typeof prop['type'] !== 'string' || prop['type'] === '') {
+            issues.push({
+              severity: 'error',
+              code: 'INVALID_TOOL_PARAMETERS',
+              path: `${itemPath}.parameters.properties.${propName}.type`,
+              message: `参数 "${propName}" 缺少 type`,
+            });
+          }
+          // 参数说明必填：空说明 = 模型不知道怎么填，坏 schema 会让工具恒调用失败（§8.9 R6）
+          if (typeof prop['description'] !== 'string' || prop['description'].trim() === '') {
+            issues.push({
+              severity: 'error',
+              code: 'INVALID_TOOL_PARAMETERS',
+              path: `${itemPath}.parameters.properties.${propName}.description`,
+              message: `参数 "${propName}" 缺少非空 description（模型靠它填参）`,
+            });
+          }
+        }
+      }
+      // required：必须是数组，且每项都在 properties 里（点名不存在的参数 = 模型永远填不对）
+      const required = params['required'];
+      if (!Array.isArray(required)) {
+        issues.push({
+          severity: 'error',
+          code: 'INVALID_TOOL_PARAMETERS',
+          path: `${itemPath}.parameters.required`,
+          message: `tools[${index}].parameters.required 必须是数组（无必填参数写 []）`,
+        });
+      } else {
+        required.forEach((req, reqIndex) => {
+          if (typeof req !== 'string') {
+            issues.push({
+              severity: 'error',
+              code: 'INVALID_TOOL_PARAMETERS',
+              path: `${itemPath}.parameters.required[${reqIndex}]`,
+              message: 'parameters.required 的每一项必须是字符串',
+            });
+          } else if (!propertyNames.has(req)) {
+            issues.push({
+              severity: 'error',
+              code: 'INVALID_TOOL_PARAMETERS',
+              path: `${itemPath}.parameters.required[${reqIndex}]`,
+              message: `required 里的 "${req}" 未在 properties 中声明`,
+            });
+          }
+        });
+      }
+    }
+
+    // ── impl：type 闭集 script + path 非空（存在性 / 逃逸 / hash 归装配期） ──
+    const impl = record['impl'];
+    if (typeof impl !== 'object' || impl === null || Array.isArray(impl)) {
+      issues.push({
+        severity: 'error',
+        code: 'INVALID_TOOL_IMPL',
+        path: `${itemPath}.impl`,
+        message: `tools[${index}].impl 必须是对象（{ type: 'script', path: 'scripts/xxx.mjs' }）`,
+      });
+    } else {
+      const implRec = impl as Record<string, unknown>;
+      if (implRec['type'] !== 'script') {
+        issues.push({
+          severity: 'error',
+          code: 'INVALID_TOOL_IMPL',
+          path: `${itemPath}.impl.type`,
+          message: `tools[${index}].impl.type 仅支持 "script"（当前：${String(implRec['type'])}）`,
+        });
+      }
+      const implPath = implRec['path'];
+      if (typeof implPath !== 'string' || implPath.trim() === '') {
+        issues.push({
+          severity: 'error',
+          code: 'INVALID_TOOL_IMPL',
+          path: `${itemPath}.impl.path`,
+          message: `tools[${index}].impl.path 必须是非空字符串（相对角色包根的脚本路径）`,
+        });
+      }
+    }
+  });
+}
+
+/**
+ * 校验 manifest.json：必填/版本、合规分档、策略键、skills/capabilities/tools。
  * 未知键 warning + 忽略；valid = 无 error（warning 不阻塞装载）。
  */
 export function validateManifest(manifest: Record<string, unknown>): RolePackValidationResult {
@@ -496,6 +742,7 @@ export function validateManifest(manifest: Record<string, unknown>): RolePackVal
   validateHandoffPrompt(manifest, issues);
   validateManifestSkills(manifest['skills'], issues);
   validateManifestCapabilities(manifest['capabilities'], issues);
+  validateManifestTools(manifest['tools'], issues);
 
   return { valid: issues.every((i) => i.severity !== 'error'), issues };
 }

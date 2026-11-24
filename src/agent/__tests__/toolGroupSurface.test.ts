@@ -191,3 +191,90 @@ describe('工具面分组（组面）· §7.6 验收锚点', () => {
     executor.setToolGroupSurface(null);
   });
 });
+
+describe('包内工具注册（registerRolePackTools / clearRolePackTools）· §8.7 锚点 1 / 12', () => {
+  let tmpProject: string;
+  let tmpData: string;
+  let index: IMemoryStorage;
+  let executor: ToolExecutor;
+
+  beforeAll(async () => {
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-packtool-proj-'));
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-packtool-data-'));
+    const security = new SecurityGuard(tmpProject, tmpData, [], false, 'owner');
+    index = new InMemoryStorage();
+    executor = new ToolExecutor(tmpProject, security, index);
+  });
+
+  afterAll(async () => {
+    await index.close?.();
+    for (const p of [tmpProject, tmpData]) {
+      try {
+        rmSync(p, { recursive: true, force: true });
+      } catch {
+        /* EPERM/EBUSY：best-effort 清理 */
+      }
+    }
+  });
+
+  /**
+   * 构造一条包内工具注册项（最小可用定义）
+   *
+   * @param name 工具名
+   * @returns registerRolePackTools 的入参项
+   */
+  const entry = (name: string) => ({
+    definition: {
+      name,
+      description: `包内工具 ${name}`,
+      parameters: { type: 'object' as const, properties: {}, required: [] },
+      group: 'readonly' as const,
+      readonly: true,
+      confirmPolicy: 'audit' as const,
+    },
+    handler: async () => JSON.stringify({ ok: true }),
+  });
+
+  it('注册后可见；clearRolePackTools 后消失（切包不残留的数据面）', () => {
+    const registered = executor.registerRolePackTools([entry('pack_echo')]);
+    expect(registered).toEqual(['pack_echo']);
+    expect(executor.list.map((t) => t.name)).toContain('pack_echo');
+
+    executor.clearRolePackTools();
+    expect(executor.list.map((t) => t.name)).not.toContain('pack_echo');
+  });
+
+  it('空数组 → 不报错、不注册', () => {
+    expect(executor.registerRolePackTools([])).toEqual([]);
+  });
+
+  it('锚点 12：批内任一与内置同名 ⇒ 全量放弃（同批的非冲突工具也不注册）', () => {
+    const registered = executor.registerRolePackTools([
+      entry('pack_ok'),
+      entry('read_file'), // 与内置同名
+    ]);
+    // 全量放弃：一个都不注册，避免「注册了一半」的半残状态
+    expect(registered).toEqual([]);
+    expect(executor.list.map((t) => t.name)).not.toContain('pack_ok');
+    // 内置工具本身不受影响（仍是内核原定义）
+    expect(executor.list.map((t) => t.name)).toContain('read_file');
+  });
+
+  it('与已注册的自定义工具同名 ⇒ 全量放弃', () => {
+    // 先注册一个普通自定义工具
+    executor.registerTool(
+      {
+        name: 'ext_conflict',
+        description: '宿主自定义工具',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+      async () => 'ok',
+    );
+
+    const registered = executor.registerRolePackTools([entry('ext_conflict'), entry('pack_other')]);
+    expect(registered).toEqual([]);
+    expect(executor.list.map((t) => t.name)).not.toContain('pack_other');
+
+    executor.removeTool('ext_conflict');
+  });
+});

@@ -125,6 +125,11 @@
         "icon": "$(list-tree)"
       },
       {
+        "command": "memora.approvePackTools",
+        "title": "%command.approvePackTools.title%",
+        "icon": "$(shield)"
+      },
+      {
         "command": "memora.addToChat",
         "title": "%command.addToChat.title%",
         "icon": "$(references)"
@@ -279,6 +284,35 @@
           "scope": "application",
           "default": [],
           "description": "%config.disabledSkills.description%"
+        },
+        "memora.approvedPackTools": {
+          "type": "array",
+          "scope": "application",
+          "default": [],
+          "description": "%config.approvedPackTools.description%",
+          "items": {
+            "type": "object",
+            "required": [
+              "packName",
+              "toolName",
+              "scriptHash"
+            ],
+            "properties": {
+              "packName": {
+                "type": "string",
+                "description": "%config.approvedPackTools.packName.description%"
+              },
+              "toolName": {
+                "type": "string",
+                "description": "%config.approvedPackTools.toolName.description%"
+              },
+              "scriptHash": {
+                "type": "string",
+                "description": "%config.approvedPackTools.scriptHash.description%"
+              }
+            },
+            "additionalProperties": false
+          }
         },
         "memora.mcpServers": {
           "type": "array",

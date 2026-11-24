@@ -90,6 +90,49 @@ describe('skillScriptRunner — L1/L2 执行修复 spawn 行为', () => {
     }
   });
 
+  // ── stdin 参数通道（角色包工具复用同一执行面）──
+  it('stdinData：stdio 开 stdin pipe，写入参数后关闭（缺省则 ignore 且不写）', async () => {
+    /** 每次 spawn 捕获的 stdio 配置与 stdin 写入内容 */
+    const captured: { stdio: unknown; writes: string[]; ended: boolean }[] = [];
+    mockedSpawn.mockImplementation(((
+      _cmd: string,
+      _args: string[],
+      opts: Record<string, unknown>,
+    ) => {
+      const record = { stdio: opts.stdio, writes: [] as string[], ended: false };
+      captured.push(record);
+      const fake = fakeChild((e) => queueMicrotask(() => e.emit('close', 0, null)));
+      (fake as unknown as Record<string, unknown>).stdin = {
+        on: () => fake,
+        end: (data: string) => {
+          record.writes.push(data);
+          record.ended = true;
+        },
+      };
+      return fake;
+    }) as never);
+
+    // 有 stdinData：须开 stdin pipe 并写入、关闭
+    await runSkillScript(
+      'x.mjs',
+      'node',
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      '{"text":"hi"}',
+    );
+    expect(captured[0]!.stdio).toEqual(['pipe', 'pipe', 'pipe']);
+    expect(captured[0]!.writes).toEqual(['{"text":"hi"}']);
+    expect(captured[0]!.ended).toBe(true);
+
+    // 无 stdinData：保持既有 ignore，不碰 stdin（零行为变化）
+    await runSkillScript('x.js', 'node');
+    expect(captured[1]!.stdio).toEqual(['ignore', 'pipe', 'pipe']);
+    expect(captured[1]!.writes).toEqual([]);
+  });
+
   // ── L1 resolveCommand 的 node 映射（文件头声称覆盖，须断言命令名）──
   it('resolveCommand：node runtime → 命令 node，脚本路径 + args 依次追加', async () => {
     const calls: { cmd: string; args: string[] }[] = [];

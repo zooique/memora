@@ -95,6 +95,8 @@ import { registerAddToAssistantCommand } from './commands/addToAssistant.js';
 import { createUserDataResetHandler } from './commands/userDataReset.js';
 import { importAssetCommand } from './commands/importAsset.js';
 import { readDisabledSkills, syncDisabledSkills } from './host/skillSync.js';
+import { syncPackToolApprovals } from './host/packToolApproval.js';
+import { approvePackToolsCommand } from './commands/approvePackTools.js';
 import {
   projectAssetDirsFor,
   applyGrantedWorkspaceTrust,
@@ -1095,6 +1097,13 @@ export function activate(context: vscode.ExtensionContext): void {
           'skill toggle sync',
         );
       }
+      // 角色包工具批准：用户批准 / 撤销后立即向内核重放，无需重开会话（§8.9 R1 生产者的运行期支路）
+      if (e.affectsConfiguration('memora.approvedPackTools')) {
+        runOnAssembledAgent(
+          (agent) => syncPackToolApprovals(agent),
+          'role pack tool approval sync',
+        );
+      }
       // 白名单：设置面板写入之外，用户手改 settings.json / Settings Sync 落地也必须收敛，
       // 否则「已保存但运行时仍按旧白名单」，只能重载窗口（静默失效）。
       if (e.affectsConfiguration('memora.allowedPaths')) {
@@ -1189,6 +1198,13 @@ export function activate(context: vscode.ExtensionContext): void {
   registerAddToAssistantCommand(context, chatProvider, hostedPanel);
 
   registerResidentRuleCommands(context, tryGetAgent, notifyWorkProjectionChanged);
+
+  // 命令：批准角色包专属工具（包内工具「声明 ≠ 授权」的宿主侧唯一批准入口）
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.approvePackTools', () =>
+      approvePackToolsCommand(tryGetAgent),
+    ),
+  );
 
   // 命令：复制诊断摘要（用户报障时一条命令带走版本 / 环境 / 配置 / 最近 webview 错误 / 指标）
   // 取数与格式化分离：chatProvider 只交出原始数据（缓冲 + 指标），脱敏与排版归 hostDiagnostics

@@ -54,7 +54,7 @@ export type {
 export { WRITE_PATH_EXTRACTORS } from '@/agent/toolResultCache.js';
 // 角色包（Role Pack）：文件夹形态（manifest.json 核心控制 + 独立内容文件）。
 // 只挂宿主/文档消费的装配元类型；装配结果/策略/团队/能力等子类型随签名推断可用，为内部实现
-export type { RolePackMeta } from '@/role-pack/types.js';
+export type { RolePackMeta, RolePackTool, RolePackToolApproval } from '@/role-pack/types.js';
 export { BUILTIN_FALLBACK_PACK, MAX_TEAM_MEMBERS } from '@/role-pack/constants.js';
 export { RolePackManager } from '@/role-pack/rolePackManager.js';
 // 技能管理器：宿主「无 Agent 的配置面编目」用（草稿页技能清单 / 冷启动无会话实例）。

@@ -1734,3 +1734,170 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     });
   });
 });
+
+describe('RolePackManager：manifest.tools 装配期解析（§8.7 锚点 8 / 脚本 hash）', () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'rolepack-tools-test-'));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  /** 含一个包内工具声明的 manifest（脚本文件由 writePack 一并写入） */
+  const MANIFEST_WITH_TOOLS = {
+    name: '工具包',
+    formatVersion: '1.0.0',
+    strategy: {},
+    tools: [
+      {
+        name: 'pack_echo',
+        description: '回显输入',
+        group: 'readonly',
+        readonly: true,
+        parameters: {
+          type: 'object',
+          properties: { text: { type: 'string', description: '要回显的文本' } },
+          required: ['text'],
+        },
+        impl: { type: 'script', path: 'scripts/echo.mjs' },
+      },
+      {
+        // 缺省 group / readonly：装配期应归一为 act / false
+        name: 'pack_plain',
+        description: '缺省组的脚本',
+        parameters: { type: 'object', properties: {}, required: [] },
+        impl: { type: 'script', path: 'scripts/plain.mjs' },
+      },
+    ],
+  };
+
+  it('解析 tools：resolvedPath 绝对 / runtime 由扩展名推断 / group 与 readonly 归一 / scriptHash 非空', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    await writePack(packsDir, '工具包', MANIFEST_WITH_TOOLS, {
+      skills: {
+        'scripts/echo.mjs': 'process.stdout.write(JSON.stringify({ok:true}))\n',
+        'scripts/plain.mjs': 'process.stdout.write("{}")\n',
+      },
+    });
+
+    const manager = new RolePackManager(dir);
+    await manager.load('工具包');
+
+    const active = manager.getActive();
+    expect(active).not.toBeNull();
+    expect(active!.meta.name).toBe('工具包');
+    const tools = active!.tools ?? [];
+    expect(tools).toHaveLength(2);
+
+    const echo = tools.find((t) => t.name === 'pack_echo')!;
+    expect(echo.group).toBe('readonly');
+    expect(echo.readonly).toBe(true);
+    expect(echo.impl.runtime).toBe('node');
+    expect(echo.impl.resolvedPath).toContain('scripts');
+    // resolvedPath 必须是绝对路径（执行器据此 spawn，不依赖当前工作目录）
+    expect(echo.impl.resolvedPath.startsWith(packsDir)).toBe(true);
+    expect(echo.impl.scriptHash).toMatch(/^[0-9a-f]{64}$/);
+
+    const plain = tools.find((t) => t.name === 'pack_plain')!;
+    // 缺省语义：group = act、readonly = false（fail-closed 写语义）
+    expect(plain.group).toBe('act');
+    expect(plain.readonly).toBe(false);
+  });
+
+  it('脚本内容变化 → reload 后 scriptHash 变化（批准自动失效的依据）', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    await writePack(packsDir, '工具包', MANIFEST_WITH_TOOLS, {
+      skills: {
+        'scripts/echo.mjs': 'process.stdout.write(JSON.stringify({v:1}))\n',
+        'scripts/plain.mjs': 'process.stdout.write("{}")\n',
+      },
+    });
+
+    const manager = new RolePackManager(dir);
+    await manager.load('工具包');
+    /** 首次装配的 echo 脚本 hash */
+    const beforeHash = manager.getActive()!.tools!.find((t) => t.name === 'pack_echo')!.impl
+      .scriptHash;
+
+    // 改脚本内容后重载
+    await writeFile(
+      join(packsDir, '工具包', 'scripts', 'echo.mjs'),
+      'process.stdout.write(JSON.stringify({v:2}))\n',
+      'utf-8',
+    );
+    await manager.reload();
+
+    /** 重载后的 echo 脚本 hash */
+    const afterHash = manager.getActive()!.tools!.find((t) => t.name === 'pack_echo')!.impl
+      .scriptHash;
+    expect(afterHash).not.toBe(beforeHash);
+  });
+
+  it('impl.path 逃逸包根（../escape.mjs）→ 整包拒绝装载（§8.9 R5）', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    // 包外放一个真实存在的脚本，确保拒绝原因是「逃逸」而不是「文件不存在」
+    await writeFile(join(packsDir, 'escape.mjs'), 'process.stdout.write("{}")\n', 'utf-8');
+    await writePack(packsDir, '工具包', {
+      ...MANIFEST_WITH_TOOLS,
+      tools: [
+        {
+          name: 'pack_escape',
+          description: '越界脚本',
+          parameters: { type: 'object', properties: {}, required: [] },
+          impl: { type: 'script', path: '../escape.mjs' },
+        },
+      ],
+    });
+
+    const manager = new RolePackManager(dir);
+    await manager.load('工具包');
+    // 整包拒绝：该包不会被激活（落兜底包），更不会带着 tools 出现
+    expect(manager.activeName).not.toBe('工具包');
+  });
+
+  it('声明的脚本文件不存在 → 整包拒绝装载', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    await writePack(packsDir, '工具包', MANIFEST_WITH_TOOLS, {
+      skills: {
+        // 只写 plain.mjs，echo.mjs 缺失
+        'scripts/plain.mjs': 'process.stdout.write("{}")\n',
+      },
+    });
+
+    const manager = new RolePackManager(dir);
+    await manager.load('工具包');
+    expect(manager.activeName).not.toBe('工具包');
+  });
+
+  it('脚本扩展名无法推断运行时 → 整包拒绝装载', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    await writePack(
+      packsDir,
+      '工具包',
+      {
+        ...MANIFEST_WITH_TOOLS,
+        tools: [
+          {
+            name: 'pack_txt',
+            description: '未知扩展名',
+            parameters: { type: 'object', properties: {}, required: [] },
+            impl: { type: 'script', path: 'scripts/run.txt' },
+          },
+        ],
+      },
+      { skills: { 'scripts/run.txt': 'echo hi\n' } },
+    );
+
+    const manager = new RolePackManager(dir);
+    await manager.load('工具包');
+    expect(manager.activeName).not.toBe('工具包');
+  });
+});

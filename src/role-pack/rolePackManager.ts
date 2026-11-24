@@ -3,8 +3,8 @@
  * 角色包特有状态（activeRolePack / 粘性匹配 / 自建扫描 / 切换防抖）保留在子类。
  * manifest.json 为唯一核心控制文件，内容文件独立按路径注册装载。
  */
-import { readFile, readdir, access, stat } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { readFile, readdir, access, stat, realpath } from 'node:fs/promises';
+import { join, dirname, relative, isAbsolute, extname } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { getLogger } from '@/utils/loggerHolder.js';
 import { ConfigResourceManager, isOutOfOrderExtraTier } from '@/utils/configResourceManager.js';
@@ -36,6 +36,8 @@ import {
   MAX_HANDOFF_PROMPT_LEN,
 } from '@/role-pack/validator.js';
 import { BUILTIN_FALLBACK_PACK, MAX_TEAM_MEMBERS } from '@/role-pack/constants.js';
+// 工具分组闭集单点（TOOL_GROUPS）：装配期归一与 validator 同源派生，不复制名单
+import { TOOL_GROUPS, type ToolGroup } from '@/role-pack/strategyKeys.js';
 import {
   SkillManager,
   L1_COMPRESSED_THRESHOLD,
@@ -48,9 +50,11 @@ import type {
   RolePackCapability,
   RolePackAssembly,
   RolePackTeam,
+  RolePackTool,
   BehaviorStrategy,
 } from '@/role-pack/types.js';
 import { assembleRolePack } from '@/role-pack/strategyResolver.js';
+import { sha256Fingerprint } from '@/utils/hash.js';
 
 /** formatVersion 缺省值（未声明时按 1.0.0） */
 const DEFAULT_FORMAT_VERSION = '1.0.0';
@@ -248,6 +252,128 @@ function parseManifestCapabilities(capabilitiesNode: unknown): RolePackCapabilit
     });
   }
   return capabilities;
+}
+
+/**
+ * 解析包内工具声明（manifest.tools）并完成**装配期 IO 校验**（§8.2 / §8.9 R5-R8）。
+ *
+ * 分工（R8，两层不得越界）：形状与闭集已在 `validator.validateManifestTools` 校验（纯函数）；
+ * 本函数只做只有 IO 才能做的事——脚本存在性、`realpath` 逃逸判定、运行时推断、内容 hash。
+ *
+ * 任一工具不合格 ⇒ **整包拒绝装载**（返回 `null`）：`impl.path` 逃逸包目录是安全事件
+ * （§8.3「逃逸即装配 error，不是 warning」），半装载会让「包声明了什么」与「实际可用什么」漂移。
+ *
+ * @param packDir 角色包根目录（绝对路径）
+ * @param toolsNode manifest.tools 原文（已通过 validator；undefined = 未声明）
+ * @returns 解析后的工具列表；`undefined` = **未声明**（调用方不注入该键，与「显式声明空数组」可区分）；
+ *          `null` = 装配失败（调用方跳过整包）
+ */
+async function parseManifestTools(
+  packDir: string,
+  toolsNode: unknown,
+): Promise<RolePackTool[] | undefined | null> {
+  if (toolsNode === undefined) return undefined;
+  if (!Array.isArray(toolsNode)) return null; // validator 已报 error，正常不可达
+
+  // 包根 realpath：逃逸判定必须以**真实路径**为基准（§8.9 R5：符号链接可绕过字面路径比对）
+  let realPackRoot: string;
+  try {
+    realPackRoot = await realpath(packDir);
+  } catch (err) {
+    logger.error({ packDir, err }, '角色包 tools：包根 realpath 失败，拒绝装载');
+    return null;
+  }
+  /** Windows 路径大小写归一（realpath 两侧都归一后再比对，防大小写差异误判逃逸） */
+  const normalize = (p: string): string => (process.platform === 'win32' ? p.toLowerCase() : p);
+
+  const tools: RolePackTool[] = [];
+  for (const item of toolsNode) {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) return null;
+    const record = item as Record<string, unknown>;
+    const impl = record['impl'];
+    if (typeof impl !== 'object' || impl === null || Array.isArray(impl)) return null;
+    const declaredPath = (impl as Record<string, unknown>)['path'];
+    if (typeof declaredPath !== 'string') return null;
+
+    // ── 脚本真实路径解析（不存在 / 断链 ⇒ 拒绝整包） ──
+    const absPath = join(packDir, declaredPath);
+    let realScriptPath: string;
+    try {
+      realScriptPath = await realpath(absPath);
+    } catch (err) {
+      logger.error(
+        { packDir, tool: record['name'], declaredPath, err },
+        '角色包 tools：脚本文件不存在或无法解析，拒绝装载',
+      );
+      return null;
+    }
+
+    // ── 逃逸判定：realpath 后必须仍在包根内（rel === '' 表示脚本就是包根目录，同样非法） ──
+    const relFromRoot = relative(normalize(realPackRoot), normalize(realScriptPath));
+    if (relFromRoot === '' || relFromRoot.startsWith('..') || isAbsolute(relFromRoot)) {
+      logger.error(
+        { packDir, tool: record['name'], declaredPath, realScriptPath },
+        '角色包 tools：impl.path 逃逸包目录（realpath 后不在包根内），拒绝装载',
+      );
+      return null;
+    }
+
+    // ── 必须是普通文件（目录 / 设备文件不可执行） ──
+    const st = await stat(realScriptPath).catch(() => null);
+    if (!st?.isFile()) {
+      logger.error(
+        { packDir, tool: record['name'], declaredPath },
+        '角色包 tools：impl.path 指向的不是普通文件，拒绝装载',
+      );
+      return null;
+    }
+
+    // ── 运行时推断（未知扩展名 = 不可执行 ⇒ 拒绝整包，不兜底 node） ──
+    const runtime = inferRuntimeFromExt(extname(realScriptPath).toLowerCase());
+    if (!runtime) {
+      logger.error(
+        { packDir, tool: record['name'], declaredPath },
+        '角色包 tools：脚本扩展名无法推断运行时（支持 .js/.mjs/.cjs/.ts/.py/.sh/.bat/.cmd），拒绝装载',
+      );
+      return null;
+    }
+
+    // ── 内容 hash（批准记录绑定用）：脚本一改，旧批准自动失效（§8.1 #10） ──
+    let scriptHash: string;
+    try {
+      scriptHash = sha256Fingerprint(await readFile(realScriptPath, 'utf-8'));
+    } catch (err) {
+      logger.error({ packDir, tool: record['name'], err }, '角色包 tools：脚本读取失败，拒绝装载');
+      return null;
+    }
+
+    const parameters = record['parameters'] as RolePackTool['parameters'];
+    // 收窄到 string：unknown 经「!== undefined」只收窄成 {} | null，进不了 includes 的 string 形参。
+    // 非字符串（畸形值）与未声明同路 → 缺省 act，与 validator 拦下的口径一致。
+    const group = typeof record['group'] === 'string' ? record['group'] : undefined;
+    const readonly = record['readonly'];
+    tools.push({
+      name: String(record['name']),
+      description: String(record['description']),
+      // 缺省值归一在装配期完成（下游不再判缺省，避免两份 fail-closed 语义）
+      // group 闭集**由 TOOL_GROUPS 派生不复制名单**（validator 同款）：手写
+      // `'readonly' || 'orchestrate'` 会在新增第 4 组时静默把它折成 act——没有任何测试会红
+      group:
+        group !== undefined && (TOOL_GROUPS as readonly string[]).includes(group)
+          ? (group as ToolGroup)
+          : 'act',
+      readonly: readonly === true,
+      parameters,
+      impl: {
+        type: 'script',
+        path: declaredPath,
+        resolvedPath: realScriptPath,
+        runtime,
+        scriptHash,
+      },
+    });
+  }
+  return tools;
 }
 
 /**
@@ -855,6 +981,14 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     // 能力声明（顶层数组，能力面与技能内容分离）
     const capabilities = parseManifestCapabilities(manifest['capabilities']);
 
+    // 包内工具（§8）：形状已被 validator 拦下，这里做装配期 IO 校验（存在性 / 逃逸 / hash）。
+    // 失败 ⇒ 整包拒绝装载：逃逸包目录是安全事件，半装载会让「声明了什么」与「能用什么」漂移。
+    const tools = await parseManifestTools(packDir, manifest['tools']);
+    if (tools === null) {
+      getLogger().error({ file: manifestPath }, '角色包 tools 装配失败，跳过装载');
+      return null;
+    }
+
     // companion 内容红线：正文在独立内容文件，由装载方读取后检测
     if (meta.interactionType === 'companion') {
       const redline = checkCompanionContentRedline(personaContent + rulesContent);
@@ -886,6 +1020,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       rules,
       skills: skillsWithContent,
       capabilities,
+      tools,
       strategy,
     };
     // 预计算装配结果（mergeStrategy + personaPrompt 构建）

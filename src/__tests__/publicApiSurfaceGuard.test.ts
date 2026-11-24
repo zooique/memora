@@ -328,6 +328,10 @@ const PUBLIC_SURFACE_SNAPSHOT: readonly string[] = [
   'ReadOnlyMemoryStorage',
   'RolePackManager',
   'RolePackMeta',
+  // 包内工具声明（§8）：宿主批准命令据此列清单、取脚本 hash
+  'RolePackTool',
+  // 包内工具批准记录（§8）：宿主 `memora.approvedPackTools` 配置注入 `setRolePackToolApprovals` 的类型载体
+  'RolePackToolApproval',
   'Round',
   'RoundMessage',
   'RoundStatus',

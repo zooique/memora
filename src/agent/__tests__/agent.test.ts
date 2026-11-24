@@ -1744,6 +1744,213 @@ describe('Agent · archiveMode · 二态归档模式（full|manual）', () => {
     }
   });
 
+  // ─── 角色包专属工具（§8 验收锚点 2 / 4 / 5 / 7 / 10 / 11）─────────────
+
+  /**
+   * 写一个带包内工具声明的角色包（manifest + 真实脚本文件）
+   *
+   * @param dirName 包目录名（同时作为包名）
+   * @param manifestExtra 额外 manifest 字段（kind / strategy / capabilities 等）
+   * @param tools 工具声明数组
+   * @param scripts 相对包根的脚本文件（路径 → 内容）
+   */
+  function writeToolsPack(
+    dirName: string,
+    manifestExtra: Record<string, unknown>,
+    tools: Record<string, unknown>[],
+    scripts: Record<string, string>,
+  ): void {
+    const packDir = join(tmpConfig, 'role-packs', dirName);
+    mkdirSync(packDir, { recursive: true });
+    writeFileSync(
+      join(packDir, 'manifest.json'),
+      JSON.stringify({ name: dirName, formatVersion: '1.0.0', tools, ...manifestExtra }, null, 2),
+      'utf-8',
+    );
+    writeFileSync(join(packDir, 'persona.md'), `${dirName}的身份。`, 'utf-8');
+    for (const [rel, body] of Object.entries(scripts)) {
+      const full = join(packDir, rel);
+      mkdirSync(join(full, '..'), { recursive: true });
+      writeFileSync(full, body, 'utf-8');
+    }
+  }
+
+  /**
+   * 构造一条最小可用的包内工具声明
+   *
+   * @param name 工具名
+   * @param over 覆盖字段（group / readonly / path 等）
+   * @returns manifest.tools 的单项
+   */
+  function toolDecl(name: string, over: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      name,
+      description: `${name} 的说明`,
+      parameters: {
+        type: 'object',
+        properties: { text: { type: 'string', description: '输入文本' } },
+        required: ['text'],
+      },
+      impl: { type: 'script', path: `scripts/${name}.mjs` },
+      ...over,
+    };
+  }
+
+  it('锚点 5 / 10：未批准 ⇒ 不注册；批准后注册且 confirmPolicy 强制 audit、group/readonly 保真', async () => {
+    writeToolsPack('工具包', {}, [toolDecl('pack_echo', { group: 'readonly', readonly: true })], {
+      'scripts/pack_echo.mjs': 'process.stdout.write(JSON.stringify({}))',
+    });
+
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    expect(agent.switchRolePack('工具包')).toBe(true);
+
+    // 声明但未批准：模型可见工具面里没有它（声明 ≠ 授权）
+    expect(agent.tools!.list.map((t) => t.name)).not.toContain('pack_echo');
+    // 但也确实没注册（不是被组面挡住）
+    expect(agent.tools!.isKnownTool('pack_echo')).toBe(false);
+
+    // 用装配期真源拿到脚本 hash 再批准（宿主命令同样从 tools[].impl.scriptHash 取值）
+    const activeTool = agent.rolePacks!.getActive()!.tools!.find((t) => t.name === 'pack_echo')!;
+    agent.setRolePackToolApprovals([
+      { packName: '工具包', toolName: 'pack_echo', scriptHash: activeTool.impl.scriptHash },
+    ]);
+
+    const def = agent.tools!.list.find((t) => t.name === 'pack_echo');
+    expect(def, '批准后工具应注册且对模型可见').toBeDefined();
+    expect(def!.confirmPolicy).toBe('audit');
+    expect(def!.group).toBe('readonly');
+    expect(def!.readonly).toBe(true);
+    expect(def!.parameters.required).toEqual(['text']);
+  });
+
+  it('锚点 2：切包不残留包内工具；切回后按批准恢复', async () => {
+    writeToolsPack('工具包', {}, [toolDecl('pack_echo')], {
+      'scripts/pack_echo.mjs': 'process.stdout.write(JSON.stringify({}))',
+    });
+
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    agent.switchRolePack('工具包');
+    const activeTool = agent.rolePacks!.getActive()!.tools!.find((t) => t.name === 'pack_echo')!;
+    agent.setRolePackToolApprovals([
+      { packName: '工具包', toolName: 'pack_echo', scriptHash: activeTool.impl.scriptHash },
+    ]);
+    expect(agent.tools!.list.map((t) => t.name)).toContain('pack_echo');
+
+    // 切到兜底包：包内工具必须被清掉（不能残留在 custom 注册表里）
+    expect(agent.switchRolePack('memora助手')).toBe(true);
+    expect(agent.tools!.list.map((t) => t.name)).not.toContain('pack_echo');
+    expect(agent.tools!.isKnownTool('pack_echo')).toBe(false);
+
+    // 切回：批准记录是外部真源，仍在 ⇒ 恢复注册
+    expect(agent.switchRolePack('工具包')).toBe(true);
+    expect(agent.tools!.list.map((t) => t.name)).toContain('pack_echo');
+  });
+
+  it('锚点 7：脚本 hash 与批准记录不一致 ⇒ 视同未批准（脚本改动后须重新批准）', async () => {
+    writeToolsPack('工具包', {}, [toolDecl('pack_echo')], {
+      'scripts/pack_echo.mjs': 'process.stdout.write(JSON.stringify({}))',
+    });
+
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    agent.switchRolePack('工具包');
+
+    // 用错误的 hash 批准（模拟包更新脚本后旧批准尚未刷新）
+    agent.setRolePackToolApprovals([
+      { packName: '工具包', toolName: 'pack_echo', scriptHash: 'f'.repeat(64) },
+    ]);
+    expect(agent.tools!.list.map((t) => t.name)).not.toContain('pack_echo');
+    expect(agent.tools!.isKnownTool('pack_echo')).toBe(false);
+  });
+
+  it('锚点 7（真重载路径）：改脚本 + reloadConfig 后旧批准失效、工具回到未批准', async () => {
+    writeToolsPack('工具包', {}, [toolDecl('pack_echo')], {
+      'scripts/pack_echo.mjs': 'process.stdout.write(JSON.stringify({v:1}))',
+    });
+
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    agent.switchRolePack('工具包');
+    const before = agent.rolePacks!.getActive()!.tools!.find((t) => t.name === 'pack_echo')!;
+    agent.setRolePackToolApprovals([
+      { packName: '工具包', toolName: 'pack_echo', scriptHash: before.impl.scriptHash },
+    ]);
+    expect(agent.tools!.isKnownTool('pack_echo')).toBe(true);
+
+    // 宿主监视到脚本变更后会走 reloadConfig('rolePack')——这条路径也必须重放工具面，
+    // 否则旧注册闭包残留：脚本内容已换、批准却仍按旧 hash 生效（§8.1 #10 的安全缺口）。
+    writeFileSync(
+      join(tmpConfig, 'role-packs', '工具包', 'scripts', 'pack_echo.mjs'),
+      'process.stdout.write(JSON.stringify({v:2}))',
+      'utf-8',
+    );
+    await agent.reloadConfig('rolePack');
+
+    expect(agent.tools!.isKnownTool('pack_echo')).toBe(false);
+    expect(agent.tools!.list.map((t) => t.name)).not.toContain('pack_echo');
+  });
+
+  it('锚点 4：assistant 包下包内工具已注册但不可见（组面遮挡，不是没注册）', async () => {
+    writeToolsPack(
+      '助手包',
+      { kind: 'assistant' },
+      [toolDecl('pack_note', { group: 'readonly', readonly: true })],
+      { 'scripts/pack_note.mjs': 'process.stdout.write(JSON.stringify({}))' },
+    );
+
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    expect(agent.switchRolePack('助手包')).toBe(true);
+    const activeTool = agent.rolePacks!.getActive()!.tools!.find((t) => t.name === 'pack_note')!;
+    agent.setRolePackToolApprovals([
+      { packName: '助手包', toolName: 'pack_note', scriptHash: activeTool.impl.scriptHash },
+    ]);
+
+    // 已注册（真源里有），但 assistant 的正向组只给 orchestrate ⇒ 模型不可见
+    expect(agent.tools!.isKnownTool('pack_note')).toBe(true);
+    expect(agent.tools!.list.map((t) => t.name)).not.toContain('pack_note');
+  });
+
+  it('锚点 11：包内工具不受 capabilities 白名单过滤，但受 disableGroups 约束', async () => {
+    writeToolsPack(
+      '收紧包',
+      {
+        capabilities: [], // 空白名单 ⇒ 特权工具全部收窄
+        strategy: { act: { disableGroups: ['readonly'] } },
+      },
+      [
+        toolDecl('pack_ro', { group: 'readonly', readonly: true }),
+        toolDecl('pack_act', { group: 'act' }),
+      ],
+      {
+        'scripts/pack_ro.mjs': 'process.stdout.write(JSON.stringify({}))',
+        'scripts/pack_act.mjs': 'process.stdout.write(JSON.stringify({}))',
+      },
+    );
+
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, undefined, {
+      // 注入搜索端口，让 web_search 成为「已注册但非常驻」的特权工具，用于观测白名单收窄
+      webSearchProvider: { search: async () => [] },
+    });
+    await agent.init();
+    expect(agent.switchRolePack('收紧包')).toBe(true);
+    const tools = agent.rolePacks!.getActive()!.tools!;
+    agent.setRolePackToolApprovals(
+      tools.map((t) => ({ packName: '收紧包', toolName: t.name, scriptHash: t.impl.scriptHash })),
+    );
+
+    const names = agent.tools!.list.map((t) => t.name);
+    // capabilities=[] 只收窄特权工具：web_search 已注册但被白名单收窄（不是没注册）
+    expect(agent.tools!.isKnownTool('web_search')).toBe(true);
+    expect(names).not.toContain('web_search');
+    // 包内 act 工具不受 capabilities 白名单过滤 ⇒ 仍可见（customTools 分支先于 toolWhitelist）
+    expect(names).toContain('pack_act');
+    // 但受 disableGroups 约束：readonly 组被显式关掉 ⇒ 包内只读工具不可见
+    expect(names).not.toContain('pack_ro');
+  });
+
   // ─── manual 模式跳过自动归档 ────────────────────────────
 
   it('manual 模式：chatSync 后不触发 memoryAdded 事件', async () => {

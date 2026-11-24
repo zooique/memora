@@ -1516,5 +1516,11 @@
   "Inline view. To keep a workbench open side by side, open it in a tab.": "Inline view. To keep a workbench open side by side, open it in a tab.",
   "Cannot open changed file: {0} is no longer in the change list": "",
   "A managed session is waiting for your decision — it has NOT settled. The pending question and its options are in the fact notice above. Decide it and unblock the work: pick an option with a stated reason whenever the question and the context allow it; only pass it back to me when you genuinely cannot judge; never make an irreversible decision for me. Close with one sentence on what you decided. IMPORTANT: only a {0} tool call whose receipt says answered=true actually answers the question; saying \"answered\" or \"unblocked\" in plain text does NOT unblock it. If you will not call the tool, say plainly that you did not answer and leave the question to me.": "",
-  "Several managed-session facts were queued while you were busy; they are now in context, oldest first. Each line starts with how long ago it was produced — a later line may already have superseded an earlier one, so read the age before acting and never treat an old settlement as the current state of that session. Handle them in the order that makes sense, then give me one short summary. If any fact is a pending question you are allowed to decide, call {0} with the answers before summarizing; plain-text \"answered\" claims do not unblock the question.": ""
+  "Several managed-session facts were queued while you were busy; they are now in context, oldest first. Each line starts with how long ago it was produced — a later line may already have superseded an earlier one, so read the age before acting and never treat an old settlement as the current state of that session. Handle them in the order that makes sense, then give me one short summary. If any fact is a pending question you are allowed to decide, call {0} with the answers before summarizing; plain-text \"answered\" claims do not unblock the question.": "",
+  "Memora Agent is not ready; cannot approve role pack tools": "",
+  "No role pack is active; nothing to approve": "",
+  "The active role pack \"{0}\" declares no tools": "",
+  "Memora: approve role pack tools": "",
+  "Checked tools are granted to the model (each call is still audited). Script updates require re-approval.": "",
+  "Approved {0} tool(s) for role pack \"{1}\"": ""
 }

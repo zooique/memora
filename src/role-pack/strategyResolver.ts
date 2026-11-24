@@ -589,6 +589,9 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
     personaPrompt,
     personaBasePrompt,
     skills: pack.skills,
+    // 包内工具随装配直通：宿主经 getActive() 拿 Assembly，批准命令据此列「当前包有哪些工具」。
+    // undefined = 未声明（不注入空数组，保持「未声明」与「声明了空」可区分）
+    ...(pack.tools ? { tools: pack.tools } : {}),
     capabilities,
     strategy,
     traits: pack.traits,

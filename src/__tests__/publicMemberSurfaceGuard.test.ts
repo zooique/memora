@@ -449,6 +449,10 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'setContextWindow',
       'setMaxTokens',
       'setProvider',
+      // 2026-11-24 新增（§8 包内工具）：宿主注入用户级批准记录，注入口是包内工具「声明 ≠ 授权」
+      // 的唯一生产者（无它则一律未批准、不注册）。真消费者 = 宿主 assemble.ts / 配置变更监听 /
+      // 批准命令。定性 = 真能力：不注入时 rolePackToolApprovals 恒空，既有工具面逐字不变。
+      'setRolePackToolApprovals',
       'switchRolePack',
     ],
   },
@@ -701,6 +705,18 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
   StrategyKeyFace: {
     kind: 'interface',
     members: ['key', 'kind', 'options', 'range', 'stage', 'values'],
+  },
+  RolePackTool: {
+    // 2026-11-24 新增（§8 包内工具）：装配期解析后的工具声明，宿主批准命令经
+    // agent.rolePacks.getActive().tools 读取它（列清单 + 取 impl.scriptHash）。定性 = 真能力。
+    kind: 'interface',
+    members: ['description', 'group', 'impl', 'name', 'parameters', 'readonly'],
+  },
+  RolePackToolApproval: {
+    // 2026-11-24 新增（§8 包内工具）：批准记录三键（包名 + 工具名 + 脚本 hash），
+    // 是 Agent.setRolePackToolApprovals 的入参类型、宿主 memora.approvedPackTools 的条目形态。
+    kind: 'interface',
+    members: ['packName', 'scriptHash', 'toolName'],
   },
   MemoryInspector: {
     kind: 'class',
@@ -1293,6 +1309,11 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
   ToolExecutor: {
     kind: 'class',
     members: [
+      // 2026-11-24 新增（§8 包内工具 · tasks/01 §8.4 R3 / R9）：切包时清掉上一包的包内工具，
+      // 与 registerRolePackTools 成对（先清后注册，避免自家旧工具被判「已注册」冲突）。
+      // 真消费者 = Agent.applyRolePackTools（每轮 Prepare / 切包 / 批准变更时重放）。
+      // 定性 = 真能力：不注册包内工具时该方法早退，既有自定义工具表逐字不变。
+      'clearRolePackTools',
       'execute',
       'get allToolDefinitions',
       // 删后注记（2026-11-05 · 6.0.0 废弃清账）：`get builtinDefinitions` 为 5.5.0 更名后的
@@ -1309,6 +1330,10 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
       'planManager',
       'readResource',
       'readSkill',
+      // 2026-11-24 新增（§8 包内工具 · tasks/01 §8.4 R9）：包内工具注册口——**全量预检 + 全量
+      // 放弃**（批内任一与内置/SWITCH_OWNED/已注册同名 ⇒ 一个都不注册并逐个报冲突名），
+      // 避免半注册的半残状态。真消费者 = Agent.applyRolePackTools。定性 = 真能力。
+      'registerRolePackTools',
       'registerTool',
       'registerWork',
       'removeTool',
@@ -1444,7 +1469,7 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `\nEXPECTED 符号数 = ${count}，与本用例期望不符。\n` +
         `若本次确有增删符号：先在 EXPECTED 表反映差异 + 完成 §3.2.1 定性，再同步本数字；\n` +
         `若未增删：说明改动误触了基线表，撤销。`,
-    ).toBe(80);
+    ).toBe(82);
   });
 
   it('成员面与冻结基线一致（增删即红；红须按 §3.2.1 定性后显式更新 EXPECTED）', () => {

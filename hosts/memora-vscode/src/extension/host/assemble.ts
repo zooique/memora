@@ -49,6 +49,7 @@ import { resolveProjectDataDir } from './projectDataDir.js';
 import { WorkspaceSessionStore } from './sessionStore.js';
 import { vscodeTracer } from './tracer.js';
 import { startMcpServers } from './mcp/runtime.js';
+import { syncPackToolApprovals } from './packToolApproval.js';
 import type { McpServerConfig } from './mcp/connectionManager.js';
 import {
   buildMemorySummaryFacts,
@@ -822,6 +823,13 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   if (projectRolePacksDir) {
     await agent.rolePacks?.loadExtraDir(projectRolePacksDir, 'project');
   }
+
+  // 6.2 注入角色包专属工具批准记录（用户级设置 memora.approvedPackTools）
+  //
+  // 放在角色包目录加载之后：批准按「包名 + 工具名 + 脚本 hash」三键匹配，须先有激活包的装配
+  // 结果（`tools` 声明与脚本 hash 都在装配期解析）。未批准的工具不会注册给模型——
+  // 「声明 ≠ 授权」（§8.9 R1：批准记录的唯一生产者入口在此 + 配置变更监听）。
+  syncPackToolApprovals(agent);
 
   // 7. 接入 MCP server（用户级设置 memora.mcpServers）
   //

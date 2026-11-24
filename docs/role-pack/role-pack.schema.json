@@ -278,6 +278,76 @@
         },
         "additionalProperties": false
       }
+    },
+
+    "tools": {
+      "type": "array",
+      "maxItems": 50,
+      "description": "包内工具声明（可选，最多 50 项）：随包启停的专属工具。声明后仍需宿主侧「批准」（记录包名 + 工具名 + 脚本内容 hash）才会注册给模型；脚本经 stdin 收 JSON 参数，须向 stdout 输出一个 JSON 值。不声明 = 该包无专属工具。",
+      "items": {
+        "type": "object",
+        "required": ["name", "description", "parameters", "impl"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+            "description": "工具名（模型可见；须与内置 / 已注册工具不重名）"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "工具说明（必填：模型据此判断何时调用）"
+          },
+          "group": {
+            "enum": ["readonly", "act", "orchestrate"],
+            "description": "所属组（缺省 act）：readonly 只读 / act 能动手 / orchestrate 会话管理；角色包的 disableGroups / kind 据此摘除"
+          },
+          "readonly": {
+            "type": "boolean",
+            "description": "只读声明（缺省 false）：toolReadonly='readonly' 时据此决定是否放行"
+          },
+          "parameters": {
+            "type": "object",
+            "required": ["type", "properties", "required"],
+            "properties": {
+              "type": { "const": "object" },
+              "properties": {
+                "type": "object",
+                "description": "参数表：参数名 → { type, description }",
+                "additionalProperties": {
+                  "type": "object",
+                  "required": ["type", "description"],
+                  "properties": {
+                    "type": { "type": "string", "minLength": 1 },
+                    "description": { "type": "string", "minLength": 1 }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "required": {
+                "type": "array",
+                "description": "必填参数名列表（每项必须出现在 properties 中；无必填参数写 []）",
+                "items": { "type": "string" }
+              }
+            },
+            "additionalProperties": false
+          },
+          "impl": {
+            "type": "object",
+            "required": ["type", "path"],
+            "properties": {
+              "type": { "const": "script", "description": "执行形态（本期仅 script）" },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "脚本相对角色包根的路径（装配期校验必须仍在包目录内，越界整包拒绝装载）"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
     }
   },
 

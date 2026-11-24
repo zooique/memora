@@ -372,8 +372,11 @@ function createOutputCollector(limitBytes: number) {
  *
  * 同步与后台共用一份：防止「同步一套选项 / 后台另一套」的漂移——一旦漂移，
  * 杀树 / detached / 禁色 / windowsHide 会各自演化出不同行为。
+ *
+ * @param cwd 子进程工作目录（可选）
+ * @param stdinPipe 是否需要可写的 stdin（角色包工具用它收 JSON 参数；缺省 `ignore`）
  */
-function buildSpawnOptions(cwd?: string): childProcess.SpawnOptions {
+function buildSpawnOptions(cwd?: string, stdinPipe?: boolean): childProcess.SpawnOptions {
   return {
     // ⚠️ 不用 spawn 原生 `timeout` 选项：它到期只 kill **直接子进程**，
     // 经 shell 派发（`cmd /c npm test`）时孙进程会变孤儿继续跑。改为手动计时
@@ -389,7 +392,8 @@ function buildSpawnOptions(cwd?: string): childProcess.SpawnOptions {
     // 同构）；回流净化由 toolExecutor sanitizeExternalText 兜底剥残留 ANSI——
     // 源头禁根因 + 通用防御两层不冲突
     env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    // stdin：缺省 ignore（既有脚本只用 argv）；需要投喂数据时开 pipe，写完即 end
+    stdio: stdinPipe ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
     // 隐藏子进程窗口（Windows）：不传则每次执行弹 conhost 黑框（对齐宿主
     // codeExecutor 既有 windowsHide 语义 + 大厂仅隐藏子进程回流输出共识）
     windowsHide: true,
@@ -730,6 +734,14 @@ export async function runSkillScript(
    * 已 abort 时不进入 python 兜底链（那是「解释器不可用」的补救，不是中断后的重试）。
    */
   signal?: AbortSignal,
+  /**
+   * 投喂给子进程 stdin 的文本（可选）。
+   *
+   * 角色包工具用它将模型传入的参数以 JSON 交给脚本：参数走 stdin 而非 argv，
+   * 避免参数里的引号/空格/超长内容在 argv 拼接处被二次解释。缺省不传 = stdin
+   * 保持 `ignore`（既有脚本只用 argv，行为零变化）。
+   */
+  stdinData?: string,
 ): Promise<ScriptExecutionResult> {
   // win32 + shell + 非 .bat/.cmd → 在 spawn 前显式拒绝，
   // 不让假 status=0 进入 formatExecutionResult（喂给判据的事实必须为真）
@@ -756,7 +768,8 @@ export async function runSkillScript(
     new Promise((resolve) => {
       let child: childProcess.ChildProcess;
       try {
-        child = childProcess.spawn(cmd, runArgs, buildSpawnOptions(cwd));
+        // 仅在需要投喂时才开 stdin pipe（缺省 ignore，保持既有行为）
+        child = childProcess.spawn(cmd, runArgs, buildSpawnOptions(cwd, stdinData !== undefined));
       } catch (err) {
         logger.error({ scriptPath, runtime, err }, '启动脚本进程失败');
         resolve({
@@ -776,6 +789,14 @@ export async function runSkillScript(
         resolve,
         signal,
       });
+
+      // 投喂 stdin 并立即关闭（脚本读到 EOF 才知道参数已给完）。
+      // 监听 error：子进程可能提前退出导致 EPIPE——那由它的退出码/stderr 如实反映，
+      // 这里若不做处理会抛未捕获异常把整个进程带崩；不在此重复结算（结算归 attachGovernance）。
+      if (stdinData !== undefined) {
+        child.stdin?.on('error', () => {});
+        child.stdin?.end(stdinData);
+      }
     });
 
   const result = await runOnce(command, cmdArgs);

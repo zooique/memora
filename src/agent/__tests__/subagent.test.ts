@@ -190,6 +190,31 @@ describe('子会话工具暴露面', () => {
     });
   });
 
+  it('不继承宿主角色包专属工具（§8.7 锚点 6：子会话天然不含包内工具）', async () => {
+    await withRuntimeParams((params) => {
+      // 父会话注册一个包内工具（模拟当前角色包已批准并注册的专属工具）
+      const parent = new ToolExecutor(params.projectPath, params.security, params.memoryIndex);
+      parent.registerRolePackTools([
+        {
+          definition: {
+            name: 'pack_echo',
+            description: '包内回显工具',
+            parameters: { type: 'object', properties: {}, required: [] },
+            group: 'readonly',
+            readonly: true,
+            confirmPolicy: 'audit',
+          },
+          handler: async () => '{}',
+        },
+      ]);
+      expect(parent.list.map((t) => t.name)).toContain('pack_echo');
+
+      // 子会话执行器是全新实例 ⇒ 不会带父会话的包内工具（无继承通道）
+      const child = createSubagentToolExecutor(params, { task: '调查' });
+      expect(child.list.map((t) => t.name)).not.toContain('pack_echo');
+    });
+  });
+
   it('深度 1：子执行器没有 delegateTask 端口 ⇒ delegate_task 不可见', async () => {
     await withRuntimeParams((params) => {
       const child = createSubagentToolExecutor(params, { task: '调查' });

@@ -215,6 +215,102 @@ export interface RolePackTeam {
   readonly members: readonly string[];
 }
 
+// ── 包内工具（§8：随包启停的角色包专属工具） ──
+
+/** 包内工具参数 schema 的单个属性（JSON Schema 子集：类型 + 说明，够模型正确填参即可） */
+export interface RolePackToolParameterProperty {
+  /** 参数类型（string / number / boolean / array / object） */
+  readonly type: string;
+  /** 参数说明（必填：模型靠它决定怎么填） */
+  readonly description: string;
+}
+
+/** 包内工具参数 schema（顶层必须是 object；`required` 每项必须在 `properties` 里） */
+export interface RolePackToolParameters {
+  /** 恒为 `object`（工具入参是命名参数对象） */
+  readonly type: 'object';
+  /** 参数表：名字 → 类型 + 说明 */
+  readonly properties: Record<string, RolePackToolParameterProperty>;
+  /** 必填参数名列表 */
+  readonly required: readonly string[];
+}
+
+/** 包内工具的执行声明（本期只支持 `script`：包内脚本文件，复用 runSkillScript 执行面） */
+export interface RolePackToolImpl {
+  /** 执行形态（闭集：本期仅 script） */
+  readonly type: 'script';
+  /** 脚本路径（相对角色包根；装配期校验必须仍在包内） */
+  readonly path: string;
+}
+
+/**
+ * 包内工具声明（manifest.tools 的一项，**纯形状**）。
+ *
+ * 与 `RolePackTool` 的分工：本接口 = manifest 原文形态（validator 只校验它，纯函数无 IO）；
+ * `RolePackTool` = 装配期补全后的形态（含 resolvedPath / scriptHash / 缺省值归一）。
+ */
+export interface RolePackToolDecl {
+  /** 工具名（模型可见名；不得与内置 / 已注册工具同名） */
+  readonly name: string;
+  /** 工具说明（必填：模型据此决定何时调用） */
+  readonly description: string;
+  /** 所属组（缺省 `act`，fail-closed；三组闭集 SSOT = strategyKeys.TOOL_GROUPS） */
+  readonly group?: ToolGroup;
+  /** 只读声明（缺省 `false`，fail-closed；`toolReadonly: 'readonly'` 时据此放行） */
+  readonly readonly?: boolean;
+  /** 参数 schema */
+  readonly parameters: RolePackToolParameters;
+  /** 执行声明 */
+  readonly impl: RolePackToolImpl;
+}
+
+/**
+ * 包内工具（装配期解析结果）：形状同 `RolePackToolDecl`，但缺省值已归一、脚本已校验落盘。
+ *
+ * 缺省值归一在装配期完成（`group ?? 'act'` / `readonly ?? false`），下游（ToolExecutor /
+ * Agent）不再重复判缺省——两处判缺省 = 两份 fail-closed 语义。
+ */
+export interface RolePackTool {
+  /** 工具名（模型可见名） */
+  readonly name: string;
+  /** 工具说明 */
+  readonly description: string;
+  /** 所属组（已归一，非可选） */
+  readonly group: ToolGroup;
+  /** 只读声明（已归一，非可选） */
+  readonly readonly: boolean;
+  /** 参数 schema */
+  readonly parameters: RolePackToolParameters;
+  /** 执行声明（已解析：绝对路径 + 运行时 + 内容 hash） */
+  readonly impl: {
+    /** 执行形态（本期仅 script） */
+    readonly type: 'script';
+    /** manifest 声明的相对路径（原样保留，供报错定位） */
+    readonly path: string;
+    /** 解析后的脚本绝对路径（realpath 后仍须在包目录内） */
+    readonly resolvedPath: string;
+    /** 运行时（由扩展名推断，值域 SSOT = utils/scanner.ScriptRuntime） */
+    readonly runtime: ScriptRuntime;
+    /** 脚本内容 sha256（批准记录按此绑定：脚本一改即回到未批准） */
+    readonly scriptHash: string;
+  };
+}
+
+/**
+ * 包内工具批准记录（宿主用户级配置注入，`setRolePackToolApprovals` 的入参）。
+ *
+ * 三键绑定：包名 + 工具名 + 脚本 hash。**只按包名记会 fail-open**——包更新新增的工具
+ * 会被旧批准自动放行，故 hash 一变即回到未批准（§8.1 #10）。
+ */
+export interface RolePackToolApproval {
+  /** 角色包名（`RolePackMeta.name`） */
+  readonly packName: string;
+  /** 工具名 */
+  readonly toolName: string;
+  /** 批准时的脚本内容 sha256（与装配期重算值不等即视为未批准） */
+  readonly scriptHash: string;
+}
+
 /** 角色包元数据（manifest.json 解析结果），用于匹配、传播、版本管理 */
 export interface RolePackMeta {
   /** 角色包名称（唯一标识） */
@@ -278,6 +374,11 @@ export interface RolePack {
   /** 内嵌技能注册（manifest.skills 对象数组，各自引用包内技能文件 file 路径；能力声明已独立为顶层 capabilities） */
   readonly skills: readonly RolePackManifestSkill[];
   /**
+   * 包内工具（manifest.tools 装配期解析结果）：随包启停——切走即注销，切回再注册。
+   * 与 `skills`（内容面）正交：本字段是**工具面**声明（模型可见的 ToolDefinition + 执行脚本）。
+   */
+  readonly tools?: readonly RolePackTool[];
+  /**
    * 能力声明（manifest.capabilities 顶层数组，独立于 skills——「能力面（权限）」与「内容面（技能正文）」分离）。
    * 🔴 三态（CAP-TRISTATE-1）：`undefined` = 未声明（放行全部）；`[]` = 显式空能力（仅常驻工具）；
    * 非空数组 = 白名单。**不得**用 `?? []` 折叠（会把「显式空」误读成「全开」）。
@@ -321,6 +422,12 @@ export interface RolePackAssembly {
   readonly personaBasePrompt: string;
   /** 内嵌技能注册（manifest.skills，对象数组，支持多个） */
   readonly skills: readonly RolePackManifestSkill[];
+  /**
+   * 包内工具（随包启停），从 `RolePack.tools` 直通。
+   * 宿主经 `rpm.get()` / `getActive()` 拿的是 Assembly，故本字段必须随装配带出——
+   * 否则宿主批准命令拿不到「当前包有哪些工具」。
+   */
+  readonly tools?: readonly RolePackTool[];
   /**
    * 能力声明列表（manifest 顶层 capabilities）。
    * 🔴 三态（CAP-TRISTATE-1）原样透传：`undefined` = 未声明（放行全部）；`[]` = 显式空能力（仅常驻工具）。

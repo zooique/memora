@@ -17,7 +17,7 @@ import type {
 } from '@/agent/types.js';
 import type { InteractiveInputKind, Round } from '@/memory/roundStore.js';
 import type { BackgroundTask } from '@/agent/backgroundTasks.js';
-import type { ToolExecutor } from '@/agent/toolExecutor.js';
+import type { ToolExecutor, ToolHandler } from '@/agent/toolExecutor.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
@@ -30,7 +30,12 @@ import {
   normalizeDisableTools,
   type ToolGroup,
 } from '@/role-pack/strategyKeys.js';
-import type { BehaviorStrategy } from '@/role-pack/types.js';
+import type {
+  BehaviorStrategy,
+  RolePackAssembly,
+  RolePackTool,
+  RolePackToolApproval,
+} from '@/role-pack/types.js';
 import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
 import { SessionNamer } from '@/agent/managers/sessionNamer.js';
@@ -54,7 +59,10 @@ import { estimateTokensMessages } from '@/agent/contextManager.js';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
 // 输入增强管线（角色/记忆/技能增强，Agent 只保留编排调用点）
 import type { ContextPreparer } from '@/agent/contextPreparer.js';
-import { chatBusyError, configError } from '@/utils/errors.js';
+import { chatBusyError, configError, toolError, ToolErrorCode } from '@/utils/errors.js';
+import { formatScriptResult, runSkillScript } from '@/skill/skillScriptRunner.js';
+import { stripControlChars } from '@/agent/textSanitize.js';
+import type { ToolDefinition } from '@/agent/builtinTools.js';
 // 执行流消费的纯逻辑（正文累积 + 中止/失败分类），与子会话共用同一真源
 import {
   classifyExecutionStreamError,
@@ -123,6 +131,20 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private skillManager: SkillManager | null = null;
   /** 角色包管理器（角色+技能+规则的唯一真理源） */
   private _rolePackManager: RolePackManager | null = null;
+  /**
+   * 包内工具批准记录（宿主用户级配置注入；空 = 一律未批准 ⇒ 一个包内工具都不注册）。
+   *
+   * 匹配按「包名 + 工具名 + 脚本 hash」三键（§8.1 #10）：只按包名记会 fail-open——
+   * 包更新新增的工具会被旧批准自动放行。
+   */
+  private rolePackToolApprovals: readonly RolePackToolApproval[] = [];
+  /**
+   * 上次应用到 ToolExecutor 的「包内工具指纹」（唯一用途 = 去抖，避免每轮 Prepare 重复清/注册）。
+   *
+   * ⚠️ 这不是工具名单真源（真源 = ToolExecutor.rolePackToolNames，§8.4 R4），只是应用缓存键；
+   * 指纹含脚本 hash / 组 / 只读 / 说明，任一变化即重放。
+   */
+  private rolePackToolsAppliedKey: string | null = null;
 
   // 拆分出的专职 Manager
   private memoryInspector: MemoryInspector | null = null;
@@ -1865,6 +1887,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         if (this.loop) {
           this.refreshRolePackPrefixOnLoop();
         }
+        // 角色重载后必须重放工具暴露面：包内工具的脚本 hash 可能已变（旧批准须失效，
+        // §8.1 #10 / §8.7 锚点 7），capabilities / kind / disable* 也可能已变。
+        // 只刷 prompt 前缀而不重放工具面 ⇒ 旧注册闭包残留，脚本换了内容仍在跑（安全缺口）。
+        this.applyRolePackToolExposure();
       } catch (err) {
         errors.push(toError(err));
         logger.warn({ err: toError(err) }, 'reloadConfig: rolePackManager.reload 失败');
@@ -1951,6 +1977,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
+   * 注入角色包工具批准记录（宿主用户级配置 `memora.approvedPackTools` 的投递入口）。
+   *
+   * 批准记录是**内核唯一的生产者入口**：没有它，包内工具一律视为未批准、不注册（§8.9 R1）。
+   * 注入后立即重放工具暴露面——宿主保存批准即生效，无需重开会话。
+   *
+   * @param approvals 批准记录（包名 + 工具名 + 脚本 hash；空数组 = 全部撤销批准）
+   */
+  setRolePackToolApprovals(approvals: readonly RolePackToolApproval[]): void {
+    this.rolePackToolApprovals = approvals;
+    this.applyRolePackToolExposure();
+  }
+
+  /**
    * 获取当前激活的 L2 行为策略：从激活角色包读取，未激活时用全局默认值；供各阶段按策略调整行为
    */
   getActiveStrategy(): BehaviorStrategy {
@@ -1967,6 +2006,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private applyRolePackToolExposure(): void {
     if (!this.toolExec) return;
     const active = this._rolePackManager?.getActive();
+    // 包内工具与组面/能力面正交：先按「当前包 + 批准集」重放注册。
+    // 注册本身不按 capabilities / kind 过滤（§8.4 R7）：暴露判据在 isToolExposed 查询期执行，
+    // 入口层预判能力位会造出「入口说能、执行说不能」的双头语义。
+    this.applyRolePackTools(active);
     const capabilities = active?.capabilities;
     // undefined ⇒ null（setToolWhitelist(null) = 不设白名单）；[] ⇒ resolveCapabilityTools([]) = []（仅常驻）
     const whitelist = capabilities === undefined ? null : resolveCapabilityTools(capabilities);
@@ -2000,6 +2043,151 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       disabledGroups: new Set(disabledGroups ?? []),
       disabledTools: new Set(disabledToolNames),
     });
+  }
+
+  /**
+   * 按「当前激活包 + 批准集」重放包内工具注册（`applyRolePackToolExposure` 的执行段）。
+   *
+   * 三条不变量：
+   *   1. **三键匹配**（包名 + 工具名 + 脚本 hash）：hash 变即回到未批准，须重新批准（§8.1 #10）；
+   *   2. **先清后注册**：顺序不可倒——不清旧的话，自家上一版工具会被 `registerRolePackTools`
+   *      预检判成「已注册」冲突，导致全量放弃（一个都不注册）；
+   *   3. **指纹去抖**：每轮 Prepare 都会调本方法，未见变化即跳过，避免每轮重复触发
+   *      `onToolsChanged` 与日志抖动。
+   *
+   * @param active 当前激活的角色包装配视图（未激活 = null/undefined ⇒ 清空全部包内工具）
+   */
+  private applyRolePackTools(active: RolePackAssembly | null | undefined): void {
+    const tools = active?.tools ?? [];
+    const packName = active?.meta.name ?? '';
+    // 批准匹配：三键全等才算已批准；未批准的声明不注册（模型看不见，§8.7 锚点 5）
+    const approved = tools.filter((t) =>
+      this.rolePackToolApprovals.some(
+        (a) =>
+          a.packName === packName && a.toolName === t.name && a.scriptHash === t.impl.scriptHash,
+      ),
+    );
+    // 指纹 = 包名 + 应注册集合的完整描述（含脚本真实路径与 hash：换包 / 脚本一改即重放；
+    // 含说明/组/只读/参数表：定义变了也重放）。
+    // ⚠️ 必须含 packName 与 resolvedPath：两个包若脚本内容相同（hash 相同）但路径不同，
+    // 只按 name+hash 判会误判「已应用」而沿用旧包的路径闭包。
+    // ⚠️ 必须含 parameters：manifest 改参数表但脚本没改时 hash 不变，漏了它就会
+    // 跳过重放 ⇒ 模型手里的仍是旧 schema（没有任何测试会红）。
+    const appliedKey = JSON.stringify([
+      packName,
+      approved.map((t) => [
+        t.name,
+        t.impl.resolvedPath,
+        t.impl.scriptHash,
+        t.group,
+        t.readonly,
+        t.description,
+        t.parameters,
+      ]),
+    ]);
+    if (appliedKey === this.rolePackToolsAppliedKey) return;
+    this.rolePackToolsAppliedKey = appliedKey;
+
+    // 先清旧工具（上一包 / 上一版批准集），再注册新工具
+    this.toolExec!.clearRolePackTools();
+    if (approved.length === 0) return;
+
+    const entries = approved.map((tool) => ({
+      definition: this.buildRolePackToolDefinition(tool),
+      handler: this.createRolePackToolHandler(tool, active?.packageRoot),
+    }));
+    // 名字真源仍在 ToolExecutor（§8.4 R4）：冲突时它会全量放弃并逐个报出冲突名
+    this.toolExec!.registerRolePackTools(entries);
+  }
+
+  /**
+   * 由包内工具声明构造 `ToolDefinition`（模型可见契约面）。
+   *
+   * `confirmPolicy: 'audit'` 在此**强制**写死（§8.9 R2）：包内工具必然执行第三方脚本，
+   * 免弹窗但**不免审计**；manifest 不得声明该字段（validator 已拦，防止包作者自降审批）。
+   *
+   * @param tool 装配期解析出的包内工具（缺省值已归一）
+   */
+  private buildRolePackToolDefinition(tool: RolePackTool): ToolDefinition {
+    return {
+      name: tool.name,
+      description: tool.description,
+      parameters: {
+        type: 'object',
+        // 浅拷贝：ToolDefinition 要求可变 Record/数组，角色包声明是 readonly（防下游改到真源）
+        properties: { ...tool.parameters.properties },
+        required: [...tool.parameters.required],
+      },
+      group: tool.group,
+      readonly: tool.readonly,
+      // 免弹窗不免审计：过闸自动放行，仍落 write-auto 审计
+      confirmPolicy: 'audit',
+      // 脚本改盘目标不可静态定位 ⇒ 显式声明 opaque（与 fail-closed 缺省同义，显式防止未来默认放宽）
+      diskWrite: 'opaque',
+    };
+  }
+
+  /**
+   * 由包内工具声明构造执行处理器：模型参数经 **stdin（JSON）** 投喂脚本，复用 `runSkillScript`
+   * 这一既有唯一执行面（不另写一套 spawn，避免进程治理/杀树/超时两套实现漂移）。
+   *
+   * 结果契约：脚本须向 stdout 输出一个 JSON 值；非 JSON / 空输出一律工具错误，且**不回原文**
+   * （原文可能含注入内容，回原文等于把不可信文本当工具结果喂给模型）。
+   *
+   * @param tool 装配期解析出的包内工具
+   * @param cwd 角色包根（脚本可据此读包内相对资源；undefined 时由 node 取当前进程目录）
+   */
+  private createRolePackToolHandler(tool: RolePackTool, cwd: string | undefined): ToolHandler {
+    return async (args, ctx) => {
+      // 参数走 stdin 而非 argv：避免引号 / 空格 / 超长内容在 argv 拼接处被二次解释
+      const result = await runSkillScript(
+        tool.impl.resolvedPath,
+        tool.impl.runtime,
+        [], // argv 留空（参数全部经 stdin）
+        undefined, // 默认超时（60s）
+        cwd,
+        this.#config.scriptNodePath,
+        ctx.signal,
+        JSON.stringify(args ?? {}),
+      );
+      // 失败三态（超时 / 中断 / 非零退出）→ 工具错误，附脚本 stdout/stderr 事实。
+      // 控制字符必须在本层剥掉（与 builtin run_skill_script 同源，那里是
+      // sanitizeExternalText = stripControlChars + 定长截断）：脚本 stderr 是第三方内容，
+      // ESC 序列原样回喂 = 把不可信字节当工具结果。长度维度**不在本层重复上限**——
+      // token 级 offload 已兜，且定长常量真源在 toolExecutor，此处再写一份必漂移。
+      if (result.timedOut || result.aborted || result.exitCode !== 0) {
+        throw toolError(
+          `角色包工具 ${tool.name} 执行失败`,
+          stripControlChars(formatScriptResult(result)),
+          ['检查脚本逻辑与传入参数是否正确'],
+          undefined,
+          ToolErrorCode.CUSTOM_TOOL_FAILED,
+        );
+      }
+      const stdout = result.stdout.trim();
+      if (!stdout) {
+        throw toolError(
+          `角色包工具 ${tool.name} 无输出`,
+          '脚本成功退出但 stdout 为空；包内工具必须向 stdout 输出一个 JSON 值',
+          ['让脚本把结果以 JSON 写进 stdout'],
+          undefined,
+          ToolErrorCode.CUSTOM_TOOL_FAILED,
+        );
+      }
+      try {
+        JSON.parse(stdout);
+      } catch {
+        // 不回原文：错误文案只陈述事实，避免把不可信脚本输出当工具结果注入上下文
+        throw toolError(
+          `角色包工具 ${tool.name} 输出不是合法 JSON`,
+          '脚本 stdout 无法解析为 JSON（内容已隐去，避免把不可信文本当工具结果）',
+          ['让脚本只向 stdout 输出一个 JSON 值'],
+          undefined,
+          ToolErrorCode.CUSTOM_TOOL_FAILED,
+        );
+      }
+      return stdout;
+    };
   }
 
   // ─── 记忆生命周期 ───────────────────────────────────────
@@ -2132,6 +2320,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.history = null;
     this.loop = null;
     this.toolExec = null;
+    // 去抖键必须清空：组件重装配会造一个新的空 ToolExecutor，键若残留会让重放被跳过
+    // （判定「已应用」→ 不注册 → 包内工具在重装配后静默消失）。
+    // 批准记录本身不清（外部真源，宿主重装配后仍应生效）。
+    this.rolePackToolsAppliedKey = null;
     this.skillManager = null;
     this._rolePackManager = null;
     this.memoryInspector = null;

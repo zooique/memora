@@ -32,7 +32,7 @@ import {
 } from '@/agent/builtinTools.js';
 import { sanitizeExternalText, stripControlChars } from '@/agent/textSanitize.js';
 // 组名值域 SSOT（三组闭集单点定义在 strategyKeys，与 act.disableGroups 校验共用）
-import type { ToolGroup } from '@/role-pack/strategyKeys.js';
+import { TOOL_NAME_PATTERN, type ToolGroup } from '@/role-pack/strategyKeys.js';
 import {
   okOutcome,
   failedOutcome,
@@ -744,8 +744,15 @@ export interface ToolGroupSurface {
  * 内置工具实现委托给 BuiltinToolHandlers。
  */
 export class ToolExecutor {
-  /** 自定义工具注册表（宿主项目通过 registerTool 注册领域工具） */
+  /** 自定义工具注册表（宿主项目通过 registerTool 注册领域工具；角色包专属工具也进这张表） */
   private readonly customTools = new Map<string, CustomToolEntry>();
+  /**
+   * 当前已注册的**角色包专属工具名**（§8 · `customTools` 的子集索引）
+   *
+   * 只承担「切包时该清哪些名字」这一件事，不参与暴露判定（`isToolExposed` 仍只看
+   * `customTools`）——两套判据并列会让「这个工具算不算包内工具」出现第二个答案。
+   */
+  private readonly rolePackToolNames = new Set<string>();
   /** 内置工具处理器（路径安全 + 内置工具实现） */
   private readonly builtinHandlers: BuiltinToolHandlers;
   /**
@@ -1082,7 +1089,8 @@ export class ToolExecutor {
    * @throws 工具名与内置工具冲突或已注册时抛错
    */
   registerTool(definition: ToolDefinition, handler: ToolHandler): void {
-    if (!definition.name || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(definition.name)) {
+    // 命名判据单点住在 strategyKeys.TOOL_NAME_PATTERN（与 validator / registerRolePackTools 同源）
+    if (!definition.name || !TOOL_NAME_PATTERN.test(definition.name)) {
       throw configError(
         `工具名无效："${definition.name}"`,
         '必须以字母/下划线开头，只含字母/数字/下划线',
@@ -1132,6 +1140,75 @@ export class ToolExecutor {
       this.customTools.delete(name);
       this.onToolsChanged?.();
     }
+  }
+
+  /**
+   * 注册角色包专属工具（§8 · 随包启停，与 `customTools` 同处一份注册表）
+   *
+   * 名字真源就是本方法维护的 `rolePackToolNames`——Agent **只调不存**（§8.4 R4）：
+   * Agent 另存一份名单就是第二真源，切包失败即漂移。
+   *
+   * **先全量预检、再逐个注册**（§8.9 R9）：任一名字与内置 / 条件内置 / 已注册工具冲突，
+   * 则**一个都不注册**并逐个报出冲突名——半注册会让「包声明了 3 个工具，实际只到 2 个」
+   * 且没有任何地方能看出来。
+   *
+   * 暴露语义与 MCP / 宿主动态工具同族（`isToolExposed` 的 `customTools` 分支）：
+   * 不受角色包能力位白名单过滤（包内工具进不了子会话，§8.1 #12），但**受**
+   * `disableGroups` / `disableTools` 约束（组面判据排在该分支之前）。
+   *
+   * @param entries 工具定义 + 处理器（处理器由 Agent 在装配期绑定执行器）
+   * @returns 实际注册的工具名（冲突时为空数组）
+   */
+  registerRolePackTools(
+    entries: ReadonlyArray<{ definition: ToolDefinition; handler: ToolHandler }>,
+  ): string[] {
+    if (entries.length === 0) return [];
+
+    /** 冲突明细（name + 原因）；非空 ⇒ 一个都不注册 */
+    const conflicts: Array<{ name: string; reason: string }> = [];
+    for (const { definition } of entries) {
+      const name = definition.name;
+      if (!name || !TOOL_NAME_PATTERN.test(name)) {
+        conflicts.push({ name, reason: '工具名无效' });
+      } else if (BUILTIN_TOOLS.some((t) => t.name === name)) {
+        conflicts.push({ name, reason: '与内置工具同名' });
+      } else if (SWITCH_OWNED_TOOL_NAMES.has(name)) {
+        conflicts.push({ name, reason: '与条件内置工具同名' });
+      } else if (this.customTools.has(name)) {
+        conflicts.push({ name, reason: '已注册（宿主工具或另一包的工具）' });
+      }
+    }
+    if (conflicts.length > 0) {
+      // 逐个报出（§8.7 锚点 12）：只报第一个会让用户改完又撞下一个
+      for (const c of conflicts) {
+        logger.error({ tool: c.name, reason: c.reason }, '角色包工具未注册（同名冲突，全量放弃）');
+      }
+      return [];
+    }
+
+    for (const { definition, handler } of entries) {
+      this.customTools.set(definition.name, { definition, handler });
+      this.rolePackToolNames.add(definition.name);
+    }
+    // 一次性触发刷新：逐个触发会让 loop 在中间态重建多次快照（无收益的抖动）
+    this.onToolsChanged?.();
+    logger.info({ tools: entries.map((e) => e.definition.name) }, '角色包专属工具已注册');
+    return entries.map((e) => e.definition.name);
+  }
+
+  /**
+   * 注销当前包的全部角色包专属工具（切包 / 清包时调用）
+   *
+   * 只动 `rolePackToolNames` 里的名字——宿主注册的工具与 MCP 工具不受影响。
+   * 切走再切回时工具表逐项相等（§8.7 锚点 2）依赖「这里全量清干净」。
+   */
+  clearRolePackTools(): void {
+    if (this.rolePackToolNames.size === 0) return;
+    for (const name of this.rolePackToolNames) {
+      this.customTools.delete(name);
+    }
+    this.rolePackToolNames.clear();
+    this.onToolsChanged?.();
   }
 
   /**

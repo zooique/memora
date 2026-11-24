@@ -182,6 +182,15 @@ export type ToolGroup = (typeof TOOL_GROUPS)[number];
 const TOOL_GROUP_SET: ReadonlySet<string> = new Set(TOOL_GROUPS);
 /** `disableTools` 单个工具名长度上限（字符）：防巨型字符串注入 prompt */
 export const MAX_TOOL_NAME_LENGTH = 64;
+/**
+ * 合法工具名格式（字母/下划线开头，只含字母数字下划线）
+ *
+ * **判据唯一真源**：消费面有三处——`ToolExecutor.registerTool`（宿主/自定义工具注册门）、
+ * `ToolExecutor.registerRolePackTools`（包内工具预检）、`validator`（manifest 声明校验）。
+ * 曾各自内联同一条正则（三份副本），改名规则时必然漏改其一且**没有任何测试会红**；
+ * 本层无任何依赖，两个方向都能 import，故按 `TOOL_GROUPS` 同款收敛到单点。
+ */
+export const TOOL_NAME_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 /** `disableTools` 条目数上限：覆盖全量内置 + 宿主工具仍有富余，超出即视为误填 */
 export const MAX_DISABLE_TOOLS = 64;
 /** `disableTools` 表单文本总长上限（字符）：`MAX_DISABLE_TOOLS` ×（名长 + 分隔符）的余量上界 */
