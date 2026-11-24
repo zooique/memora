@@ -16,6 +16,7 @@ import type {
   SessionCheckpoint,
 } from '@/agent/types.js';
 import type { InteractiveInputKind, Round } from '@/memory/roundStore.js';
+import type { SessionMeta } from '@/memory/sessionStore.js';
 import type { BackgroundTask } from '@/agent/backgroundTasks.js';
 import type { ToolExecutor, ToolHandler } from '@/agent/toolExecutor.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
@@ -1693,9 +1694,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 本会话职责边界段（托管派活 mandate）：同步读当前会话 SessionMeta（内存 Map，零 IO）。
     // 真机 T5：App 只把边界落 workOrder、Worker 首轮只拿 text ⇒ Worker 不知道边界存在而越界改文件；
     // HAND-BACK-UNREACHABLE-1：协议原先只在 Router 工具描述里，Worker 收不到 ⇒ 只知边界、
-    // 不会交回。现由宿主常量注入（delegationRuleProvider），仍只在「有边界」时投影。
-    const workOrderContext = buildWorkOrderContextBlock(this.readCurrentWorkOrder());
-    const delegationRuleContext = workOrderContext
+    // 不会交回。现由宿主常量注入（delegationRuleProvider）。
+    const currentMeta = this.readCurrentSessionMeta();
+    const workOrderContext = buildWorkOrderContextBlock(currentMeta?.workOrder);
+    // 交回/自报协议的注入判据 = 「是不是派活开的会话」，不是「填没填 mandate」。
+    // mandate 在 create_session 里可选（DECOUPLE-1）：只按 workOrder 判会让「派活但未写边界」
+    // 的 Worker 静默拿不到协议（工具不报错、行为降级），而 declaredPaths 由同一创建入口四键必填写入，
+    // 两者任一存在即派活会话。注意 boundary 段仍只在 workOrder 非空时出现（语义边界≠技术范围）。
+    const isDelegatedSession =
+      Boolean(currentMeta?.workOrder?.trim()) || (currentMeta?.declaredPaths?.length ?? 0) > 0;
+    const delegationRuleContext = isDelegatedSession
       ? buildDelegationRuleContextBlock(this.#config.delegationRuleProvider?.() ?? '')
       : '';
     const newPrefix = buildSystemPromptPrefix(
@@ -1717,20 +1725,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 取当前会话的职责边界（`SessionMeta.workOrder`，托管派活 mandate）
+   * 取当前会话的元数据（`SessionMeta`，托管派活的 workOrder / declaredPaths 均在此）
    *
    * 同步内存读：SessionStore 的 meta 是启动期加载的 Map，零 IO，可放进同步刷新链。
-   * 未注入 sessionStore / 会话管理器未就绪 / 非托管会话（无 workOrder）→ undefined，
-   * 由 buildWorkOrderContextBlock 转成空串、不注入空壳段。
+   * 未注入 sessionStore / 会话管理器未就绪 / 无当前会话 → undefined，
+   * 由各消费方按「无该事实」降级（`buildWorkOrderContextBlock` 转空串、协议段不注入）。
    */
-  private readCurrentWorkOrder(): string | undefined {
+  private readCurrentSessionMeta(): SessionMeta | undefined {
     const manager = this._sessionManager;
     const current = manager?.getCurrentSessionInfo();
     if (!manager || !current) return undefined;
-    // 复用 SessionManager 的可选元数据读口：轻量测试替身未实现 getSessionMeta 时
-    // 与改动前一样按「无职责边界」降级，不让提示词刷新链因辅助能力缺失而中断。
-    const meta = manager.getSessionMeta(`${current.date}-${current.session}`);
-    return meta?.workOrder;
+    // SessionManager 的读口本身是可选链（未注入 sessionStore / store 未实现 getSessionMeta
+    // 均返回 undefined）：与改动前一样按「无元数据」降级，不让提示词刷新链因辅助能力缺失而中断。
+    return manager.getSessionMeta(`${current.date}-${current.session}`);
   }
 
   /**

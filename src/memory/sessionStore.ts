@@ -176,7 +176,7 @@ export interface SessionMeta {
    *
    * 写入方 = 宿主 createSession 时由主控 create_session 工具的 mandate 参数一次性写入，
    *       **不从父会话继承**（分叉是另一条活，边界要重新声明）。
-   * 读取方 = ① 内核 Agent 每轮刷新系统前缀时投影给本会话 Worker（`readCurrentWorkOrder` →
+   * 读取方 = ① 内核 Agent 每轮刷新系统前缀时投影给本会话 Worker（`readCurrentSessionMeta` →
    *   `buildWorkOrderContextBlock`，只读事实段、不参与任何门禁）；② 宿主 Hand back 边界比对：
    *   `HostedSessionNotifier.formatHandBack` 在 Worker 交回时把本字段随通知注入创建者 Router，
    *   供其决定转新活 / 合并 / 转述用户。Worker 身份判定仍读 `Round.origin` 轮戳，

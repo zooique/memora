@@ -138,8 +138,9 @@ export function buildWorkOrderContextBlock(workOrder?: string): string {
  * 将宿主提供的「越界交回规则」格式化为 system prompt 注入段
  *
  * 与 `buildWorkOrderContextBlock` 同构：零解释转发宿主常量原文，内核不解析协议、
- * 不裁决格式（`[HAND_BACK]` 的语义归宿主）。是否注入由调用方判定——只有本会话
- * 存在职责边界（workOrder）时才传本段，自助 / 普通会话不出现该段。
+ * 不裁决格式（`[HAND_BACK]` 的语义归宿主）。是否注入由调用方判定——判据是「本会话是不是
+ * 派活开出的」（`declaredPaths` 非空或 `workOrder` 非空），不是「填没填 mandate」；
+ * 自助 / 普通会话不出现该段，而职责边界段本身仍只随 `workOrder` 出现。
  *
  * @param rule 宿主提供的交回规则文本（`delegationRuleProvider()` 产出）
  * @returns 「## 本会话交回规则」段落（可能为空串）

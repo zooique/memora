@@ -3285,7 +3285,7 @@ describe('Agent · 作品投影实时刷新（workProjectionGenerated → loop �
     refreshSpy.mockRestore();
   });
 
-  it('有职责边界时注入宿主交回规则；无边界时整段缺席（HAND-BACK-UNREACHABLE-1）', async () => {
+  it('协议按「是否派活会话」注入，边界段仍只随 workOrder 出现（DECOUPLE-1 / HAND-BACK-UNREACHABLE-1）', async () => {
     const refreshSpy = vi.spyOn(AgentLoop.prototype, 'refreshRolePackPrefix');
     agent = new TestableAgent({
       projectPath: tmpProject,
@@ -3307,10 +3307,21 @@ describe('Agent · 作品投影实时刷新（workProjectionGenerated → loop �
     const sm = agent.sessionManager!;
     const metaSpy = vi.spyOn(sm, 'getSessionMeta').mockReturnValue(undefined);
 
-    // 无 workOrder（自助 / 普通会话）→ 交回规则段不出现
+    // 无 workOrder 也无 declaredPaths（自助 / 普通会话）→ 两段都不出现
     refreshSpy.mockClear();
     agent.emitWorkProjectionGenerated();
-    expect(refreshSpy.mock.calls.at(-1)![0]).not.toContain('## 本会话交回规则');
+    const plainPrefix = refreshSpy.mock.calls.at(-1)![0];
+    expect(plainPrefix).not.toContain('## 本会话职责边界');
+    expect(plainPrefix).not.toContain('## 本会话交回规则');
+
+    // 派活会话但 mandate 缺省（DECOUPLE-1）：declaredPaths 非空即注入协议段，
+    // 边界段仍缺席——技术范围 ≠ 语义边界，不得用声明路径伪造一段职责描述。
+    metaSpy.mockReturnValue({ declaredPaths: ['src/agent'] } as never);
+    agent.emitWorkProjectionGenerated();
+    const delegatedPrefix = refreshSpy.mock.calls.at(-1)![0];
+    expect(delegatedPrefix).not.toContain('## 本会话职责边界');
+    expect(delegatedPrefix).toContain('## 本会话交回规则');
+    expect(delegatedPrefix).toContain('[HAND_BACK]');
 
     // 有 workOrder（托管 Worker）→ 边界段与交回规则段同时出现
     metaSpy.mockReturnValue({ workOrder: '只允许改 a.md' } as never);

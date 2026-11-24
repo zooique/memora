@@ -773,10 +773,11 @@ export interface AgentOptions {
   environmentProvider?: IEnvironmentProvider;
   /**
    * 越界交回规则提供者（可选）：宿主提供「任务超出职责边界时如何交回」的固定文本，
-   * 内核在**本会话存在职责边界（`workOrder`）时**把它作为独立系统段零解释投影给 Worker。
+   * 内核在**本会话是派活开出的（`declaredPaths` 非空或 `workOrder` 非空）时**把它作为
+   * 独立系统段零解释投影给 Worker；职责边界段本身仍只在 `workOrder` 非空时出现。
    *
    * 为什么必须由宿主提供：`[HAND_BACK]` 是宿主领域协议（格式定义、正则解析、通知消费
-   * 全在宿主），内核只做「有边界才投影」的结构判定，不解析、不裁决协议内容
+   * 全在宿主），内核只做「是不是派活会话才投影」的结构判定，不解析、不裁决协议内容
    * （同 `environmentProvider` 的领域无关口径）。
    * 缺省 `undefined` ⇒ 不注入该段，既有会话提示词逐字不变（fail-closed）。
    * 设计锚：台账 `HAND-BACK-UNREACHABLE-1`（协议原先只在 Router 工具描述里，Worker 收不到）。
