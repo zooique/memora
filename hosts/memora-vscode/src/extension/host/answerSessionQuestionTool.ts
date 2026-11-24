@@ -99,6 +99,7 @@ export type HostedQuestionAnswerer = (
  */
 export const ANSWER_SESSION_QUESTION_DEFINITION: ToolDefinition = {
   name: ANSWER_SESSION_QUESTION_TOOL_NAME,
+  group: 'orchestrate',
   description:
     '回答指定会话正在等待的提问（ask_user）。' +
     '先省略 answers 调用一次：回执带 questions（每题的 index / question / options），按 index 顺序作答。' +

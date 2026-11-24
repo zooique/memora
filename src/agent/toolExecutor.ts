@@ -31,6 +31,8 @@ import {
   type ToolDefinition,
 } from '@/agent/builtinTools.js';
 import { sanitizeExternalText, stripControlChars } from '@/agent/textSanitize.js';
+// 组名值域 SSOT（三组闭集单点定义在 strategyKeys，与 act.disableGroups 校验共用）
+import type { ToolGroup } from '@/role-pack/strategyKeys.js';
 import {
   okOutcome,
   failedOutcome,
@@ -713,6 +715,29 @@ export const SWITCH_OWNED_TOOL_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * 角色包组面（工具面**又一条收紧轴** · tasks/01 §7.2 拍板）
+ *
+ * **只做收紧，不做放行**：组面的每一项都只能把工具**挡掉**，通过组面检查不等于通过
+ * 整个判据链（`allowOnlyTools` / `denyTools` / 角色包能力位白名单 / 自定义工具仍要过）。
+ * 各轴因此在 `isToolExposed` 里天然取**交集**，方向恒朝拒绝——任何一轴都不可能
+ * 把另一轴挡掉的工具放回来（放行方向才是 fail-open 的来源）。
+ *
+ * 两个成员回答两个不同问题，不折叠：
+ * - `allowedGroups`：**由 `kind` 派生的授权单位**（工种决定给哪几组）；`null` = 包未声明
+ *   kind（work 缺省态）⇒ 不按组限制。
+ * - `disabledGroups` / `disabledTools`：**显式禁用表**（这个工种里哪几样不给），
+ *   恒为减法、无论有无 kind 都生效。
+ */
+export interface ToolGroupSurface {
+  /** kind 派生的允许组；null = 未声明 kind（不按组限制）；非 null 时组外工具一律挡住 */
+  readonly allowedGroups: ReadonlySet<ToolGroup> | null;
+  /** `strategy.act.disableGroups`：整组摘除 */
+  readonly disabledGroups: ReadonlySet<ToolGroup>;
+  /** `strategy.act.disableTools`：单工具摘除 */
+  readonly disabledTools: ReadonlySet<string>;
+}
+
+/**
  * 工具执行器
  *
  * 职责：工具注册 + 分发 + 参数校验。
@@ -770,6 +795,16 @@ export class ToolExecutor {
    * 双向拒绝放在装配期 fail-closed，不靠调用方自觉。
    */
   private allowOnlyTools: ReadonlySet<string> | null = null;
+
+  /**
+   * 角色包组面（工具面收紧轴 · 默认 null ⇒ 未启用，既有消费者逐字不变）
+   *
+   * 判据是**查询期谓词**（见 `isToolExposed` 内按 `tool.group ?? 'act'` 现场判），
+   * 刻意**不在装配期展开成名字清单**——agent 运行期会经 `registerTool` 注册宿主 / MCP
+   * 工具，时刻在装配之后；装配期展开 = 静态快照 ⇒ 晚注册的工具漏出，
+   * 而「禁了却还在」是禁用方向的 fail-open，正是用户最不能接受的失效方向。
+   */
+  private toolGroupSurface: ToolGroupSurface | null = null;
 
   /** 安全守卫（构造参数转存，run_code/run_project_script 执行前确认用） */
   private readonly security: SecurityGuard;
@@ -1170,7 +1205,34 @@ export class ToolExecutor {
         'allowOnlyTools 与 denyTools 语义互斥：同一 Agent 不得同时启用两套工具面判据',
       );
     }
+    // allow-only 与组面**不互斥**：两者都只能收紧，`isToolExposed` 里取交集即可。
+    // （曾经的「双正向面并存即 throw」守卫已撤：它会迫使 Agent 清掉宿主封闭面才能切到
+    //  assistant 包，而宿主 allowOnly 只在装配期设一次、切回时不恢复 ⇒ 封闭面被永久炸开。）
     this.allowOnlyTools = tools === null ? null : new Set(tools);
+    this.onToolsChanged?.();
+  }
+
+  /**
+   * 设置角色包组面（工具面第三条轴 · 与 `setDenyTools` / `setToolAllowOnly` 同范式）
+   *
+   * `null` = 退出组面（回到既有判据链）；对象 = 启用。
+   *
+   * **与另外两轴不互斥、不互相清除**：组面只做收紧，`isToolExposed` 里与 allow-only /
+   * deny / 能力位白名单天然取交集。这样任意切包顺序都不需要「保存 / 恢复」上一轴的值——
+   * 一旦引入清除与恢复，就会产生「切到 A 包清空、切回 B 包不恢复」的 fail-open 窗口
+   * （宿主 allowOnly 只在装配期设一次，运行期无人重设）。
+   *
+   * 单轴规则（§7.2）的落地形态因此是**遮蔽而非清除**：激活角色包声明了 `kind` 且派生出
+   * 正向组（当前即 `assistant`）时，组谓词把组外工具挡掉，宿主 `allowOnlyTools` 的
+   * 交集不改变结论；未声明 `kind` ⇒ `allowedGroups === null`，组面完全不限制（存量零变化）。
+   *
+   * @param surface 组面；null = 退出
+   */
+  setToolGroupSurface(surface: ToolGroupSurface | null): void {
+    // 本方法在每轮 Prepare 都会被调用（applyRolePackToolExposure），null 未变时早退——
+    // 否则存量包（无 kind、无禁用表）每轮都白触发一次 onToolsChanged → 重建 system prompt
+    if (this.toolGroupSurface === surface) return;
+    this.toolGroupSurface = surface;
     this.onToolsChanged?.();
   }
 
@@ -1236,10 +1298,14 @@ export class ToolExecutor {
    * 「某工具此刻是否暴露」的唯一判定（EXPOSURE-GATE-1 单点）
    *
    * 暴露面（`list`）与执行闸（`execute`）共用本方法：前者决定「摆给 LLM 看什么」，
-   * 后者决定「模型硬点名时放不放行」。只此一份规则，不并列第二套判据——三根轴在此
-   * 汇合（allow-only 排他 / deny 减法 / 白名单特权声明），其中 allow-only 与 deny 互斥。
+   * 后者决定「模型硬点名时放不放行」。只此一份规则，不并列第二套判据——四条收紧判据在此
+   * 汇合（组面 / allow-only 排他 / deny 减法 / 能力位白名单），除 allow-only 与 deny
+   * 双向互斥外，其余各轴**取交集、互不清除**（方向恒朝拒绝）。
    *
    * 判据分层（tool-exposure-model 特权声明模型）：
+   * - **组面：前置否决层，只挡不放行**——`toolGroupSurface` 非 null 时，先按显式禁用表 /
+   *   禁用组 / `kind` 派生的正向组否决；**组内命中不直接放行**，继续走下面的链
+   *   （否则助手包会绕过宿主 allow-only 封闭面与能力位白名单）。默认 null 不启用。
    * - **allow-only 集：第零层，排他**——非 null 时只有名单内工具可见 / 可执行，`customTools`
    *   与常驻集一律不豁免。封闭工具面（只给会话管理工具）唯一可表达的形态；默认 null 不启用。
    * - **deny 集：第一层，且必须早于 `customTools.has(name)`**——宿主注册的自定义 / MCP 工具
@@ -1257,6 +1323,17 @@ export class ToolExecutor {
    * @returns 此刻是否在 LLM 可见的工具面内
    */
   private isToolExposed(name: string): boolean {
+    const surface = this.toolGroupSurface;
+    if (surface !== null) {
+      // ① 显式禁用表（减法）：用户点名关掉的工具 / 组，任何轴都不得把它漏回来
+      if (surface.disabledTools.has(name)) return false;
+      const group = this.groupOf(name);
+      if (surface.disabledGroups.has(group)) return false;
+      // ② kind 派生的正向组：**只挡不放行**——组外挡掉，组内继续走下面的既有判据链。
+      //    刻意不在此 return true：`allowOnlyTools` / 角色包能力位白名单 / deny / 自定义工具
+      //    必须仍然生效，否则助手包会绕过宿主的封闭面与包自身的能力声明（放宽 = fail-open）。
+      if (surface.allowedGroups !== null && !surface.allowedGroups.has(group)) return false;
+    }
     // allow-only 排他轴：必须首行，先于自定义工具 / 常驻集——否则那两族恒真分支会漏工具
     // （封闭工具面的危险方向是漏：新工具默认进去，而不是缺）。null = 未启用，落到既有判据链。
     if (this.allowOnlyTools !== null) return this.allowOnlyTools.has(name);
@@ -1270,6 +1347,38 @@ export class ToolExecutor {
     if (DEFAULT_EXPOSED_TOOLS.has(name)) return true;
     // 特权工具按白名单过滤（null = 全暴露；数组 = 仅名单内）
     return this.toolWhitelist === null || this.toolWhitelist.includes(name);
+  }
+
+  /**
+   * 查工具所属组（组谓词的取值口 · 查询期现场判，不走装配期快照）
+   *
+   * `tool.group ?? 'act'`：**缺省 fail-closed 归 `act`**（最保守）——新工具 / 晚注册的
+   * 宿主与 MCP 工具漏标 group 时，只会被纯只读包一起禁掉（方向朝拒绝），
+   * 不会被静默当成无害而漏进助手包。查不到定义（禁用表里的拼错名字）同样归 `act`。
+   *
+   * 每次现读 `assembledTools` 而不缓存索引：自定义工具可在运行期注册，
+   * 缓存一旦失效判据就变成旧快照——正是本方法要避免的形态。
+   *
+   * @param name 工具名
+   * @returns 所属组（readonly / act / orchestrate）
+   */
+  private groupOf(name: string): ToolGroup {
+    const def = this.assembledTools.find((t) => t.name === name);
+    return def?.group ?? 'act';
+  }
+
+  /**
+   * 该工具名是否**已注册**（只看装配面，不看是否暴露）。
+   *
+   * 供装配期核对 `strategy.act.disableTools` 用：拼错的名字在 `isToolExposed` 里永远匹配不上，
+   * 结果是「用户以为关了、实际开着」（禁用方向 fail-open）。validator 是纯函数拿不到注册表，
+   * 这类核对只能在有 IO 的调用方做，故提供本口。
+   *
+   * @param name 工具名
+   * @returns 是否存在于当前装配面（含宿主 / MCP 自定义工具）
+   */
+  isKnownTool(name: string): boolean {
+    return this.assembledTools.some((t) => t.name === name);
   }
 
   /**

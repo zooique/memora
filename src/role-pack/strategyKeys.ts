@@ -168,6 +168,75 @@ export const SUMMARY_MODES = ['on', 'off'] as const;
 export const USER_FOLLOWUPS = ['ask', 'silent'] as const;
 /** 错误处理策略枚举值（SSOT：types.ts ErrorHandling 推导 + global.errorHandling 校验/归位） */
 export const ERROR_HANDLINGS = ['retry', 'degrade', 'stop'] as const;
+/**
+ * 工具分组枚举值（SSOT 单一来源：`ToolDefinition.group` 类型推导 +
+ * `act.disableGroups` 校验 + `describeStrategyKeys` 键面 options 三处共用）。
+ *
+ * 分组只回答「这个工种能不能用」；「谁注册、何时注销」是另一根轴（来源），两者不折叠。
+ * 缺省 fail-closed 归 `act`——新工具漏标只会被纯只读包一起禁掉，不会漏进助手包。
+ */
+export const TOOL_GROUPS = ['readonly', 'act', 'orchestrate'] as const;
+/** 工具分组类型（types.ts 与 agent 层 ToolDefinition.group 均由本数组推导，同 AskOnTrigger 范式） */
+export type ToolGroup = (typeof TOOL_GROUPS)[number];
+/** 工具分组运行时集合（由 TOOL_GROUPS 派生，O(1) 判定） */
+const TOOL_GROUP_SET: ReadonlySet<string> = new Set(TOOL_GROUPS);
+/** `disableTools` 单个工具名长度上限（字符）：防巨型字符串注入 prompt */
+export const MAX_TOOL_NAME_LENGTH = 64;
+/** `disableTools` 条目数上限：覆盖全量内置 + 宿主工具仍有富余，超出即视为误填 */
+export const MAX_DISABLE_TOOLS = 64;
+/** `disableTools` 表单文本总长上限（字符）：`MAX_DISABLE_TOOLS` ×（名长 + 分隔符）的余量上界 */
+export const MAX_DISABLE_TOOLS_TEXT_LENGTH = 4096;
+
+/**
+ * `disableGroups` 断言：非空字符串数组，元素 ∈ 三组闭集，条数 ≤ 组数（防重复堆叠）。
+ *
+ * 写错组名必须**报错**而不是被忽略——静默忽略 = 用户以为关了、实际开着（fail-open）。
+ */
+export function isDisableGroups(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.length <= TOOL_GROUPS.length &&
+    value.every((v) => typeof v === 'string' && TOOL_GROUP_SET.has(v))
+  );
+}
+
+/**
+ * `disableTools` 归一：把双形态输入拆成工具名数组；**非法形态返回 `null`**（不静默折成空数组——
+ * 空数组与「未声明」同义，折过去等于把错值洗成「全开」，正是 fail-open）。
+ *
+ * 双形态（同 `isAskOn` 的单值/数组双形态先例）：
+ *   - **JSON 数组**：manifest 作者面（`["run_command"]`）；
+ *   - **逗号分隔字符串**：宿主表单 `text` 控件面（`"run_command, write_file"`）——
+ *     `disableTools` 是开放集（内置 + 宿主 + MCP + 自定义），内核静态键面枚举不出全集，
+ *     画不出多选框，只能给文本输入；两入口一个真源，故校验层必须两者都接。
+ *
+ * 空白项被剔除（`["a", ""]` ≡ `["a"]`），剔完为空 ⇒ 返回 `[]`，由调用方按「至少一条」判错。
+ */
+export function normalizeDisableTools(value: unknown): string[] | null {
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  }
+  if (Array.isArray(value)) {
+    if (!value.every((v) => typeof v === 'string')) return null;
+    return value.map((v) => v.trim()).filter((s) => s.length > 0);
+  }
+  return null;
+}
+
+/** `disableTools` 断言：归一后非空、条数与单项长度均在上限内（上限防 prompt 注入膨胀） */
+export function isDisableTools(value: unknown): boolean {
+  const names = normalizeDisableTools(value);
+  if (names === null) return false;
+  return (
+    names.length > 0 &&
+    names.length <= MAX_DISABLE_TOOLS &&
+    names.every((n) => n.length <= MAX_TOOL_NAME_LENGTH)
+  );
+}
 
 /**
  * 单键键面（纯数据，可过协议）：宿主 UI 渲染策略编辑控件所需的全部元数据。
@@ -199,6 +268,8 @@ export interface StrategyKeyFace {
  *   - enum 规则 → kind='enum'，values 来自各枚举常量；
  *   - askOn → kind='multi'，可选值带出 ASK_TRIGGERS（其可选值藏在常量而非 rule 内）；
  *   - summaryFocus → kind='text'（字符串长度区间 1~MAX_SUMMARY_FOCUS_LENGTH，非数值键）；
+ *   - disableGroups → kind='multi'（三组闭集，可选值带出 TOOL_GROUPS）；
+ *   - disableTools → kind='text'（开放集枚举不出全集，只能文本输入，逗号分隔）；
  *   - 其余 check+range → kind='number'，并用 check 闭包在内核内探测 0 是否合法
  *     （闭包不出内核只出结论）：接受 0 的键（0 哨兵语义）UI 下限折算为 0。
  */
@@ -211,6 +282,13 @@ export function describeStrategyKeys(): StrategyKeyFace[] {
       } else if (key === 'askOn') {
         faces.push({ stage, key, kind: 'multi', options: ASK_TRIGGERS });
       } else if (key === 'summaryFocus') {
+        faces.push({ stage, key, kind: 'text', range: rule.range });
+      } else if (key === 'disableGroups') {
+        // 三组闭集可枚举 → 多选框；可选值带出 TOOL_GROUPS（藏在常量而非 rule 内，同 askOn 范式）
+        faces.push({ stage, key, kind: 'multi', options: TOOL_GROUPS });
+      } else if (key === 'disableTools') {
+        // 开放集（工具名由各注册方动态决定），内核静态键面枚举不出全集 ⇒ 画不出多选框，
+        // 只能给文本输入（逗号分隔）。**不能落 number 兜底**——那会渲染成数字输入框（假 UI 面）。
         faces.push({ stage, key, kind: 'text', range: rule.range });
       } else if (rule.range) {
         // 0 哨兵折算：0 合法的键 UI 下限为 0（输入框可填 0 = 不干预），否则用正数声明下限
@@ -273,6 +351,16 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
     // DEFAULT_BEHAVIOR_STRATEGY.act.subagentConcurrency）。0 是合法哨兵，UI 下限自动折算为 0。
     // 校验/区间复用命名规则常量（resolver 也读它），不在此再写一份。
     subagentConcurrency: SUBAGENT_CONCURRENCY_RULE,
+    // 工具面禁用表（暴露期摘除，与 toolReadonly 的执行期闸分工）：缺省不设 = 全开（ADR-045）。
+    // 数组键**不进 PERMISSION_FIELD_LENIENCE**（那张秩表值域是标量 number|null，表达不了集合严度），
+    // 也**不走 mergeActStrategy 的浅合并**（覆盖侧整体胜 = 放松）——两键合并取并集，见 DISABLE_SET_FIELDS。
+    disableGroups: { kind: 'check', check: isDisableGroups },
+    // 开放集（内置 + 宿主 + MCP + 自定义），range 是表单文本长度上界（validator 另判条数与单项长度）
+    disableTools: {
+      kind: 'check',
+      check: isDisableTools,
+      range: { min: 1, max: MAX_DISABLE_TOOLS_TEXT_LENGTH },
+    },
   },
   reflect: {
     summary: { kind: 'enum', values: SUMMARY_MODES },

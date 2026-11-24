@@ -432,10 +432,37 @@ function mergePermissionField(
 }
 
 /**
- * 合并 act 段：普通字段由 override 覆盖，权限类字段按「更严者胜」裁决
+ * 工具面禁用表键（字符串数组）——**不进 `PERMISSION_FIELD_LENIENCE`**。
  *
- * 权限判据单点 = `PERMISSION_FIELD_LENIENCE`；本函数只负责「按表逐字段调用裁决」，
- * 不复制任何「谁更严」的知识（增字段只改表）。
+ * 为什么另开一张表：那张秩表的值域是标量 `(value) => number | null`，表达不了
+ * 「集合谁更严」；对禁集而言「更严」=禁得更多，正确语义是**并集**（各层禁的都禁）。
+ * 并集天然只收紧、无放宽路径，故不需要秩裁决，只需要合并形状正确。
+ *
+ * ⚠️ 也不能落 `mergeActStrategy` 的浅合并：`{...base, ...override}` 是「覆盖侧整体胜」，
+ * 覆盖侧可以整份替换掉下层已禁的项 = **放松**（失败方向朝关闭，必须挡住）。
+ */
+const DISABLE_SET_FIELDS = ['disableGroups', 'disableTools'] as const;
+
+/**
+ * 禁用表并集：`undefined` = 未声明（该侧不生效），两侧都有则取并集去重。
+ *
+ * 去重只影响形状不影响语义（重复项本就等价），但留着会让「禁了 3 个」这种计数失真。
+ */
+function unionDisableSet(
+  base: readonly string[] | undefined,
+  override: readonly string[] | undefined,
+): readonly string[] | undefined {
+  if (base === undefined) return override;
+  if (override === undefined) return base;
+  return [...new Set([...base, ...override])];
+}
+
+/**
+ * 合并 act 段：普通字段由 override 覆盖，权限类字段按「更严者胜」裁决，
+ * **禁用表两键取并集**（三套语义，各有单点判据，不互相折叠）。
+ *
+ * 权限判据单点 = `PERMISSION_FIELD_LENIENCE`；禁用表判据单点 = `DISABLE_SET_FIELDS`。
+ * 本函数只负责「按表逐字段调用裁决」，不复制任何「谁更严」的知识（增字段只改表）。
  *
  * @param base 基础 act 段（可为空，空时全部取覆盖值）
  * @param override 覆盖 act 段（可为空，空时全部保留 base）
@@ -455,6 +482,15 @@ function mergeActStrategy(
       override?.[field],
       PERMISSION_FIELD_LENIENCE[field],
     );
+  }
+
+  // 禁用表：浅合并已把覆盖侧整体写进 merged，此处必须**改回并集**——
+  // 否则覆盖侧的整份替换就是「下层禁用项被冲掉」= 放松（见 DISABLE_SET_FIELDS 注释）。
+  for (const field of DISABLE_SET_FIELDS) {
+    const union = unionDisableSet(base?.[field], override?.[field]);
+    const slot = merged as unknown as Record<string, unknown>;
+    if (union === undefined) delete slot[field];
+    else slot[field] = union;
   }
 
   return merged;

@@ -1863,4 +1863,34 @@ describe('HOSTED-ROUTER-TOOL-SURFACE-1 · 宝工具面闭合（allow-only）', (
       await disposeProbe(probe);
     }
   }, 120_000);
+
+  it('判据 ⑤：退役等价性（§7.6 锚点 9）——orchestrate 组派生集与名单逐项相等', async () => {
+    // 宝将来切到 kind:assistant 时，allow-only 名单退役，暴露面改由组谓词派生。
+    // 派生集 = allToolDefinitions 中 group==='orchestrate' 的工具——不等名单 ⇒ 分组表漏标
+    // （漏标方向是 fail-closed：宝静默断臂；多标方向是 fail-open：技术工具漏进宝面）。
+    const probe = await assembleProbe(true, {});
+    try {
+      const exec = probe.agent.tools!;
+      // ① 分组表逐项等价：派生集（按 group 过滤）与旧名单同集（顺序无关）
+      const derived = exec.allToolDefinitions
+        .filter((t) => t.group === 'orchestrate')
+        .map((t) => t.name);
+      expect([...derived].sort()).toEqual([...ORCHESTRATOR_ALLOWED_TOOLS].sort());
+      // ② 派生面真跑一遍：**保持宿主 allow-only 不动**（真实退役场景就是名单还在时组面上线），
+      //    组谓词只挡不放行、与名单取交集 ⇒ 面应与名单同集（清掉名单会弱化这条验证）
+      exec.setToolGroupSurface({
+        allowedGroups: new Set(['orchestrate']),
+        disabledGroups: new Set(),
+        disabledTools: new Set(),
+      });
+      const exposed = exec.list.map((t) => t.name);
+      expect([...exposed].sort()).toEqual([...ORCHESTRATOR_ALLOWED_TOOLS].sort());
+      // ③ 反例：技术工具在组谓词面下仍不可见（组面不打开后门）
+      for (const name of TECHNICAL_TOOLS) {
+        expect(exposed, `组谓词面漏进技术工具：${name}`).not.toContain(name);
+      }
+    } finally {
+      await disposeProbe(probe);
+    }
+  }, 120_000);
 });

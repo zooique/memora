@@ -615,6 +615,7 @@ export interface WorkSessionBrief {
  */
 const LIST_WORK_SESSIONS_DEFINITION: ToolDefinition = {
   name: LIST_WORK_SESSIONS_TOOL_NAME,
+  group: 'orchestrate',
   description:
     '列出当前工作区已知的会话（sid、标题、归档摘要、最后更新时间、状态、归属、角色包），' +
     '用于判断是否已有相关会话、避免重复新建。不含对话正文。' +
@@ -653,6 +654,7 @@ const LIST_WORK_SESSIONS_DEFINITION: ToolDefinition = {
  */
 const SEND_TO_SESSION_DEFINITION: ToolDefinition = {
   name: SEND_TO_SESSION_TOOL_NAME,
+  group: 'orchestrate',
   description:
     '向指定会话发送一条输入，由该会话继续处理。sid 必须来自 list_work_sessions。' +
     '目标会话正在运行时返回 E_BUSY（不排队）；被另一个窗口占用时返回 E_LOCKED（不排队）。' +
@@ -681,6 +683,7 @@ const SEND_TO_SESSION_DEFINITION: ToolDefinition = {
  */
 const STOP_WORK_SESSION_DEFINITION: ToolDefinition = {
   name: STOP_WORK_SESSION_TOOL_NAME,
+  group: 'orchestrate',
   description:
     '停止一条**当前仍由代理驱动**的会话正在跑的活（复用用户停止的同一条路径）。' +
     '目标正由用户接管、或本来就是用户自己建的，返回 E_DENIED（判据是当前驱动权，不是出生记录）；' +
@@ -711,6 +714,7 @@ const STOP_WORK_SESSION_DEFINITION: ToolDefinition = {
  */
 const PAUSE_WORK_SESSION_DEFINITION: ToolDefinition = {
   name: PAUSE_WORK_SESSION_TOOL_NAME,
+  group: 'orchestrate',
   description:
     '暂停一条**当前仍由代理驱动**的会话（软暂停：当前步骤结束后生效，历史保留，可再恢复）。' +
     '目标正由用户接管、或本来就是用户自己建的，返回 E_DENIED（判据是当前驱动权，不是出生记录）；' +
@@ -740,6 +744,7 @@ const PAUSE_WORK_SESSION_DEFINITION: ToolDefinition = {
  */
 const RESUME_WORK_SESSION_DEFINITION: ToolDefinition = {
   name: RESUME_WORK_SESSION_TOOL_NAME,
+  group: 'orchestrate',
   description:
     '恢复一条**当前仍由代理驱动**的会话（复用宿主既有续跑路径，不新造流）。' +
     '目标正由用户接管、或本来就是用户自己建的，返回 E_DENIED（判据是当前驱动权，不是出生记录）；' +
@@ -773,6 +778,7 @@ const RESUME_WORK_SESSION_DEFINITION: ToolDefinition = {
  */
 const CREATE_SESSION_DEFINITION: ToolDefinition = {
   name: CREATE_SESSION_TOOL_NAME,
+  group: 'orchestrate',
   description:
     '创建一个新会话，并让它开始处理第一轮任务。rolePack **必填**：必须是 list_role_packs 返回的' +
     'name（代理没有「切换角色包」的能力，开活前先定清楚，省了或包名不存在都会被拒）。' +
@@ -826,6 +832,7 @@ const CREATE_SESSION_DEFINITION: ToolDefinition = {
  */
 const LIST_ROLE_PACKS_DEFINITION: ToolDefinition = {
   name: LIST_ROLE_PACKS_TOOL_NAME,
+  group: 'orchestrate',
   description:
     '列出当前可用的角色包（名称、展示名、描述、来源：内置 / 用户 / 项目），用于给 create_session 挑包。' +
     '主控能选的包与用户自己能选的完全相同，没有额外授权。',
@@ -848,6 +855,7 @@ const LIST_ROLE_PACKS_DEFINITION: ToolDefinition = {
  */
 const READ_MEMORY_SUMMARY_DEFINITION: ToolDefinition = {
   name: READ_MEMORY_SUMMARY_TOOL_NAME,
+  group: 'orchestrate',
   description:
     '读取指定会话的记忆摘要：会话级归档摘要、关键主题、最近若干轮的摘要（不含原始对话）。' +
     'sid 必须来自 list_work_sessions；不接受 roundId，也不返回任何轮的原始对话。' +

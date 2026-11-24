@@ -545,6 +545,48 @@ describe('mergeStrategy — 策略合并', () => {
     const result = mergeStrategy(lowTemp, { act: { temperature: 1.2 } });
     expect(result.act!.temperature).toBe(1.2);
   });
+
+  // ── 禁用表两键（tasks/01 §7.5 陷阱 2）：合并取**并集**，不是覆盖侧整体胜 ──
+
+  it('disableGroups 跨层合并取并集（各层禁的都禁，不被覆盖侧冲掉）', () => {
+    const layer1 = mergeStrategy(base, { act: { disableGroups: ['readonly'] } });
+    const result = mergeStrategy(layer1, { act: { disableGroups: ['act'] } });
+    expect([...(result.act!.disableGroups ?? [])].sort()).toEqual(['act', 'readonly']);
+  });
+
+  it('disableTools 跨层合并取并集（浅合并会把下层禁用项整份替换 = 放松，须挡住）', () => {
+    const layer1 = mergeStrategy(base, { act: { disableTools: ['run_command'] } });
+    const result = mergeStrategy(layer1, { act: { disableTools: ['write_file'] } });
+    expect([...(result.act!.disableTools ?? [])].sort()).toEqual(['run_command', 'write_file']);
+  });
+
+  it('禁用表合并去重（重复项不影响语义，但会让「禁了几个」的计数失真）', () => {
+    const layer1 = mergeStrategy(base, { act: { disableTools: ['run_command', 'write_file'] } });
+    const result = mergeStrategy(layer1, { act: { disableTools: ['run_command'] } });
+    expect([...(result.act!.disableTools ?? [])].sort()).toEqual(['run_command', 'write_file']);
+  });
+
+  it('单侧未声明时取另一侧（undefined = 该层不生效，不是「禁空表」）', () => {
+    const onlyBase = mergeStrategy(
+      { act: { disableGroups: ['orchestrate'] } },
+      { act: { temperature: 0.5 } },
+    );
+    expect(onlyBase.act!.disableGroups).toEqual(['orchestrate']);
+    const onlyOverride = mergeStrategy(base, { act: { disableTools: ['run_command'] } });
+    expect(onlyOverride.act!.disableTools).toEqual(['run_command']);
+    const neither = mergeStrategy(base, { act: { temperature: 0.5 } });
+    expect(neither.act!.disableGroups).toBeUndefined();
+    expect(neither.act!.disableTools).toBeUndefined();
+  });
+
+  it('禁用表合并结果仍是数组（若被误路由进标量秩裁决，此处会变成非数组而红）', () => {
+    const merged = mergeStrategy(
+      { act: { disableGroups: ['readonly'], disableTools: ['run_command'] } },
+      { act: { disableGroups: ['act'], disableTools: ['write_file'] } },
+    );
+    expect(Array.isArray(merged.act!.disableGroups)).toBe(true);
+    expect(Array.isArray(merged.act!.disableTools)).toBe(true);
+  });
 });
 
 // ════════════════════════════════════════════════════════

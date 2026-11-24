@@ -24,7 +24,12 @@ import { SecurityGuard } from '@/security/pathGuard.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/strategyResolver.js';
-import { isTemperature, MAX_OUTPUT_LIMIT } from '@/role-pack/strategyKeys.js';
+import {
+  isTemperature,
+  MAX_OUTPUT_LIMIT,
+  normalizeDisableTools,
+  type ToolGroup,
+} from '@/role-pack/strategyKeys.js';
 import type { BehaviorStrategy } from '@/role-pack/types.js';
 import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
@@ -1752,11 +1757,43 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       logger.warn({ name }, '切换角色包失败（不存在或切换锁已激活）');
       return false;
     }
+    // 装配期核对 disableTools 是否都是已注册工具名（tasks/01 §7.6 锚点 3）：
+    // validator 无 IO 判不了未知名，拼错的条目在 isToolExposed 里永远匹配不上 = 静默失效，
+    // 故在此（切换入口、每次用户动作只跑一次）报出来。
+    this.reportUnknownDisableTools();
     this.emit(AGENT_EVENTS.rolePackSwitched, { from: prevName ?? '', to: name });
     this.refreshRolePackPrefixOnLoop();
     this.applyRolePackToolExposure();
     logger.info({ rolePack: name }, '角色包切换');
     return true;
+  }
+
+  /**
+   * 核对激活角色包的 `disableTools` 是否都是已注册工具名（tasks/01 §7.6 锚点 3）。
+   *
+   * 为什么只能在这里报：`validator` 是纯函数、拿不到工具注册表（无 IO），判不了「这个名字存不存在」；
+   * 而拼错的条目在 `isToolExposed` 里永远匹配不上 ⇒ **用户以为关了、实际开着**（禁用方向 fail-open）。
+   * 只在切换入口跑（每次用户动作一次），不在每轮 Prepare 跑——否则日志会被同一条错误刷屏。
+   *
+   * 只报不拦：拦下会让整个角色包切不过去，用户连「哪个名字写错了」都看不到；
+   * 而包的其余能力（persona / 能力位 / 技能）并无问题，为一条工具名全盘拒绝过重。
+   *
+   * **刻意不挂到 init**：装配期宿主工具可能尚未 `registerTool`（宿主在 assemble 之后注入），
+   * 此刻核对会把合法的宿主 / MCP 工具名误报成「未注册」——假警报比晚报一次更伤信任。
+   * 用户切的第一次包（或任何一次 switchRolePack）时一切已就绪，是安全且足够的时机。
+   */
+  private reportUnknownDisableTools(): void {
+    if (!this.toolExec) return;
+    const act = this._rolePackManager?.getActive()?.strategy.act;
+    const names = normalizeDisableTools(act?.disableTools ?? []) ?? [];
+    if (names.length === 0) return;
+    const unknown = names.filter((n) => !this.toolExec!.isKnownTool(n));
+    if (unknown.length > 0) {
+      logger.error(
+        { rolePack: this._rolePackManager?.activeName, unknown },
+        '角色包 disableTools 含未注册工具名：这些条目不会生效（工具仍然可见），请改正 manifest 后重新切换',
+      );
+    }
   }
 
   /**
@@ -1934,6 +1971,35 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // undefined ⇒ null（setToolWhitelist(null) = 不设白名单）；[] ⇒ resolveCapabilityTools([]) = []（仅常驻）
     const whitelist = capabilities === undefined ? null : resolveCapabilityTools(capabilities);
     this.toolExec.setToolWhitelist(whitelist);
+
+    // ── 组面派生（tasks/01 §7.2 · 判据在 ToolExecutor.isToolExposed 查询期执行）──
+    const kind = active?.meta.kind;
+    const act = active?.strategy.act;
+    const disabledGroups = act?.disableGroups;
+    // kind 的正向授权组（§7.3 kind 表）：assistant 只给 orchestrate；
+    // work / 未声明 ⇒ null（不设正向面 = 默认全开，ADR-045）。本行是该映射的唯一定义点。
+    const allowedGroups: ReadonlySet<ToolGroup> | null =
+      kind === 'assistant' ? new Set<ToolGroup>(['orchestrate']) : null;
+    // disableTools 双形态（JSON 数组 / 宿主表单逗号串）在此归一。
+    // 非法值已在装载期被 validator 拦下（error 级包进不了这里），故归一失败只可能是
+    // 绕过校验的内存态——按空表处理（不扩大禁用面，也不改判 kind）。
+    const disabledToolNames = normalizeDisableTools(act?.disableTools ?? []) ?? [];
+    const hasDisable = (disabledGroups?.length ?? 0) > 0 || disabledToolNames.length > 0;
+
+    // 未声明 kind 且无禁用表 ⇒ 不启用组面（存量零变化：宿主 allowOnly / deny 逐字继续生效）
+    if (allowedGroups === null && !hasDisable) {
+      this.toolExec.setToolGroupSurface(null);
+      return;
+    }
+
+    // 注意：这里**不动**宿主 allowOnlyTools。组面只做收紧，isToolExposed 里与之取交集；
+    // 若在此清掉 allowOnly，切回 work 包时没有任何地方能恢复它（宿主只在装配期设一次）
+    // ⇒ 封闭工具面被永久炸开（fail-open）。kind 的收紧靠「组谓词遮蔽」实现，不靠清除。
+    this.toolExec.setToolGroupSurface({
+      allowedGroups,
+      disabledGroups: new Set(disabledGroups ?? []),
+      disabledTools: new Set(disabledToolNames),
+    });
   }
 
   // ─── 记忆生命周期 ───────────────────────────────────────

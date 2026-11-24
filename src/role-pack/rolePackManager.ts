@@ -805,6 +805,15 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       author: str(manifest['author']),
       formatVersion: str(manifest['formatVersion']) ?? DEFAULT_FORMAT_VERSION,
       interactionType: manifest['interactionType'] === 'companion' ? 'companion' : 'tool_assistant',
+      // 角色包工种（工具面判据）：**未声明保持 undefined**（「未声明 ⇒ 不产生组限制」依赖这个区分）。
+      // 显式非法值已在上游被 validator 以 INVALID_KIND error 拦下（error 级包进不了这里），
+      // 故此处只做「合法值透传 + 未声明留空」——不是「静默容错」，拦截职责在 validator。
+      kind:
+        manifest['kind'] === 'assistant'
+          ? 'assistant'
+          : manifest['kind'] === 'work'
+            ? 'work'
+            : undefined,
       aiIdentityDisclosure: manifest['aiIdentityDisclosure'] === false ? false : true,
       // 未成年人保护为强制项（非可配置）：恒为 'required'，与 validator「仅支持 required」一致；
       // validator 对显式非法值（非 'required'）记 error、阻塞装载；缺省时 validator 放行，

@@ -759,6 +759,7 @@ interface ToolDefinition {
   readonly?: boolean;          // 只读工具标记：true = readonly 模式下保留；缺省 false = 写操作，readonly 模式被阻止
                                // 内置工具与自定义/MCP 工具同样受此闸约束：闸查「全部工具定义」（含自定义、不受 toolWhitelist 暴露面影响）
   diskWrite?: 'none' | 'path' | 'opaque'; // 改盘声明（与 readonly 正交）：'none' 明确不改项目磁盘；'path' 按 args.path 定位目标做写串行；'opaque' 与一切写互斥；缺省 = fail-closed 按 'opaque'（漏声明不得静默当成不改盘）
+  group?: 'readonly' | 'act' | 'orchestrate'; // 分组唯一分类真源（角色包 disableGroups 的判据）：'readonly' 只读不改盘 / 'act' 改盘·执行·挂起会话 / 'orchestrate' 会话管理。缺省 = fail-closed 按 'act'（漏声明只会被纯只读包一起禁掉，不会漏进助手包）。与 readonly 正交：readonly 管执行期闸，group 管暴露期分组
   confirmPolicy?: 'always' | 'audit'; // 自定义工具审批策略：'always' 每次过确认闸；'audit' 过闸自动放行仍落审计；缺省 = 不过闸不审计（历史行为）
 }
 

@@ -631,7 +631,15 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
   },
   ToolDefinition: {
     kind: 'interface',
-    members: ['confirmPolicy', 'description', 'diskWrite', 'name', 'parameters', 'readonly'],
+    members: [
+      'confirmPolicy',
+      'description',
+      'diskWrite',
+      'group',
+      'name',
+      'parameters',
+      'readonly',
+    ],
   },
   ToolContext: { kind: 'interface', members: ['guardPath', 'signal'] },
   WriteExtensions: { kind: 'interface', members: ['onBeforeWrite'] },
@@ -645,6 +653,7 @@ const EXPECTED: Record<string, { kind: string; members: string[] }> = {
       'formatVersion',
       'handoffPrompt',
       'interactionType',
+      'kind',
       'minorProtection',
       'name',
       'version',
@@ -1290,6 +1299,11 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
       // 转发别名（逐行等价 `allToolDefinitions`，全仓零调用），按 DEPRECATE-1 移除，不还原。
       'get currentToolWhitelist',
       'get list',
+      // 2026-11-24 新增（工具面分组 · tasks/01 §7.6 锚点 3）：装配面已注册性核对口。
+      // 真消费者 = Agent.reportUnknownDisableTools（切换角色包时核 strategy.act.disableTools
+      // 是否都是已注册工具名）。定性 = 真能力：validator 是纯函数拿不到注册表，拼错的禁用
+      // 条目在 isToolExposed 里永远匹配不上 = 静默失效，只有本口能报出来。
+      'isKnownTool',
       'listResources',
       'listSkills',
       'planManager',
@@ -1326,6 +1340,12 @@ const REACHABLE_MEMBERS: Record<string, { kind: string; members: string[] }> = {
       // 与 setDenyTools 同形态且语义互斥。真消费者 = assembler.assembleComponents
       // （AgentOptions.allowOnlyTools 透传）；定性 = 真能力：不注入时现有消费者逐字不变。
       'setToolAllowOnly',
+      // 2026-11-24 新增（工具面分组 · tasks/01 §7.2）：组面启用口，与
+      // setDenyTools / setToolAllowOnly 同为公开面方法但**不互斥**——三轴在 isToolExposed
+      // 里取交集（组面只挡不放行），互斥会迫使清除宿主封闭面并留下无法恢复的 fail-open 窗口。
+      // 真消费者 = Agent.applyRolePackToolExposure（每轮 Prepare 按 kind 派生）。
+      // 定性 = 真能力：不启用时 toolGroupSurface 恒 null，isToolExposed 既有判据链逐字不变。
+      'setToolGroupSurface',
       'setToolWhitelist',
     ],
   }, // 来源 Agent.tools / 宿主调用 7 个 / 文件 F:\zooique\memora\src\agent\toolExecutor.ts
@@ -1583,7 +1603,16 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    .collectDispatchedChildren\`（按会话从末尾往前 20 轮、命中即停重建「被派过活」清单）。\n` +
       `    写入方 = 宿主两处 \`agent.chat(opts)\`（\`dispatchHostedInput\` / \`hostedSessionCreate\`），\n` +
       `    只记**真的落了轮**的动作：被拒 / 超时 / 目标不存在不建轮，因此天然不写。\n` +
-      `    代价 = 零（可选字段：老轮次读不到 ⇒ 反查不认、也不许倒推创建者，无 deprecation 需求）。`;
+      `    代价 = 零（可选字段：老轮次读不到 ⇒ 反查不认、也不许倒推创建者，无 deprecation 需求）。\n` +
+      `\n  ㉓ ToolDefinition.group + RolePackMeta.kind 新增（2026-11-24 · 工具面分组，非 Breaking）：\n` +
+      `    定性 = **真能力**（非 no-op 谎报）：\n` +
+      `      · group 是工具分组唯一分类真源（readonly / act / orchestrate），消费面 =\n` +
+      `        ToolExecutor.isToolExposed 的查询期组谓词（strategy.act.disableGroups 判据）。\n` +
+      `      · kind 是角色包工种（work / assistant），消费面 = Agent.applyRolePackToolExposure\n` +
+      `        按 §7.2 单轴规则派生 allowedGroups（assistant ⇒ 只留 orchestrate 组）。\n` +
+      `    缺省即保守：无 group ⇒ fail-closed 归 act；无 kind ⇒ work（存量包行为零变化）。\n` +
+      `    代价 = 零（两个都是可选字段：老 manifest / 老工具定义读不到即按缺省解释，\n` +
+      `    无 deprecation 需求，不还原、不写 CHANGELOG）。`;
     expect(
       issues,
       `\n成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,
@@ -1619,7 +1648,15 @@ describe('公开成员面登记守卫（PUBLIC-MEMBER-SURFACE-1）', () => {
       `    但 Agent.get security 返回它 ⇒ 消费者可达。宿主真实消费 setConfirmWrites /\n` +
       `    setConfirmScripts / setAllowedPaths（设置面板热更新 + 装配层注入），5.1.0 新增的\n` +
       `    requestToolCallConfirmation 亦在其上 ⇒ 删改这些方法此前**零闸门红**（真伤）。\n` +
-      `    本层闭合该缺口。`;
+      `    本层闭合该缺口。\n` +
+      `  ② ToolExecutor.setToolGroupSurface / isKnownTool 新增（2026-11-24 · 工具面分组，非 Breaking）：\n` +
+      `    定性 = **真能力**：\n` +
+      `      · setToolGroupSurface 是组面启用口（Agent.applyRolePackToolExposure 每轮 Prepare 调用），\n` +
+      `        与 setDenyTools / setToolAllowOnly 同为公开面方法，但三轴**不互斥**、在 isToolExposed\n` +
+      `        里取交集（组面只挡不放行）；互斥会迫使清掉宿主封闭面且切回时无法恢复（fail-open）。\n` +
+      `      · isKnownTool 供装配期核对 strategy.act.disableTools 是否都是已注册工具名\n` +
+      `        （tasks/01 §7.6 锚点 3）——validator 无 IO 判不了未知名，只有本口能报。\n` +
+      `    不注入 / 不启用时 toolGroupSurface 恒 null，isToolExposed 既有判据链逐字不变。`;
     expect(
       issues,
       `\n可达成员面差异 ${issues.length} 项：\n${issues.map((s) => `  - ${s}`).join('\n')}\n${hint}`,

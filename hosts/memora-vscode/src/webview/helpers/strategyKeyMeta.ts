@@ -77,6 +77,19 @@ export const STRATEGY_KEY_META: Record<string, StrategyKeyMetaEntry> = {
     tip: 'full = full read and write; readonly = read-only operations only (safer)',
     valueLabels: { full: 'Full permissions', readonly: 'Read-only mode' },
   },
+  disableGroups: {
+    label: 'Turn off tool groups',
+    tip: 'Hide whole tool groups from the model before it ever sees them (tools that only read; tools that change files or run things; session management tools). All unchecked = everything stays visible.',
+    optionLabels: {
+      readonly: 'Read-only tools',
+      act: 'Tools that change things',
+      orchestrate: 'Session management tools',
+    },
+  },
+  disableTools: {
+    label: 'Turn off specific tools',
+    tip: 'Hide individual tools from the model, separated by commas (e.g. run_command, write_file). Blank = nothing hidden. Names are checked against the registered tools when the pack is applied — a typo is reported, not silently ignored.',
+  },
   summary: {
     label: 'Memory summary',
     tip: 'on = generate a memory summary after each turn; off = do not generate',

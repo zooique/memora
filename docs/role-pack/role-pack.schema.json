@@ -49,6 +49,13 @@
       "default": "tool_assistant",
       "description": "交互类型：tool_assistant（工具型工作助手，豁免区间）/ companion（拟人化陪伴，需完整合规校验）"
     },
+
+    "kind": {
+      "type": "string",
+      "enum": ["work", "assistant"],
+      "default": "work",
+      "description": "工种（工具面判据，与 interactionType 是两根正交轴，不可合并）：work=工作包（默认不设任何工具面，仅当声明了 disableGroups/disableTools 时按组过滤）/ assistant=助手包（只有 orchestrate 组，不给写盘与执行工具）。省略=work（存量包行为零变化）；写错由校验器报 INVALID_KIND error，不静默退回 work"
+    },
     "aiIdentityDisclosure": {
       "type": "boolean",
       "default": true,
@@ -125,6 +132,31 @@
               "minimum": 0,
               "maximum": 16,
               "description": "同一步可并行的子会话额度：0=关闭派发（delegate_task 不可见），省略=内核缺省 4。额度只约束同一批 tool_call 内最多并行几个，不会让模型自动并行；越界由校验器报 error，不静默回退缺省值"
+            },
+            "disableGroups": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["readonly", "act", "orchestrate"] },
+              "minItems": 1,
+              "maxItems": 3,
+              "uniqueItems": true,
+              "description": "整组关闭（暴露期摘除，模型根本看不见）：readonly=只读工具 / act=改盘执行类工具 / orchestrate=会话管理工具。省略=全开（ADR-045 默认全开）；与 toolReadonly 分工——后者是执行期闸（看得见但调用时拒绝），本键是根本看不见。写错组名由校验器报 error，不静默忽略"
+            },
+            "disableTools": {
+              "description": "单个工具关闭（暴露期摘除）：工具名，省略=不摘除。两种写法都合法——JSON 数组（manifest 作者面）或逗号分隔字符串（宿主表单面），内核按同一真源归一。拼错的工具名校验器判不了（纯函数无 IO），须在装配期对照工具注册表报错——静默忽略等于用户以为关了、实际开着",
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+                  "minItems": 1,
+                  "maxItems": 64,
+                  "uniqueItems": true
+                },
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                }
+              ]
             }
           },
           "additionalProperties": false

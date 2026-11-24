@@ -33,6 +33,7 @@ export const GET_DISPATCH_PROGRESS_TOOL_NAME = 'get_dispatch_progress';
  */
 export const GET_DISPATCH_PROGRESS_DEFINITION: ToolDefinition = {
   name: GET_DISPATCH_PROGRESS_TOOL_NAME,
+  group: 'orchestrate',
   description:
     '查看你通过 send_to_session / create_session 派出去的活的落实情况，返回一段可直接给用户看的报告。' +
     '使用时机：只在用户问「进展 / 状态 / 那件事怎么样了 / 我让你做的事呢」时调用；' +

@@ -26,6 +26,13 @@ import {
   isTemperature,
   isSummaryFocus,
   isAskOn,
+  TOOL_GROUPS,
+  isDisableGroups,
+  isDisableTools,
+  normalizeDisableTools,
+  MAX_TOOL_NAME_LENGTH,
+  MAX_DISABLE_TOOLS,
+  MAX_DISABLE_TOOLS_TEXT_LENGTH,
   MAX_OUTPUT_LIMIT,
   MAX_TOOL_STEP_LIMIT,
   MAX_SUBAGENT_CONCURRENCY,
@@ -129,6 +136,89 @@ describe('strategyKeys — 校验辅助函数', () => {
       expect(isAskOn({})).toBe(false);
     });
   });
+
+  describe('isDisableGroups', () => {
+    it('三组任一子集通过（单组与多组）', () => {
+      expect(isDisableGroups(['act'])).toBe(true);
+      expect(isDisableGroups(['readonly'])).toBe(true);
+      expect(isDisableGroups(['orchestrate'])).toBe(true);
+      expect(isDisableGroups(['readonly', 'act', 'orchestrate'])).toBe(true);
+    });
+
+    it('写错组名不通过（静默忽略 = 用户以为关了、实际开着，故必须报错）', () => {
+      expect(isDisableGroups(['ReadOnly'])).toBe(false); // 大小写敏感
+      expect(isDisableGroups(['write'])).toBe(false);
+      expect(isDisableGroups([''])).toBe(false);
+      expect(isDisableGroups(['act', 'bogus'])).toBe(false);
+    });
+
+    it('空数组 / 非数组不通过（空 = 未声明语义，不该由「写了个空数组」表达）', () => {
+      expect(isDisableGroups([])).toBe(false);
+      expect(isDisableGroups('act')).toBe(false);
+      expect(isDisableGroups(null)).toBe(false);
+      expect(isDisableGroups(undefined)).toBe(false);
+      expect(isDisableGroups(1)).toBe(false);
+    });
+
+    it('重复堆叠超组数不通过（防重复项撑爆）', () => {
+      expect(isDisableGroups(['act', 'act', 'act', 'act'])).toBe(false);
+    });
+
+    it('元素含非字符串不通过', () => {
+      expect(isDisableGroups(['act', 1])).toBe(false);
+      expect(isDisableGroups([1, 2])).toBe(false);
+    });
+  });
+
+  describe('isDisableTools / normalizeDisableTools（双形态归一）', () => {
+    it('JSON 数组形态（manifest 作者面）通过', () => {
+      expect(isDisableTools(['run_command'])).toBe(true);
+      expect(isDisableTools(['run_command', 'write_file', 'delete_file'])).toBe(true);
+      expect(normalizeDisableTools(['run_command', 'write_file'])).toEqual([
+        'run_command',
+        'write_file',
+      ]);
+    });
+
+    it('逗号分隔字符串形态（宿主表单 text 面）通过并拆分', () => {
+      expect(isDisableTools('run_command, write_file')).toBe(true);
+      expect(normalizeDisableTools('run_command,write_file')).toEqual([
+        'run_command',
+        'write_file',
+      ]);
+      expect(normalizeDisableTools('  run_command ,  write_file  ')).toEqual([
+        'run_command',
+        'write_file',
+      ]);
+    });
+
+    it('空格项被剔除，剔完为空 ⇒ 判错（空数组 ≡ 未声明 = 全开，不能由错值洗成全开）', () => {
+      expect(normalizeDisableTools('')).toEqual([]);
+      expect(isDisableTools('')).toBe(false);
+      expect(isDisableTools([])).toBe(false);
+      expect(isDisableTools(['   '])).toBe(false);
+      expect(normalizeDisableTools(['a', ''])).toEqual(['a']);
+    });
+
+    it('非法形态返回 null 而非空数组（静默折成「全开」是 fail-open）', () => {
+      expect(normalizeDisableTools(null)).toBeNull();
+      expect(normalizeDisableTools(undefined)).toBeNull();
+      expect(normalizeDisableTools(1)).toBeNull();
+      expect(normalizeDisableTools({})).toBeNull();
+      expect(normalizeDisableTools(['a', 1])).toBeNull(); // 混型数组
+      expect(isDisableTools(null)).toBe(false);
+      expect(isDisableTools({})).toBe(false);
+    });
+
+    it('条数与单项长度上限（防 prompt 注入膨胀）', () => {
+      expect(isDisableTools(['x'.repeat(MAX_TOOL_NAME_LENGTH)])).toBe(true);
+      expect(isDisableTools(['x'.repeat(MAX_TOOL_NAME_LENGTH + 1)])).toBe(false);
+      const many = Array.from({ length: MAX_DISABLE_TOOLS }, (_, i) => `tool_${i}`);
+      expect(isDisableTools(many)).toBe(true);
+      expect(isDisableTools([...many, 'one_more'])).toBe(false);
+      expect(isDisableTools('x'.repeat(MAX_DISABLE_TOOLS_TEXT_LENGTH + 1))).toBe(false);
+    });
+  });
 });
 
 // ══════════════════════════════════════════════════════════════
@@ -151,6 +241,8 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       'multiStepReasoning',
       'toolReadonly',
       'subagentConcurrency',
+      'disableGroups',
+      'disableTools',
     ],
     reflect: ['summary', 'selfReview', 'userFollowup'],
     global: ['askOn', 'askLimit', 'webSearchLimit', 'errorHandling', 'contextLimit', 'stepBudget'],
@@ -690,6 +782,25 @@ describe('strategyKeys — describeStrategyKeys 键面派生（RP-EDIT-1）', ()
     });
   });
 
+  // 验收锚点（tasks/01 §7.6 锚点 8）：禁用表两键不得落 number 兜底——
+  // 落 number = 宿主 UI 渲染成数字输入框（假 UI 面），用户填不了工具名/组名。
+  it('disableGroups → kind=multi，可选值带出三组闭集（不是 number）', () => {
+    expect(faceMap.get('act.disableGroups')).toEqual({
+      stage: 'act',
+      key: 'disableGroups',
+      kind: 'multi',
+      options: TOOL_GROUPS,
+    });
+  });
+
+  it('disableTools → kind=text（开放集枚举不出全集，只能文本输入；不是 number）', () => {
+    const face = faceMap.get('act.disableTools');
+    expect(face?.kind).toBe('text');
+    expect(face).toMatchObject({ stage: 'act', key: 'disableTools' });
+    // text 面的 range 是表单长度上界（非数值键的区间语义）
+    expect(face?.range).toEqual({ min: 1, max: MAX_DISABLE_TOOLS_TEXT_LENGTH });
+  });
+
   it('数值键 0 哨兵折算：0 合法的键 UI 下限折算为 0；askLimit（1 起）保持声明下限', () => {
     // outputLimit：validator range.min=1（正数声明下限），但 0=不干预合法 → UI 下限 0
     expect(faceMap.get('act.outputLimit')).toMatchObject({
@@ -727,8 +838,13 @@ describe('strategyKeys — describeStrategyKeys 键面派生（RP-EDIT-1）', ()
   // 此断言把注释里的口头承诺升级为会红的硬判据：将来新增不带 range 的 check 键
   // 且无专属分支 → 此处红灯，逼作者当场决策（补 range / 加专属分支 / 有意识放行）。
   it('不变式：所有 check 键均带 range 或有专属分支（describeStrategyKeys 的 else 路径当前不可达）', () => {
-    /** 有专属分支的 check 键（askOn → multi，summaryFocus → text） */
-    const DEDICATED_BRANCH_KEYS: ReadonlySet<string> = new Set(['askOn', 'summaryFocus']);
+    /** 有专属分支的 check 键（askOn → multi，summaryFocus → text，两个禁用表键 → multi/text） */
+    const DEDICATED_BRANCH_KEYS: ReadonlySet<string> = new Set([
+      'askOn',
+      'summaryFocus',
+      'disableGroups',
+      'disableTools',
+    ]);
     for (const [stage, rules] of Object.entries(STRATEGY_KEY_RULES)) {
       for (const [key, rule] of Object.entries(rules)) {
         if (rule.kind !== 'check') continue; // 只看 check 键（enum 键走第一分支）

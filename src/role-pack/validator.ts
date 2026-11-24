@@ -47,6 +47,7 @@ const MANIFEST_KEYS: ReadonlySet<string> = new Set([
   'description',
   'author',
   'interactionType',
+  'kind',
   'aiIdentityDisclosure',
   'minorProtection',
   'strategy',
@@ -57,6 +58,10 @@ const MANIFEST_KEYS: ReadonlySet<string> = new Set([
 
 /** 合规 interactionType 枚举 */
 const INTERACTION_TYPES: ReadonlySet<string> = new Set(['tool_assistant', 'companion']);
+
+/** 角色包工种枚举（`kind` 顶层键；缺省 work =存量包行为零变化）。
+ * 闭集：显式写错必须 error，不许静默折叠回 work（折叠 = 拼错的助手包静默拿到写盘工具，fail-open）。 */
+const ROLE_PACK_KINDS: ReadonlySet<string> = new Set(['work', 'assistant']);
 
 /** companion 全量强校验时的虚拟亲密关系红线特征词 */
 const INTIMATE_REDLINE_PATTERN =
@@ -185,6 +190,17 @@ function validateComplianceFields(
     });
   }
   const isCompanion = interactionType === 'companion';
+
+  // kind 枚举（缺省 work；显式非法值 error，不静默折叠）
+  const kind = manifest['kind'];
+  if (kind !== undefined && (typeof kind !== 'string' || !ROLE_PACK_KINDS.has(kind))) {
+    issues.push({
+      severity: 'error',
+      code: 'INVALID_KIND',
+      path: 'kind',
+      message: `kind 必须是 work | assistant（当前：${String(kind)}）；写错会让工具面静默退回 work`,
+    });
+  }
 
   // aiIdentityDisclosure 类型（缺省 true）
   const disclosure = manifest['aiIdentityDisclosure'];

@@ -524,3 +524,76 @@ describe('validateManifest：无消费远期键按未知键宽容', () => {
     expect(result.valid).toBe(true);
   });
 });
+
+describe('validateManifest：kind 与组名闭集（§7.6 锚点 2）', () => {
+  it('kind 拼写错误（"assisstant"）→ INVALID_KIND error（不静默折叠回 work）', () => {
+    // 折叠回 work = 拼错的助手包静默拿到写盘/执行工具（fail-open），必须 error 拦下
+    const result = validate({ kind: 'assisstant' });
+    expect(findByCode(result.issues, 'INVALID_KIND')).toHaveLength(1);
+    expect(findByCode(result.issues, 'INVALID_KIND')[0]?.severity).toBe('error');
+    expect(result.valid).toBe(false);
+  });
+
+  it('kind 非字符串（数字/布尔）→ INVALID_KIND error', () => {
+    expect(findByCode(validate({ kind: 1 }).issues, 'INVALID_KIND')).toHaveLength(1);
+    expect(findByCode(validate({ kind: true }).issues, 'INVALID_KIND')).toHaveLength(1);
+  });
+
+  it('kind 合法值（work / assistant）与缺省 → 无 INVALID_KIND', () => {
+    expect(findByCode(validate({ kind: 'work' }).issues, 'INVALID_KIND')).toHaveLength(0);
+    expect(findByCode(validate({ kind: 'assistant' }).issues, 'INVALID_KIND')).toHaveLength(0);
+    expect(findByCode(validate({ kind: undefined }).issues, 'INVALID_KIND')).toHaveLength(0);
+  });
+
+  it('kind 为已知顶层键（MANIFEST_KEYS 放行，不报未知键）', () => {
+    const result = validate({ kind: 'work' });
+    expect(findByCode(result.issues, 'UNKNOWN_TOP_LEVEL_KEY')).toHaveLength(0);
+  });
+
+  it('disableGroups 含非法组名 → INVALID_STRATEGY_VALUE error（组名也是闭集）', () => {
+    const result = validate({
+      strategy: {
+        ...validStrategy,
+        act: { ...validStrategy.act, disableGroups: ['readonly', 'write'] },
+      },
+    });
+    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
+    expect(result.valid).toBe(false);
+  });
+
+  it('disableGroups 合法（三组闭集子集）→ 通过', () => {
+    const result = validate({
+      strategy: { ...validStrategy, act: { ...validStrategy.act, disableGroups: ['act'] } },
+    });
+    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(0);
+    expect(result.valid).toBe(true);
+  });
+
+  it('disableTools 形状校验：数组与逗号字符串双形态合法，非字符串/超长 error', () => {
+    // 双形态（normalizeDisableTools）：JSON 数组与逗号分隔字符串都合法
+    const arr = validate({
+      strategy: { ...validStrategy, act: { ...validStrategy.act, disableTools: ['read_file'] } },
+    });
+    expect(findByCode(arr.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(0);
+
+    const csv = validate({
+      strategy: {
+        ...validStrategy,
+        act: { ...validStrategy.act, disableTools: 'read_file,run_command' },
+      },
+    });
+    expect(findByCode(csv.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(0);
+
+    // 非字符串/非数组（数字）→ 形状 error
+    const bad = validate({
+      strategy: { ...validStrategy, act: { ...validStrategy.act, disableTools: 42 } },
+    });
+    expect(findByCode(bad.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
+
+    // 工具名拼写错误 validator 判不了（纯函数无 IO），由装配期对照注册表判（§7.6 锚点 3）
+    const shapeOk = validate({
+      strategy: { ...validStrategy, act: { ...validStrategy.act, disableTools: ['read_fil'] } },
+    });
+    expect(findByCode(shapeOk.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(0);
+  });
+});

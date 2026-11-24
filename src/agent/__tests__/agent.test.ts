@@ -30,6 +30,7 @@ import { createPendingRoundFixture } from '@/memory/__tests__/helpers/roundFixtu
 import { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
 import { todayDate } from '@/utils/time.js';
 import { AGENT_EVENTS } from '@/utils/eventEmitter.js';
+import { logger } from '@/logging/logger.js';
 import { AgentLoop } from '@/agent/loop.js';
 
 // ═══════════════════════════════════════════════════════════════
@@ -1617,6 +1618,130 @@ describe('Agent · archiveMode · 二态归档模式（full|manual）', () => {
     expect(switched).toBe(false);
 
     agent.off('rolePackSwitched', () => {});
+  });
+
+  it('锚点 3：切换时 disableTools 含未注册工具名 → logger.error 报出（只报不拦）', async () => {
+    // validator 是纯函数无 IO，判不了工具名拼写——拼错的条目在 isToolExposed 里永远
+    // 匹配不上 = 用户以为关了、实际开着（禁用方向 fail-open），只能在切换入口对照注册表报
+    const packsDir = join(tmpConfig, 'role-packs');
+    const packDir = join(packsDir, '禁错工具的包');
+    mkdirSync(packDir, { recursive: true });
+    writeFileSync(
+      join(packDir, 'manifest.json'),
+      JSON.stringify(
+        {
+          name: '禁错工具的包',
+          formatVersion: '1.0.0',
+          strategy: { act: { disableTools: ['reda_file'] } },
+        },
+        null,
+        2,
+      ),
+      'utf-8',
+    );
+    writeFileSync(join(packDir, 'persona.md'), '你是测试包。', 'utf-8');
+
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    try {
+      // ① 拼错条目必须报出来（报不出 = 静默失效，没有任何测试会红）
+      expect(agent.switchRolePack('禁错工具的包')).toBe(true);
+      const reported = errorSpy.mock.calls.some((args) =>
+        String(args.at(-1) ?? '').includes('未注册工具名'),
+      );
+      expect(reported, '拼错的 disableTools 未被报出').toBe(true);
+      // 只报不拦：包的其余能力没问题，切换本身应成功
+      expect(agent.rolePack!.activeName).toBe('禁错工具的包');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('锚点 5（端到端）：manifest 声明 kind:assistant → 切换后 readonly/act 工具全不可见', async () => {
+    // 上面的组面测试直调 setToolGroupSurface，绕过了 manifest → applyRolePackToolExposure 的
+    // 派生链——这条把 kind 从磁盘 manifest 一路走到 isToolExposed，防接线漏了而组面单测照绿
+    const packsDir = join(tmpConfig, 'role-packs');
+    const packDir = join(packsDir, '纯编排包');
+    mkdirSync(packDir, { recursive: true });
+    writeFileSync(
+      join(packDir, 'manifest.json'),
+      JSON.stringify({ name: '纯编排包', formatVersion: '1.0.0', kind: 'assistant' }, null, 2),
+      'utf-8',
+    );
+    writeFileSync(join(packDir, 'persona.md'), '你只负责编排。', 'utf-8');
+
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    const baseline = agent.tools!.list.map((t) => t.name);
+
+    expect(agent.switchRolePack('纯编排包')).toBe(true);
+    // 内核零 orchestrate 内置工具（锚点 9 内核半边）⇒ 组谓词面为空；
+    // 关键判据是「技术工具一个不剩」——readonly 与 act 都必须消失
+    const names = agent.tools!.list.map((t) => t.name);
+    expect(names).not.toContain('read_file'); // readonly 组
+    expect(names).not.toContain('write_file'); // act 组
+    expect(names).not.toContain('search_memories'); // readonly 组
+    // 切回存量包（无 kind、无禁用表）⇒ 面逐项还原（锚点 4 的端到端半边）
+    expect(agent.switchRolePack('memora助手')).toBe(true);
+    expect(agent.tools!.list.map((t) => t.name).sort()).toEqual(baseline.sort());
+  });
+
+  it('锚点 6（端到端 · 回归）：切到 assistant 包再切回 work，宿主 allowOnly 封闭面不得丢失', async () => {
+    // 复现真实路径：宿主只在装配期设一次 allowOnly（宝的 10 项会话名单），运行期无人重设。
+    // 若组面启用时顺手把它清成 null，切回 work 包就没有任何地方能恢复 ⇒ 宝的技术工具全开。
+    const packsDir = join(tmpConfig, 'role-packs');
+    const asstDir = join(packsDir, '纯编排包');
+    mkdirSync(asstDir, { recursive: true });
+    writeFileSync(
+      join(asstDir, 'manifest.json'),
+      JSON.stringify({ name: '纯编排包', formatVersion: '1.0.0', kind: 'assistant' }, null, 2),
+      'utf-8',
+    );
+    writeFileSync(join(asstDir, 'persona.md'), '你只负责编排。', 'utf-8');
+
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    // 模拟宿主装配：封闭面 = 只给两个内核只读工具（真实名单是宿主会话工具，等价性由宿主测试守）
+    agent.tools!.setToolAllowOnly(['read_file', 'list_dir']);
+    const before = agent.tools!.list.map((t) => t.name).sort();
+    expect(before).toEqual(['list_dir', 'read_file']);
+
+    expect(agent.switchRolePack('纯编排包')).toBe(true);
+    // 切回存量 work 包（memora助手 未声明 kind / disable）
+    expect(agent.switchRolePack('memora助手')).toBe(true);
+    // 关键断言：封闭面原样还在（组面从未清除、也无需恢复）
+    expect(
+      agent.tools!.list.map((t) => t.name).sort(),
+      '切包往返后宿主 allowOnly 封闭面丢失 = 工具面被永久炸开（fail-open）',
+    ).toEqual(['list_dir', 'read_file']);
+  });
+
+  it('锚点 6（端到端）：work 包未声明 disable ⇒ setDenyTools / setToolAllowOnly 均未被调用', async () => {
+    // 单轴规则：存量包不许被组面逻辑顺手设了 deny / allowOnly——那会静默改掉宿主既有轴
+    const packsDir = join(tmpConfig, 'role-packs');
+    const packDir = join(packsDir, '普通工作包');
+    mkdirSync(packDir, { recursive: true });
+    writeFileSync(
+      join(packDir, 'manifest.json'),
+      JSON.stringify({ name: '普通工作包', formatVersion: '1.0.0' }, null, 2),
+      'utf-8',
+    );
+    writeFileSync(join(packDir, 'persona.md'), '普通工作。', 'utf-8');
+
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    const denySpy = vi.spyOn(agent.tools!, 'setDenyTools');
+    const allowSpy = vi.spyOn(agent.tools!, 'setToolAllowOnly');
+    try {
+      expect(agent.switchRolePack('普通工作包')).toBe(true);
+      expect(denySpy, '存量包被顺手设了 deny').not.toHaveBeenCalled();
+      expect(allowSpy, '存量包被顺手设了 allowOnly').not.toHaveBeenCalled();
+    } finally {
+      denySpy.mockRestore();
+      allowSpy.mockRestore();
+    }
   });
 
   // ─── manual 模式跳过自动归档 ────────────────────────────

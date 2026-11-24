@@ -17,6 +17,7 @@ import type {
   TOOL_MODES,
   TOOL_READONLY_MODES,
   USER_FOLLOWUPS,
+  ToolGroup,
 } from './strategyKeys.js';
 import type { RolePackValidationIssue } from './validator.js';
 
@@ -95,6 +96,23 @@ export interface ActStrategy {
    * ——是否并行仍由模型在一次回复里自行决定。
    */
   readonly subagentConcurrency?: number;
+  /**
+   * 整组关闭（**暴露期摘除**，模型根本看不见）：值 ∈ `TOOL_GROUPS` 三组闭集。
+   *
+   * 缺省不设 = 全开（ADR-045「默认未定义 = 全开，只有明确禁止才关闭」）。
+   * 与 `toolReadonly` 分工不重叠：后者是**执行期**闸（看得见但调用时拒绝，白烧 step），
+   * 本键与 `disableTools` 是**暴露期**摘除——纯只读包的正确写法是 `disableGroups: ['act']`。
+   * 合并取并集（各层禁的都禁），不走浅合并——见 `strategyResolver.DISABLE_SET_FIELDS`。
+   */
+  readonly disableGroups?: readonly ToolGroup[];
+  /**
+   * 单个工具关闭（**暴露期摘除**，同上）：工具名，缺省不设 = 不摘除。
+   *
+   * 双形态（JSON 数组 / 逗号分隔字符串）由 `normalizeDisableTools` 归一。
+   * **拼错的工具名 validator 判不了**（纯函数无 IO，拿不到工具注册表）——须在装配期
+   * 对照注册表报错：静默忽略 = 用户以为关了、实际开着（fail-open）。
+   */
+  readonly disableTools?: readonly string[];
 }
 
 /** 回答后（Reflect）沉淀策略集合 */
@@ -213,6 +231,13 @@ export interface RolePackMeta {
   readonly formatVersion?: string;
   /** 拟人化场景声明（tool_assistant=工具型默认 / companion=拟人化陪伴） */
   readonly interactionType?: 'tool_assistant' | 'companion';
+  /**
+   * 角色包工种（工具面判据，缺省 `work` = 存量包行为零变化）：
+   * - `work`      ：**不设正向组限制**（ADR-045 默认全开，注册了什么就能看见什么）；
+   * - `assistant` ：只有 `orchestrate` 组（定案 S1「Router 不配技术工具」）。
+   * 与 `interactionType`（拟人化）是两根正交轴，不得合并成一个枚举。
+   */
+  readonly kind?: 'work' | 'assistant';
   /** AI 身份标注（默认强制 true） */
   readonly aiIdentityDisclosure?: boolean;
   /** 未成年人保护（默认 required） */

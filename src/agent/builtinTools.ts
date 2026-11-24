@@ -51,6 +51,17 @@ export interface ToolDefinition {
    */
   readonly?: boolean;
   /**
+   * 角色包授权单位（分组唯一分类真源，`disableGroups` 的判据）：
+   * - `'readonly'`    ：只读工具（不改盘、也不改会话运行状态）；
+   * - `'act'`         ：能动手的工具（改盘 / 执行 / 挂起会话 / 改任务表与情报区）；
+   * - `'orchestrate'` ：会话管理工具（宿主注册，助手包的默认组）。
+   *
+   * **缺省 = fail-closed 按 `'act'` 处理**（同 `diskWrite` 范式：漏声明不得被静默当成无害）——
+   * 新工具漏标只会被纯只读包一起禁掉（fail-closed），不会漏进助手包。
+   * 分组只表达「这个工种能不能用」；「谁注册、何时注销」是另一根轴（来源），两者不折叠。
+   */
+  group?: ToolGroup;
+  /**
    * 改盘写声明（「这个工具算不算写盘工具」的唯一判据真源）：
    * - `'none'`：明确不改项目磁盘（读工具、内核数据工具如 task_table_*）→ 可全并发；
    * - `'path'`：按 `args.path` 定位目标的落盘写（write_file / delete_file，以及自定义工具）→ 同目标写串行；
@@ -110,6 +121,9 @@ export interface ToolDefinition {
 // ──────────────────────────────────────────────────────────
 
 import type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
+// 分组值域 SSOT：三组闭集单点定义在 strategyKeys（与 act.disableGroups 校验、键面 options 共用），
+// 本文件只引用类型——写死字面量会造第二份副本，改组名时漏改这里 = 静默漂移
+import type { ToolGroup } from '@/role-pack/strategyKeys.js';
 
 /**
  * 内置工具幂等性映射
@@ -213,6 +227,7 @@ export function shouldSkipForIdempotency(
  */
 export const WEB_SEARCH_TOOL: ToolDefinition = {
   name: 'web_search',
+  group: 'readonly',
   diskWrite: 'none',
   description: '搜索互联网获取实时信息。当需要最新数据、新闻、文档或无法从记忆中找到答案时使用。',
   // 读操作：readonly 模式下保留（对齐 web_fetch / search_memories）
@@ -235,6 +250,7 @@ export const WEB_SEARCH_TOOL: ToolDefinition = {
  */
 export const TRACE_SUMMARY_TOOL: ToolDefinition = {
   name: 'trace_summary',
+  group: 'readonly',
   diskWrite: 'none',
   description: '追溯轮次摘要的原始对话内容。当需要查看某条摘要对应的完整对话时使用。',
   readonly: true,
@@ -266,6 +282,7 @@ export const TRACE_SUMMARY_TOOL: ToolDefinition = {
  */
 export const COMPRESS_CONTEXT_TOOL: ToolDefinition = {
   name: 'compress_context',
+  group: 'act',
   diskWrite: 'none',
   description:
     '当上下文接近容量上限或空间紧张时主动压缩空间（第二级压缩，LLM 触发兜底）：把最早的 turn' +
@@ -304,6 +321,7 @@ export const COMPRESS_CONTEXT_TOOL: ToolDefinition = {
  */
 export const ASK_USER_TOOL: ToolDefinition = {
   name: 'ask_user',
+  group: 'act',
   diskWrite: 'none',
   description:
     '向用户提问（结构化）——当需要用户做决策、补充关键信息、或确认时使用：系统会暂停当前执行，' +
@@ -345,6 +363,7 @@ export const ASK_USER_TOOL: ToolDefinition = {
  */
 export const REMEMBER_INTEL_TOOL: ToolDefinition = {
   name: 'remember_intel',
+  group: 'act',
   diskWrite: 'none',
   description:
     '把一条关键信息写入你的私有情报区（工作笔记）。当你从大文本或工具结果中得到需要长期记住的要点时使用；' +
@@ -414,6 +433,7 @@ export const READ_IMAGE_MAX_PER_ROUND = 12;
  */
 export const WEB_FETCH_TOOL: ToolDefinition = {
   name: 'web_fetch',
+  group: 'readonly',
   diskWrite: 'none',
   description:
     '抓取指定网页的正文内容（搜索→抓取闭环的第二段）。当 web_search 找到候选链接、需要读取正文全文时使用。返回清洗后的纯文本。',
@@ -448,6 +468,7 @@ export function buildRunCodeTool(supportedLanguages?: readonly string[]): ToolDe
       : '';
   return {
     name: 'run_code',
+    group: 'act',
     description:
       '执行代码并返回运行结果（通用计算/数据处理/验证能力）。源码不进入上下文，仅执行结果返回。执行能力与隔离等级由宿主注入的执行器决定。' +
       '两种模式（二选一）：① 传 code 直接执行代码字符串；② 传 script_path 执行项目根下的脚本文件（相对项目根路径，cwd=项目根，脚本可 require 项目本地依赖、读取项目数据）。' +
@@ -505,6 +526,7 @@ export const RUN_CODE_TOOL: ToolDefinition = buildRunCodeTool();
  */
 export const SEARCH_PROJECT_TOOL: ToolDefinition = {
   name: 'search_project',
+  group: 'readonly',
   diskWrite: 'none',
   description:
     '在当前项目（当前工作区文件夹）中搜索文件。mode="name" 按文件名 glob（如 "**/*.ts"），' +
@@ -561,6 +583,7 @@ export const SEARCH_PROJECT_TOOL: ToolDefinition = {
  */
 export const DELEGATE_TASK_TOOL: ToolDefinition = {
   name: 'delegate_task',
+  group: 'act',
   // 显式 none：子会话被强制只读，本工具自身不改任何磁盘。
   // 不能靠「不声明」——未声明按 fail-closed 归 'opaque'，会被拉进执行面确认清单
   // （`confirmEntry` 派生集），而它没有确认入口，运行到确认点即 fail-closed 抛错。
@@ -614,6 +637,7 @@ export const DELEGATE_TASK_TOOL: ToolDefinition = {
  */
 export const RUN_TEAM_MEETING_TOOL: ToolDefinition = {
   name: 'run_team_meeting',
+  group: 'act',
   diskWrite: 'none',
   description:
     '召开评估/评审型小组会议：一次调用注入组内各角色（组长+组员，队长 1 + 组员 ≤ 4）的完整设定，' +
@@ -678,6 +702,7 @@ const WRITE_FILE_MODES_BRIEF = WRITE_FILE_MODES.map((m) => `${m.name}（${m.summ
 export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'read_file',
+    group: 'readonly',
     diskWrite: 'none',
     description:
       '读取项目内文件内容（按行分段返回）。路径必须相对项目根目录。' +
@@ -703,6 +728,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'read_image',
+    group: 'readonly',
     diskWrite: 'none',
     description:
       '读取图片并查看内容。path 既可传「文件」，也可传「目录」：' +
@@ -731,6 +757,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'write_file',
+    group: 'act',
     description:
       '写入或创建文件。owner 模式默认自动批准；guest 模式会要求用户确认。写入路径受白名单限制。' +
       `支持 ${WRITE_FILE_MODES.length} 种写入模式：${WRITE_FILE_MODES_BRIEF}。` +
@@ -765,6 +792,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'delete_file',
+    group: 'act',
     description:
       '删除项目内文件。用于清理 LLM 创建的临时脚本等一次性文件（配合 run_code 的 script_path 模式：写脚本 → 执行 → 删除，不留痕）。写入路径受白名单限制；owner 模式默认自动批准，guest 模式会要求用户确认。仅支持删除文件，不支持删除目录。',
     diskWrite: 'path',
@@ -778,6 +806,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'list_dir',
+    group: 'readonly',
     diskWrite: 'none',
     description:
       '列出目录内容。默认相对项目根目录。读取路径受白名单限制。递归深度 ≤ 3，自动忽略 .git / node_modules / .memora / dist / coverage / .next。',
@@ -794,6 +823,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'search_memories',
+    group: 'readonly',
     diskWrite: 'none',
     description:
       '关键词检索记忆库（纯关键词通道，无语义向量通道）。涉及过往决定、历史事实、' +
@@ -819,6 +849,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   TRACE_SUMMARY_TOOL,
   {
     name: 'list_sessions',
+    group: 'readonly',
     diskWrite: 'none',
     description:
       '列出历史会话的路标（每个会话的主题与摘要），用于定位"之前聊过某件事"具体在哪个会话。' +
@@ -842,6 +873,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   // ── 任务表管理工具 ──────────────────────────────
   {
     name: 'task_table_write',
+    group: 'act',
     diskWrite: 'none',
     description:
       '写入或更新任务表（命令式：多步任务必须先用本工具把任务拆解为子任务项写入任务表，随后按任务表逐步执行，禁止跳过拆解一次性盲目执行）。' +
@@ -883,6 +915,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'task_table_update',
+    group: 'act',
     diskWrite: 'none',
     description:
       '更新任务表中指定任务项的状态（命令式：一次只更新一个任务项）。将 plan_item_id 对应的任务项标记为 done（已完成）或 blocked（已阻塞）。' +
@@ -906,6 +939,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   // ── 渐进披露：角色包内嵌技能按需装载 ──────────────
   {
     name: 'read_skill',
+    group: 'readonly',
     diskWrite: 'none',
     description:
       '读取技能完整正文（渐进披露 L2，按需装载）：先查激活角色包内嵌技能，再查全局通用技能池。当需要执行某项技能时，先读取其正文获取详细步骤。技能名来自技能清单（角色包声明或全局通用技能）。',
@@ -922,6 +956,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   // ── 渐进披露 L3：资源/脚本分离 ──────────────────
   {
     name: 'read_resource',
+    group: 'readonly',
     diskWrite: 'none',
     description:
       '读取技能的参考资源文件（渐进披露 L3，按需调用）。技能含 resources/ 或 references/ 目录时，可通过此工具读取参考资料。资源路径相对技能的 resources/ 或 references/ 目录。',
@@ -941,6 +976,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'run_skill_script',
+    group: 'act',
     description:
       '执行技能的可执行脚本（渐进披露 L3）。脚本源码不进入上下文，仅执行结果返回。当技能含 scripts/ 目录时可调用。' +
       '扩展名推断运行时：.py→python、.js/.mjs/.cjs/.ts→node、.sh/.bash/.zsh/.bat/.cmd→shell。' +
@@ -964,6 +1000,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'run_project_script',
+    group: 'act',
     description:
       '运行项目内已有的脚本文件（默认开放，与角色包能力声明无关）。脚本路径相对项目根，越界（项目外路径）拒绝执行。' +
       '脚本源码不进入上下文，仅执行结果（stdout/stderr/退出码）返回。由内核子进程执行：超时默认 60s（上限 600s，' +
@@ -997,6 +1034,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'run_command',
+    group: 'act',
     description:
       '在工作区执行一条 shell 命令（Windows 经 cmd /c，类 Unix 经 sh -c），返回退出码与输出。' +
       '适用于构建、测试、git 查询等命令行走场景：命令本身不落盘成脚本文件，执行完即走。' +
@@ -1035,6 +1073,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'kill_command',
+    group: 'act',
     diskWrite: 'none',
     description:
       '终止由 run_command（background=true）启动的后台命令，返回截至终止时已捕获的输出。' +
@@ -1050,6 +1089,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'list_resources',
+    group: 'readonly',
     diskWrite: 'none',
     description:
       '列出技能的 L3 资源清单（渐进披露 L3）。返回 resources/ 与 references/ 目录下所有资源文件列表。',
@@ -1065,6 +1105,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'list_skills',
+    group: 'readonly',
     diskWrite: 'none',
     description:
       '列出当前可用的所有技能清单（渐进披露 L1 补充）。当技能数量较多（>50）时使用此工具查询。',
@@ -1079,6 +1120,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   // ── 作品投影：用户主动登记作品索引卡片 ──────────────────
   {
     name: 'register_work',
+    group: 'act',
     description:
       '登记作品索引：把用户的一件作品（文档/代码/笔记）登记为项目级文件索引，追加到 <memoraDir>/work-projections.json 清单中。当用户说「记住这个文件」「把这份文档登记为作品」时使用。path 为相对项目根的源文件路径，description 为作品的一句话说明。登记后 AI 在后续对话中会看到此索引，根据描述自主决定是否读取原文。',
     // 目标 = <memoraDir>/work-projections.json（非 args.path），且登记是「读盘 refresh → 追加 → 写盘」⇒ opaque 屏障
