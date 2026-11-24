@@ -38,7 +38,7 @@
 
 ```
 我的角色包/                        ← 文件夹，zip 压缩分发
-├── manifest.json                 # ★核心控制文件（唯一权威）：元数据 + strategy + skills 白名单 + capabilities 注册（内容文件纯约定名，不注册路径）
+├── manifest.json                 # ★核心控制文件（唯一权威）：元数据 + strategy + skills 白名单 + capabilities 注册 + kind + tools（内容文件纯约定名，不注册路径）
 ├── persona.md                    # 可选：身份设定（约定文件名，§2.3）
 ├── rules.md                      # 可选：确定性规则（约定文件名，§2.3）
 ├── skills/                       # 可选：内嵌技能（目录动态扫描，frontmatter 声明，§四 C3）
@@ -111,7 +111,7 @@
 
 * **manifest.json 是唯一的权威（SSOT）**：元数据 + L2 策略 + skills 白名单声明 + capabilities 注册全部在此，无第二份权威，同字段永不双写；
 
-* **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `handoffPrompt`（接手衔接提示词，自洽声明，§2.5）/ `skills`（可选白名单过滤，§四 C3）/ `capabilities`（能力声明顶层数组，§四 C2）。**不含内容文件路径字段**——persona.md / rules.md 为纯约定名，manifest 不注册路径（R7 纪律，§2.3）；
+* **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `kind`（角色包工种，工具面判据，`work` / 未声明均不设组限制，`assistant` 收窄为 orchestrate 组）/ `strategy`（L2 策略，§六）/ `handoffPrompt`（接手衔接提示词，自洽声明，§2.5）/ `skills`（可选白名单过滤，§四 C3）/ `capabilities`（能力声明顶层数组，§四 C2）/ `tools`（包内专属工具声明，装配期 IO 校验 + 三键批准闸，参考实现消费面见 role-pack-authoring-guide §2.7）。**不含内容文件路径字段**——persona.md / rules.md 为纯约定名，manifest 不注册路径（R7 纪律，§2.3）；
 
 > **`[草案]` 状态注记（2026-09-08 收敛）**：`homepage` / `repository` / `license` / `minKernelVersion` 为标准字段（生态通用元数据 + 版本兼容远期键），但当前**无参考实现消费**（memora 参考实现不读，按「未知键 warn + ignore」处理）。按 §六 双闸门纪律标 `[草案]`，征集实现验证后冻结；`keywords`/`trigger` 匹配字段见 §2.2 的 `[草案]` 注记。
 

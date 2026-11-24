@@ -201,7 +201,7 @@ function validateComplianceFields(
       severity: 'error',
       code: 'INVALID_KIND',
       path: 'kind',
-      message: `kind 必须是 work | assistant（当前：${String(kind)}）；写错会让工具面静默退回 work`,
+      message: `kind 必须是 work | assistant（当前：${String(kind)}）；非法值 error 拒装，不静默退回 work`,
     });
   }
 

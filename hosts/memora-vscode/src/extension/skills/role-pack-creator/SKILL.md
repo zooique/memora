@@ -20,10 +20,10 @@ layer: agent
 ## 核心执行骨架
 
 ```
-采集需求 → 脚本初始化骨架 → LLM 精修 → 校验 → 交付
+采集需求（五件事）→ 脚本初始化骨架 → LLM 精修 → 校验 → 交付
 ```
 
-- **采集需求**：问清角色名/定位/能力面/行为偏好（四件事）。
+- **采集需求**：问清角色名/定位/能力面/行为偏好/工种与工具面（五件事，最后一项缺省不收窄即可不填）。
 - **脚本初始化**：静态模板复制 + 填槽，产出 4 个文件骨架。
 - **LLM 精修**：唯一允许改的环节（manifest/persona/rules/skills）。
 - **校验**：写→验→用闭环，跑 `scripts/verify-pack.mjs` 确定性校验。
@@ -31,7 +31,7 @@ layer: agent
 
 ## 详细步骤
 
-### 第一步：采集需求（问清四件事）
+### 第一步：采集需求（问清五件事）
 
 | 项 | 决定 |
 |----|------|
@@ -39,6 +39,7 @@ layer: agent
 | 一句话定位 | `description` + persona 第一句 |
 | 能力面 | `capabilities`（特权键，或省略 = 全部暴露；`[]` = 仅默认常驻） |
 | 行为偏好 | 温度 / 主动提问 / 联网搜索次数等 → strategy 键 |
+| 工种 / 工具面 | `kind`（`assistant` 收窄为 orchestrate 组，`work` / 未声明不限制）与 `act.disableGroups` / `disableTools`（负向禁用，缺省不禁用）——缺省即不改工具面，只有确实要收窄时才问；判据见 [role-pack-authoring-guide.md](../../../../../../docs/architecture/role-pack-authoring-guide.md) §二 / §3.2 |
 
 需求不足时按 [memora 角色包开放键指南](../../../../../../docs/role-pack-开放键指南.md) 或直接补问，不臆造。
 
@@ -89,12 +90,20 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 
 > ⚠️ **语义红线（已对齐特权模型）**：`capabilities: []`（空数组）= **仅默认常驻工具**（本地读写/记忆/技能/项目脚本全可用，不开放任何特权）——纯本地型角色应写 `[]` 而非省略；**省略** capabilities = 全部暴露（含特权工具）；声明特权键 = 常驻 + 白名单内的特权工具。「换角色 = 特权工具集切换」。详见 [tool-exposure-model.md](../../../../../../docs/architecture/tool-exposure-model.md)。
 
-#### strategy 键速查（18 键；未改动的键可删除 = 内核默认）
+#### strategy 键速查（未改动的键可删除 = 内核默认）
 
-`prepare`（1）默认值：`summaryFocus`(≤500字符，默认省略)。注：`understandingConfirm` 不作为开放键——confirm 并入 `askOn` 含 `'confirm'` 触发，echo 由内核 Turn 起始策略覆盖，勿再填写；`memoryRecall`/`memoryRecallPercent`/`minFallback`/`contextAssembly`/`recallConfidence`/`summaryRecall` 6 个召回键不存在——记忆检索改由 `memory_search` 工具触发，勿再填写。
-`act`（8）默认值：`toolMode`=allow｜`temperature`=0.7(0~2)｜`outputLimit`=0(0~65536，0=不干预、与 per-LLM 配置取更小值语义下不设额外上限)｜`toolStepLimit`=20(0~100)｜`providerRouting`=auto｜`multiStepReasoning`=auto｜`toolReadonly`=full｜`subagentConcurrency`=4(0~16，0=关闭派发；越界直接报错不回退；只管同一批 tool_call 内能并行几个，不会让模型自动并行)
-`reflect`（3）默认值：`summary`=on｜`selfReview`=0(0~10，布尔数字：0=关闭，>0 一律收敛为 1=终审一次，写 2 与写 1 效果相同)｜`userFollowup`=silent
-`global`（6）默认值：`askOn`=['ambiguity','decision','missing_info']｜`askLimit`=10(1~10)｜`webSearchLimit`=6(1~20，联网搜索硬护栏)｜`errorHandling`=retry｜`contextLimit`=0(0 或 120000~2000000，0=不设额外上限、跟随 provider 窗口；1~119999 非法)｜`stepBudget`=0(0 或 10~500，0=走内核兜底；1~9 非法)
+> **键面指针**：现行键集与区间以 [strategyKeys.ts](../../../../../../src/role-pack/strategyKeys.ts) 的 `STRATEGY_KEY_RULES` 为准，本表只是速查、不复制默认值来源；计数随增删即过期，此处不写死。
+
+`prepare` 默认值：`summaryFocus`(≤500字符，默认省略)。注：`understandingConfirm` 不作为开放键——confirm 并入 `askOn` 含 `'confirm'` 触发，echo 由内核 Turn 起始策略覆盖，勿再填写；`memoryRecall`/`memoryRecallPercent`/`minFallback`/`contextAssembly`/`recallConfidence`/`summaryRecall` 6 个召回键不存在——记忆检索改由 `memory_search` 工具触发，勿再填写。
+`act` 默认值：`toolMode`=allow｜`temperature`=0.7(0~2)｜`outputLimit`=0(0~65536，0=不干预、与 per-LLM 配置取更小值语义下不设额外上限)｜`toolStepLimit`=20(0~100)｜`providerRouting`=auto｜`multiStepReasoning`=auto｜`toolReadonly`=full｜`subagentConcurrency`=4(0~16，0=关闭派发；越界直接报错不回退；只管同一批 tool_call 内能并行几个，不会让模型自动并行)
+`reflect` 默认值：`summary`=on｜`selfReview`=0(0~10，布尔数字：0=关闭，>0 一律收敛为 1=终审一次，写 2 与写 1 效果相同)｜`userFollowup`=silent
+`global` 默认值：`askOn`=['ambiguity','decision','missing_info']｜`askLimit`=10(1~10)｜`webSearchLimit`=6(1~20，联网搜索硬护栏)｜`errorHandling`=retry｜`contextLimit`=0(0 或 120000~2000000，0=不设额外上限、跟随 provider 窗口；1~119999 非法)｜`stepBudget`=0(0 或 10~500，0=走内核兜底；1~9 非法)
+
+#### 工种与工具面（可选，缺省不改工具面）
+
+- `kind`：manifest 顶层键。`assistant` = 工具正向面只放 `orchestrate` 组；`work` / 未声明 = 不设组限制（存量包零变化）。写错报 `INVALID_KIND`，不静默折叠。
+- `act.disableGroups` / `act.disableTools`：负向禁用，与 `kind` 叠加；判据在 `ToolExecutor.isToolExposed` 查询期执行，与宿主 allowOnly 取交集、只收紧不清空。写错组名报 error，不静默忽略。
+- **包内脚本工具（manifest `tools`）**：声明 ≠ 授权。必须经宿主用户级命令 `memora.approvePackTools` 按「包名 + 工具名 + 脚本 hash」批准后才注册给模型，脚本一改 hash 即失效须重新批准。**本 skill 只生成声明骨架，不代做批准**——用户侧批准配置 `memora.approvedPackTools` 禁项目级（项目级可被他人提交，等于静默授权第三方脚本）。字段与校验全貌见 [role-pack-authoring-guide.md](../../../../../../docs/architecture/role-pack-authoring-guide.md) §2.7。
 
 ### 第四步：校验（写→验→用闭环）
 
@@ -157,7 +166,7 @@ node scripts/verify-pack.mjs <角色名> [--kernel-root <内核仓库根>]
 
 ### ✅ 必须做
 
-- 先采集四要素需求再跑脚本，不凭空假设角色定位。
+- 先采集五要素需求（含工种 / 工具面，缺省不收窄就不写）再跑脚本，不凭空假设角色定位。
 - 用 `node scripts/skaffold.mjs` 初始化骨架（模板 = 结构唯一真相源，不手写 JSON 结构）。
 - 精修只在产出文件内进行，产出后跑 `scripts/verify-pack.mjs`，不手工逐项核对。
 - `capabilities` 写数组前确认每个键都是**特权键**（只有 `web` / `code`）；不要写 `file:*` / `memory:*` / `task:plan`——它们不映射任何工具，会触发 `UNREGISTERED_CAPABILITY` warning，并把工具面收窄到常驻集。纯本地角色写 `[]`（仅常驻工具）；需要全部暴露才省略字段。
@@ -194,6 +203,7 @@ node scripts/verify-pack.mjs <角色名> [--kernel-root <内核仓库根>]
 
 ## 规范唯一真相源（SSOT）
 
-- 策略键速查 / 校验区间以 [strategyKeys.ts](../../../../../../src/role-pack/strategyKeys.ts) 与 [role-pack-spec.md](../../../../../../docs/architecture/role-pack-spec.md) 为准（本文件速查表与之一致）。
+- 策略键速查 / 校验区间以 [strategyKeys.ts](../../../../../../src/role-pack/strategyKeys.ts) 与 [role-pack-spec.md](../../../../../../docs/architecture/role-pack-spec.md) 为准（本文件速查表只列存在性、不复制默认值来源与计数，内核变更时按指针同步）。
+- 工具面分组与包内工具的判据真源是 [role-pack-authoring-guide.md](../../../../../../docs/architecture/role-pack-authoring-guide.md) §二 / §3.2 / §2.7；批准入口真源是宿主命令 `memora.approvePackTools` 与用户级配置 `memora.approvedPackTools`。
 - 技能引用格式（反引号包裹技能名 + 双向守卫）以 [role-pack-authoring-guide.md](../../../../../../docs/architecture/role-pack-authoring-guide.md) §2.6 为准。
 - 若发现本文件键速查与内核出现分歧，以内核为准并**更新本文件**（本 skill 跟随内核同步，不是独立权威）。

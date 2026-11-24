@@ -8,6 +8,19 @@
 >
 > 本文件 2026-10-19 起按 `CHLOG-TRIM-1` 精简：只记「改了什么 + 为什么 + 对消费者的影响」；逐批拍板过程、变异验证收据、台账叙事的 SSOT 在仓库台账 `tasks/待完成任务.md` 对应 ID 条目（npm 包不含），此处只留 ID 锚保交叉引用。
 
+## [Unreleased]
+
+### Added（内核）
+
+- **角色包工具分组与组面收窄**（`PACKTOOL-1` · **消费者可感知 · 公开面扩张**）：manifest 增顶层 `kind`（缺省 `work`，`assistant` 切正向工具组），`act` 增 `disableGroups`（三组闭集）与 `disableTools`（开放集按名收窄）；`ToolExecutor.setToolGroupSurface(...)` 把三组正向名单与禁用集装配进执行器，`isToolExposed` 在**查询期**按组过滤（入口层不预判能力位）。**对消费者**：不声明这些键的包行为逐字不变；`kind` 写错报 `INVALID_KIND` 不静默折叠，未知 disable 条目装配期告警。
+- **角色包专属工具：manifest `tools` 声明 + 三键批准闸**（`PACKTOOL-1` · **消费者可感知 · 公开面扩张**）：包可在 manifest 声明专属脚本工具（≤50 项，`impl.type` 仅 `script`），装配期 realpath 防逃逸（Windows 大小写归一）、扩展名推 runtime、算脚本 sha256——任一失败**整包拒绝装载**（坏声明是 error 不是 warning）。**声明 ≠ 授权**：只有批准记录按「包名 + 工具名 + 脚本 hash」三键全等命中才注册给模型，脚本一改 hash 即失效、须重新批准；注册强制 `confirmPolicy:'audit'`（免弹窗不免审计）；批内同名冲突全量放弃、逐个报冲突名；切包先清后注册不残留。执行复用 `runSkillScript`：参数经 stdin 收 JSON、stdout 必须 JSON（非 JSON / 空输出报工具错误且**不回原文**）。新增公开类型 `RolePackTool` / `RolePackToolApproval` 与 `Agent.setRolePackToolApprovals()`；`reloadConfig('rolePack')` 重载后按新 hash 重放工具面。**对消费者**：无 `tools` 声明的包零变化；`runSkillScript` 的 `stdinData` 为可选第 8 参，缺省行为逐字不变。
+
+## [Unreleased] · 宿主
+
+### Added（宿主）
+
+- **角色包工具批准入口**（`PACKTOOL-1` · **消费者可感知 · 新增入口**）：新配置 `memora.approvedPackTools`（**application 用户级，禁项目级**——项目级可被他人提交、静默把第三方脚本授予模型）+ 命令「批准角色包工具」（`memora.approvePackTools`：QuickPick 多选当前激活包的工具、写回三键记录，取消勾选即撤销）。装配期注入 + 配置变更即时同步，批准后无需重开会话。**对消费者**：未批准的包内工具对模型不可见；脚本更新后批准自动失效需重新批准。
+
 ## [0.12.0] · 2026-11-23 · 宿主
 
 > **随包内核代次 = `7.4.0`**（esbuild 内联 dist，内核自身变更见内核区）。本区收 `vscode@0.11.0`（2026-11-16）之后全部动 `hosts/` 的提交中**消费者可感知**的部分（纯注释 / 测试 / 台账整理不逐条列出）——对拍 `git log vscode@0.11.0..HEAD --oneline -- hosts/` 去 `docs(` / `test(` / `chore(` / `style(` 后 **116 笔**，按功能簇归并。**版本号判定：minor**——助手形态与工作台新增入口、协议字段扩张（SEMVER-GATE-1 形态 4「协议 / 入口扩张」：新入口不传也兼容，旧调用行为逐字不变）。删去的三条命令（`memora.revokeManagedSession` / `form.assistant` / `form.self`）全部出自 0.11.0 已标 **〔开发中〕** 的托管簇，随该簇收口作废，不构成稳定契约 breaking。

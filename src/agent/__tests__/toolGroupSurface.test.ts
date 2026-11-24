@@ -14,16 +14,20 @@
  * 锚点 2（`kind` / 组名写错 ⇒ error）落 validator 测试；
  * 锚点 7（禁集并集）落 strategyResolver 测试；锚点 8（键面非 number）落 strategyKeys 测试。
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ToolExecutor, type ToolGroupSurface } from '@/agent/toolExecutor.js';
 import { ALL_BUILTIN_TOOL_DEFS } from '@/agent/builtinTools.js';
+import { ToolRunner, type ToolCall } from '@/agent/toolRunner.js';
+import { NOOP_TRACER } from '@/agent/tracer.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ToolGroup } from '@/role-pack/strategyKeys.js';
+import { DEFAULT_L2_STRATEGY } from '@/role-pack/strategyResolver.js';
+import type { L2RuntimeStrategy } from '@/role-pack/types.js';
 
 /** 组面快捷构造：未指明的成员一律取「不生效」缺省（与 applyRolePackToolExposure 的存量分支同义） */
 function surface(partial: Partial<ToolGroupSurface>): ToolGroupSurface {
@@ -235,6 +239,18 @@ describe('包内工具注册（registerRolePackTools / clearRolePackTools）· �
     handler: async () => JSON.stringify({ ok: true }),
   });
 
+  /**
+   * 构造工具调用元素（OpenAI 协议结构，只读闸测试用）
+   *
+   * @param name 工具名
+   * @returns ToolCall 元素（空参）
+   */
+  const tc = (name: string): ToolCall => ({
+    id: `t-${name}`,
+    type: 'function',
+    function: { name, arguments: '{}' },
+  });
+
   it('注册后可见；clearRolePackTools 后消失（切包不残留的数据面）', () => {
     const registered = executor.registerRolePackTools([entry('pack_echo')]);
     expect(registered).toEqual(['pack_echo']);
@@ -276,5 +292,45 @@ describe('包内工具注册（registerRolePackTools / clearRolePackTools）· �
     expect(executor.list.map((t) => t.name)).not.toContain('pack_other');
 
     executor.removeTool('ext_conflict');
+  });
+
+  it('§8.7 锚点 3：包内工具 readonly:true 在 toolReadonly=readonly 下可调，readonly:false 被拒', async () => {
+    // 注册一批两个包内工具：只读探针（entry 缺省 readonly:true）与写探针（显式 readonly:false）。
+    // 断言链 = manifest 声明的 readonly 标志 → registerRolePackTools 写进 definition → ToolRunner 只读闸消费，
+    // 任一环丢标志（变异点）都会让下面的断言转红。
+    const readOnlyProbe = entry('pack_ro_gate');
+    const writeProbe = {
+      ...entry('pack_rw_gate'),
+      definition: { ...entry('pack_rw_gate').definition, readonly: false },
+    };
+    expect(executor.registerRolePackTools([readOnlyProbe, writeProbe])).toEqual([
+      'pack_ro_gate',
+      'pack_rw_gate',
+    ]);
+
+    const execute = vi.fn(async () => 'OK');
+    const runner = new ToolRunner({
+      execute,
+      // 只读闸查「全部工具定义」（内置 + 自定义），与生产装配形态（allToolDefinitions）同源
+      allTools: () => executor.allToolDefinitions,
+      getStrategy: () => ({ ...DEFAULT_L2_STRATEGY, toolReadonly: 'readonly' }) as L2RuntimeStrategy,
+      tracer: NOOP_TRACER,
+    });
+
+    // readonly:true ⇒ 放行进执行面（包内只读工具在只读模式下可用）
+    const ok = await runner.runOne(tc('pack_ro_gate'));
+    expect(ok.status, 'readonly:true 的包内工具被误拦').toBe('ok');
+
+    // readonly:false ⇒ 只读闸拒绝（包内工具不因「来自角色包」豁免执行面闸门）
+    const denied = await runner.runOne(tc('pack_rw_gate'));
+    expect(denied.status, 'readonly:false 的包内工具未被只读闸拦下').toBe('blocked');
+    expect(denied.blockedReason).toBe('readonly_denied');
+    // 前缀形态锁死（denied 通道文本须带 [ERR:TOOL:READONLY_DENIED]）
+    expect(denied.text).toContain('[ERR:TOOL:READONLY_DENIED]');
+
+    // 执行面只进了只读工具（写工具没进 execute）
+    expect(execute).toHaveBeenCalledTimes(1);
+
+    executor.clearRolePackTools();
   });
 });

@@ -12,10 +12,11 @@
 
 ```
 角色包名/
-├── manifest.json        # ★ 元数据 + strategy 策略 + capabilities + skills 白名单
+├── manifest.json        # ★ 元数据 + strategy 策略 + capabilities + skills 白名单 + kind + tools
 ├── persona.md           # 角色身份设定（可缺省，缺省则无身份仅靠策略驱动）
 ├── rules.md             # 确定性规则（列表逐条 / 段落合并一条，见 §二.4）
-└── skills/              # 技能目录（动态扫描，新增技能只写文件即可）
+├── skills/              # 技能目录（动态扫描，新增技能只写文件即可）
+└── scripts/             # 可选：包内工具脚本（manifest.tools 的 impl.path 指向此处，见 §2.7）
 ```
 
 `manifest.json` 最小可用示例：
@@ -58,13 +59,15 @@
 | `aiIdentityDisclosure` | boolean                        | 否  | `true`           | companion 必须显式 `true`                                   |
 | `minorProtection`      | `required`                     | 否  | `required`       | 未成年人保护钩子，仅支持 `required`                                 |
 | `handoffPrompt`        | string                         | 否  | 无                | 被带入对话时预填的接手话术；≤2000 字符                                  |
+| `kind`                 | `work` / `assistant`           | 否  | 未声明（≡ `work`，无组限制） | 角色包工种（工具面判据）：`assistant` ⇒ 工具正向面只放 `orchestrate` 组；`work` / 未声明 ⇒ 不设组限制（存量包零变化）。写错报 `INVALID_KIND`（error，不静默折叠回 work），消费面 = 组面派生（§3.2） |
 | `skills`               | 对象数组                           | 否  | 无                | 技能白名单（`{ file, name?, description? }`）；不声明则全量扫描；最多 50 项 |
 | `capabilities`         | 对象数组                           | 否  | 省略 = 未声明       | 特权能力声明（`{ capability, description? }`）；最多 50 项。**三态**：省略 = 不收紧（全开）/ `[]` = 仅默认常驻工具 / 非空 = 白名单 |
+| `tools`                | 对象数组                           | 否  | 未声明 = 无包内工具   | 包内专属工具声明（`{ name, description, parameters, impl, group?, readonly? }`）；最多 50 项。**声明 ≠ 授权**：还须用户三键批准才注册，见 §2.7 |
 | `strategy`             | 嵌套对象                           | 否  | 全局默认             | L2 行为策略（见 §三）                                           |
 
 > **content 零声明**：`persona.md` / `rules.md` / `skills/` 全部约定俗成，manifest **不注册内容路径**（防路径写错静默丢内容）。
 >
-> **字段上限 SSOT**：上表的数量/长度上限以 `src/role-pack/validator.ts` 为唯一真理源（`MAX_MANIFEST_SKILLS` / `MAX_CAPABILITIES` / `MAX_HANDOFF_PROMPT_LEN` / `MAX_META_STRING_LEN`）。超限时校验报 error（开发期拒绝、跳过装载）；运行时兜底**仅 `handoffPrompt`** 按 `MAX_HANDOFF_PROMPT_LEN` 截断（宽容容错），其余上限无运行时消费（2026-09-19 订正原「运行时按上限截断兜底」泛化失实）。
+> **字段上限 SSOT**：上表的数量/长度上限以 `src/role-pack/validator.ts` 为唯一真理源（`MAX_MANIFEST_SKILLS` / `MAX_CAPABILITIES` / `MAX_MANIFEST_TOOLS` / `MAX_HANDOFF_PROMPT_LEN` / `MAX_META_STRING_LEN`）。超限时校验报 error（开发期拒绝、跳过装载）；运行时兜底**仅 `handoffPrompt`** 按 `MAX_HANDOFF_PROMPT_LEN` 截断（宽容容错），其余上限无运行时消费（2026-09-19 订正原「运行时按上限截断兜底」泛化失实）。
 
 ### 2.4 rules.md 写法（ADR-025 档 3：规则语义对齐）
 
@@ -124,6 +127,61 @@
 
 ⚠️ **但不要在角色包设定文本里引用全局技能**：双向守卫的视野**只覆盖仓库根 `role-packs/`**（`builtinPackCoverage.test.ts` 的 `ROLE_PACKS_DIR`），看不到宿主全局技能池 ⇒ 引用全局技能会被**反向守卫判成悬空引用**（测试红）。全局技能靠 L1 清单被模型发现即可，无需设定文本引导。（当前三个内置包对全局技能零引用，符合此约定。）
 
+### 2.7 包内专属工具（`tools` 声明 + 三键批准闸）
+
+**定位**：`manifest.tools` 让角色包自带专属脚本工具（脚本存包内 `scripts/`，随包启停）。**声明 ≠ 授权**——声明只是「包作者说我有这个工具」，实际注册还须用户逐工具批准。
+
+**JSON 示例**：
+
+```json
+{
+  "name": "数据清洗师",
+  "kind": "work",
+  "tools": [
+    {
+      "name": "clean_csv",
+      "description": "清洗 CSV：去重、统一编码、输出统计",
+      "group": "act",
+      "readonly": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "CSV 文件相对路径" }
+        },
+        "required": ["path"]
+      },
+      "impl": { "type": "script", "path": "scripts/cleanCsv.mjs" }
+    }
+  ]
+}
+```
+
+**字段约束（validator 形状校验，error ⇒ 整包拒绝装载）**：
+
+- **数量**：≤ 50 项（`MAX_MANIFEST_TOOLS`，上限 SSOT 见 §二注记）；
+- **`name`**：须匹配 `TOOL_NAME_PATTERN`（字母/下划线开头，只含字母数字下划线）且包内不重复；
+- **`parameters`**：JSON Schema 对象——`type` 必须 `object`、`properties` 非空且每项带非空 `description`、`required` 每项必须出现在 `properties`（否则模型填的参数永远校验不过）；
+- **`group`**：三组闭集 `readonly` / `act` / `orchestrate`（缺省 `act`，fail-closed），与 §3.2 工具分组同源（`TOOL_GROUPS`）；
+- **`readonly`**：布尔（缺省 `false` = 写工具）；
+- **`impl`**：`type` 仅 `'script'`（本期闭集）、`path` 为非空相对路径；
+- **禁止声明 `confirmPolicy`**：包作者自选「不被审查」等于审批闸失效——装配期强制 `confirmPolicy: 'audit'`（**免弹窗不免审计**，过闸自动放行仍落审计）。
+
+**装配期 IO 校验（`parseManifestTools`，任一失败 ⇒ 整包拒绝装载）**：脚本必须存在、`realpath` 后仍在包目录内（符号链接可绕过字面路径比对，故按真实路径判逃逸）、是普通文件、扩展名可推断运行时（`.js` / `.mjs` / `.cjs` / `.ts` / `.py` / `.sh` / `.bat` / `.cmd`，未知扩展名不兜底 node）、读得出内容 sha256。半装载会让「包声明了什么」与「实际可用什么」漂移，故不做部分成功。
+
+**批准闸（三键全等才注册）**：`包名 + 工具名 + 脚本 sha256` 三键全等才算已批准（宿主配置 `memora.approvedPackTools`，application 用户级，禁项目级）。**脚本一改 hash 即变 ⇒ 自动回到未批准**，须重新批准（只按包名记会 fail-open：包更新新增的工具会被旧批准自动放行）。无批准记录的声明不注册——模型看不见该工具。
+
+**执行契约（复用 `runSkillScript` 唯一执行面，不另写 spawn）**：模型参数经 **stdin（JSON）** 投喂脚本（argv 留空，避免引号/空格在 argv 拼接处被二次解释）；**stdout 必须输出一个 JSON 值**，非 JSON / 空输出一律工具错误且**不回原文**（原文可能含注入内容，回原文等于把不可信文本当工具结果喂给模型）；默认超时 60s；工作目录 = 角色包根（脚本可据此读包内相对资源）。
+
+**冲突语义（三层，勿折叠）**：
+
+| 冲突层 | 判据 | 后果 |
+| --- | --- | --- |
+| manifest 内部重名 / 形状非法 | validator | **整包拒绝装载** |
+| 脚本缺失 / 路径逃逸 / 扩展名未知 | 装配期 `parseManifestTools` | **整包拒绝装载** |
+| 与内置 / 条件内置 / 已注册工具同名 | 注册期 `registerRolePackTools` 全量预检 | **该包包内工具全不注册**（逐个报出冲突名），**包其余部分仍生效** |
+
+**暴露面**：包内工具**不受** `capabilities` 白名单约束（与 MCP / 宿主动态工具同族），但**受**组面约束——`kind` 正向面（§二）与 `disableGroups` / `disableTools`（§3.2）在 `ToolExecutor.isToolExposed` 查询期统一裁决（组面判据排在包内工具分支之前）；包内工具**进不了子会话**（子 agent 结构性只读边界）。
+
 ***
 
 ## 三、strategy 策略键（逐键填写指导）
@@ -147,6 +205,8 @@
 | `multiStepReasoning` | `auto` / `manual`             | —                  | `auto`      | 多步推理模式        | `"manual"`        |
 | `toolReadonly`       | `full` / `readonly`           | —                  | `full`      | 工具操作范围        | `"readonly"`      |
 | `subagentConcurrency` | 整数                         | `0 ~ 16`（0=关闭派发） | `4`         | 同一步可并行的子 agent 额度 | `2`               |
+| `disableGroups`      | 组名数组（元素见下）              | 1 ~ 3 个元素（闭集）  | 无          | 禁用整组工具：`readonly` / `act` / `orchestrate`（组名 SSOT = `TOOL_GROUPS`）。写错组名**报 error 不静默忽略**（静默忽略 = 用户以为关了、实际开着） | `["orchestrate"]` |
+| `disableTools`       | 字符串数组或逗号分隔字符串           | 1 ~ 64 项，单项 ≤64 字符 | 无          | 禁用具体工具名（开放集：内置 + 宿主 + MCP + 自定义，静态键面枚举不出全集故为文本表单）。未知工具名装配期告警 | `["run_command"]` 或 `"run_command, write_file"` |
 
 > **`subagentConcurrency` 语义（2026-11-12 增键）**：
 > - `0` = **关闭派发**：装配期不注入派发端口，`delegate_task` 结构性不可见（不是运行时再判断）；
@@ -154,6 +214,12 @@
 > - 额度**只管「同一批 tool_call 内最多几个子 agent 同时执行」**——它**不会让模型自动并行**，
 >   是否在一次回复里并行派发由模型自行决定；
 > - 唯一真实瓶颈是 model provider 的配额（属 provider 层），本键只做同一批派发的上限保护。
+>
+> **`disableGroups` / `disableTools` 组面语义（2026-11-24 增键）**：
+> - 判据在 `ToolExecutor.isToolExposed` **查询期**执行（装配期只装配、不预判），与宿主 allowOnly / 能力白名单取**交集**——组面只做收紧，不清除宿主封闭面（清了切回无禁用表的包时无法恢复 = fail-open）；
+> - 与顶层 `kind`（§二）同属一个组面：`kind: assistant` 是**正向授权**（只放 `orchestrate`），本两键是**负向禁用**，叠加生效；
+> - 与 `capabilities` 白名单正交：白名单管「特权能力位」，组面管「工种维度」，两层都在查询期取交集，互不替代；
+> - 未声明 `kind` 且无禁用表 ⇒ 不启用组面（存量包行为零变化）。
 
 ### 3.3 reflect 组（回答后·沉淀）
 
@@ -209,11 +275,15 @@
 
 | 情况                                    | 级别      | 行为                     |
 | ------------------------------------- | ------- | ---------------------- |
-| 缺失 `name` / `formatVersion` 非法        | error   | 校验不通过（当前装载器警告降级，不拒绝装载） |
+| 缺失 `name` / `formatVersion` 非法        | error   | 校验不通过，整包拒绝装载（`RolePackManager.load` 跳过该包） |
 | 枚举键取值不在枚举内                            | error   | 校验不通过；运行时归位内核默认        |
 | 数值键越界（超出上下限）                          | error   | 校验不通过；运行时回退内核默认/忽略     |
 | 未知顶层键 / 未知策略阶段 / 未知策略键                | warning | 警告并忽略，不阻塞装载（键级渐进）      |
+| `kind` 写错（非 `work` / `assistant`）      | error   | 校验不通过（`INVALID_KIND`，不静默折叠回 work） |
+| `act.disableGroups` 组名不在闭集 / `disableTools` 形状非法或越上限 | error   | 校验不通过（`INVALID_STRATEGY_VALUE`，不静默忽略） |
 | `capabilities` 格式非法（非 `域:动作`）         | error   | 校验不通过                  |
+| `tools` 形状非法 / 超 50 项 / 声明 `confirmPolicy` | error   | 校验不通过（`MAX_MANIFEST_TOOLS` 等，整包拒绝装载） |
+| `tools` 脚本缺失 / `impl.path` 逃逸包目录 / 扩展名未知 | error（装配期） | **整包拒绝装载**（`parseManifestTools` 返回 null，不做部分成功） |
 | companion 缺 AI 身份/未声明 minorProtection | error   | 校验不通过                  |
 | companion 正文含虚拟亲属/伴侣红线词               | error   | 拒绝装载                   |
 
@@ -228,7 +298,7 @@
 
 | 状态          | 含义          | 键             |
 | ----------- | ----------- | ------------- |
-| **已消费（冻结）** | 内核真实读取并影响行为 | 上述 §三 全部 18 键（prepare 1 / act 8 / reflect 3 / global 6） |
+| **已消费（冻结）** | 内核真实读取并影响行为 | 上述 §三 全部键（以 §3.1–§3.4 各组表格所列键为准，计数随表格增删，不在此写死） |
 
 > 全部策略键现均已落地，无纯预留死键。`understandingConfirm` 已回收（2026-09-13，turn-intent-reasoning-design Part 3）：confirm 并入 `askOn['confirm']`/ask_user 工具通道，echo 由内核 Turn 起始策略指令覆盖——确认场景统一走 ask_user 单一通道，不再作为开放键。已撤键先例：`costBudget`（2026-08-28，内核无定价能力、宿主无执行者）、`taskLoopLimit`（2026-09-06，多 turn 编排删除 + 会议确定性预置退役后无常量消费方）、prepare 召回策略键族 6 键（2026-09-09 阶段2，记忆纯工具化召回后无自动注入消费端）、`toolApproval`（2026-09-11，审批链无执行方的展示性假承诺）、`streaming`（2026-09-11，写而不读的假旋钮——内核 provider 恒 `stream:true`）、`loopContinue`（2026-09-11，v0.13- 别名；安装基数 0 → 兼容防的是从未发生的场景，按版本契约分面「作者输入面可不兼容」删除）——**无消费者 / 无真实兼容对象的策略键不保留**。诚实化声明见 `src/role-pack/types.ts` `BehaviorStrategy` 注释。
 
