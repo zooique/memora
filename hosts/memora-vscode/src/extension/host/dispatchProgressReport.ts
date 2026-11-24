@@ -16,6 +16,7 @@
  * - 超时未归只报「没回音」，不猜成功、也不冒充失败——不知道就说不知道。
  */
 import type { ProcessEvent, Round, ToolDefinition } from '@zooique/memora';
+import { formatDispatchKey } from '../../shared/dispatchKey.js';
 import { DISPATCH_LEDGER_ORPHAN_TIMEOUT_MS, type DispatchLedgerRecord } from './dispatchLedger.js';
 
 /** 派活进度查询的工具名（工具定义与注册分处两地，字面量在这里单点） */
@@ -357,11 +358,10 @@ export function buildDispatchLedgerTurnContext(
   const rest = sorted.length - shown.length;
   const lines = shown.map((record) => {
     const title = record.targetTitle || record.targetSessionId;
-    // 对账键与落定通知同源：通知写 `sid=…`（有收场轮时再带 `round=…`），这里就用
-    // 同一组标识，宝才能把「这一行」和「那条落定通知」对上号。不写账本内部 id——
-    // 那个标识只在本进程账本里存在，通知侧从不出场，带了也 join 不上。
-    const roundKey = record.roundId ? `, round=${record.roundId}` : '';
-    const head = `- 《${title}》(sid=${record.targetSessionId}${roundKey}) · `;
+    // 对账键唯一产地 = shared/dispatchKey（与落定通知同一函数）：宝要能把「这一行」和
+    // 「那条落定通知」对上号，两处各写模板已实证漂移过。不写账本内部 id——那个标识只在
+    // 本进程账本里存在，通知侧从不出场，带了也 join 不上。
+    const head = `- 《${title}》(${formatDispatchKey(record.targetSessionId, record.roundId)}) · `;
     if (record.status === 'pending') {
       return `${head}进行中 · 派的是：${clipForContext(record.text, DISPATCH_TURN_CONTEXT_TEXT_CHARS)}`;
     }

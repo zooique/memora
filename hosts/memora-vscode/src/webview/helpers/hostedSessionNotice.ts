@@ -62,6 +62,7 @@ import {
   type SessionMeta,
 } from '@zooique/memora';
 import { ANSWER_SESSION_QUESTION_TOOL_NAME } from '../../shared/constants.js';
+import { formatDispatchKey } from '../../shared/dispatchKey.js';
 import { deriveInterruptReason } from '../../shared/interruptReason.js';
 import type { PendingQuestionDto } from '../../shared/protocol.js';
 // 交付摘录与工作台末轮摘要同一截断口径（阈值只定义一次）
@@ -248,9 +249,9 @@ function formatNotice(
   detail: string,
   delivered?: string,
 ): string {
-  const roundSuffix = roundId ? `，round=${roundId}` : '';
+  const key = formatDispatchKey(sessionId, roundId);
   const excerpt = delivered ? ` 交付摘录：${delivered}` : '';
-  return `[托管会话已落定] 会话《${title}》（sid=${sessionId}${roundSuffix}）：${detail}${excerpt}`;
+  return `[托管会话已落定] 会话《${title}》（${key}）：${detail}${excerpt}`;
 }
 
 /**

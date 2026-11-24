@@ -216,7 +216,8 @@ describe('buildDispatchLedgerTurnContext', () => {
     expect(text).toContain('进行中 1；没回音 1；已完成 1；失败/未开始 2。');
     expect(text).toContain('- 《在跑》(sid=target-1) · 进行中 · 派的是：整理销售数据');
     expect(text).toContain('- 《没回音》(sid=target-1) · 没回音');
-    expect(text).toContain('- 《写完了》(sid=target-1, round=round-s) · 已完成 · 雨夜，铁匠铺');
+    // 与落定通知共用 shared/dispatchKey（全角逗号是同一函数的既有口径）
+    expect(text).toContain('- 《写完了》(sid=target-1，round=round-s) · 已完成 · 雨夜，铁匠铺');
     expect(text).not.toContain('我先看一下');
     expect(text).toContain('- 《挂了》(sid=target-1) · 失败');
     expect(text).toContain('- 《没起》(sid=target-1) · 未开始（起流失败）');
