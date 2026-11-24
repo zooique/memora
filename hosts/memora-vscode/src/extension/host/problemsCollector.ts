@@ -2,8 +2,8 @@
  * problemsCollector — `@problems` 诊断的**有界采集**（HOST-CTX-4 第一笔）
  *
  * 为什么存在：`HOST-CTX-0` 定案是引用模式（只挂指针、模型自取），但 VS Code 诊断是
- * **瞬态派生数据**——内核内置工具里没有 diagnostics（实测 `builtinTools.ts`：`BUILTIN_TOOLS`
- * 常驻 23 项 / `ALL_BUILTIN_TOOL_DEFS` 完整面 28 项，两个清单均无此项），模型无从自取
+ * **瞬态派生数据**——内核内置工具里没有 diagnostics（`BUILTIN_TOOLS` 与 `ALL_BUILTIN_TOOL_DEFS`
+ * 两个清单均无此项，成员以 `src/agent/builtinTools.ts` 为准），模型无从自取
  * ⇒ 定案为该三类开了**有界注入**的例外
  * （四条硬约束真源 = 台账 HOST-CTX-0「定案例外清单」）。本模块就是「有界」这一条的落点。
  *
