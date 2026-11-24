@@ -469,11 +469,13 @@ function createProviderRouter(provider: LlmProvider): ProviderRouter {
  * 首段即给：派活方无读工具（S1），判断完成只靠正文「实质开头 + 截断」投影
  * （`extractSubstantiveExcerpt`）⇒ 证据写在末尾等于没写。
  * 只收四项、不收「提交号 / 行号」：Worker 不落 git 写（B7），行号会漂移且禁行号定位。
- * 与 `HAND_BACK_PROTOCOL` 同一注入点合并投影：仅在有 `workOrder` 时生效，
- * 故 mandate 不填时交回与自报两段都到不了 Worker。
+ * 与 `HAND_BACK_PROTOCOL` 同一注入点合并投影：注入判据 = 「派活开的会话」
+ * （`workOrder` 非空 **或** `declaredPaths` 非空，见内核 `isDelegatedSession`）——
+ * mandate 不填时本段仍到得了 Worker，只有语义边界段（`workOrderContext`）不出现。
  */
 const WORKER_REPORT_PROTOCOL =
-  '收场汇报的首段就写清四件事，不要写「详见下文」、不要把证据放到后文：' +
+  '收场汇报的首段就写清四件事——这是交付格式，不是建议；四项逐条编号写全、缺一不可，' +
+  '缺的项写「无」或「没验证」，不许整段省略，也不要写「详见下文」、不要把证据放到后文：' +
   '① 三态选一——做完了 / 部分做完 / 没做成；' +
   '② 改了哪些文件（路径，最多列 5 个）；' +
   '③ 验证命令与结果（命令原文 + 退出码或通过数），没跑就明写「没验证」；' +
