@@ -2,8 +2,9 @@
  * 会话工具 · 主控装配面（托管模式 v0）
  *
  * 职责（只做主控会话的工具面）：
- *   - 装配层判定「这个 Agent 是主控」时，按 `ORCHESTRATOR_ALLOWED_TOOLS` 逐项注册
- *     （白名单即交付面真源，此处不抄成员、不写计数；回调缺项时对应工具不注册）；
+ *   - 装配层判定「这个 Agent 是主控」时，`registerWorkSessionTools` 按回调到位情况注册本组工具
+ *     （回调缺项时对应工具不注册）；暴露面由 `ORCHESTRATOR_ALLOWED_TOOLS` 收口，
+ *     它派生自各工具定义的 `group` 字段（此处不抄成员、不写计数）；
  *   - 普通会话不注册 ⇒ 模型侧「工具不存在」，不是「调用报错」。
  *
  * 边界（刻意如此，勿扩）：
@@ -50,7 +51,6 @@ import { readDispatchLedger } from './dispatchLedger.js';
 import {
   buildDispatchProgressReport,
   GET_DISPATCH_PROGRESS_DEFINITION,
-  GET_DISPATCH_PROGRESS_TOOL_NAME,
   parseDispatchProgressArgs,
 } from './dispatchProgressReport.js';
 // 代答子会话提问的工具面（定义 / 参数解析 / 回执类型）：独立闭环外置，注册仍在本文件
@@ -157,33 +157,6 @@ export const MEMORY_SUMMARY_TEXT_CHARS = 120;
  */
 export const PAUSE_WORK_SESSION_TOOL_NAME = 'pause_work_session';
 export const RESUME_WORK_SESSION_TOOL_NAME = 'resume_work_session';
-
-/**
- * 宝的完整工具面（HOSTED-ROUTER-TOOL-SURFACE-1 · 封闭白名单唯一真源）
- *
- * 定案 §一 / §五「Router 不配技术工具」：宝只有会话管理 + 两个只读查询，零读文件 /
- * 跑命令 / 改代码 / 内核基建。名单从上方各工具名常量逐项派生（含代答工具名，
- * 它住在独立模块），装配层只引用本常量、不另抄字面量——抄一份就是第二真源，
- * 内核新增工具或本模块改名时必漂移。
- *
- * 为什么不用 deny 补集：deny 是「全集减名单」，内核新出的工具默认漏进宝面
- * （危险方向是漏）。allow-only 是「全集即名单」，新工具默认不进，与设计硬约束同向。
- *
- * ⚠️ 名单只控制暴露面，不控制注册：`registerWorkSessionTools` 按回调到位情况注册，
- * 缺回调的工具本就不在装配产物里，allow-only 过滤对不存在的名字零副作用。
- */
-export const ORCHESTRATOR_ALLOWED_TOOLS: readonly string[] = [
-  LIST_WORK_SESSIONS_TOOL_NAME,
-  SEND_TO_SESSION_TOOL_NAME,
-  CREATE_SESSION_TOOL_NAME,
-  STOP_WORK_SESSION_TOOL_NAME,
-  LIST_ROLE_PACKS_TOOL_NAME,
-  READ_MEMORY_SUMMARY_TOOL_NAME,
-  GET_DISPATCH_PROGRESS_TOOL_NAME,
-  PAUSE_WORK_SESSION_TOOL_NAME,
-  RESUME_WORK_SESSION_TOOL_NAME,
-  ANSWER_SESSION_QUESTION_TOOL_NAME,
-];
 
 /**
  * 派发回调可产生的业务结果（**唯一**真源 = `chatPanel.dispatchHostedInput` 的返回面）
@@ -884,6 +857,42 @@ const READ_MEMORY_SUMMARY_DEFINITION: ToolDefinition = {
   diskWrite: 'none',
   confirmPolicy: 'audit',
 };
+
+/**
+ * 宝的完整工具面（allow-only 注入值 · `group` 字段是唯一真源）
+ *
+ * 定案 §一 / §五（S1）「Router 不配技术工具」：宝只有会话管理与只读查询，
+ * 零读文件 / 跑命令 / 改代码 / 内核基建。
+ *
+ * **名单不再手写名字**（2026-11-25 退役手写形态）：下面列的是工具**定义对象**，
+ * 名字取自定义、成员资格由 `group === 'orchestrate'` 判定——与内核
+ * `kind: assistant → orchestrate` 组面同源于同一字段，不是并列的第二判据。
+ * 为什么是静态清单：`assemble.ts` 构造 `Agent` 时就要注入 allow-only 名单（早于注册），
+ * 执行器注册表还不存在 ⇒ 名单只能静态列出，不能反查注册结果。
+ *
+ * 为什么 allow-only 轴保留（没走「纯组面」）：组面由角色包 `kind` 驱动，角色包加载失败
+ * 会回落到 `BUILTIN_FALLBACK_PACK`（工作包，`kind` 缺省）⇒ 组面不派生 ⇒ 工具面全开。
+ * allow-only 是内核排在最前的独立轴、不读角色包状态，是降级路径唯一封闭面。
+ *
+ * 为什么不用 deny 补集：deny 是「全集减名单」，内核新工具默认漏进宝面（危险方向是漏）；
+ * allow-only 是「全集即名单」，新工具默认不进。名单只控制暴露面、不控制注册：
+ * `registerWorkSessionTools` 按回调到位情况注册，缺回调的工具本就不在装配产物里。
+ *
+ * ⚠️ 新增工具 =「写定义常量」+「加进本清单」+「写注册调用」；漏标 `group: 'orchestrate'`
+ * 会被 `group` 判定挡掉（宝断臂），`workSessionTools.test.ts` 的验收锚会红。
+ */
+export const ORCHESTRATOR_ALLOWED_TOOLS: readonly string[] = [
+  LIST_WORK_SESSIONS_DEFINITION,
+  SEND_TO_SESSION_DEFINITION,
+  CREATE_SESSION_DEFINITION,
+  STOP_WORK_SESSION_DEFINITION,
+  LIST_ROLE_PACKS_DEFINITION,
+  READ_MEMORY_SUMMARY_DEFINITION,
+  GET_DISPATCH_PROGRESS_DEFINITION,
+  PAUSE_WORK_SESSION_DEFINITION,
+  RESUME_WORK_SESSION_DEFINITION,
+  ANSWER_SESSION_QUESTION_DEFINITION,
+].flatMap((tool) => (tool.group === 'orchestrate' ? [tool.name] : []));
 
 /**
  * 把既有事实投影成窄工具的回执事实（纯函数，便于单测）

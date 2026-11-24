@@ -1827,6 +1827,27 @@ describe('托管 v0 · pause / resume（判据 6 成对开放）', () => {
  * 名单真源 = `ORCHESTRATOR_ALLOWED_TOOLS`，从同一模块导入，改名自动跟随。
  */
 describe('HOSTED-ROUTER-TOOL-SURFACE-1 · 宝工具面闭合（allow-only）', () => {
+  /**
+   * 宝能力面的验收锚（**显式列举，不从实现派生**）
+   *
+   * 实现真源 = `workSessionTools.ts` 各工具定义对象的 `group` 字段（据此派生
+   * `ORCHESTRATOR_ALLOWED_TOOLS`）；本锚是独立于实现的「应有能力」清单。
+   * 两份分开才抓得住两类静默断臂——新增工具漏加进清单、工具漏标 `group: 'orchestrate'`：
+   * 它们都让派生名单少一项，而「派生集与自己比」恒等，永远绿。
+   */
+  const EXPECTED_ORCHESTRATOR_TOOLS = [
+    'list_work_sessions',
+    'send_to_session',
+    'create_session',
+    'stop_work_session',
+    'list_role_packs',
+    'read_memory_summary',
+    'get_dispatch_progress',
+    'pause_work_session',
+    'resume_work_session',
+    'answer_session_question',
+  ] as const;
+
   /** 定案 §五「不配读文件 / 跑命令 / 改代码」的技术工具代表面 */
   const TECHNICAL_TOOLS = [
     'read_file',
@@ -1848,11 +1869,11 @@ describe('HOSTED-ROUTER-TOOL-SURFACE-1 · 宝工具面闭合（allow-only）', (
     const probe = await assembleProbe(true, {});
     try {
       const names = probe.agent.tools!.list.map((t) => t.name);
-      // 正例：白名单会话工具一个不少（漏一个 = 宝静默断臂）
-      for (const name of ORCHESTRATOR_ALLOWED_TOOLS) {
+      // 正例：验收锚里的会话工具一个不少（漏一个 = 宝静默断臂）
+      for (const name of EXPECTED_ORCHESTRATOR_TOOLS) {
         expect(names, `宝缺会话工具 ${name}`).toContain(name);
       }
-      expect(names).toHaveLength(ORCHESTRATOR_ALLOWED_TOOLS.length);
+      expect(names).toHaveLength(EXPECTED_ORCHESTRATOR_TOOLS.length);
       // 反例：技术工具代表面一个都不能有
       for (const name of TECHNICAL_TOOLS) {
         expect(names, `技术工具漏进宝面：${name}`).not.toContain(name);
@@ -1906,20 +1927,23 @@ describe('HOSTED-ROUTER-TOOL-SURFACE-1 · 宝工具面闭合（allow-only）', (
     }
   }, 120_000);
 
-  it('判据 ⑤：退役等价性（§7.6 锚点 9）——orchestrate 组派生集与名单逐项相等', async () => {
-    // 宝将来切到 kind:assistant 时，allow-only 名单退役，暴露面改由组谓词派生。
-    // 派生集 = allToolDefinitions 中 group==='orchestrate' 的工具——不等名单 ⇒ 分组表漏标
-    // （漏标方向是 fail-closed：宝静默断臂；多标方向是 fail-open：技术工具漏进宝面）。
+  it('判据 ⑤：名单派生自工具定义 group 字段（退役手写形态）——与验收锚、执行器派生集三方一致', async () => {
+    // 形态（2026-11-25）：手写白名单退役，`ORCHESTRATOR_ALLOWED_TOOLS` 改为从工具定义的
+    // `group` 字段派生；allow-only 轴保留（角色包降级时组面不派生，它是唯一封闭面）。
     const probe = await assembleProbe(true, {});
     try {
       const exec = probe.agent.tools!;
-      // ① 分组表逐项等价：派生集（按 group 过滤）与旧名单同集（顺序无关）
-      const derived = exec.allToolDefinitions
+      // ① 派生名单 == 验收锚：抓「定义表漏项 / 漏标 group / 多塞非编排工具」
+      expect([...ORCHESTRATOR_ALLOWED_TOOLS].sort()).toEqual(
+        [...EXPECTED_ORCHESTRATOR_TOOLS].sort(),
+      );
+      // ② 名单 == 执行器里全部 orchestrate 工具（从注册产物侧再核一遍同源）
+      const registered = exec.allToolDefinitions
         .filter((t) => t.group === 'orchestrate')
         .map((t) => t.name);
-      expect([...derived].sort()).toEqual([...ORCHESTRATOR_ALLOWED_TOOLS].sort());
-      // ② 派生面真跑一遍：**保持宿主 allow-only 不动**（真实退役场景就是名单还在时组面上线），
-      //    组谓词只挡不放行、与名单取交集 ⇒ 面应与名单同集（清掉名单会弱化这条验证）
+      expect([...ORCHESTRATOR_ALLOWED_TOOLS].sort()).toEqual([...registered].sort());
+      // ③ 组面真跑一遍：**保持宿主 allow-only 不动**（真实形态就是两层共存），
+      //    组谓词只挡不放行、与名单取交集 ⇒ 面应与名单同集
       exec.setToolGroupSurface({
         allowedGroups: new Set(['orchestrate']),
         disabledGroups: new Set(),
@@ -1927,7 +1951,7 @@ describe('HOSTED-ROUTER-TOOL-SURFACE-1 · 宝工具面闭合（allow-only）', (
       });
       const exposed = exec.list.map((t) => t.name);
       expect([...exposed].sort()).toEqual([...ORCHESTRATOR_ALLOWED_TOOLS].sort());
-      // ③ 反例：技术工具在组谓词面下仍不可见（组面不打开后门）
+      // ④ 反例：技术工具在组谓词面下仍不可见（组面不打开后门）
       for (const name of TECHNICAL_TOOLS) {
         expect(exposed, `组谓词面漏进技术工具：${name}`).not.toContain(name);
       }

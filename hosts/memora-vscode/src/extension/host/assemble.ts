@@ -686,9 +686,13 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     autoStartGc,
     // 宝的工具面收口（HOSTED-ROUTER-TOOL-SURFACE-1 · 定案 S1「Router 不配技术工具」）：
     // allow-only 白名单取代原 deny 补集——deny 只能减掉点名的工具，内核新增工具默认
-    // 漏进宝面（危险方向是漏）；allow-only 是「全集即名单」，不在白名单常量内的
-    // 一律不可见，原始 `trace_summary`（判据 5）、read_file / run_command / write_file
-    // 连同内核基建工具一并闭合，不逐项枚举。名单唯一真源 = ORCHESTRATOR_ALLOWED_TOOLS。
+    // 漏进宝面（危险方向是漏）；allow-only 是「全集即名单」，不在名单内的一律不可见，
+    // 原始 `trace_summary`（判据 5）、read_file / run_command / write_file 连同内核
+    // 基建工具一并闭合，不逐项枚举。
+    // 名单不是手写表：`ORCHESTRATOR_ALLOWED_TOOLS` 派生自各工具定义的 `group` 字段
+    // （2026-11-25 退役手写形态），与内核 `kind: assistant → orchestrate` 组面同源。
+    // 保留 allow-only 轴而不是只靠组面：角色包降级会回落到工作包（`kind` 缺省）⇒
+    // 组面不派生 ⇒ 工具面全开；allow-only 不读角色包状态，是降级路径唯一封闭面。
     // 自助会话 / Worker 不带本标记 ⇒ 不注入 ⇒ 工具面逐字不变。
     ...(orchestratorSession ? { allowOnlyTools: ORCHESTRATOR_ALLOWED_TOOLS } : {}),
   });
