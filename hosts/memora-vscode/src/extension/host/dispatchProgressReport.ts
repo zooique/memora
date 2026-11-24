@@ -359,8 +359,8 @@ export function buildDispatchLedgerTurnContext(
   const lines = shown.map((record) => {
     const title = record.targetTitle || record.targetSessionId;
     // 对账键唯一产地 = shared/dispatchKey（与落定通知同一函数）：宝要能把「这一行」和
-    // 「那条落定通知」对上号，两处各写模板已实证漂移过。不写账本内部 id——那个标识只在
-    // 本进程账本里存在，通知侧从不出场，带了也 join 不上。
+    // 「那条落定通知」对上号；两处各写模板必然漂移（标点 / 字段顺序都可能分叉）。
+    // 不写账本内部 id——那个标识只在本进程账本里存在，通知侧从不出场，带了也 join 不上。
     const head = `- 《${title}》(${formatDispatchKey(record.targetSessionId, record.roundId)}) · `;
     if (record.status === 'pending') {
       return `${head}进行中 · 派的是：${clipForContext(record.text, DISPATCH_TURN_CONTEXT_TEXT_CHARS)}`;

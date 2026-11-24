@@ -1,9 +1,9 @@
 /**
  * shared/dispatchKey 单测
  *
- * 这个函数存在的唯一理由就是「两处必须逐字相同」，所以这里同时钉死**两种消费形态**：
- * 落定通知的 `（sid=…，round=…）` 外壳，和账本行的 `(sid=…，round=…)` 外壳——
- * 身份片段本身只能有一份。
+ * 这个函数存在的唯一理由就是「两处必须逐字相同」，所以这里钉死**片段本身**：
+ * 全角逗号与 `round` 的位置只此一份；两种消费外壳（落定通知的 `（…）` / 账本行的
+ * `(…)`）由各自的消费面测试持有——账本面见 `extension/host/__tests__/dispatchProgressReport.test.ts`。
  */
 import { describe, expect, it } from 'vitest';
 import { formatDispatchKey } from '../dispatchKey.js';
