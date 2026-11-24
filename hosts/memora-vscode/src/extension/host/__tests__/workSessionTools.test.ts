@@ -31,6 +31,8 @@ import {
 } from '../workSessionTools.js';
 // 工具名单点真源 = shared/constants（与 webview 业务受理判据同源）
 import { CREATE_SESSION_TOOL_NAME, SEND_TO_SESSION_TOOL_NAME } from '../../../shared/constants.js';
+// 工种闸常量：播种的助手包名取真源，改名时本测试跟着红（不另抄字面量）
+import { ASSISTANT_ROLE_PACK } from '../../../shared/rolePackKind.js';
 // 代答工具面独立模块：工具名 / 回执类型直接取自声明处（不在两个文件里各抄一份）
 import {
   ANSWER_SESSION_QUESTION_DEFINITION,
@@ -145,10 +147,11 @@ interface HostedDeps {
 }
 
 /**
- * 播种用户级 / 项目级角色包目录（各一个包）
+ * 播种用户级 / 项目级角色包目录
  *
- * 只为验证 `list_role_packs` 的来源标记：内置包来自 configDir，用户包 / 项目包
- * 必须由这两个目录真实加载，来源层判定才有输入（否则三条都会被判成内置）。
+ * 两个工作包验证来源标记（内置 / 用户 / 项目三档）；额外播一个 `kind: assistant`
+ * 的助手包，用来证明主控选择面按 `isWorkRolePack` 过滤——它**在盘上真实存在**，
+ * 但 `list_role_packs` 的返回里必须看不到它（工作会话选到它 = 空工具面）。
  *
  * @param projectPath 临时工作区路径
  * @returns 两个额外角色包目录
@@ -159,15 +162,17 @@ function seedRolePackDirs(projectPath: string): {
 } {
   const userRolePacksDir = join(projectPath, 'user-role-packs');
   const projectRolePacksDir = join(projectPath, 'project-role-packs');
-  for (const [dir, name] of [
-    [userRolePacksDir, '我的助手'],
-    [projectRolePacksDir, '项目助手'],
+  // 三元组：[目录, 包名, 工种]；工种缺省 = work（存量工作包行为逐字不变）
+  for (const [dir, name, kind] of [
+    [userRolePacksDir, '我的助手', undefined],
+    [projectRolePacksDir, '项目助手', undefined],
+    [userRolePacksDir, ASSISTANT_ROLE_PACK, 'assistant'],
   ] as const) {
     const packDir = join(dir, name);
     mkdirSync(packDir, { recursive: true });
     writeFileSync(
       join(packDir, 'manifest.json'),
-      JSON.stringify({ name, displayName: name, strategy: {} }),
+      JSON.stringify({ name, displayName: name, ...(kind ? { kind } : {}), strategy: {} }),
       'utf-8',
     );
     writeFileSync(join(packDir, 'persona.md'), '你是播种出来的角色包。', 'utf-8');
@@ -1666,7 +1671,7 @@ describe('托管 v0 · 主控 deny 原始 trace_summary（判据 5 的另一半�
 });
 
 describe('托管 v0 · list_role_packs（工具层）', () => {
-  it('从内核 listMeta 直读：内置 / 用户 / 项目三档来源都能标出来，不二次过滤', async () => {
+  it('从内核 listMeta 直读：内置 / 用户 / 项目三档来源都能标出来，助手包被工种闸挡在清单外', async () => {
     const probe = await assembleProbe(true, {});
     try {
       const raw = await probe.agent.tools!.execute(LIST_ROLE_PACKS_TOOL_NAME, '{}');
@@ -1684,6 +1689,8 @@ describe('托管 v0 · list_role_packs（工具层）', () => {
           expect.objectContaining({ name: '项目助手', source: 'project' }),
         ]),
       );
+      // 助手包在盘上真实存在（seedRolePackDirs 播过），但工作会话的选择面必须看不到它
+      expect(parsed.packs.map((pack) => pack.name)).not.toContain(ASSISTANT_ROLE_PACK);
     } finally {
       await disposeProbe(probe);
     }
