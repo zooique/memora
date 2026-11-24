@@ -21,7 +21,7 @@
 ### Added（宿主）
 
 - **角色包工具批准入口**（`PACKTOOL-1` · **消费者可感知 · 新增入口**）：新配置 `memora.approvedPackTools`（**application 用户级，禁项目级**——项目级可被他人提交、静默把第三方脚本授予模型）+ 命令「批准角色包工具」（`memora.approvePackTools`：QuickPick 多选当前激活包的工具、写回三键记录，取消勾选即撤销）。装配期注入 + 配置变更即时同步，批准后无需重开会话。**对消费者**：未批准的包内工具对模型不可见；脚本更新后批准自动失效需重新批准。
-- **助手会话固定接入 `memora宝` + 角色包选择只列工作包**（`ROLEPACK-KIND-CONSUMER-1` · **消费者可感知 · 〔开发中〕托管簇**）：助手会话建档与旧数据矫正改指独立的 `kind: assistant` 包 `memora宝`（固定包名真源在宿主 `shared/rolePackKind.ts`，不改内核兜底包契约）；`memora助手` 保持工作包与兜底身份。设置页角色列表 / 聊天页角色列表 / 主控 `list_role_packs` 三处按 `RolePackMeta.kind` 白名单过滤，助手包不进任何选择面（未知工种亦不展示，fail-closed）。**对消费者**：普通会话不再能选到助手包、避免空工具面；助手人格由助手包承载；宿主工具名单仍在，名单退役须待真机验收（判据见台账）。
+- **助手会话固定接入 `memora宝` + 角色包选择只列工作包**（`ROLEPACK-KIND-CONSUMER-1` · **消费者可感知 · 〔开发中〕托管簇**）：助手会话建档与旧数据矫正改指独立的 `kind: assistant` 包 `memora宝`（固定包名真源在宿主 `shared/rolePackKind.ts`，不改内核兜底包契约）；`memora助手` 保持工作包与兜底身份。设置页角色列表 / 聊天页角色列表 / 主控 `list_role_packs` 三处按 `RolePackMeta.kind` 白名单过滤，助手包不进任何选择面（未知工种亦不展示，fail-closed）。**对消费者**：普通会话不再能选到助手包、避免空工具面；助手人格由助手包承载；宝可只读核对会话的语义边界与路径范围（`list_work_sessions` 返回新增 `workOrder` / `declaredPaths`），复用会话改按「摘要或最近派发至少一项可核」判定，不再因缺归档摘要就新建重复活（`WORKSESSION-BRIEF-SCOPE-1` / `SUMMARY-ROUTE-CRITERIA-1`）；宿主工具名单仍在，名单退役须待真机验收（判据见台账）。
 
 ## [0.12.0] · 2026-11-23 · 宿主
 

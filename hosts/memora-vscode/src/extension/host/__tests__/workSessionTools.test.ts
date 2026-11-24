@@ -27,6 +27,7 @@ import {
   READ_MEMORY_SUMMARY_TOOL_NAME,
   RESUME_WORK_SESSION_TOOL_NAME,
   STOP_WORK_SESSION_TOOL_NAME,
+  toWorkSessionBrief,
 } from '../workSessionTools.js';
 // 工具名单点真源 = shared/constants（与 webview 业务受理判据同源）
 import { CREATE_SESSION_TOOL_NAME, SEND_TO_SESSION_TOOL_NAME } from '../../../shared/constants.js';
@@ -292,6 +293,37 @@ async function disposeProbe(probe: Probe): Promise<void> {
 }
 
 describe('托管 v0 · 切片 0：主控会话工具接线', () => {
+  it('Brief 投影语义边界与技术范围：已声明原样回、未声明不猜', async () => {
+    const probe = await assembleProbe(true, {});
+    try {
+      const meta = probe.sessionStore.getSessionMeta(SESSION_ID);
+      expect(meta).toBeDefined();
+      const declaredPaths = ['src/agent'];
+      const withScope = toWorkSessionBrief(
+        { ...meta!, workOrder: '解决周报重复', declaredPaths },
+        { kind: 'running' },
+        'agent',
+        null,
+      );
+      // 既有事实原样投影；路径复制一份，不把 store 内部数组的可变引用递出去
+      expect(withScope.workOrder).toBe('解决周报重复');
+      expect(withScope.declaredPaths).toEqual(['src/agent']);
+      expect(withScope.declaredPaths).not.toBe(declaredPaths);
+
+      const withoutScope = toWorkSessionBrief(
+        { ...meta!, workOrder: '   ', declaredPaths: undefined },
+        { kind: 'unreadable' },
+        'unknown',
+        null,
+      );
+      // 空白 mandate = 没声明（不拿空串冒充边界）；无 paths = 空数组（不是「可动全部路径」）
+      expect(withoutScope.workOrder).toBeNull();
+      expect(withoutScope.declaredPaths).toEqual([]);
+    } finally {
+      probe.storage.close?.();
+    }
+  });
+
   it('主控会话能调到 list_work_sessions，并拿到自身元数据', async () => {
     // 传空依赖盒 = 装配层注入完整读口（状态 / 归属），与生产同形
     const probe = await assembleProbe(true, {});
@@ -334,6 +366,9 @@ describe('托管 v0 · 切片 0：主控会话工具接线', () => {
         rolePack: null,
         // 这一轮历史里没有派给它的记录 ⇒ null（不许用 unknown 之类占位词冒充事实）
         lastDispatch: null,
+        // 播种的会话没声明边界 ⇒ null / 空数组（全等断言随投影字段同步，不放宽成 objectContaining）
+        workOrder: null,
+        declaredPaths: [],
       });
       // 有记录的角色包如实带出（取 SessionMeta.activeRolePackName，只读不落盘）
       expect(parsed.sessions.find((s) => s.sid === TARGET_SESSION_ID)?.rolePack).toBe(
@@ -1801,12 +1836,12 @@ describe('HOSTED-ROUTER-TOOL-SURFACE-1 · 宝工具面闭合（allow-only）', (
     'ask_user',
   ] as const;
 
-  it('判据 ①：宝装配后只暴露九个会话工具，技术工具全不可见', async () => {
-    // 完整依赖盒 ⇒ 九个工具全注册；列表即 allow-only 过滤后的真实交付面
+  it('判据 ①：宝装配后只暴露白名单会话工具，技术工具全不可见', async () => {
+    // 完整依赖盒 ⇒ 白名单工具全注册；列表即 allow-only 过滤后的真实交付面
     const probe = await assembleProbe(true, {});
     try {
       const names = probe.agent.tools!.list.map((t) => t.name);
-      // 正例：九个会话工具一个不少（漏一个 = 宝静默断臂）
+      // 正例：白名单会话工具一个不少（漏一个 = 宝静默断臂）
       for (const name of ORCHESTRATOR_ALLOWED_TOOLS) {
         expect(names, `宝缺会话工具 ${name}`).toContain(name);
       }

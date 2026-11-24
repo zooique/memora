@@ -2,10 +2,8 @@
  * 会话工具 · 主控装配面（托管模式 v0）
  *
  * 职责（只做主控会话的工具面）：
- *   - 装配层判定「这个 Agent 是主控」时，为它注册九个工具：`list_work_sessions` /
- *     `send_to_session` / `create_session` / `stop_work_session` / `pause_work_session` /
- *     `resume_work_session` / `answer_session_question` / `list_role_packs` /
- *     `read_memory_summary`（后两者只读；回调缺项时对应工具不注册）；
+ *   - 装配层判定「这个 Agent 是主控」时，按 `ORCHESTRATOR_ALLOWED_TOOLS` 逐项注册
+ *     （白名单即交付面真源，此处不抄成员、不写计数；回调缺项时对应工具不注册）；
  *   - 普通会话不注册 ⇒ 模型侧「工具不存在」，不是「调用报错」。
  *
  * 边界（刻意如此，勿扩）：
@@ -164,7 +162,7 @@ export const RESUME_WORK_SESSION_TOOL_NAME = 'resume_work_session';
  * 宝的完整工具面（HOSTED-ROUTER-TOOL-SURFACE-1 · 封闭白名单唯一真源）
  *
  * 定案 §一 / §五「Router 不配技术工具」：宝只有会话管理 + 两个只读查询，零读文件 /
- * 跑命令 / 改代码 / 内核基建。名单从上方九个工具名常量逐项派生（含代答工具名，
+ * 跑命令 / 改代码 / 内核基建。名单从上方各工具名常量逐项派生（含代答工具名，
  * 它住在独立模块），装配层只引用本常量、不另抄字面量——抄一份就是第二真源，
  * 内核新增工具或本模块改名时必漂移。
  *
@@ -555,9 +553,11 @@ export interface WorkSessionLastDispatch {
 /**
  * 单个会话的对外摘要（代理判断「该复用还是该新开」的最小字段集）
  *
- * 八个事实：标识、标题、**归档摘要**、最后更新时间、**当前状态**、**归属**（谁开的）、
- * **角色包**（能力面）、**最近一次派给它什么**。前七项全部来自既有事实的读侧投影，
- * 第八项来自主控自己轮里的派发记录——不新增持久化、不建关系表。
+ * 事实集（成员以本接口字段为准，不写计数）：标识、标题、**归档摘要**、最后更新时间、
+ * **当前状态**、**归属**（谁开的）、**角色包**（能力面）、**最近一次派给它什么**、
+ * **语义边界**（workOrder）、**技术范围**（declaredPaths）。
+ * 除派发摘录外均来自既有事实的读侧投影（边界两项在 `SessionMeta` 已持久化），
+ * 派发摘录来自主控自己轮里的记录——不新增持久化、不建关系表。
  */
 export interface WorkSessionBrief {
   /** 会话标识（YYYY-MM-DD-sessionName，与 sessionStore 同口径） */
@@ -572,8 +572,9 @@ export interface WorkSessionBrief {
   /**
    * 会话级归档摘要（`SessionMeta.summary`，由 SessionArchiver 归档时生成）
    *
-   * `null` = 这条会话**没有归档过摘要**（还没离场 / 归档没写成）——**不是**标题，
-   * 也**不是**空串。判据 1 的数据面：没有摘要的会话不许被路由（拿不到就新建）。
+   * `null` = 这条会话**没有归档过摘要**（可能在跑 / 已完成未归档）——**不是**标题，
+   * 也**不是**空串。路由判据见 `list_work_sessions` 描述：summary 或 lastDispatch 至少一项
+   * 可核才路由；两样都没有才按新活处理，不许仅因 summary 空就判「不可路由」。
    */
   summary: string | null;
   /** 最后更新时间（ISO 8601，排序依据；store 已按此降序） */
@@ -604,6 +605,20 @@ export interface WorkSessionBrief {
    * （`coverage !== 'complete'`）时，只能说「这次没看到」。不许用占位词冒充事实。
    */
   lastDispatch: WorkSessionLastDispatch | null;
+  /**
+   * 语义边界（`SessionMeta.workOrder`，派活时的 mandate：解决什么问题 / 不解决什么）
+   *
+   * ⚠️ 与技术范围正交，不可互替：`declaredPaths` 说动哪些路径，`workOrder` 说解决什么。
+   * 只作读侧投影，不是权限、不参与门禁；`null` = 这条会话从未声明过边界，不猜一个。
+   */
+  workOrder: string | null;
+  /**
+   * 技术范围（`SessionMeta.declaredPaths`，创建时声明的仓库相对路径）
+   *
+   * 空数组 = 没有声明范围（旧会话 / 创建时未传 paths），**不是**「允许动所有路径」；
+   * 读侧只回投影，范围门禁用的是 store 真源，不得拿这份摘要当授权依据。
+   */
+  declaredPaths: string[];
 }
 
 /**
@@ -617,19 +632,14 @@ const LIST_WORK_SESSIONS_DEFINITION: ToolDefinition = {
   name: LIST_WORK_SESSIONS_TOOL_NAME,
   group: 'orchestrate',
   description:
-    '列出当前工作区已知的会话（sid、标题、归档摘要、最后更新时间、状态、归属、角色包），' +
-    '用于判断是否已有相关会话、避免重复新建。不含对话正文。' +
-    'summary 是该会话归档时生成的摘要（判断复用与否的主依据）；null = 没有归档过摘要，' +
-    '不是标题、也不是空串——没有摘要的会话不许被路由。' +
+    '列出当前工作区已知的会话（sid、标题、归档摘要、最后更新时间、状态、归属、角色包、语义边界、技术范围），用于判断是否已有相关会话、避免重复新建。不含对话正文。' +
+    'summary 是该会话归档时生成的摘要；null = 没有归档过摘要（可能在跑 / 已完成未归档），不是标题、也不是空串。复用判据：summary 或 lastDispatch 至少一项可核才路由；两样都没有按新活处理。' +
     'title 只用于初筛：它是首轮生成后永不更新的旧标题，任务漂移后会误导，不能拿它做定夺。' +
-    'status.kind：running 在跑 / waiting 等你（用户要先处理）/ completed 已完成 / ' +
-    'stopped 被中止（stop 给原因）/ unsettled 上次未正常结束 / queued 尚未开始 / unreadable 状态读不到。' +
-    'createdBy：agent = 你开的 / user = 用户自己建的 / unknown = 无法确认。' +
-    'rolePack：该会话挂的角色包名（能力面依据）；null = 会话没有记录角色包，不是默认包。' +
-    'lastDispatch：你最近一次派给它的任务摘录（来自你自己轮里的 send_to_session 调用）；' +
-    'null = 本次可读历史窗口里没读到派给它的记录，不等于从未派过——窗口上限与截断见顶层 scan。' +
-    '⚠️ unreadable、unknown、或顶层 coverage 不为 complete 都表示「不确定」，' +
-    '不得当成「这条活没在跑、可以再开一个」；不确定时先向用户确认，不要盲目新建或派活。',
+    'workOrder 是语义边界（解决什么问题），declaredPaths 是技术范围（动哪些路径）：复用前据此核对边界与占用路径；空数组 = 未声明范围，不是可动全部路径。' +
+    'status.kind：running 在跑 / waiting 等你（用户要先处理）/ completed 已完成 / stopped 被中止（stop 给原因）/ unsettled 上次未正常结束 / queued 尚未开始 / unreadable 状态读不到。' +
+    'createdBy：agent = 你开的 / user = 用户自己建的 / unknown = 无法确认。rolePack：该会话挂的角色包名（能力面依据）；null = 会话没有记录角色包，不是默认包。' +
+    'lastDispatch：你最近一次派给它的任务摘录（来自你自己轮里的 send_to_session 调用）；null = 本次可读历史窗口里没读到派给它的记录，不等于从未派过——窗口上限与截断见顶层 scan。' +
+    '⚠️ unreadable、unknown、或顶层 coverage 不为 complete 都表示「不确定」，不得当成「这条活没在跑、可以再开一个」；不确定时先向用户确认，不要盲目新建或派活。',
   parameters: {
     type: 'object',
     // 本片无参数：切片 1 接入扫盘后再按需扩展（不预留空壳参数）
@@ -965,6 +975,10 @@ export function toWorkSessionBrief(
     rolePack: normalizeRolePackName(meta.activeRolePackName) ?? null,
     // 派发记录来自主控自己的历史；没读到就如实 null，不用占位词冒充
     lastDispatch,
+    // 边界两项只投影 store 既有事实：空白 mandate 归 null（不拿空串冒充「声明过」）；
+    // 路径复制一份，避免读侧持有 store 内部数组的可变引用。
+    workOrder: meta.workOrder && meta.workOrder.trim() !== '' ? meta.workOrder : null,
+    declaredPaths: meta.declaredPaths ? [...meta.declaredPaths] : [],
   };
 }
 

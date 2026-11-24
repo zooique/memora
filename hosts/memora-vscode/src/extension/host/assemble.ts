@@ -665,7 +665,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     autoStartGc,
     // 宝的工具面收口（HOSTED-ROUTER-TOOL-SURFACE-1 · 定案 S1「Router 不配技术工具」）：
     // allow-only 白名单取代原 deny 补集——deny 只能减掉点名的工具，内核新增工具默认
-    // 漏进宝面（危险方向是漏）；allow-only 是「全集即名单」，不在九个会话工具内的
+    // 漏进宝面（危险方向是漏）；allow-only 是「全集即名单」，不在白名单常量内的
     // 一律不可见，原始 `trace_summary`（判据 5）、read_file / run_command / write_file
     // 连同内核基建工具一并闭合，不逐项枚举。名单唯一真源 = ORCHESTRATOR_ALLOWED_TOOLS。
     // 自助会话 / Worker 不带本标记 ⇒ 不注入 ⇒ 工具面逐字不变。
