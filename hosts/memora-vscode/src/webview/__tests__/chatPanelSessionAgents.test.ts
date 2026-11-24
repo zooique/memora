@@ -1355,6 +1355,44 @@ describe('新建会话默认角色包 · 用户级默认 → 会话快照', () =
     return ctx.provider.getCurrentSessionId();
   }
 
+  /**
+   * DRAFT-FIRST-SEND-1 回归：冷启动草稿**首条** send 必须真的送达 agent、零「未就绪」警告。
+   *
+   * 变异靶标：`routeInput` 草稿分支删掉 `sessionId = deps.currentSessionId()`（退回入口空快照）
+   * ⇒ `ensureAgent('')` 弹警告并 return，本用例的 chatSpy 零调用 ⇒ 转红。
+   * 旧 `sendFirst` 只等 `isDraftSession()===false`（建会话成功）就从不断言首条送达，吞消息照样绿。
+   */
+  it('草稿首条 send 送达新会话 agent 且零警告（DRAFT-FIRST-SEND-1）', async () => {
+    stubDefaultRolePack('');
+    const ctx = setupPanel();
+    const chatCalls: string[] = [];
+    // 工厂产出即装 spy：首条 send 触发建会话 → 这个实例就是目标 agent
+    const factory = vi.fn(async (_projectPath: string, sessionId: string) => {
+      const agent = sessionAgent(sessionId);
+      agent.chat = vi.fn((input: string) => {
+        chatCalls.push(input);
+        return (async function* () {})();
+      }) as unknown as SessionAgentStub['chat'];
+      return agent as unknown as Agent;
+    });
+    ctx.provider.setAgentFactory(factory);
+    ctx.provider.setRolePackCatalog(async () => new Set());
+    const warn = mockedWindow.showWarningMessage as unknown as { mockClear(): void };
+    warn.mockClear();
+
+    const newId = await sendFirst(ctx);
+
+    // ① 首条原文确实进了 agent（不是「建了会话但消息被吞」）
+    await vi.waitFor(() => expect(chatCalls).toEqual(['梳理一下这个仓库']), { timeout: 5000 });
+    expect(ctx.cast._sessionAgents.get(newId)).toBeDefined();
+    // ② 零「Agent is not ready」警告（用户真机撞的那条），且不能靠第二次重试
+    expect(factory).toHaveBeenCalledTimes(1);
+    const notReadyWarnings = vi
+      .mocked(mockedWindow.showWarningMessage)
+      .mock.calls.filter(([m]) => String(m ?? '').includes('Agent is not ready'));
+    expect(notReadyWarnings).toEqual([]);
+  });
+
   it('未选包 + 全局默认=X ⇒ 建会话写入 meta，装配与投影都等于 X', async () => {
     stubDefaultRolePack('代码助手');
     const ctx = await enterDraft(new Set(['代码助手']));

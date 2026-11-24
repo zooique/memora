@@ -96,6 +96,10 @@ export async function routeInput(
   if (sessionId === current && deps.isDraft()) {
     if (msg.kind !== 'send' || !(msg.text?.trim() ?? '')) return;
     if (!(await deps.flushDraft())) return;
+    // DRAFT-FIRST-SEND-1：flush 已把草稿落成真实会话（createSession 内 setCurrentSessionId +
+    // agentForSession 均已就位），入口快照这个空 id 已失效。回读真源（只读访问器，不写状态）
+    // 覆盖目标 id，否则下方 ensureAgent('') 弹「Agent is not ready」并吞掉首条。
+    sessionId = deps.currentSessionId();
   }
   const agent = await deps.ensureAgent(sessionId);
   if (!agent) {
