@@ -313,7 +313,8 @@ describe('包内工具注册（registerRolePackTools / clearRolePackTools）· �
       execute,
       // 只读闸查「全部工具定义」（内置 + 自定义），与生产装配形态（allToolDefinitions）同源
       allTools: () => executor.allToolDefinitions,
-      getStrategy: () => ({ ...DEFAULT_L2_STRATEGY, toolReadonly: 'readonly' }) as L2RuntimeStrategy,
+      getStrategy: () =>
+        ({ ...DEFAULT_L2_STRATEGY, toolReadonly: 'readonly' }) as L2RuntimeStrategy,
       tracer: NOOP_TRACER,
     });
 
