@@ -49,9 +49,6 @@ import { interjectEcho } from '../helpers/interjectEcho.js';
 import {
   resolveContextWindow,
   LOOP_CONSTANTS,
-  // 助手会话的固定角色包 = 内核契约包（「memora 的通用助手」）：助手人格不得被
-  // 用户「新建会话默认角色包」顶替，故建会话时显式传它，不走默认包决策链
-  BUILTIN_FALLBACK_PACK,
   type Agent,
   type AgentChunk,
   type AgentEventMap,
@@ -104,6 +101,7 @@ import { routeInput } from '../helpers/inputRouting.js';
 import { replaySessionInto, type SessionReplayDeps } from '../helpers/sessionReplay.js';
 // 「上次停在空白草稿页」标记：空白页没有会话身份，会话停留指针表达不了这件事
 import { UI_DRAFT_PAGE_KEY } from '../../shared/constants.js';
+import { ASSISTANT_ROLE_PACK } from '../../shared/rolePackKind.js';
 // 插话受理三态的可见文案（INPUT-LIMIT-1 / INTERJECT-PERSIST-1）统一由 windowNotices 提供，
 // 面板内不嵌字面量：那里是窗口提示的单一真源（常量形态会在模块求值时定稿语言，故用函数）。
 
@@ -327,9 +325,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     assistantSessionId: () => this.sessionModes.listManagedSessionIds()[0],
     dropAssistantSession: (sessionId) => this.sessionModes.delete(sessionId),
     isResolvable: (sessionId) => this.sessionStore.isResolvable(sessionId),
-    // 助手身份固定 = 内置助手包（用户级默认只属工作会话，不得顶替助手人格，2026-11-17 真机实锤）
+    // 助手身份固定 = 助手角色包 memora宝（用户级默认只属工作会话，不得顶替助手人格；
+    // 固定包名真源在 shared/rolePackKind，非内核兜底包契约）
     createAssistantSession: (sessionId) =>
-      this.createSession(sessionId, BUILTIN_FALLBACK_PACK, {
+      this.createSession(sessionId, ASSISTANT_ROLE_PACK, {
         background: true,
         assistant: true,
         title: l10n.t('Assistant'),
@@ -2023,12 +2022,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (!this._getAgent) throw new Error(l10n.t('Memora: Agent factory is not injected'));
     const cached = this._sessionAgents.get(sessionId);
     if (cached) return cached;
-    // 旧版助手会话可能落着工作角色包（真机 2026-11-17 自称「小说创作助手」）：装配前矫正
+    // 旧版助手会话落工作角色包（真机 2026-11-17 自称「小说创作助手」）：装配前矫正到
+    // 助手包 memora宝；用户手动切包也由本矫正写回（ASSISTANT-PACK-SILENT-RESET-1 语义不变）
     ensureAssistantRolePack(
       this.sessionStore,
       sessionId,
       this.getAssistantSessionId(),
-      BUILTIN_FALLBACK_PACK,
+      ASSISTANT_ROLE_PACK,
     );
     const agent = await this._getAgent(this.workspacePath, sessionId);
     this._sessionAgents.set(sessionId, agent);

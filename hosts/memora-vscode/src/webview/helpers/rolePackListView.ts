@@ -15,6 +15,7 @@ import type { Agent } from '@zooique/memora';
 import { BUILTIN_FALLBACK_PACK, MAX_TEAM_MEMBERS, describeStrategyKeys } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { ROLE_PACK_TEAMS_KEY } from '../../shared/constants.js';
+import { isWorkRolePack } from '../../shared/rolePackKind.js';
 import { inspectRolePackTeams } from '../../extension/host/rolePackTeams.js';
 import { deriveCapabilityState } from './capabilityState.js';
 
@@ -72,7 +73,8 @@ export function postRolePackList(
   });
   const packs = rpm
     .listMeta()
-    .filter((m) => m.name)
+    // 只列工作包：助手包由助手会话独占，不进任何角色包选择面（宿主策略见 shared/rolePackKind）
+    .filter((m) => m.name && isWorkRolePack(m.kind))
     .map((m) => {
       const pack = rpm.get(m.name);
       // 来源层判定：rolePackSource 单点（与保存链路内置拒绝判据同源，禁第二份前缀副本）
@@ -144,7 +146,8 @@ export function buildChatRolePacks(
   }
   const packs = rpm
     .listMeta()
-    .filter((p) => p.name) // 过滤无 name 的异常包
+    // 过滤无 name 的异常包 + 只列工作包（与设置页 / 主控共用 isWorkRolePack 判据）
+    .filter((p) => p.name && isWorkRolePack(p.kind))
     .map((p) => ({
       name: p.name,
       displayName: p.displayName ?? p.name,

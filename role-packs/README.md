@@ -24,7 +24,7 @@
 | 角色包 | 说明 | 覆盖能力面 |
 |--------|------|-----------|
 | **memora助手** | **兜底契约包**（非示例，名字由内核常量 `BUILTIN_FALLBACK_PACK` 锁定，改名须走 ADR；**宿主 UI 禁删 + 构建期 existsSync 硬校验**）：领域无关的**工作角色包**（缺省 `kind: work` = 不设组面），负责通用对话与任务执行 | 领域无关最小集：无 skills / 无 capabilities（省略 = 全部暴露）/ 无 strategy（走内核默认） |
-| **memora宝** | **助手角色包**（`kind: assistant` = 工具面只放 `orchestrate` 组，不配写盘 / 执行 / 挂起工具）：会话调度专用，负责派活、跟进与回报；独立包，非兜底契约包、不接管工作会话降级链 | 无 skills / 无 capabilities / 无 strategy；真实 `persona.md` / `rules.md` 声明调度纪律，`group` 归组真源 = 各工具定义（宿主会话工具标 `orchestrate`） |
+| **memora宝** | **助手角色包**（`kind: assistant` = 工具面只放 `orchestrate` 组，不配写盘 / 执行 / 挂起工具）：会话调度专用，负责派活、跟进与回报；独立包，非兜底契约包、不接管工作会话降级链，助手会话固定接入、不进工作会话角色包选择列表 | 无 skills / 无 capabilities / 无 strategy；真实 `persona.md` / `rules.md` 声明调度纪律，`group` 归组真源 = 各工具定义（宿主会话工具标 `orchestrate`） |
 | **只读项目顾问**（目录 `readonly-advisor`） | 示例：只读顾问型角色包——陪你阅读、检索、分析项目并给出改进建议，**不修改项目文件**（提问 / 暂停等会话状态不属项目文件，不受此限） | 真实 `persona.md` / `rules.md`（无 `skills/`）+ capabilities（web:search / web:fetch）+ strategy（**`act.toolReadonly: "readonly"`** 只读模式、低温度 0.3、askOn 含 confirm）+ handoffPrompt；**具体工具与能力面以该包 `manifest.json` 为准，此处不复述工具清单** |
 | 共鸣小说家 | 示例：方法论型角色包——三层结构小说创作（**需求层**：社会热点→痛点→精神需求缺口；**内核层**：经典人性内核，跨时代稳定；**形式层**：题材文笔是内核与读者的纽带），先需求再内核后形式，直接产出完整成稿 | 真实 skills/ 文件（**技能清单以 `skills/` 目录为唯一源、使用时机见 `persona.md` 七阶段流水线与 `rules.md`，此处不枚举**）+ capabilities（web:search 特权）+ strategy（高温度 / askOn 主动提问 / 联网搜索上限 8 次）+ handoffPrompt |
 | 白话方案设计师 | 示例：方法论型角色包——融合方案设计（单一真理源·最小单元·网络为土壤）与文档编排，先用白话把设计讲清楚，再落实为可开发的专业文档 | 真实 skills/ 文件（**技能清单以 `skills/` 目录为唯一源、使用时机见 `persona.md` / `rules.md`，此处不枚举**）+ capabilities（web:search 特权 / llm:summarize）+ strategy（白话优先 / askOn 含 confirm / 联网搜索上限 12 次）+ handoffPrompt |

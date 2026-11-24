@@ -36,6 +36,7 @@ import type {
 } from '@zooique/memora';
 import type { ILogger } from '@zooique/memora';
 import type { CustomSearchEngineConfig } from '../../shared/protocol.js';
+import { isWorkRolePack } from '../../shared/rolePackKind.js';
 import { resolveSearchEndpoints } from './searchEngines.js';
 // vscode 命名空间类型引用（OutputChannel）：仅类型导入，无运行时依赖（宿主运行时由 VS Code 注入真实模块）
 import type { OutputChannel } from 'vscode';
@@ -697,16 +698,20 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     const listRolePacks = (): RolePackBrief[] => {
       const manager = agent.rolePacks;
       if (!manager) return [];
-      return manager.listMeta().map((meta) => {
-        // filePath 取同一 manager 的装配结果，来源层判定与设置页共用 rolePackSourceOf
-        const filePath = manager.get(meta.name)?.filePath;
-        return {
-          name: meta.name,
-          ...(meta.displayName ? { displayName: meta.displayName } : {}),
-          ...(meta.description ? { description: meta.description } : {}),
-          source: rolePackSourceOf(filePath, { userRolePacksDir, projectRolePacksDir }),
-        };
-      });
+      // 只列工作包：助手包由助手会话独占，不进主控可选清单（与 webview 两处共用判据）
+      return manager
+        .listMeta()
+        .filter((meta) => isWorkRolePack(meta.kind))
+        .map((meta) => {
+          // filePath 取同一 manager 的装配结果，来源层判定与设置页共用 rolePackSourceOf
+          const filePath = manager.get(meta.name)?.filePath;
+          return {
+            name: meta.name,
+            ...(meta.displayName ? { displayName: meta.displayName } : {}),
+            ...(meta.description ? { description: meta.description } : {}),
+            source: rolePackSourceOf(filePath, { userRolePacksDir, projectRolePacksDir }),
+          };
+        });
     };
     /**
      * 会话摘要读口（判据 5 的窄工具）

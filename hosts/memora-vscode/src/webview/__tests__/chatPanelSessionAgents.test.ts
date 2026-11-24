@@ -37,6 +37,8 @@ import type * as vscode from 'vscode';
 import { workspace as mockedWorkspace, window as mockedWindow } from 'vscode';
 // 未发送草稿的持久键（断言落盘形状用真源常量，不复制字面量）
 import { UI_COMPOSER_DRAFTS_KEY, UI_DRAFT_PAGE_KEY } from '../../shared/constants.js';
+// 助手会话固定包名 = 宿主策略真源（与建档 / 矫正生产代码同一常量）
+import { ASSISTANT_ROLE_PACK } from '../../shared/rolePackKind.js';
 import { DRAFT_PAGE_OWNER } from '../helpers/composerDrafts.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
@@ -2894,7 +2896,7 @@ describe('助手会话与工作会话分家（HOSTED-SEAT-SESSION-1 真机订正
     return list?.sessions.map((s) => s.sessionId) ?? [];
   }
 
-  it('助手会话角色包固定为内置助手包（不被「新建会话默认角色包」顶替），且不进工作会话列表', async () => {
+  it('助手会话角色包固定为助手角色包 memora宝（不被「新建会话默认角色包」顶替），且不进工作会话列表', async () => {
     // 用户级默认 = 工作包（真机里就是「共鸣小说家」）；助手人格不得被它接走
     vi.mocked(mockedWorkspace.getConfiguration).mockImplementation(
       () =>
@@ -2916,7 +2918,7 @@ describe('助手会话与工作会话分家（HOSTED-SEAT-SESSION-1 真机订正
     const assistantId = modes.listManagedSessionIds()[0];
     expect(assistantId).toBeDefined();
     // ① 助手身份不被默认包接走
-    expect(h.store.getSessionMeta(assistantId!)?.activeRolePackName).toBe(BUILTIN_FALLBACK_PACK);
+    expect(h.store.getSessionMeta(assistantId!)?.activeRolePackName).toBe(ASSISTANT_ROLE_PACK);
     // ② 列表含别的工作会话、不含助手会话
     const ids = lastListIds(h.posted);
     expect(ids).toContain('2026-11-06-w2');
@@ -2931,7 +2933,7 @@ describe('助手会话与工作会话分家（HOSTED-SEAT-SESSION-1 真机订正
     expect(h.provider.getCurrentSessionId()).toBe('2026-11-06-w');
   });
 
-  it('旧版助手会话落着工作角色包 ⇒ 装配时矫正回内置助手包', async () => {
+  it('旧版助手会话落着工作角色包 ⇒ 装配时矫正回助手角色包 memora宝', async () => {
     const modes = createEphemeralSessionModeStore();
     modes.set('2026-11-06-a', 'managed');
     const h = setupPanel({}, ['2026-11-06-w'], modes);
@@ -2956,7 +2958,7 @@ describe('助手会话与工作会话分家（HOSTED-SEAT-SESSION-1 真机订正
     await new Promise((r) => setTimeout(r, 0));
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(h.store.getSessionMeta('2026-11-06-a')?.activeRolePackName).toBe(BUILTIN_FALLBACK_PACK);
+    expect(h.store.getSessionMeta('2026-11-06-a')?.activeRolePackName).toBe(ASSISTANT_ROLE_PACK);
     unregister.dispose();
   });
 

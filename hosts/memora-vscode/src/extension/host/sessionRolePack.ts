@@ -34,12 +34,13 @@ export interface SessionMetaWriter extends SessionMetaReader {
  *
  * 助手会话的身份由「它是不是助手会话」决定，**不由**用户级「新建会话默认角色包」决定：
  * 旧版建出来的助手会话会落着工作包（真机 2026-11-17 助手自称「小说创作助手」）。
- * 装配前把名字改回内置助手包，避免「身份判据」在装配链与建档链各存一份。
+ * 装配前把名字改回助手角色包（`shared/rolePackKind.ASSISTANT_ROLE_PACK`，由调用方注入），
+ * 避免「身份判据」在装配链与建档链各存一份。固定包名属宿主策略，本判据模块不硬编码。
  *
  * @param store 会话存储（读 / 写 meta）
  * @param sessionId 目标会话
  * @param assistantSessionId 助手会话 id（undefined / 不相等 ⇒ 不是助手会话，不动）
- * @param packName 助手固定包名（= 内置助手包）
+ * @param packName 助手固定包名（真源 `shared/rolePackKind.ASSISTANT_ROLE_PACK`）
  * @returns 是否发生了矫正（调用方据此决定是否刷新显示）
  */
 export function ensureAssistantRolePack(
