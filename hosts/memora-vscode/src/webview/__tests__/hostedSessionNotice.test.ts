@@ -61,12 +61,14 @@ function meta(sessionId: string, origin: SessionMeta['origin'], displayName?: st
  * @param status 轮状态
  * @param events 过程事件（原因真源）
  * @param assistantContent 助手正文（成功轮的交付摘录来源；缺省 = 无正文）
+ * @param stamped 是否助手盖章派发的轮（缺省 true；用户亲手开的轮传 false，无 origin/dispatchedBy）
  */
 function round(
   id: string,
   status: RoundStatus,
   events: ProcessEvent[] = [],
   assistantContent?: string,
+  stamped = true,
 ): Round {
   return {
     id,
@@ -75,6 +77,9 @@ function round(
     createdAt: TS,
     completedAt: TS,
     processEvents: events,
+    ...(stamped
+      ? { origin: 'hosted' as const, dispatchedBy: { from: CREATOR, via: 'delegate' as const } }
+      : {}),
     ...(assistantContent
       ? {
           assistantMessage: {
@@ -296,6 +301,33 @@ describe('HostedSessionNotifier', () => {
     const text = h.creatorQueue.mock.calls[0][0] as string;
     expect(text).toContain('我自己的会话');
     expect(text).toContain('用户主动停止');
+  });
+
+  it('宝创建的会话里用户亲手开的轮落定 → 不通知创建者（turn 级归属闸，真机实测）', () => {
+    const h = harness();
+    // 会话是宝建的（hosted 出生 + 创建者已登记），且会话级驱动权判据此刻仍判「代理驱动中」——
+    // 刻意不删 h.driven：让拦阻只能来自本轮缺 authored 戳这一处，否则旧会话级闸会造假绿。
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '宝开的会话'));
+    h.rounds.set('r-user-turn', round('r-user-turn', 'complete', [], undefined, false));
+    h.notifier.remember(CHILD, CREATOR);
+
+    expect(h.notifier.noteSettledFlow(CHILD, 'r-user-turn', false, false)).toBe(false);
+    expect(h.creatorQueue).not.toHaveBeenCalled();
+    expect(h.wakeCreator).not.toHaveBeenCalled();
+  });
+
+  it('盖章方与登记方不一致 → 不通知（会话已被重新派发，宁可不投也不投错人）', () => {
+    const h = harness();
+    h.metas.set(CHILD, meta(CHILD, 'hosted', '转派过的会话'));
+    // 轮戳的派发方 ≠ 进程内登记的创建者
+    h.rounds.set('r-restamp', {
+      ...round('r-restamp', 'complete'),
+      dispatchedBy: { from: '2026-11-14-other-creator', via: 'delegate' },
+    });
+    h.notifier.remember(CHILD, CREATOR);
+
+    expect(h.notifier.noteSettledFlow(CHILD, 'r-restamp', false, false)).toBe(false);
+    expect(h.creatorQueue).not.toHaveBeenCalled();
   });
 
   it('hosted 但没有创建者记录 → 不通知（不知道谁是代理，就不乱发）', () => {

@@ -2227,7 +2227,8 @@ describe('托管落定通知 · 流收场投递给创建者（第三 / 第四切
     modes.markAgentDriven(child);
     store.updateSessionMeta(child, { displayName: '抓取任务', origin: 'hosted' });
     const roundId = 'round-child-stop';
-    // 盘上事实：该轮已按中断收场，aborted.stopReason 说明是用户停的
+    // 盘上事实：该轮已按中断收场，aborted.stopReason 说明是用户停的。
+    // origin/dispatchedBy = 生产里 createHostedSession 派首轮时写入的盖章（turn 级归属真源）。
     roundStore.save({
       id: roundId,
       userMessage: {
@@ -2236,6 +2237,8 @@ describe('托管落定通知 · 流收场投递给创建者（第三 / 第四切
         content: '去抓取',
         timestamp: '2026-11-14T10:00:00.000Z',
       },
+      origin: 'hosted',
+      dispatchedBy: { from: creator, via: 'create' },
       status: 'interrupted',
       createdAt: '2026-11-14T10:00:00.000Z',
       completedAt: '2026-11-14T10:00:05.000Z',
@@ -2287,7 +2290,7 @@ describe('托管落定通知 · 流收场投递给创建者（第三 / 第四切
     modes.markAgentDriven(child);
     store.updateSessionMeta(child, { displayName: '抓取任务', origin: 'hosted' });
     const roundId = 'round-child-done';
-    // 盘上事实：该轮以 complete 成功收场
+    // 盘上事实：该轮以 complete 成功收场（盖章同 createHostedSession 派首轮的生产形态）。
     roundStore.save({
       id: roundId,
       userMessage: {
@@ -2296,6 +2299,8 @@ describe('托管落定通知 · 流收场投递给创建者（第三 / 第四切
         content: '去抓取',
         timestamp: '2026-11-14T10:00:00.000Z',
       },
+      origin: 'hosted',
+      dispatchedBy: { from: creator, via: 'create' },
       status: 'complete',
       createdAt: '2026-11-14T10:00:00.000Z',
       completedAt: '2026-11-14T10:00:05.000Z',

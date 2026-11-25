@@ -16,10 +16,12 @@
  *     随之丢失，**刻意不补发**（宁可漏报一条旧落定，也不在重启后刷一屏历史）；
  *   - 创建者实例**还没装配**（真机：重启后子会话先落定、创建者面板尚未装配）时，
  *     通知压进待办、等实例就位由 `flushPending` 放出——**不许直接丢**（丢了用户永远看不到结果）。
- *   - 只通知**本进程内登记过创建者、且当前仍由代理驱动**的会话。登记来源两条：
+ *   - 只通知**本进程内登记过创建者、且本轮确由代理盖章派发**的落定。登记来源两条：
  *     代理建会话（`create_session`）与代理派发接管（`send_to_session`）。
  *     `SessionMeta.origin` 只记出生事实（用户自建会话被派发后仍是 `'user'`），不作通知判据；
  *     用户自己选托管新建、且从未被派发过的会话没有创建者记录 ⇒ 不会向任何代理发通知；
+ *     **轮级归属闸**：`Round.dispatchedBy` 是「谁派给谁」的真相源，用户在这个会话里亲手开的
+ *     轮没有该戳 ⇒ 即便会话出身 hosted、驱动权已按会话级判据自动恢复，也不回执助手；
  *   - 同一会话同一轮只写一条（成功 / 失败 / 中断共用同一去重键，重复信号不再打扰主控）；
  *   - 宁晚不打断：创建者正在跑流、挂着待答提问、暂停中，或用户正在输入框里打字时，
  *     不立刻唤醒——把事实压进内存待办，等创建者本轮收场后由 `flushPending` 合并成一轮浮现；
@@ -449,6 +451,15 @@ export class HostedSessionNotifier {
     this.injectLedgerContext(input.sessionId);
     const creator = this.childToCreator.get(input.sessionId);
     if (creator && creator !== input.sessionId) this.injectLedgerContext(creator);
+    // turn 级归属闸：只有助手盖章派发的轮才回执创建者。
+    // `Round.dispatchedBy` 是「谁派给谁」的归属真相源（随轮落盘、永久可反查）；用户亲手开的
+    // 轮没有这个戳，即便会话出身是 hosted、此刻驱动权已按会话级判据自动归还助手，也不该把
+    // 用户自己的成果回执给助手——那会诱导它重复整理，或误认成自己那次派活的结果。
+    // childToCreator 只是进程内驱动登记（服务 childrenOf 清单与路由），此处仅用它核对盖章方
+    // 与登记方一致：不一致说明会话已被重新派发，宁可不投也不投错人。
+    // 闸放在账本核销与内部注入之后：那一轮已落定的系统事实与「要不要打扰助手」是两件事。
+    const stampedFrom = round.dispatchedBy?.from;
+    if (!stampedFrom || stampedFrom !== creator) return false;
     const target = this.resolveTarget(input.sessionId);
     if (!target) return false;
     if (this.notified.has(key)) return false;
