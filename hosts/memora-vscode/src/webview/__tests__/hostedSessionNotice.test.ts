@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type { Agent, ProcessEvent, Round, RoundStatus, SessionMeta } from '@zooique/memora';
 import type { PendingQuestionDto } from '../../shared/protocol.js';
+import { IRREVERSIBLE_ACTION_WORDS } from '../../shared/constants.js';
 import { HostedSessionNotifier, noteHandBackOrSettlement } from '../helpers/hostedSessionNotice.js';
 import { SessionModeStore } from '../../extension/host/sessionModeStore.js';
 // 派活账本核销挂点（判据 C）：落定系统事件必须核销，且与「能否通知创建者」解耦
@@ -627,6 +628,11 @@ describe('HostedSessionNotifier · 等你作答（HOSTED-ASK-ROUTE-1）', () => 
     expect(text).toContain('有选项时按题面与上下文直接代选一项并说明代选理由');
     expect(text).toContain('只有确实无法判断时才转述用户或继续别的活');
     expect(text).toContain('不可逆操作不代答');
+    // 不可逆判据同源守卫（2026-11-25）：种子里的清单必须逐项取自 shared/constants 的
+    // IRREVERSIBLE_ACTION_WORDS（此前种子只有泛指「不可逆操作」、无清单）。
+    for (const word of IRREVERSIBLE_ACTION_WORDS) {
+      expect(text).toContain(word);
+    }
   });
 
   it('② 创建者忙 → 压待办不丢，也不起轮；收场后合并浮现', () => {

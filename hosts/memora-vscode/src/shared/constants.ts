@@ -48,6 +48,28 @@ export const CREATE_SESSION_TOOL_NAME = 'create_session';
 export const ANSWER_SESSION_QUESTION_TOOL_NAME = 'answer_session_question';
 
 /**
+ * 「不可逆动作」判据词表 —— 代码侧唯一取值点
+ *
+ * 消费面（两处必须引用本常量，禁止各写一份清单）：
+ *   - 代答工具描述 `extension/host/answerSessionQuestionTool.ts`：题面/选项涉及这些词 ⇒ 留空转述用户；
+ *   - 唤醒种子 `webview/helpers/hostedSessionNotice.ts`：涉及这些词 ⇒ 不代答、仍留用户决定。
+ *   `role-packs/memora宝/rules.md` 是 markdown、无法 import，属**人工镜像**（改词表须同步那一行）。
+ *
+ * 为什么只共享判据、不共享整句：两个消费面句式本来不同（工具契约说「留空并转述用户」，
+ * 唤醒正文说「不代答、仍留用户决定」），硬抽整句会让两侧都别扭；但「哪些动作算不可逆」
+ * 必须是同一份清单——清单漂移 = 同一道题在两个面得到不同待遇，且没有任何测试会红。
+ * 2026-11-25 核查即发现三处已漂：工具描述缺「发版」、唤醒种子只有泛指「不可逆操作」无清单。
+ */
+export const IRREVERSIBLE_ACTION_WORDS = [
+  '推送',
+  '发布',
+  '发版',
+  '删除',
+  '覆盖',
+  '改规则',
+] as const;
+
+/**
  * 未发送输入草稿在 `workspaceState` 里的键（`Record<sessionId | 空白页标记, string>`）
  *
  * 归属**按会话走**：草稿是「那条会话还没发出去的话」，不是全局一坨。空白草稿页

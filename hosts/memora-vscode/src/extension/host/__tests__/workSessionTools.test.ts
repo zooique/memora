@@ -30,7 +30,11 @@ import {
   toWorkSessionBrief,
 } from '../workSessionTools.js';
 // 工具名单点真源 = shared/constants（与 webview 业务受理判据同源）
-import { CREATE_SESSION_TOOL_NAME, SEND_TO_SESSION_TOOL_NAME } from '../../../shared/constants.js';
+import {
+  CREATE_SESSION_TOOL_NAME,
+  IRREVERSIBLE_ACTION_WORDS,
+  SEND_TO_SESSION_TOOL_NAME,
+} from '../../../shared/constants.js';
 // 工种闸常量：播种的助手包名取真源，改名时本测试跟着红（不另抄字面量）
 import { ASSISTANT_ROLE_PACK } from '../../../shared/rolePackKind.js';
 // 代答工具面独立模块：工具名 / 回执类型直接取自声明处（不在两个文件里各抄一份）
@@ -896,6 +900,20 @@ describe('托管 v0 · answer_session_question（代答子会话提问）', () =
     const description = ANSWER_SESSION_QUESTION_DEFINITION.description;
     expect(description).toContain('带选项的题应按题面与上下文选一项并说明代选理由');
     expect(description).toContain('空串 = 该题不答');
+  });
+
+  /**
+   * 不可逆判据同源守卫（2026-11-25）：描述里的不可逆清单必须逐项取自
+   * `shared/constants.ts` 的 `IRREVERSIBLE_ACTION_WORDS`——2026-11-25 核查发现
+   * 工具描述曾缺「发版」、唤醒种子曾无清单，三处各写一份是漂移源。
+   * 变异靶标：把描述改回手写字面量并漏掉任一词 ⇒ 本条转红。
+   */
+  it('工具描述的不可逆清单与共享判据词表逐项一致', () => {
+    const description = ANSWER_SESSION_QUESTION_DEFINITION.description;
+    for (const word of IRREVERSIBLE_ACTION_WORDS) {
+      expect(description).toContain(word);
+    }
+    expect(description).toContain(IRREVERSIBLE_ACTION_WORDS.join('、'));
   });
 
   it('参数只认 { sid, answers? }：未知键 / 非字符串数组一律 E_ARGS，且不触代答', async () => {

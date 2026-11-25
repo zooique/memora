@@ -6,7 +6,10 @@
  * （与其它会话工具同一注册面），本文件不持有 sessionStore / 面板依赖。
  */
 import type { ToolDefinition } from '@zooique/memora';
-import { ANSWER_SESSION_QUESTION_TOOL_NAME } from '../../shared/constants.js';
+import {
+  ANSWER_SESSION_QUESTION_TOOL_NAME,
+  IRREVERSIBLE_ACTION_WORDS,
+} from '../../shared/constants.js';
 export { ANSWER_SESSION_QUESTION_TOOL_NAME };
 
 /**
@@ -105,7 +108,9 @@ export const ANSWER_SESSION_QUESTION_DEFINITION: ToolDefinition = {
     '先省略 answers 调用一次：回执带 questions（每题的 index / question / options），按 index 顺序作答。' +
     '再提交 answers：必须与当前题目**等长同序**（空串 = 该题不答）；' +
     '带选项的题应按题面与上下文选一项并说明代选理由，只有确实无法判断时才留空或转述用户；' +
-    '前述代选仅适用于非不可逆题——题面或选项涉及推送、发布、删除、覆盖、改规则时留空并转述用户；' +
+    '前述代选仅适用于非不可逆题——题面或选项涉及' +
+    IRREVERSIBLE_ACTION_WORDS.join('、') +
+    '时留空并转述用户；' +
     '条数不等于当前题数时整批拒收（E_ARGS），回执同样带 questions 供你重答。' +
     '目标不在等待问答（已答 / 已超时 / 已收场）时回 answered=false，这不是错误。' +
     'sid 必须来自 list_work_sessions；本工具不投递新任务，投递请用 send_to_session。' +

@@ -61,7 +61,10 @@ import {
   type Round,
   type SessionMeta,
 } from '@zooique/memora';
-import { ANSWER_SESSION_QUESTION_TOOL_NAME } from '../../shared/constants.js';
+import {
+  ANSWER_SESSION_QUESTION_TOOL_NAME,
+  IRREVERSIBLE_ACTION_WORDS,
+} from '../../shared/constants.js';
 import { formatDispatchKey } from '../../shared/dispatchKey.js';
 import { deriveInterruptReason } from '../../shared/interruptReason.js';
 import type { PendingQuestionDto } from '../../shared/protocol.js';
@@ -284,7 +287,7 @@ function formatNeedsAnswer(
   return (
     `[托管会话需要你拍板] 会话《${title}》（sid=${sessionId}）在等待回答。` +
     `请你按判断拍板继续、不要阻塞任务（有选项时按题面与上下文直接代选一项并说明代选理由；` +
-    `只有确实无法判断时才转述用户或继续别的活；不可逆操作不代答、仍留用户决定，` +
+    `只有确实无法判断时才转述用户或继续别的活；不可逆操作不代答（${IRREVERSIBLE_ACTION_WORDS.join('、')}），仍留用户决定，` +
     `别拖到超时让子会话自己代选）：\n` +
     lines.join('\n') +
     // 事实层只告知「作答入口是哪个工具 / 哪个回执算数」，处置指令仍只在唤醒种子里
