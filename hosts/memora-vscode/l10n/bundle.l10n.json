@@ -323,6 +323,7 @@
   "Edit configuration": "",
   "Open the full key form (blank = use the default; hover a key name for its meaning)": "",
   "Built-in role packs are read-only here; copy it into the user role pack directory to edit": "",
+  "Built-in tools (click to add; type names outside this list too)": "",
   "(valid range {0}–{1})": "",
   "Blank (use the default)": "",
   "{0} (raw value)": "",

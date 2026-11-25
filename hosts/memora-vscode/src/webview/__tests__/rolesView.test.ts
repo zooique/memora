@@ -687,7 +687,7 @@ describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () =
     });
   });
 
-  it('disableTools 键 = 文本框（非 checkbox）+ datalist 候选来自内核清单 + 手输仍可保存', () => {
+  it('disableTools 键 = 文本框 + 内置工具点选面板（展示名复用真源）+ 手输开放集仍可保存', () => {
     const { postMessage } = mountRolesView();
     const keyfaceWithTools = [
       {
@@ -721,15 +721,38 @@ describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () =
     const textInput = formModal?.querySelector('input[type="text"]') as HTMLInputElement;
     // 回归判据：text 键必须渲染成文本框，不得 fall through 成 switch checkbox（既存 bug）
     expect(textInput).toBeTruthy();
-    // 候选提示挂 datalist，值 = 下发的工具名（只提示，不设封闭选项）
-    expect(textInput.getAttribute('list')).toBe('role-disable-tools-candidates');
-    const options = Array.from(formModal?.querySelectorAll('datalist option') ?? []).map(
-      (o) => (o as HTMLOptionElement).value,
+    // 点选面板渲染：分组标题 + 每项 checkbox；展示名来自 toolNameMap 真源（Read file）附内部名
+    const picker = formModal?.querySelector('.role-detail-tool-picker');
+    expect(picker).toBeTruthy();
+    expect(picker?.querySelectorAll('.role-detail-tool-group-title').length).toBe(2);
+    const labels = Array.from(picker?.querySelectorAll('label.role-detail-check') ?? []).map(
+      (l) => l.textContent,
     );
-    expect(options).toEqual(faces.map((f) => f.name));
+    expect(labels).toContain('Read file (read_file)');
+    expect(labels).toContain('Run command (run_command)');
 
-    // 手输自定义工具名（清单外）仍可保存 = 开放集语义未被 datalist 破坏
+    // 点选：勾 read_file → 文本框（唯一真源）回填工具名；再点一次去掉
+    const cb = Array.from(picker?.querySelectorAll('input[type="checkbox"]') ?? []).find(
+      (c) => (c as HTMLInputElement).value === 'read_file',
+    ) as HTMLInputElement;
+    cb.checked = true;
+    cb.dispatchEvent(new Event('change'));
+    expect(textInput.value).toBe('read_file');
+    cb.checked = false;
+    cb.dispatchEvent(new Event('change'));
+    expect(textInput.value).toBe('');
+
+    // 初值回显：原文已有工具名 → checkbox 从 input.value 反推为选中态（唯一真源）
+    textInput.value = 'run_command';
+    textInput.dispatchEvent(new Event('input'));
+    const runCb = Array.from(picker?.querySelectorAll('input[type="checkbox"]') ?? []).find(
+      (c) => (c as HTMLInputElement).value === 'run_command',
+    ) as HTMLInputElement;
+    expect(runCb.checked).toBe(true);
+
+    // 手输清单外工具名仍可保存 = 开放集语义未被点选面板破坏
     textInput.value = 'custom_tool, read_file';
+    textInput.dispatchEvent(new Event('input'));
     (formModal?.querySelector('.btn-primary') as HTMLButtonElement).click();
     expect(postMessage).toHaveBeenCalledWith({
       type: 'roles_save',

@@ -361,6 +361,17 @@ export const rolesStyles = `
   /* 多选（askOn）：checkbox 组横排换行 */
   #roles-root .role-detail-multi { display: flex; flex-wrap: wrap; gap: var(--sp-1, 4px) var(--sp-2, 6px); flex: 1; min-width: 0; }
   #roles-root .role-detail-check { display: inline-flex; align-items: center; gap: var(--sp-1, 4px); cursor: pointer; }
+  /* 内置工具候选面板（disableTools 便捷填名）：窄幅滚动，组标题 + 勾选行复用 role-detail-check。
+     面板是文本框的便捷编辑器，选中态唯一真源 = 文本框值，样式不持有状态。 */
+  #roles-root .role-detail-tool-picker {
+    flex: 1; min-width: 0; max-height: 160px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: var(--sp-0, 2px);
+  }
+  #roles-root .role-detail-tool-group { display: flex; flex-wrap: wrap; gap: var(--sp-1, 4px) var(--sp-2, 6px); }
+  #roles-root .role-detail-tool-group-title {
+    flex-basis: 100%; font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+  }
   /* 内置包只读提示：占位行左对齐（actions 行内 margin-right:auto 推按钮组靠右） */
   #roles-root .role-detail-readonly-hint { margin-right: auto; margin: 0; }
   /* 卡片可点击光标（点卡片空白区打开配置详情） */

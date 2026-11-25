@@ -40,6 +40,8 @@ import { collectStrategyFromForm } from '../helpers/strategyForm.js';
 import type { StrategyFormCell } from '../helpers/strategyForm.js';
 // 性格特征名唯一定义处（与对话侧角色徽章共用，禁本文件另持副本）
 import { traitLabel } from '../helpers/traitLabels.js';
+// 内置工具候选点选面板（外置：本文件贴 max-lines 红线；展示名复用 toolNameMap 唯一真源）
+import { appendToolPicker } from '../helpers/toolPicker.js';
 
 /** 「其他角色」每页条数（分页组件；激活角色恒显不参与分页） */
 const ROLE_PAGE_SIZE = 8;
@@ -634,26 +636,22 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       input.placeholder = l10n.t('Blank = use default');
       input.title = meta ? l10n.t(meta.tip) : face.key;
       if (typeof initial === 'string') input.value = initial;
-      // 内置工具候选：只给 disableTools 挂 datalist——它是工具名开放集，候选仅提示、不设边界。
-      // 其余 text 键（如 summaryFocus）是自由文本，挂工具名反而误导。
-      if (face.key === 'disableTools' && builtinToolFaces.length > 0) {
-        const listId = 'role-disable-tools-candidates';
-        input.setAttribute('list', listId);
-        const datalist = document.createElement('datalist');
-        datalist.id = listId;
-        for (const tool of builtinToolFaces) {
-          const opt = document.createElement('option');
-          opt.value = tool.name;
-          opt.label = tool.group;
-          datalist.appendChild(opt);
-        }
-        row.appendChild(datalist);
-      }
       refs.push({
         cell: { stage: face.stage, key: face.key, kind: 'text', raw: '' },
         read: () => input.value,
       });
+      // 内置工具候选点选面板：只给 disableTools 挂（工具名开放集，面板仅便捷填名、不设边界）。
+      // 其余 text 键（如 summaryFocus）是自由文本，挂工具清单反而误导。
+      // 输入框先入 DOM 再建面板——面板的初值/回写都以 input.value（唯一真源）为准。
       row.appendChild(input);
+      if (face.key === 'disableTools' && builtinToolFaces.length > 0) {
+        // 分组标题复用 disableGroups 的 optionLabels（同一组名 → 同一本地化文案，禁另写映射）
+        const groupLabel = (group: string): string => {
+          const opt = STRATEGY_KEY_META['disableGroups']?.optionLabels?.[group];
+          return opt ? l10n.t(opt) : group;
+        };
+        appendToolPicker(document, row, input, builtinToolFaces, groupLabel);
+      }
       return row;
     }
     // switch（selfReview 布尔数字语义）：勾选 = 写 1；未勾 = 不写入（默认 0=关，同语义不固化 0）。

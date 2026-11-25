@@ -323,6 +323,7 @@
   "Edit configuration": "编辑配置",
   "Open the full key form (blank = use the default; hover a key name for its meaning)": "打开全键表单（留空 = 走默认值；悬停键名查看含义）",
   "Built-in role packs are read-only here; copy it into the user role pack directory to edit": "内置角色包为只读展示；复制到用户角色包目录后可编辑",
+  "Built-in tools (click to add; type names outside this list too)": "内置工具（点击添加；清单外的工具仍可手动输入）",
   "(valid range {0}–{1})": "（合法范围 {0}–{1}）",
   "Blank (use the default)": "留空（用默认）",
   "{0} (raw value)": "{0}（原文值）",
