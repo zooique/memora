@@ -1,6 +1,7 @@
 import { LOOP_CONSTANTS } from '@zooique/memora';
 import type { Agent, AgentChunk } from '@zooique/memora';
 import type { PendingQuestionDto, ExtensionToWebviewMessage } from '../../shared/protocol.js';
+import { IRREVERSIBLE_ACTION_WORDS } from '../../shared/constants.js';
 
 /**
  * ask_user 提问等待超时（ms）：超时未答 → cancelAsk（[ASK_ABORTED] 占位）
@@ -119,6 +120,11 @@ export class AskCoordinator {
    * ② 消费在途提问（cancelAsk 注入 [ASK_ABORTED] 占位，转存快照供落盘）；
    * ③ **仍可续跑** → resumeExecution('timeout') 自动续跑（LLM 看到「用户未回答」自决）；
    *    **不可续跑** → `agent.abandonTurn()` 以中断收场（不再「假续跑」空耗）。
+   *
+   * **不可逆例外（2026-11-25 拍板）**：题面/选项命中 `IRREVERSIBLE_ACTION_WORDS` ⇒ 不消费、
+   * 不续跑，原地保留提问直到用户回来答。这是「不替用户做不可逆决定」的机器闸，
+   * 不是「确认卡」：不弹窗、不阻塞其他会话、不引入 risk 字段。软约束（提示词）仍保留，
+   * 但不再作为唯一防线。
    * 选项/自由输入仍是唯一主动通道，超时只是保底（用户明确不要「跳过」按钮）。
    *
    * 多问批次整批逐条 post（与内核 runResume timeout 分支整组落盘同构）——
@@ -140,6 +146,18 @@ export class AskCoordinator {
     // 唯一判据：提问是否仍未被消费（事实源 = 本域在途快照，非相位投影）
     const pendingQs = this._pending;
     if (pendingQs.length === 0) return;
+    // 不可逆题不走「自动代选」保底（2026-11-25 拍板）：题面/选项命中不可逆判据词表 ⇒
+    // 不消费提问、不续跑，原地保留等用户回来答复。
+    // 为什么不是「弹确认卡」：2026-11-17 定案禁止硬卡打扰；本闸只做「不替用户拍板」，
+    // 不阻塞其他会话、不引入 risk 字段、不做用户开关。
+    if (this.hasIrreversibleQuestion(pendingQs)) {
+      this._deps.post({
+        type: 'notice',
+        level: 'info',
+        message: '提问涉及不可逆操作，超时后不会替你代选——提问仍保留，你回来答复即可继续',
+      });
+      return;
+    }
     this._pending = []; // 提问已超时消费（整体清空，非 splice 逐条弹出）
     this._deps.onPendingChanged?.(); // 标识随「提问已消费」熄灭（超时是清除路径之一）
     this.postQaRows(pendingQs, 'timeout', ASK_TIMEOUT_NOTICE);
@@ -199,6 +217,21 @@ export class AskCoordinator {
       });
     }
     return checkpointDiscarded;
+  }
+
+  /**
+   * 本批提问是否命中「不可逆动作」判据（词表真源 = `shared/constants.ts`）。
+   *
+   * 判据输入 = 题面 + 选项（选项是结构化数组，比自由文本窄得多），不是意图识别。
+   * 定位是**保守偏置**而非总闸：换一种说法仍可能绕过；真正的不可逆授权仍在 Worker 侧
+   * 工具确认与本闸之外的人工通道。它的价值 = 挡住「按选项推送 / 发布 / 删除」这类最常见
+   * 形态，且与宝代答共用同一份词表（隔离两处判据必然漂移）。
+   */
+  private hasIrreversibleQuestion(questions: readonly PendingQuestionDto[]): boolean {
+    return questions.some((item) => {
+      const text = `${item.question ?? ''} ${(item.options ?? []).join(' ')}`;
+      return IRREVERSIBLE_ACTION_WORDS.some((word) => text.includes(word));
+    });
   }
 
   /**

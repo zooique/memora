@@ -187,6 +187,32 @@ describe('AskCoordinator（宿主 ask 提问域 · HOST-SPLIT-1 第 4 刀）', (
     expect(h.coordinator.pendingQuestions()).toEqual([]);
   });
 
+  it('不可逆题超时 ⇒ 不消费、不续跑、不中断，保留提问并提示等用户（2026-11-25 机器闸）', async () => {
+    const h = makeCoordinator();
+    const pending = [q('要推送这个提交吗？', ['推送', '先不推'])];
+    h.coordinator.setPending(pending);
+
+    await h.coordinator.handleAskTimeout();
+
+    // 提问原样保留（用户回来仍可答复，不是「已消费」）
+    expect(h.coordinator.pendingQuestions()).toEqual(pending);
+    // 三个内核动作一个都不许发生：不代选（cancel+resume）、不中断收场（abandon）
+    expect(h.stub.calls).toEqual([]);
+    // 不写「未回答」行（未消费，屏上仍是提问卡）
+    expect(h.userRows()).toHaveLength(0);
+    // 必须有可见说明，否则会话静默不动会被用户当成卡死
+    expect(h.posted).toContainEqual(expect.objectContaining({ type: 'notice', level: 'info' }));
+  });
+
+  it('对照组：不含不可逆词的题超时仍自动续跑（闸只拦命中项）', async () => {
+    const h = makeCoordinator();
+    h.coordinator.setPending([q('语言用哪个？', ['TS', 'Python'])]);
+
+    await h.coordinator.handleAskTimeout();
+
+    expect(h.stub.calls).toEqual(['cancel', 'resume']);
+  });
+
   it('T4-batch 超时整批逐条 post：同刻 ts + 批内唯一 inputId + 各题问/选项随行透出（ASK-MULTI-Q-1 漏网面，与内核整组落盘同构）', async () => {
     const h = makeCoordinator();
     h.coordinator.setPending([
