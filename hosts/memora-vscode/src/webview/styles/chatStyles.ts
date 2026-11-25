@@ -494,6 +494,9 @@ export const chatStyles = `
     color: var(--text-primary, #cccccc);
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     border-radius: var(--radius-lg, 8px) var(--radius-lg, 8px) var(--radius-sm, 2px) var(--radius-lg, 8px);
+    /* CHAT-TEXT-SCALE-1：用户气泡正文随三档缩放。气泡内时间 / 来源标签 / 附件失败提示
+     * 各自有显式字号，不受本继承影响；气泡外操作栏亦独立。 */
+    font-size: var(--font-chat-text, 13px);
   }
   /* 托管输入来源标签：气泡右上角（flex 行首 + align-self 右对齐），不参与正文排版；
      仅 origin === 'hosted' 由脚本插入，用户输入 / 旧数据无此元素。 */
@@ -859,7 +862,8 @@ export const chatStyles = `
   .msg.assistant .msg-body,
   .process-flow__narrate,
   .round-block__narrate {
-    font-size: var(--font-base, 13px);
+    /* CHAT-TEXT-SCALE-1：三档只改这一处语义令牌，代码块 / 工具行 / 输入区保持各自字号。 */
+    font-size: var(--font-chat-text, 13px);
     color: var(--text-primary, #cccccc);
     line-height: var(--lh-relaxed);
   }

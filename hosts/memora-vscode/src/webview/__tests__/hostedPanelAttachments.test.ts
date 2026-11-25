@@ -30,6 +30,8 @@ vi.mock('vscode', () => ({
   window: { createWebviewPanel: mocks.createWebviewPanel },
   ViewColumn: { Beside: 2 },
   env: { language: 'en' },
+  // 首帧 wrapper 读 chatTextScale：mock 命名空间对未定义导出访问即 throw，须补齐该键
+  workspace: { getConfiguration: () => ({ get: () => undefined }) },
 }));
 
 import { MemoraHostedPanel } from '../panels/hostedPanel.js';

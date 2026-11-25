@@ -1543,5 +1543,10 @@
   "Show LLM calls, tokens, tool failures and audit counts in the activity drawer. Debug information, hidden by default; takes effect from the next round.": "",
   "Diagnostics": "",
   "Copy a sanitized summary (versions, configuration and recent errors) to the clipboard for bug reports. API keys are never included.": "",
-  "Copy diagnostic summary": ""
+  "Copy diagnostic summary": "",
+  "Chat text size": "",
+  "Size of message text in the chat. Applies immediately to open chat views; tool rows, labels and the composer are unaffected.": "",
+  "Small": "",
+  "Normal": "",
+  "Large": ""
 }

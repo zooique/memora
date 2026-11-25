@@ -197,8 +197,8 @@ import {
   type SessionRuntimeState,
 } from '../helpers/sessionRuntime.js';
 import { vscodeTracer } from '../../extension/host/tracer.js';
-// HTML 骨架已外置（纯静态模板，见 chatPanelHtml 模块头）
-import { buildHtml } from './chatPanelHtml.js';
+// HTML 骨架已外置（纯静态模板，见 chatPanelHtml 模块头）；首帧配置读口在 wrapper
+import { buildChatHtml } from './chatHtmlFrame.js';
 // 会话事件出口（B9-D 按 op 组外置；纯「事件 → notice / 投影刷新」映射，见模块头）
 import { createChatNoticeOps, type ChatNoticeOps } from './chatNoticeOps.js';
 // 引用入口域（B9-D-2 按 op 组外置）：引用打开定位 + @ 提及选择器，见模块头
@@ -2128,7 +2128,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 与 webview 文档自身 origin 不同，'self' 无法匹配 → 脚本被 CSP 拦截（历史加载/回放失效根因）
     // 侧栏恒自助：form 是挂载常量（托管走独立编辑器页，见 HOSTED-UI-SEAT-DECOUPLE-1），
     // 不再随运行时切换。buildHtml 的 form 参数保留给托管页复用同一骨架。
-    this._view.webview.html = buildHtml(scriptUri, this._view.webview.cspSource, 'self');
+    this._view.webview.html = buildChatHtml(scriptUri, this._view.webview.cspSource, 'self');
   }
 
   /**
@@ -2645,8 +2645,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  /** 全局投递（配置面 / 跨会话信号）：主视图与全部附加视图都收 */
-  private postGlobal(msg: ExtensionToWebviewMessage): void {
+  /** 全局投递（配置面 / 跨会话信号）：主视图与全部附加视图都收。
+   * public：宿主配置变更（如 CHAT-TEXT-SCALE-1）需跨视图广播，构造消息后在 extension 调本口；
+   * 会话级信号仍用私有的 post/postToSession，不要借本口绕过会话路由。 */
+  public postGlobal(msg: ExtensionToWebviewMessage): void {
     this._views.post(msg, this._view?.webview);
   }
 

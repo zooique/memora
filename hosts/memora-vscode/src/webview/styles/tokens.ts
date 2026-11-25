@@ -15,6 +15,13 @@
  *     「非布局间距」值允许内联，不属于本铁律范围。
  */
 export const tokens = `
+  /* 对话正文三档映射（CHAT-TEXT-SCALE-1）：body[data-text-scale] 覆写语义令牌，
+   * 消费者只认 --font-chat-text ⇒ 加档不改组件样式、改映射只动这一处。
+   * 属性由 buildHtml 首帧注入（脚本未跑即正确），热更由入口监听写 dataset。
+   * normal 缺省 = 不覆写 = :root 的 var(--font-base)，与既往逐字等价。 */
+  body[data-text-scale='small'] { --font-chat-text: var(--font-md); }
+  body[data-text-scale='large'] { --font-chat-text: var(--font-lg); }
+
   :root {
     color-scheme: light dark;
 
@@ -70,6 +77,11 @@ export const tokens = `
     /* === L1 基础令牌：字号阶梯 === */
     --font-2xs: 8px;  /* 极紧凑档：刻度下界，唯一消费者 .context-ring__percent（圆环内百分比数字） */
     --font-xs: 10px; --font-sm: 11px; --font-md: 12px; --font-base: 13px; --font-lg: 14px;
+    /* L2 语义令牌：对话正文专用字号（CHAT-TEXT-SCALE-1）。三档映射 only 在此一处声明；
+     * 消费者（AI 正文唯一组 + 用户气泡正文）只引本令牌，禁止在 chatStyles 另写三套 font-size。
+     * 默认 normal = 现状 13px，body 无 data-text-scale 时逐字等价。
+     * 刻意不跟随 --vscode-font-size：状态徽章 / 圆环 / 输入区复用同一根字号，跟随会撑破固定尺寸控件。 */
+    --font-chat-text: var(--font-base);
 
     /* === L1 基础令牌：行高层级刻度（UI-TOKEN-AXIS-1 · 2026-10-12） ===
      * 行高此前以裸值散落 46 处、6 个值（1 / 1.4 / 1.5 / 1.6 / 1.7 / 1.75），排版这一

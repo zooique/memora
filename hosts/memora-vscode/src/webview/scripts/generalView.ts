@@ -2,7 +2,7 @@
  * generalView — 设置面板「常规」选项卡运行时
  *
  * 职责：AI 回答语言的自动 / 手动模式切换与写入、界面语言只读说明（无交互）、
- * 交互提示音与活动指标开关、复制诊断动作。持久写入都发 `general_setting` 给宿主，
+ * 交互提示音与活动指标开关、对话文字三档、复制诊断动作。持久写入都发 `general_setting` 给宿主，
  * 由宿主走唯一写入封装 `settingsWrite.writeSetting()`；复制诊断同通道但按 kind
  * 分流为命令动作（不写配置、不回推），提示由命令自身弹。本模块零配置 API 调用、
  * 零本地持久化。
@@ -38,6 +38,7 @@ export function createGeneralView({
   const soundToggle = root.querySelector<HTMLInputElement>('#attentionSoundToggle');
   const metricsToggle = root.querySelector<HTMLInputElement>('#showMetricsToggle');
   const copyDiagnosticsBtn = root.querySelector<HTMLButtonElement>('#copyDiagnosticsBtn');
+  const scaleRadios = [...root.querySelectorAll<HTMLInputElement>('input[name="chatTextScale"]')];
 
   /** 当前 UI 模式（只由宿主回推的 mode 改写；用户点 radio 是待保存的意图） */
   let mode: 'auto' | 'manual' = 'auto';
@@ -85,6 +86,15 @@ export function createGeneralView({
     });
   });
 
+  // 三档只发档位名，px 映射在宿主 CSS 令牌层一处完成；webview 不自己存第二份值。
+  for (const radio of scaleRadios) {
+    radio.addEventListener('change', () => {
+      if (radio.checked) {
+        vscode.postMessage({ type: 'general_setting', kind: 'chatTextScale', value: radio.value });
+      }
+    });
+  }
+
   // 动作型 kind：不写配置、不等回执。宿主复用命令面板同一命令提示，
   // webview 乐观显示「已复制」会在命令失败时谎报成功。
   copyDiagnosticsBtn?.addEventListener('click', () => {
@@ -109,6 +119,12 @@ export function createGeneralView({
       if (soundToggle) soundToggle.checked = msg.value;
       return;
     }
-    if (msg.kind === 'showMetrics' && metricsToggle) metricsToggle.checked = msg.value;
+    if (msg.kind === 'showMetrics') {
+      if (metricsToggle) metricsToggle.checked = msg.value;
+      return;
+    }
+    if (msg.kind === 'chatTextScale') {
+      for (const radio of scaleRadios) radio.checked = radio.value === msg.value;
+    }
   });
 }

@@ -867,6 +867,7 @@ export type WebviewToExtensionMessage =
   | { type: 'general_setting'; kind: 'answerLanguage'; value: string }
   | { type: 'general_setting'; kind: 'attentionSound'; value: boolean }
   | { type: 'general_setting'; kind: 'showMetrics'; value: boolean }
+  | { type: 'general_setting'; kind: 'chatTextScale'; value: string }
   | { type: 'general_setting'; kind: 'copyDiagnostics' }
   /**
    * MCP 域写操作（**唯一**写通道，按 `op` 分流；2026-10-24 协议治理）
@@ -2022,6 +2023,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'general_setting'; kind: 'answerLanguage'; mode: 'auto' | 'manual'; value: string }
   | { type: 'general_setting'; kind: 'attentionSound'; value: boolean }
   | { type: 'general_setting'; kind: 'showMetrics'; value: boolean }
+  | { type: 'general_setting'; kind: 'chatTextScale'; value: string }
   /**
    * 白名单额外允许路径状态推送（设置面板加载时推送当前列表）
    *

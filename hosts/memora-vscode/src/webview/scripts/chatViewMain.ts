@@ -9,6 +9,8 @@
 import { createChatView, type ChatViewDeps } from './chatView.js';
 import { installWebviewErrorBoundary } from '../helpers/errorBoundary.js';
 import { initWebviewL10n } from '../helpers/webviewL10n.js';
+import { applyTextScaleMessage } from '../helpers/textScaleView.js';
+import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 
 // webview 宿主提供的全局函数（@types/vscode 未声明，此处显式声明）
 declare const acquireVsCodeApi: ChatViewDeps['acquireVsCodeApi'];
@@ -19,5 +21,11 @@ const api = acquireVsCodeApi();
 installWebviewErrorBoundary({ post: (msg) => api.postMessage(msg), window, document });
 // 装配宿主注入的 l10n 译文（P1 基建）：须先于任何 l10n.t 调用；无注入时保持未配置
 initWebviewL10n(document);
+
+// 对话正文档位热更（CHAT-TEXT-SCALE-1）：独立小监听器，只改 body dataset，
+// 不侵入 createChatView 的渲染状态；首帧属性已由 buildHtml 注入，两者同源。
+window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
+  applyTextScaleMessage(event.data, document.body);
+});
 
 createChatView({ acquireVsCodeApi: () => api, window });

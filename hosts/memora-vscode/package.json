@@ -196,6 +196,22 @@
           "maxLength": 60,
           "description": "%config.answerLanguage.description%"
         },
+        "memora.chatTextScale": {
+          "type": "string",
+          "scope": "application",
+          "default": "normal",
+          "enum": [
+            "small",
+            "normal",
+            "large"
+          ],
+          "enumDescriptions": [
+            "%config.chatTextScale.enum.small%",
+            "%config.chatTextScale.enum.normal%",
+            "%config.chatTextScale.enum.large%"
+          ],
+          "description": "%config.chatTextScale.description%"
+        },
         "memora.backgroundProvider": {
           "type": "string",
           "scope": "application",

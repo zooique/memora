@@ -18,7 +18,7 @@
  * （隐藏即销毁 webview 上下文，reveal 后脚本重发 ready，由 chatProvider 回放整份会话）。
  */
 import * as vscode from 'vscode';
-import { buildHtml } from './chatPanelHtml.js';
+import { buildChatHtml } from './chatHtmlFrame.js';
 import type { MemoraChatViewProvider } from './chatPanel.js';
 import type { ChatRef, WebviewToExtensionMessage } from '../../shared/protocol.js';
 import { resolveAttachmentsDir } from '../../extension/host/projectDataDir.js';
@@ -128,7 +128,7 @@ export class MemoraHostedPanel {
       vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview', 'scripts', 'chatView.js'),
     );
     // 与侧栏唯一差异：form='assistant'（样式 / 文案 / 气泡取景全由这一常量驱动）
-    panel.webview.html = buildHtml(scriptUri, panel.webview.cspSource, 'assistant');
+    panel.webview.html = buildChatHtml(scriptUri, panel.webview.cspSource, 'assistant');
 
     panel.webview.onDidReceiveMessage((message: WebviewToExtensionMessage) => {
       if (this._panel !== panel) return;

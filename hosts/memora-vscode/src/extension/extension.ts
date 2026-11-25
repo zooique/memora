@@ -46,6 +46,7 @@ import { resolveDraftRolePackName } from './host/rolePackDefault.js';
 import { MemoryGcScheduler } from './host/memoryGcScheduler.js';
 import { ImageCache } from './host/imageCache.js';
 import { createImageReadPort } from './host/imageReadPort.js';
+import { readChatTextScale } from './host/chatTextScaleConfig.js';
 import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { formatDiagnosticsSnapshot } from '../webview/panels/hostDiagnostics.js';
@@ -1126,6 +1127,16 @@ export function activate(context: vscode.ExtensionContext): void {
             console.info('Memora 归档模式变更已暂存，将在当前对话结束后生效', err);
           }
         }, 'archive mode sync');
+      }
+      // 对话正文档位（CHAT-TEXT-SCALE-1）：跨视图全局偏好 ⇒ postGlobal，
+      // 侧栏与助手页即时改 body dataset（不重建 webview，保草稿/滚动/在途流）。
+      // 读口与首帧同源（readChatTextScale），设置面板写入与用户手改 settings.json 同走到这里。
+      if (e.affectsConfiguration('memora.chatTextScale')) {
+        chatProvider.postGlobal({
+          type: 'general_setting',
+          kind: 'chatTextScale',
+          value: readChatTextScale(),
+        });
       }
       // MCP 配置（切片 4 起即时生效）：按 name 差分增量启停 + allowlist 只重算档位，
       // 无需重载窗口；差分细节见 host/mcp/runtime.ts，读取与装配期同源（mcpConfig.ts）。

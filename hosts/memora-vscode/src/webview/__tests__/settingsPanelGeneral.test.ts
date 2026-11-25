@@ -17,14 +17,16 @@ import type { Agent } from '@zooique/memora';
 import { MemoraSettingsPanel } from '../panels/settingsPanel.js';
 
 /** 配置读口的可观测替身：读写同处一份状态，忠实于「回推读真值」语义 */
-const configState = vi.hoisted(() => ({ showMetrics: false }));
+const configState = vi.hoisted(() => ({ showMetrics: false, chatTextScale: 'normal' as string }));
 const vscodeConfigMock = vi.hoisted(() => ({
   cfgGet: vi.fn((key: string, defaultValue?: unknown) => {
     if (key === 'showMetrics') return configState.showMetrics;
+    if (key === 'chatTextScale') return configState.chatTextScale;
     return defaultValue;
   }),
   cfgUpdate: vi.fn((key: string, value: unknown) => {
     if (key === 'showMetrics') configState.showMetrics = Boolean(value);
+    if (key === 'chatTextScale') configState.chatTextScale = String(value);
     return Promise.resolve();
   }),
 }));
@@ -85,6 +87,7 @@ function send(provider: MemoraSettingsPanel, msg: unknown): Promise<void> {
 beforeEach(() => {
   vi.clearAllMocks();
   configState.showMetrics = false;
+  configState.chatTextScale = 'normal';
 });
 
 describe('settingsPanel 常规页消息路由', () => {
@@ -95,6 +98,16 @@ describe('settingsPanel 常规页消息路由', () => {
     expect(
       posted.filter((m) => m.type === 'general_setting' && m.kind === 'showMetrics'),
     ).toMatchObject([{ value: true }]);
+    expect(posted.filter((m) => m.type === 'notice')).toEqual([]);
+  });
+
+  it('对话文字三档走唯一写入封装写既有键，并按配置真值回推', async () => {
+    const { provider, posted } = setup();
+    await send(provider, { type: 'general_setting', kind: 'chatTextScale', value: 'large' });
+    expect(vscodeConfigMock.cfgUpdate).toHaveBeenCalledWith('chatTextScale', 'large', 1);
+    expect(
+      posted.filter((m) => m.type === 'general_setting' && m.kind === 'chatTextScale'),
+    ).toMatchObject([{ value: 'large' }]);
     expect(posted.filter((m) => m.type === 'notice')).toEqual([]);
   });
 

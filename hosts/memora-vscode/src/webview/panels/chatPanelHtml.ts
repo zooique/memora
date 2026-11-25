@@ -12,14 +12,23 @@ import { contextMenuStyles } from '../styles/contextMenu.js';
 import { chatStyles } from '../styles/chatStyles.js';
 import { buildHtmlHead, resolveHtmlLang } from '../helpers/htmlShell.js';
 import type { UiForm } from '../../shared/protocol.js';
+import type { ChatTextScale } from '../../shared/textScale.js';
 
 /** 生成 Webview HTML（含消息区 / 输入框 + 模型下拉框 / 主动提问框）
  *  @param scriptUri 外部脚本 chatView.js 的 asWebviewUri（CSP script-src cspSource 加载）
  *  @param cspSource webview 本地资源源（webview.cspSource，供 CSP script-src 放行 asWebviewUri 外部脚本）
  *  @param form 挂载形态常量：侧栏恒 'self'、托管编辑器页恒 'assistant'
  *  （HOSTED-UI-SEAT-DECOUPLE-1）。只落成 body 的 data-form 属性，样式与文案在**首帧**即正确；
- *  不再有运行时形态切换消息——换形态 = 换一个 webview 挂载。缺省 self 与既往 HTML 逐字等价。 */
-export function buildHtml(scriptUri: vscode.Uri, cspSource: string, form: UiForm = 'self'): string {
+ *  不再有运行时形态切换消息——换形态 = 换一个 webview 挂载。缺省 self 与既往 HTML 逐字等价。
+ *  @param textScale 对话正文档位（CHAT-TEXT-SCALE-1）：首帧写 body 的 data-text-scale，
+ *  脚本未加载即正确、不闪常规档。缺省 normal 不写属性（tokens 的 :root 默认即常规），
+ *  与既往 HTML 逐字等价；调用方负责归一化，本骨架不做第二份判定。 */
+export function buildHtml(
+  scriptUri: vscode.Uri,
+  cspSource: string,
+  form: UiForm = 'self',
+  textScale: ChatTextScale = 'normal',
+): string {
   return `${buildHtmlHead({
     lang: resolveHtmlLang(vscode.env?.language),
     cspSource,
@@ -28,7 +37,7 @@ export function buildHtml(scriptUri: vscode.Uri, cspSource: string, form: UiForm
     // `?.` 守测试侧 vscode mock 未提供 l10n 的场景，真实 API 恒存在
     l10nBundle: vscode.l10n?.bundle,
   })}
-<body data-form="${form}">
+<body data-form="${form}"${textScale === 'normal' ? '' : ` data-text-scale="${textScale}"`}>
   <!-- SSOT：面板无顶部身份条，角色切换在「角色」视图。
        角色/模型/状态职责归位：模型选择在输入区 composer（model-picker），生成状态由
        思考折叠块 + 发送按钮承载，「谁在回答」由 AI 消息头部标签 msg-ai-label 表达。

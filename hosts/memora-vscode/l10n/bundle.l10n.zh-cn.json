@@ -1543,5 +1543,10 @@
   "Show LLM calls, tokens, tool failures and audit counts in the activity drawer. Debug information, hidden by default; takes effect from the next round.": "在活动抽屉中显示 LLM 调用次数、token、工具失败数与安全审计计数。属调试信息，默认隐藏；从下一轮起生效。",
   "Diagnostics": "诊断",
   "Copy a sanitized summary (versions, configuration and recent errors) to the clipboard for bug reports. API keys are never included.": "复制一份脱敏摘要（版本、配置与最近错误）到剪贴板，便于报障。API 密钥不会包含在内。",
-  "Copy diagnostic summary": "复制诊断摘要"
+  "Copy diagnostic summary": "复制诊断摘要",
+  "Chat text size": "对话文字大小",
+  "Size of message text in the chat. Applies immediately to open chat views; tool rows, labels and the composer are unaffected.": "调整对话消息正文的字号。改动即时作用于已打开的对话视图；工具过程行、标签与输入框不受影响。",
+  "Small": "小",
+  "Normal": "常规",
+  "Large": "大"
 }

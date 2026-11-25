@@ -18,6 +18,7 @@ import type {
 } from '../../shared/protocol.js';
 import { CONFIRM_SCRIPTS_KEY } from '../../shared/constants.js';
 import { isAnswerLanguageAuto } from '../../extension/host/responseLanguage.js';
+import { readChatTextScale } from '../../extension/host/chatTextScaleConfig.js';
 
 /** 消息投递口（面板注入；**尽力投递、不判断可达性**——丢了下一轮推送会补当前态） */
 type Post = (msg: ExtensionToWebviewMessage) => void;
@@ -68,6 +69,7 @@ export function pushGeneralStatus(post: Post): void {
     kind: 'showMetrics',
     value: cfg.get<boolean>('showMetrics', false),
   });
+  post({ type: 'general_setting', kind: 'chatTextScale', value: readChatTextScale() });
 }
 
 /** 读取用户自定义搜索引擎清单（写入侧与推送侧共用同一配置键） */

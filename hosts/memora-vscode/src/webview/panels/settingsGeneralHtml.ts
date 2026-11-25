@@ -2,8 +2,9 @@
  * 设置面板「常规」选项卡 HTML 主体片段
  *
  * 职责边界：只提供静态 DOM 骨架，零逻辑。交互（语言模式切换 / 写入 / 提示音开关 /
- * 活动指标开关 / 复制诊断动作）由 `scripts/generalView.ts` 承担；持久值回显由宿主
+ * 活动指标开关 / 对话文字三档 / 复制诊断动作）由 `scripts/generalView.ts` 承担；持久值回显由宿主
  * `settingsStatusPush.pushGeneralStatus` 推送，复制诊断不回推——提示由命令自身给出。
+ * 三档 UI 只发档位名，px 映射真源在 tokens.ts 的 --font-chat-text，本页不持第二份数值。
  *
  * **语言边界（ADR-042）**：本页的「语言」只有 AI 回答语言可改；界面语言真源唯一 =
  * `vscode.env.language`，本页只给只读说明，绝不放开关——原生 NLS 按 locale 取文件，
@@ -41,6 +42,26 @@ export function buildGeneralBodyHtml(l10n: {
         <div class="general-actions">
           <button id="answerLanguageSave" class="btn btn-secondary" type="button">${l10n.t('Save')}</button>
           <span id="answerLanguageStatus" class="general-status" hidden></span>
+        </div>
+      </div>
+      <div class="general-item">
+        <div class="general-item-header">
+          <label class="general-label" id="chatTextScaleLabel">${l10n.t('Chat text size')}</label>
+        </div>
+        <p class="general-desc">${l10n.t('Size of message text in the chat. Applies immediately to open chat views; tool rows, labels and the composer are unaffected.')}</p>
+        <div class="general-mode-row" role="radiogroup" aria-labelledby="chatTextScaleLabel">
+          <label class="general-mode">
+            <input type="radio" name="chatTextScale" value="small" />
+            <span>${l10n.t('Small')}</span>
+          </label>
+          <label class="general-mode">
+            <input type="radio" name="chatTextScale" value="normal" checked />
+            <span>${l10n.t('Normal')}</span>
+          </label>
+          <label class="general-mode">
+            <input type="radio" name="chatTextScale" value="large" />
+            <span>${l10n.t('Large')}</span>
+          </label>
         </div>
       </div>
       <div class="general-item">
