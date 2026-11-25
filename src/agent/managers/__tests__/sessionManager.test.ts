@@ -213,9 +213,11 @@ describe('SessionManager', () => {
 
       await manager.switchToSession('2026-06-27-main');
 
-      // 投影只取 role / content / attachments（roundId / timestamp 属装配中间态，不入 Message）
+      // 投影取 role / content / attachments / roundId（Message 类型契约见 llm/provider.ts：
+      // roundId 是第一级 LRU 取 round-summary 的单一真理源，恢复轮必须带上，否则压缩跳过）；
+      // 仅 timestamp 属装配中间态不入 Message。
       expect(loop.restoreHistory).toHaveBeenCalledWith([
-        { role: 'user', content: '看图', attachments: [ref] },
+        { role: 'user', content: '看图', roundId: 'r0', attachments: [ref] },
       ]);
     });
   });
@@ -328,6 +330,22 @@ describe('SessionManager', () => {
       expect(restored).toEqual([
         { role: 'user', content: 'u' },
         { role: 'assistant', content: 'a' },
+      ]);
+    });
+
+    it('应透传 roundId（恢复历史轮须可被压缩第一级按轮分组替换）', async () => {
+      const messages: SessionMessage[] = [
+        { role: 'user', content: 'u', timestamp: '2026-06-27T10:00:00Z', roundId: 'round-7' },
+        { role: 'assistant', content: 'a', timestamp: '2026-06-27T10:00:01Z', roundId: 'round-7' },
+      ];
+      (history.loadSessionMessages as ReturnType<typeof vi.fn>) = vi
+        .fn()
+        .mockResolvedValue(messages);
+      await manager.switchToSession('2026-06-27-main');
+      const restored = (loop.restoreHistory as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      expect(restored).toEqual([
+        { role: 'user', content: 'u', roundId: 'round-7' },
+        { role: 'assistant', content: 'a', roundId: 'round-7' },
       ]);
     });
 

@@ -317,6 +317,11 @@ export class SessionManager {
     const messages: Message[] = sessionMessages.map((tm) => ({
       role: tm.role as Message['role'],
       content: tm.content,
+      // roundId 必须显式透传：上游 SessionMessage 落盘带此字段（messageHistory.appendUser），
+      // 下游压缩第一级 ReplaceRoundsStrategy.groupRounds 靠它分组，缺此字段则恢复后的历史轮
+      // 全部 `if (!roundId) continue` 跳过替换，只剩 token 硬截断兜底（长会话质量退化）。
+      // Message 类型（llm/provider.ts）已声明可选 roundId，此处补的是值透传，非新增字段/API。
+      ...(tm.roundId ? { roundId: tm.roundId } : {}),
       ...(tm.attachments ? { attachments: tm.attachments } : {}),
     }));
     this.getLoop().restoreHistory(messages);
