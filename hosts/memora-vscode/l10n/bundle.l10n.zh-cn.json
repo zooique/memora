@@ -412,7 +412,7 @@
   "Hide whole tool groups from the model before it ever sees them (tools that only read; tools that change files or run things; session management tools). All unchecked = everything stays visible.": "在模型看到之前整组隐藏工具（只读工具；改文件或执行命令的工具；会话管理工具）。全部不勾选 = 全部保持可见。",
   "Read-only tools": "只读工具",
   "Tools that change things": "会改动的工具",
-  "Session management tools": "会话管理工具",
+  "Session management tools (assistant sessions only)": "会话管理工具（仅助手会话）",
   "Turn off specific tools": "关闭指定工具",
   "Hide individual tools from the model, separated by commas (e.g. run_command, write_file). Blank = nothing hidden. Names are checked against the registered tools when the pack is applied — a typo is reported, not silently ignored.": "逐个隐藏工具，用逗号分隔（例如 run_command, write_file）。留空 = 不隐藏任何工具。应用角色包时会对照已注册工具核名——拼错会被报出，不会被静默忽略。",
   "Memory summary": "记忆摘要",

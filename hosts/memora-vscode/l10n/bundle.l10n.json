@@ -412,7 +412,7 @@
   "Hide whole tool groups from the model before it ever sees them (tools that only read; tools that change files or run things; session management tools). All unchecked = everything stays visible.": "",
   "Read-only tools": "",
   "Tools that change things": "",
-  "Session management tools": "",
+  "Session management tools (assistant sessions only)": "",
   "Turn off specific tools": "",
   "Hide individual tools from the model, separated by commas (e.g. run_command, write_file). Blank = nothing hidden. Names are checked against the registered tools when the pack is applied — a typo is reported, not silently ignored.": "",
   "Memory summary": "",

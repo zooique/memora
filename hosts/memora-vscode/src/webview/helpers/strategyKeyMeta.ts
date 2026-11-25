@@ -83,7 +83,7 @@ export const STRATEGY_KEY_META: Record<string, StrategyKeyMetaEntry> = {
     optionLabels: {
       readonly: 'Read-only tools',
       act: 'Tools that change things',
-      orchestrate: 'Session management tools',
+      orchestrate: 'Session management tools (assistant sessions only)',
     },
   },
   disableTools: {

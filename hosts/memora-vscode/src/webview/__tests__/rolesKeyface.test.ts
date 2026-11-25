@@ -62,6 +62,16 @@ describe('键面一致性守卫（RP-EDIT-1 核心护栏）', () => {
     }
   });
 
+  it('disableGroups 的 orchestrate 选项须标注适用范围（可编辑包用不上这组工具）', () => {
+    // 会话管理工具只在主控会话装配期注册，且助手会话的角色包被强制矫正为内置助手包
+    // （用户手切也写回）⇒ 可编辑的角色包里这组工具永不生效。标签不标注适用范围，
+    // 用户会以为能靠它关掉工作会话里的会话管理工具 = fail-open 认知误导。
+    // 只锁「提及适用范围」这一语义，不锁整句文案——换措辞不误伤，删标注即红。
+    const label = STRATEGY_KEY_META['disableGroups']?.optionLabels?.orchestrate;
+    expect(label, 'orchestrate 选项标签缺失').toBeTruthy();
+    expect(label).toMatch(/assistant session/i);
+  });
+
   it('每个 number 键必须带 range（NUM-HINT-1 实时检测的前提）', () => {
     // 编辑表单的输入超限红框（rolesStyles :out-of-range）依赖 buildFormRow 写入的
     // input[min]/max——键面 range 缺失 = 红框对该键静默失效（只剩保存时内核拦截）。
