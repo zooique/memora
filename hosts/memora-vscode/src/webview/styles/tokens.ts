@@ -370,7 +370,7 @@ export const tokens = `
      * 原为 chatStyles 内的裸值局部重定义（A 类债）——值散在消费文件里，改一处漏一处。
      * 2026-10-12 闭包：变体值升为本区具名令牌，面板只留 var() 引用 ⇒ 值归 tokens.ts 唯一，
      * 1:1 沿用现状值 ⇒ 零视觉变化。280 档直接复用 --dim-xl（大尺寸刻度，不造并列值）。 */
-    --dd-trigger-max-w-narrow: 120px; /* 单图标胶囊（skill-picker）：触发器更窄兜底 */
+    --dd-trigger-max-w-narrow: 120px; /* 显名胶囊（skill-picker）：「选择技能」+ 箭头的窄窗兜底 */
     --dd-menu-min-w-wide: 200px;      /* 宽名胶囊（model-picker）：长模型名不逼截菜单 */
 
     /* 历史会话浮层尺寸（HIST-TAB-ORDER-1 · 2026-11-20）：会话条目含标题/主题/摘要/时间，

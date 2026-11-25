@@ -2342,11 +2342,11 @@ export const chatStyles = `
   .image-attach-btn:active { transform: scale(0.95); }
 
   /* Skill 选择器胶囊差异（共用 .treedd--capsule 外壳，见 dropdown.ts）：
-   * 单图标（⚡）触发器。胶囊底色/箭头/尺寸全复用 capsule；此处仅：
-   * 1) 选中态由触发器 .ctl--on（accent 图标染色）回显，不再靠边框；
+   * 显名触发器（Select skill，与模型的 Select model 对称）。胶囊底色/箭头/尺寸全复用 capsule；此处仅：
+   * 1) 选中态由触发器 .ctl--on（accent 文字染色）回显，不再靠边框；
    * 2) 菜单左对齐（左起触发器若沿用 capsule 的 right:0 会往左溢出面板边缘）；
-   * 3) 菜单内当前项高亮（icon-only 下，这是菜单打开时「我用了哪个 Skill」的入口）；
-   * 4) 触发器更窄（单图标不需要 200 兜底，引 tokens.ts 变体令牌，禁裸值）。 */
+   * 3) 菜单内当前项高亮（菜单打开时「我用了哪个 Skill」的入口；chip 在 textarea 上方）；
+   * 4) 触发器窄兜底（标签短于模型名，引 tokens.ts 变体令牌，禁裸值）。 */
   .skill-picker { --dd-trigger-max-w: var(--dd-trigger-max-w-narrow); }
   /* 输入区下拉触发器残余差异（作用域仅限 .composer-left）：
    * 边框已改由 --dd-trigger-border: none（见上方 .composer-left）单点取值，此处**不再**
@@ -2361,7 +2361,7 @@ export const chatStyles = `
     background: var(--surface-hover);
     color: var(--text-primary);
   }
-  /* 选中态（Skill 已挂载）：常驻标记 = accent 图标染色（0,3,0 用于压过 capsule 公共 color 0,2,0），
+  /* 选中态（Skill 已挂载）：常驻标记 = accent 文字染色（0,3,0 用于压过 capsule 公共 color 0,2,0），
    * 不写常驻底色（理由同 .ctl--on）。hover 时补灰底并保住 accent 染色——
    * 0,4,0 且位于 base .treedd__trigger:hover 之后，故不会被压回主色文字。 */
   .composer-left .treedd--capsule .ctl--on {

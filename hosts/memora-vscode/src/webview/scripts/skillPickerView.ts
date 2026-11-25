@@ -109,8 +109,9 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
   list.className = 'treedd__list';
 
   /** 更新选择器标签 + 盒内附件行 chip：
-   * 入口触发器 ⚡（.ctl--on = accent 图标染色表示已启用）+ 菜单内 is-active 高亮
-   * + title/aria 兜底；输入盒内文字上方由 renderChip 呈现「名称 + × 可移除」的状态 chip。 */
+   * 入口触发器显名「选择技能」（.ctl--on = accent 文字染色表示已启用）+ 菜单内 is-active 高亮
+   * + title/aria 兜底；输入盒内文字上方由 renderChip 呈现「名称 + × 可移除」的状态 chip。
+   * 入口只承载「这是什么控件」，名称归 chip——两处写同一状态必漂移。 */
   function syncLabel(): void {
     if (trigger) {
       if (currentSkill) {

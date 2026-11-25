@@ -30,7 +30,7 @@ function mount(onPinnedChange?: () => void): Mounted {
     ${buildDropdownHtml([], {
       extraClass: 'skill-picker treedd--capsule',
       onSelect: '__skillPickerOnSelect',
-      triggerLabel: '<span class="btn-icon" data-icon="bolt"></span>',
+      triggerLabel: '<span class="dd-trigger-name">选择技能</span>',
       triggerTitle: '选择 Skill',
       triggerAriaLabel: '选择 Skill',
     })}

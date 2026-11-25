@@ -128,13 +128,13 @@ const HTML = `
         <div class="composer-row composer-row--actions">
           <div class="composer-actions">
             <div class="model-picker treedd--capsule"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
-            <div class="treedd skill-picker treedd--capsule" data-treedd data-on-select="__skillPickerOnSelect"><button class="treedd__trigger" title="选择 Skill" aria-label="选择 Skill" aria-haspopup="menu"></button><div class="treedd__menu" role="menu"></div></div>
+            <div class="treedd skill-picker treedd--capsule" data-treedd data-on-select="__skillPickerOnSelect"><button class="treedd__trigger" title="选择 Skill" aria-label="选择 Skill" aria-haspopup="menu"><span class="dd-trigger-name">选择技能</span></button><div class="treedd__menu" role="menu"></div></div>
             <!-- 润色按钮：消费侧 getElementById('polishBtn') 带 null 守卫，缺它不会崩但整条
                  润色链路（点击→loading 态→回填）在夹具里恒不执行＝静默失测（P6 守卫锁此id）。 -->
-            <button id="polishBtn" class="polish-btn-icon" title="润色输入内容" aria-label="润色"><span class="btn-icon" data-icon="edit"></span></button>
+            <button id="polishBtn" class="polish-btn-icon" title="润色输入内容" aria-label="润色"><span class="btn-icon" data-icon="sparkle"></span></button>
             <!-- 上传图片按钮（Q3，与生产骨架同挪）：消费侧递给 imageCapture 的 attachBtn，
                  缺它 = 按钮置灰/拾取请求链路在夹具里恒不执行＝静默失测（P6 守卫锁此 id）。 -->
-            <button id="imageAttachBtn" class="image-attach-btn is-vision-off" aria-disabled="true" title="当前模型未开启图片输入——点击前往设置开启" aria-label="添加图片"><span class="btn-icon" data-icon="paperclip"></span></button>
+            <button id="imageAttachBtn" class="image-attach-btn is-vision-off" aria-disabled="true" title="当前模型未开启图片输入——点击前往设置开启" aria-label="添加图片"><span class="btn-icon" data-icon="image"></span></button>
             <button id="pauseBtn" hidden title="暂停生成" aria-label="暂停生成"><span class="btn-icon" data-icon="pause"></span></button>
             <button id="send"></button>
           </div>

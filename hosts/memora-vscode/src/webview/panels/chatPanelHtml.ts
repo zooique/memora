@@ -266,14 +266,16 @@ export function buildHtml(
         <div class="composer-row composer-row--main">
           <!-- 左侧功能群：Skill + 模型选择 + 润色（次级功能，弱化展示） -->
           <div class="composer-left">
-            <!-- Skill 选择器：单图标（bolt SVG，图标语言唯一 = icons.ts 柔和线条）胶囊触发器，与模型选择器共用 capsule 变体；选择后作为 system prompt 传给 LLM。
-                 Skill 名不常显（节省窄窗横向空间），当前项由触发器 .ctl--on（accent 图标染色）、菜单内 is-active 高亮、输入盒内 skill chip 与 title 兜底
+            <!-- Skill 选择器：显名胶囊触发器，与模型选择器共用 capsule 变体；选择后作为 system prompt 传给 LLM。
+                 入口文案用 Select skill，与模型的 Select model 对称（两个选择器同类可读，图标只留菜单内项与 chip）；
+                 当前项由触发器 .ctl--on（accent 文字染色）、菜单内 is-active 高亮、输入盒内 skill chip 与 title 兜底。
+                 名称不进触发器：chip 已承载名称 + pin + 移除，两处写同一状态必漂移。
                  触发器带 .ctl（输入区无边框基类），边框由 --dd-trigger-border 变量取值清零（见 chatStyles .composer-left），禁止在此另写 border 规则 -->
             ${buildDropdownHtml([], {
               extraClass: 'skill-picker treedd--capsule',
               triggerClass: 'ctl',
               onSelect: '__skillPickerOnSelect',
-              triggerLabel: '<span class="btn-icon" data-icon="bolt"></span>',
+              triggerLabel: `<span class="dd-trigger-name">${vscode.l10n.t('Select skill')}</span>`,
               triggerTitle: vscode.l10n.t('Select skill'),
               triggerAriaLabel: vscode.l10n.t('Select skill'),
             })}
@@ -286,13 +288,13 @@ export function buildHtml(
               triggerTitle: vscode.l10n.t('Select model'),
               triggerAriaLabel: vscode.l10n.t('Select model'),
             })}
-            <!-- 文本润色按钮：图标化，降低视觉权重（.ctl 无边框基类） -->
+            <!-- 文本润色按钮：sparkle（生成/改写语义），与 rename 的铅笔分开，避免读成「编辑输入框」 -->
             <button id="polishBtn" class="polish-btn-icon ctl" title="${vscode.l10n.t('Polish input')}" aria-label="${vscode.l10n.t('Polish')}">
-              <span class="btn-icon" data-icon="edit"></span>
+              <span class="btn-icon" data-icon="sparkle"></span>
             </button>
-            <!-- 上传图片按钮（常驻，D27）：有视觉能力→发 image_pick_request；未声明→置灰可点跳设置。绑定/状态归 imageCapture，此处只出骨架 -->
+            <!-- 上传图片按钮（常驻，D27）：image 图标（这里只收图片，回形针承诺任意附件）；有视觉能力→发 image_pick_request；未声明→置灰可点跳设置。绑定/状态归 imageCapture，此处只出骨架 -->
             <button id="imageAttachBtn" class="image-attach-btn is-vision-off ctl" aria-disabled="true" title="${vscode.l10n.t('Image input is disabled for the current model — click to enable it in settings')}" aria-label="${vscode.l10n.t('Add image')}">
-              <span class="btn-icon" data-icon="paperclip"></span>
+              <span class="btn-icon" data-icon="image"></span>
             </button>
           </div>
           <!-- 右侧：主发送按钮（单图标三态：发送↑ / 停止■ / 继续▶，均无文字省空间）
