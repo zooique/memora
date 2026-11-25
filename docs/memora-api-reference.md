@@ -1372,6 +1372,11 @@ export { imageTokens } from '@zooique/memora';
 export { loadConfig } from '@zooique/memora';
 export type { Config } from '@zooique/memora';
 
+// 内置工具面清单：派生自内核工具定义合集，返回只读的工具名与分组投影。
+// 只覆盖随内核分发的工具；宿主自行注册的和外部桥接的都不在内。
+// 用途：宿主把清单透传给界面，画「可禁用工具」的候选提示，保留手动输入，勿当封闭全集。
+export { listBuiltinToolFaces } from '@zooique/memora';
+
 // 工具函数
 export { segmentLower } from '@zooique/memora';
 export { parseFrontmatter } from '@zooique/memora';

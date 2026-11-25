@@ -12,6 +12,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 import type { Agent } from '@zooique/memora';
+import { listBuiltinToolFaces } from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { ASSISTANT_ROLE_PACK } from '../../shared/rolePackKind.js';
 import {
@@ -81,6 +82,24 @@ describe('postRolePackList（设置页 roles_loaded）', () => {
     // 只剩工作包；助手包在 listMeta 里真实存在，但不得出现在选择面
     expect(msg.packs.map((pack) => pack.name)).toEqual([WORK_PACK]);
     expect(msg.activeName).toBe(WORK_PACK);
+  });
+
+  it('内置工具清单随 roles_loaded 下发，且逐项派生自内核真源（零手工副本）', () => {
+    const posted: ExtensionToWebviewMessage[] = [];
+    const ctx: RolePackListContext = {
+      post: (msg) => posted.push(msg),
+      globalState: undefined,
+      rolePackSource: () => 'user',
+    };
+    // 两条分支都要下发：rpm 就绪 与 rpm 缺省（编辑模式不因装配时序缺席）
+    postRolePackList(ctx, stubRolePackManager());
+    postRolePackList(ctx, undefined);
+    const expected = listBuiltinToolFaces();
+    expect(expected.length).toBeGreaterThan(0);
+    for (const msg of posted) {
+      const loaded = msg as Extract<ExtensionToWebviewMessage, { type: 'roles_loaded' }>;
+      expect(loaded.builtinToolFaces).toEqual(expected);
+    }
   });
 });
 

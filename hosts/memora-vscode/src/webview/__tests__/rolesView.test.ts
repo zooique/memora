@@ -52,6 +52,7 @@ function dispatchLoaded(
   maxTeamMembers = 4,
   keyface?: unknown[],
   defaultName?: string,
+  builtinToolFaces?: readonly { name: string; group: string }[],
 ): void {
   window.dispatchEvent(
     new MessageEvent('message', {
@@ -63,6 +64,7 @@ function dispatchLoaded(
         maxTeamMembers,
         keyface,
         defaultName,
+        builtinToolFaces,
       },
     }),
   );
@@ -682,6 +684,57 @@ describe('角色配置详情弹窗（RP-EDIT-1：键面查看与编辑）', () =
       type: 'roles_save',
       name: 'user-a',
       strategy: { global: { stepBudget: 200 } },
+    });
+  });
+
+  it('disableTools 键 = 文本框（非 checkbox）+ datalist 候选来自内核清单 + 手输仍可保存', () => {
+    const { postMessage } = mountRolesView();
+    const keyfaceWithTools = [
+      {
+        stage: 'act',
+        key: 'disableTools',
+        kind: 'text',
+        range: { min: 1, max: 4096 },
+      },
+    ];
+    const faces = [
+      { name: 'run_command', group: 'act' },
+      { name: 'read_file', group: 'readonly' },
+    ];
+    dispatchLoaded(
+      [{ name: 'user-a', displayName: '用户甲', capabilityState: { kind: 'all' } }],
+      'user-a',
+      [],
+      4,
+      keyfaceWithTools,
+      undefined,
+      faces,
+    );
+    dispatchDetail('user-a', 'user', {});
+    const viewModal = document.querySelector('.team-modal.role-detail');
+    const edit = Array.from(viewModal?.querySelectorAll('.btn-primary') ?? []).find(
+      (b) => b.textContent === 'Edit configuration',
+    ) as HTMLButtonElement;
+    edit.click();
+
+    const formModal = document.querySelector('.team-modal.role-detail');
+    const textInput = formModal?.querySelector('input[type="text"]') as HTMLInputElement;
+    // 回归判据：text 键必须渲染成文本框，不得 fall through 成 switch checkbox（既存 bug）
+    expect(textInput).toBeTruthy();
+    // 候选提示挂 datalist，值 = 下发的工具名（只提示，不设封闭选项）
+    expect(textInput.getAttribute('list')).toBe('role-disable-tools-candidates');
+    const options = Array.from(formModal?.querySelectorAll('datalist option') ?? []).map(
+      (o) => (o as HTMLOptionElement).value,
+    );
+    expect(options).toEqual(faces.map((f) => f.name));
+
+    // 手输自定义工具名（清单外）仍可保存 = 开放集语义未被 datalist 破坏
+    textInput.value = 'custom_tool, read_file';
+    (formModal?.querySelector('.btn-primary') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'roles_save',
+      name: 'user-a',
+      strategy: { act: { disableTools: 'custom_tool, read_file' } },
     });
   });
 

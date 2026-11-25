@@ -1705,6 +1705,13 @@ export type ExtensionToWebviewMessage =
        * 宿主零清单维护，内核加键自动跟随；缺省（旧载荷）= 编辑模式不可用。
        */
       keyface?: StrategyKeyFace[];
+      /**
+       * 内置工具候选清单（SSOT 透传）：内核 listBuiltinToolFaces() 的派生投影，
+       * 供角色包编辑 UI 的 disableTools 文本框画候选提示（datalist）。
+       * 只含内置工具，非全集——宿主注册 / MCP / 包内工具不在内，故保留手输。
+       * webview 沙箱不可直连内核，故由此下发；缺省（旧载荷）= 不画候选提示，手输仍可用。
+       */
+      builtinToolFaces?: readonly BuiltinToolFaceDto[];
     }
   /**
    * 角色包键面配置详情（对 roles_detail 的应答；roles_save 成功后复用回发新原文）
@@ -2550,6 +2557,17 @@ export interface RoleIssueDto {
   level: 'error' | 'warning';
   /** 问题描述（映射内核 issue.message） */
   message: string;
+}
+
+/**
+ * 内置工具面候选（映射内核 listBuiltinToolFaces() 的派生投影）。
+ * 值域真源在内核，宿主只透传；webview 不可直连内核，故走 roles_loaded 下发。
+ */
+export interface BuiltinToolFaceDto {
+  /** 工具名（可直接填入 act.disableTools） */
+  readonly name: string;
+  /** 分组（readonly / act / orchestrate，对应 act.disableGroups 的三组） */
+  readonly group: string;
 }
 /**
  * 能力面三态判定结果（`CAP-TRISTATE-1`）

@@ -12,7 +12,12 @@
  */
 import type * as vscode from 'vscode';
 import type { Agent } from '@zooique/memora';
-import { BUILTIN_FALLBACK_PACK, MAX_TEAM_MEMBERS, describeStrategyKeys } from '@zooique/memora';
+import {
+  BUILTIN_FALLBACK_PACK,
+  MAX_TEAM_MEMBERS,
+  describeStrategyKeys,
+  listBuiltinToolFaces,
+} from '@zooique/memora';
 import type { ExtensionToWebviewMessage } from '../../shared/protocol.js';
 import { ROLE_PACK_TEAMS_KEY } from '../../shared/constants.js';
 import { isWorkRolePack } from '../../shared/rolePackKind.js';
@@ -54,6 +59,8 @@ export function postRolePackList(
       maxTeamMembers: MAX_TEAM_MEMBERS,
       // 键面与 rpm 无关（静态派生），未就绪时也下发，编辑模式不因装配时序缺席
       keyface: describeStrategyKeys(),
+      // 内置工具清单同样与 rpm 无关（内核定义派生），供 disableTools 候选提示
+      builtinToolFaces: listBuiltinToolFaces(),
     });
     return;
   }
@@ -122,9 +129,11 @@ export function postRolePackList(
     teams,
     activeName,
     defaultName,
-    // maxTeamMembers / keyface：内核常量与键面透传（UI 侧禁另写字面量 / 清单）
+    // maxTeamMembers / keyface / builtinToolFaces：内核常量、键面与工具清单透传
+    // （UI 侧禁另写字面量 / 清单）
     maxTeamMembers: MAX_TEAM_MEMBERS,
     keyface: describeStrategyKeys(),
+    builtinToolFaces: listBuiltinToolFaces(),
   });
 }
 

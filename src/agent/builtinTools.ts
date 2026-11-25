@@ -1160,6 +1160,28 @@ export const ALL_BUILTIN_TOOL_DEFS: readonly ToolDefinition[] = [
 ];
 
 /**
+ * 内置工具面清单（宿主角色包编辑 UI 的可发现性来源）：从 `ALL_BUILTIN_TOOL_DEFS` **派生**，
+ * 禁另造名字表——工具增删只改定义，本表自动跟随（跨包第二清单必漂移）。
+ *
+ * 为什么 export 到公共面：宿主 webview 沙箱不能 import 内核，只能靠宿主经 protocol 透传；
+ * 而宿主自己也没有权威名字表（历史做法 = 正则读本文件源码，见 toolNameMap.test.ts）。
+ * 本函数给「内核内置工具」一份可枚举、可透传的只读投影，宿主据此画候选提示。
+ *
+ * ⚠️ 语义边界（不可折叠）：这是**内置**子集，不是可禁用工具的全集——宿主注册工具 / MCP /
+ * 包内自定义工具都由各自注册方决定，不在本表。故 UI 只能把它当「候选提示 + 保留手输」，
+ * 不能画成封闭多选框（那会让用户以为表外工具关不掉 = 新的 fail-open 误导）。
+ *
+ * 字段只给 `name` + `group`：能填进 `act.disableTools` / `disableGroups` 的最小可用面；
+ * 展示文案（中文名）归消费者自持（SSOT-OWNERSHIP-1），内核不出 UI 文案。
+ */
+export function listBuiltinToolFaces(): readonly {
+  readonly name: string;
+  readonly group: string;
+}[] {
+  return ALL_BUILTIN_TOOL_DEFS.map((t) => ({ name: t.name, group: t.group ?? 'act' }));
+}
+
+/**
  * 三态的**保守度序**（值越大越保守）：同名多条时按最坏情况取，宁多排一次屏障、不漏一次写盘。
  */
 const WRITE_CAPABILITY_ORDER: Record<WriteCapability, number> = {

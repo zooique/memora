@@ -104,6 +104,17 @@ interface RolesPayload {
   maxTeamMembers: number;
   /** 策略键面（内核 describeStrategyKeys 透传；缺省 = 旧载荷，编辑模式不可用） */
   keyface?: KeyFaceItem[];
+  /**
+   * 内置工具候选清单（内核 listBuiltinToolFaces 透传；缺省 = 旧载荷，disableTools 不画候选但手输仍可用）。
+   * 只含内置工具非全集，UI 只作 datalist 提示，禁当封闭选项。
+   */
+  builtinToolFaces?: readonly BuiltinToolFaceItem[];
+}
+
+/** 内置工具面候选（宿主 BuiltinToolFaceDto 的结构镜像；webview 沙箱不直连内核） */
+interface BuiltinToolFaceItem {
+  readonly name: string;
+  readonly group: string;
 }
 
 /** 策略键面条目（内核 StrategyKeyFace 的结构镜像：webview 沙箱不直连内核，仅类型层对齐） */
@@ -183,6 +194,8 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   let lastData: RolesPayload | null = null;
   /** 策略键面（roles_loaded 下发；编辑表单的唯一数据源，缺省 = 编辑不可用） */
   let keyface: KeyFaceItem[] = [];
+  /** 内置工具候选（roles_loaded 下发；只作 disableTools 的 datalist 提示，不设选项边界） */
+  let builtinToolFaces: readonly BuiltinToolFaceItem[] = [];
   /** 当前详情弹窗数据（roles_detail_data 写入；弹窗重渲染共用） */
   let detail: {
     name: string;
@@ -232,6 +245,8 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     defaultName = data.defaultName ?? '';
     // 键面随载荷刷新（内核加键自动跟随；缺省保留旧值防瞬时载荷抖动清空）
     if (data.keyface) keyface = data.keyface;
+    // 工具候选同步刷新（缺省保留旧值，同键面抖动纪律）
+    if (data.builtinToolFaces) builtinToolFaces = data.builtinToolFaces;
     if (!data.packs || data.packs.length === 0) {
       // 空态引导：无角色包时提示（SSOT：createEmptyState 纯函数，对齐 configView 列表级同构）
       list.appendChild(
@@ -611,6 +626,34 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
           ),
       });
       row.appendChild(wrap);
+      return row;
+    }
+    if (kind === 'text') {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = l10n.t('Blank = use default');
+      input.title = meta ? l10n.t(meta.tip) : face.key;
+      if (typeof initial === 'string') input.value = initial;
+      // 内置工具候选：只给 disableTools 挂 datalist——它是工具名开放集，候选仅提示、不设边界。
+      // 其余 text 键（如 summaryFocus）是自由文本，挂工具名反而误导。
+      if (face.key === 'disableTools' && builtinToolFaces.length > 0) {
+        const listId = 'role-disable-tools-candidates';
+        input.setAttribute('list', listId);
+        const datalist = document.createElement('datalist');
+        datalist.id = listId;
+        for (const tool of builtinToolFaces) {
+          const opt = document.createElement('option');
+          opt.value = tool.name;
+          opt.label = tool.group;
+          datalist.appendChild(opt);
+        }
+        row.appendChild(datalist);
+      }
+      refs.push({
+        cell: { stage: face.stage, key: face.key, kind: 'text', raw: '' },
+        read: () => input.value,
+      });
+      row.appendChild(input);
       return row;
     }
     // switch（selfReview 布尔数字语义）：勾选 = 写 1；未勾 = 不写入（默认 0=关，同语义不固化 0）。

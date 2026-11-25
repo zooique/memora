@@ -13,6 +13,7 @@ import {
   BUILTIN_TOOLS,
   BUILTIN_TOOL_IDEMPOTENCY,
   PATH_WRITE_TOOL_NAMES,
+  listBuiltinToolFaces,
   resolveWriteCapability,
   shouldSkipForIdempotency,
   WEB_SEARCH_TOOL,
@@ -787,5 +788,16 @@ describe('builtinTools · 写盘声明位（diskWrite）与派生索引', () => 
         `${def.name} 是 opaque 写，不应有路径提取器`,
       ).toBeUndefined();
     }
+  });
+
+  it('listBuiltinToolFaces ≡ ALL_BUILTIN_TOOL_DEFS 投影（清单零第二真源）', () => {
+    // 派生判据：每一项 = 定义的 name + group（缺省 act）；增删工具只改定义，本表自动跟随。
+    expect(listBuiltinToolFaces()).toEqual(
+      ALL_BUILTIN_TOOL_DEFS.map((t) => ({ name: t.name, group: t.group ?? 'act' })),
+    );
+    // 非空 + 名字唯一（空集假绿 / 重复项都是缺陷）
+    const faces = listBuiltinToolFaces();
+    expect(faces.length).toBeGreaterThan(0);
+    expect(new Set(faces.map((f) => f.name)).size).toBe(faces.length);
   });
 });

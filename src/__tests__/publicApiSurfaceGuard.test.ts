@@ -391,6 +391,7 @@ const PUBLIC_SURFACE_SNAPSHOT: readonly string[] = [
   'isRoundSuccessful',
   'isWithinLocalDay',
   'killProcessTree',
+  'listBuiltinToolFaces',
   'loadConfig',
   'logger',
   'parseFrontmatter',

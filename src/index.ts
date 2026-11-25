@@ -52,6 +52,10 @@ export type {
 // 本表不再是串行闸判据；宿主改动追踪（fileChangeTracker）仍据其 keys 派生**旧事件兜底**集合
 //（现行事件已按该派生点上报 diskWrite）。
 export { WRITE_PATH_EXTRACTORS } from '@/agent/toolResultCache.js';
+// 内置工具面清单（可发现性 SSOT）：宿主角色包编辑 UI 经本函数取「内核内置工具名 + 分组」候选，
+// 派生自 builtinTools.ALL_BUILTIN_TOOL_DEFS（禁另造名字表）。是内置子集非全集（宿主/MCP/包内
+// 工具不在内）⇒ UI 只能作候选提示 + 保留手输，勿画封闭多选框（详见本函数注释）。
+export { listBuiltinToolFaces } from '@/agent/builtinTools.js';
 // 角色包（Role Pack）：文件夹形态（manifest.json 核心控制 + 独立内容文件）。
 // 只挂宿主/文档消费的装配元类型；装配结果/策略/团队/能力等子类型随签名推断可用，为内部实现
 export type { RolePackMeta, RolePackTool, RolePackToolApproval } from '@/role-pack/types.js';
