@@ -50,15 +50,19 @@ export const ANSWER_SESSION_QUESTION_TOOL_NAME = 'answer_session_question';
 /**
  * 「不可逆动作」判据词表 —— 代码侧唯一取值点
  *
- * 消费面（两处必须引用本常量，禁止各写一份清单）：
+ * 消费面（凡读本常量者皆是；全集以 `grep -rn IRREVERSIBLE_ACTION_WORDS hosts/memora-vscode/src`
+ * 为准，不写死面数——新增消费面曾漏补声明，故改指针写法。禁止在任何消费面另写一份清单）：
  *   - 代答工具描述 `extension/host/answerSessionQuestionTool.ts`：题面/选项涉及这些词 ⇒ 留空转述用户；
- *   - 唤醒种子 `webview/helpers/hostedSessionNotice.ts`：涉及这些词 ⇒ 不代答、仍留用户决定。
- *   `role-packs/memora宝/rules.md` 是 markdown、无法 import，属**人工镜像**（改词表须同步那一行）。
+ *   - 唤醒种子 `webview/helpers/hostedSessionNotice.ts`：涉及这些词 ⇒ 不代答、仍留用户决定；
+ *   - ask 超时闸 `extension/host/askCoordinator.ts`：提问命中这些词 ⇒ 超时不代选、保留等用户。
+ *   `role-packs/memora宝/rules.md` 是 markdown、无法 import，属**人工镜像**（改词表须同步那一行，
+ *   由 `shared/__tests__/constants.test.ts` 守卫）。
  *
- * 为什么只共享判据、不共享整句：两个消费面句式本来不同（工具契约说「留空并转述用户」，
- * 唤醒正文说「不代答、仍留用户决定」），硬抽整句会让两侧都别扭；但「哪些动作算不可逆」
- * 必须是同一份清单——清单漂移 = 同一道题在两个面得到不同待遇，且没有任何测试会红。
- * 2026-11-25 核查即发现三处已漂：工具描述缺「发版」、唤醒种子只有泛指「不可逆操作」无清单。
+ * 为什么只共享判据、不共享整句：各消费面句式本来不同（工具契约说「留空并转述用户」，
+ * 唤醒正文说「不代答、仍留用户决定」，超时闸只做布尔判定），硬抽整句会让各方都别扭；
+ * 但「哪些动作算不可逆」必须是同一份清单——清单漂移 = 同一道题在不同面得到不同待遇，
+ * 且没有任何测试会红。2026-11-25 核查即发现漂移：工具描述缺「发版」、唤醒种子只有泛指
+ * 「不可逆操作」无清单；同批新增超时闸时又漏补本声明面数 —— 此即改指针写法之由。
  */
 export const IRREVERSIBLE_ACTION_WORDS = [
   '推送',
