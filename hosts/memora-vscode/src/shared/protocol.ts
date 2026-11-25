@@ -859,12 +859,15 @@ export type WebviewToExtensionMessage =
    * 常规设置的写入（设置 → 常规卡）
    *
    * 与下行同名消息共用一条通道（去重按 `type` 字面量）：上行是写入意图，下行是
-   * 当前持久值回推。`kind` 限定两个键，收口在宿主 `settingsPanel` 的 writeSetting 调用；
-   * 回答语言只有 value 一个真值（空串 = 自动），**不另设 mode 键**——mode 只是同一
-   * 配置值在 UI 上的派生显示，第二份存储必漂移。
+   * 当前持久值回推。`kind` 覆盖三个持久键 + 一个只读动作（复制诊断），收口在宿主
+   * `settingsPanel`：持久键走 writeSetting 唯一封装，动作 kind 在写入前分流，
+   * 绝不写出幽灵配置键。回答语言只有 value 一个真值（空串 = 自动），**不另设 mode
+   * 键**——mode 只是同一配置值在 UI 上的派生显示，第二份存储必漂移。
    */
   | { type: 'general_setting'; kind: 'answerLanguage'; value: string }
   | { type: 'general_setting'; kind: 'attentionSound'; value: boolean }
+  | { type: 'general_setting'; kind: 'showMetrics'; value: boolean }
+  | { type: 'general_setting'; kind: 'copyDiagnostics' }
   /**
    * MCP 域写操作（**唯一**写通道，按 `op` 分流；2026-10-24 协议治理）
    *
@@ -2018,6 +2021,7 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'general_setting'; kind: 'answerLanguage'; mode: 'auto' | 'manual'; value: string }
   | { type: 'general_setting'; kind: 'attentionSound'; value: boolean }
+  | { type: 'general_setting'; kind: 'showMetrics'; value: boolean }
   /**
    * 白名单额外允许路径状态推送（设置面板加载时推送当前列表）
    *

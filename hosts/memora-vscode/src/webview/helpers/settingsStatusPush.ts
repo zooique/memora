@@ -43,10 +43,11 @@ export function pushArchiveModePreference(post: Post): void {
 }
 
 /**
- * 常规页两项持久偏好（回答语言模式 / 提示音）
+ * 常规页三项持久偏好（回答语言模式 / 提示音 / 活动指标）
  *
  * `mode` 判定复用宿主 `isAnswerLanguageAuto`（与 system prompt 指令同一函数），
  * 不在本处另写 `auto` 字面量比对——那会让 UI 回显与真实行为漂移。
+ * 活动指标只读 `memora.showMetrics`：消费面（panelSnapshots）实时 get，无热更路径。
  */
 export function pushGeneralStatus(post: Post): void {
   const cfg = vscode.workspace.getConfiguration('memora');
@@ -61,6 +62,11 @@ export function pushGeneralStatus(post: Post): void {
     type: 'general_setting',
     kind: 'attentionSound',
     value: cfg.get<boolean>('attentionSound', true),
+  });
+  post({
+    type: 'general_setting',
+    kind: 'showMetrics',
+    value: cfg.get<boolean>('showMetrics', false),
   });
 }
 

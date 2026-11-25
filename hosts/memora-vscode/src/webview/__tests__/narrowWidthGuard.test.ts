@@ -73,6 +73,8 @@ const EXEMPT: Record<string, string> = {
     'inline-flex 正常流触发器：内部 span.dd-trigger-name 负责 ellipsis，且父级 flex 可压缩',
   'settingsStyles.ts :: .security-select :: max-width = var(--dim-xl)':
     '原生 select（inline 语义、宽度随内容）+ 设置面板是编辑器标签页单例，不驻留侧栏',
+  'generalStyles.ts :: #general-root .general-input :: max-width = 360px':
+    '同块已声明 width:100% + box-sizing:border-box：宽度由父容器决定，max-width 只封顶不撑宽；窄屏随容器收缩为 100%',
 };
 
 /** 令牌 → 像素值（覆盖同一行多定义：`--sp-1: 4px; --sp-2: 6px;`） */

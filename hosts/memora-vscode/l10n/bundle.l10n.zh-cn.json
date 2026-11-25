@@ -1537,5 +1537,11 @@
   "Saving…": "正在保存…",
   "Saved": "已保存",
   "General setting could not be saved": "常规设置保存失败",
-  "General settings: answer language and interaction preferences": "常规设置：回答语言与交互偏好"
+  "General settings: answer language and interaction preferences": "常规设置：回答语言与交互偏好",
+  "Activity metrics": "活动指标",
+  "Show debugging metrics in the chat panel": "在对话面板中显示调试指标",
+  "Show LLM calls, tokens, tool failures and audit counts in the activity drawer. Debug information, hidden by default; takes effect from the next round.": "在活动抽屉中显示 LLM 调用次数、token、工具失败数与安全审计计数。属调试信息，默认隐藏；从下一轮起生效。",
+  "Diagnostics": "诊断",
+  "Copy a sanitized summary (versions, configuration and recent errors) to the clipboard for bug reports. API keys are never included.": "复制一份脱敏摘要（版本、配置与最近错误）到剪贴板，便于报障。API 密钥不会包含在内。",
+  "Copy diagnostic summary": "复制诊断摘要"
 }

@@ -376,8 +376,14 @@ export class MemoraSettingsPanel {
       this.refreshAll();
       return;
     }
-    // 常规页写入：两条 kind 共用一条通道，落盘统一走唯一写入封装（settingsWrite）
+    // 常规页消息：按 kind 分流——动作型（复制诊断）在写入前拦下，否则会写出
+    // 一个未声明的幽灵配置键，并在失败时误弹「设置保存失败」。持久键共用一条
+    // 通道，落盘统一走唯一写入封装（settingsWrite）。
     if (msg.type === 'general_setting') {
+      if (msg.kind === 'copyDiagnostics') {
+        void vscode.commands.executeCommand('memora.copyDiagnostics');
+        return;
+      }
       const written = await writeSetting(msg.kind, msg.value);
       if (!written.ok) {
         this.post({
@@ -1673,7 +1679,7 @@ export class MemoraSettingsPanel {
     pushSearchEngineStatus((m) => this.post(m));
     // 记忆子视图：会话归档模式当前值（归档模式下拉的回显真源）
     pushArchiveModePreference((m) => this.post(m));
-    // 常规子视图：回答语言模式 + 交互提示音的持久值
+    // 常规子视图：回答语言模式 + 交互提示音 + 活动指标的持久值
     pushGeneralStatus((m) => this.post(m));
     // MCP 子视图：服务器/工具运行态（无独立拉取消息，统一由本函数推送——
     // 未装配时是合法空态，装配完成后由 extension 的热更回推覆盖）

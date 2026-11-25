@@ -1537,5 +1537,11 @@
   "Saving…": "",
   "Saved": "",
   "General setting could not be saved": "",
-  "General settings: answer language and interaction preferences": ""
+  "General settings: answer language and interaction preferences": "",
+  "Activity metrics": "",
+  "Show debugging metrics in the chat panel": "",
+  "Show LLM calls, tokens, tool failures and audit counts in the activity drawer. Debug information, hidden by default; takes effect from the next round.": "",
+  "Diagnostics": "",
+  "Copy a sanitized summary (versions, configuration and recent errors) to the clipboard for bug reports. API keys are never included.": "",
+  "Copy diagnostic summary": ""
 }

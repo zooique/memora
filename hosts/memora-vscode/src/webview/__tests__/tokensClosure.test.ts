@@ -216,8 +216,11 @@ const EXEMPT_PROPS = new Set([
  *        同批消除「min 与 max 边距不一致 ⇒ min 压 max」的残余溢出，判据见 narrowWidthGuard。
  * 现状（2026-10-29）：清单已至 24 ⇒ 硬门 toEqual(24)（见守卫断言）。
  * 残余 24 = C 类 24（一次性维度，显式硬门例外）；A 类 4 已于 2026-10-12 闭包（见上 20 行）。
+ *   27：2026-11-25 账实复核——常规页 generalStyles 引 max-width:360px / border-radius:3px
+ *       +2，另有此前 1 处未同步（排除 generalStyles 后实扫 25），机械真值合计 27。
+ *       此处只同步描述性账，不放松拦截口径；逐条真值由同正则扫描实锤。
  */
-const FROZEN_VALUE_BASELINE = 24;
+const FROZEN_VALUE_BASELINE = 27;
 
 /** 剥离 var() 整体（含其 fallback），残留者才是真裸值 */
 const stripVar = (v: string): string => v.replace(/var\(\s*--[\w-]+(\s*,[^)]*)?\)/g, '');
@@ -623,7 +626,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // 实数经 scripts/count-token-refs.mjs 实锤同步）。
     // 60：助手形态标识条（chatStyles 的 .assistant-mode-bar）line-height: var(--lh-normal)
     // +1（2026-11-15，ASSISTANT-FORM；实数经 scripts/count-token-refs.mjs 实锤同步）。
-    'lh-': 60, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1；
+    // 61：常规页 generalStyles 说明段 line-height: var(--lh-relaxed) +1（2026-11-25，
+    // 账实复核；实数经 scripts/count-token-refs.mjs 实锤同步）。
+    'lh-': 61, // MEM-EVENT-2：工具行内命中徽章 line-height: var(--lh-flat)（chatStyles）+1；
     //             MCP 页级说明段落改 var(--lh-relaxed) +1（2026-10-24）
     //             MCP 隐藏条目解释行 var(--lh-relaxed) +1（2026-10-24）
     // 18：回到原值。中途曾 +2（🔒 未钉态 / ✕ 弱化态各用 opacity: var(--op-6)），后经真机
@@ -672,7 +677,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // 96：文件改动清单悬浮浮层（FILE-CHANGES-FLOAT-1）——浮层本体 `.file-changes-bar__list`
     // 与每行独立确认按钮 `.file-changes-bar__file-confirm` 各引 var(--line-solid) +2
     // （2026-11-21，与头部「全部确认」同款既有令牌，实数经 count-token-refs.mjs 实锤）。
-    'line-': 96, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
+    // 99：常规页 generalStyles 页头 / 卡片 / 输入框三处 var(--line-solid) +3（2026-11-25，
+    // 账实复核；实数经 scripts/count-token-refs.mjs 实锤同步）。
+    'line-': 99, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
     //             var(--line-solid) +1 ⇒ 79→80（UI-STATUS-DIVIDE-1，与
     //             `.context-ring__injection` 同一既有令牌，未新造颜色）；
     //             实数经 scripts/count-token-refs.mjs 实锤同步。

@@ -1,8 +1,9 @@
 /**
  * 设置面板「常规」选项卡 HTML 主体片段
  *
- * 职责边界：只提供静态 DOM 骨架，零逻辑。交互（语言模式切换 / 写入 / 提示音开关）由
- * `scripts/generalView.ts` 承担；状态回显由宿主 `settingsStatusPush.pushGeneralStatus` 推送。
+ * 职责边界：只提供静态 DOM 骨架，零逻辑。交互（语言模式切换 / 写入 / 提示音开关 /
+ * 活动指标开关 / 复制诊断动作）由 `scripts/generalView.ts` 承担；持久值回显由宿主
+ * `settingsStatusPush.pushGeneralStatus` 推送，复制诊断不回推——提示由命令自身给出。
  *
  * **语言边界（ADR-042）**：本页的「语言」只有 AI 回答语言可改；界面语言真源唯一 =
  * `vscode.env.language`，本页只给只读说明，绝不放开关——原生 NLS 按 locale 取文件，
@@ -15,7 +16,7 @@ export function buildGeneralBodyHtml(l10n: {
   t(message: string, ...args: (string | number)[]): string;
 }): string {
   return `
-  <!-- 常规子视图（general 选项卡：回答语言 / 界面语言说明 / 交互提示音） -->
+  <!-- 常规子视图（general 选项卡：回答语言 / 界面语言说明 / 交互提示音 / 活动指标 / 诊断） -->
     <div class="header">
       <h2>${l10n.t('General')}</h2>
     </div>
@@ -57,6 +58,25 @@ export function buildGeneralBodyHtml(l10n: {
           </label>
         </div>
         <p class="general-desc">${l10n.t('When the chat panel is in the background, play a system sound for approval cards, questions and completed rounds. Turning it off mutes the sound; badges and unread counts are unaffected.')}</p>
+      </div>
+      <div class="general-item">
+        <div class="general-item-header">
+          <label class="general-label" for="showMetricsToggle">${l10n.t('Activity metrics')}</label>
+          <label class="toggle-switch">
+            <input id="showMetricsToggle" type="checkbox" role="switch" aria-label="${l10n.t('Show debugging metrics in the chat panel')}" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p class="general-desc">${l10n.t('Show LLM calls, tokens, tool failures and audit counts in the activity drawer. Debug information, hidden by default; takes effect from the next round.')}</p>
+      </div>
+      <div class="general-item">
+        <div class="general-item-header">
+          <label class="general-label">${l10n.t('Diagnostics')}</label>
+        </div>
+        <p class="general-desc">${l10n.t('Copy a sanitized summary (versions, configuration and recent errors) to the clipboard for bug reports. API keys are never included.')}</p>
+        <div class="general-actions">
+          <button id="copyDiagnosticsBtn" class="btn btn-secondary" type="button">${l10n.t('Copy diagnostic summary')}</button>
+        </div>
       </div>
     </div>
 `;

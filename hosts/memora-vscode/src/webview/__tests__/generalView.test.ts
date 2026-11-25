@@ -112,6 +112,47 @@ describe('常规视图 — 回答语言自动 / 手动模式', () => {
   });
 });
 
+describe('常规视图 — 活动指标', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('开关只上报 showMetrics 布尔值，不做本地乐观翻转', () => {
+    const { postMessage, root } = mount();
+    const toggle = root.querySelector('#showMetricsToggle') as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    toggle.click();
+    expect(lastGeneral(postMessage)).toMatchObject({ kind: 'showMetrics', value: true });
+  });
+
+  it('宿主回推按 kind 改写指标开关，不串写提示音（隐式 fallthrough 会在此真红）', () => {
+    const { push, root } = mount();
+    const metrics = root.querySelector('#showMetricsToggle') as HTMLInputElement;
+    const sound = root.querySelector('#attentionSoundToggle') as HTMLInputElement;
+    push({ type: 'general_setting', kind: 'showMetrics', value: true });
+    expect(metrics.checked).toBe(true);
+    expect(sound.checked).toBe(false);
+    push({ type: 'general_setting', kind: 'attentionSound', value: true });
+    expect(sound.checked).toBe(true);
+    expect(metrics.checked).toBe(true);
+  });
+});
+
+describe('常规视图 — 复制诊断', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('按钮只发动作 kind：不带 value，也不在本地谎报「已复制」', () => {
+    const { postMessage, root } = mount();
+    (root.querySelector('#copyDiagnosticsBtn') as HTMLButtonElement).click();
+    const msg = lastGeneral(postMessage);
+    expect(msg.kind).toBe('copyDiagnostics');
+    expect('value' in msg).toBe(false);
+    expect((root.querySelector('#answerLanguageStatus') as HTMLElement).hidden).toBe(true);
+  });
+});
+
 describe('常规视图 — 交互提示音', () => {
   beforeEach(() => {
     document.body.innerHTML = '';

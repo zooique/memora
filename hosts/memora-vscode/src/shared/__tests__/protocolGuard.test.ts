@@ -106,6 +106,8 @@ import { join } from 'node:path';
  *  2026-11-25 常规页 +1（`general_setting`）：回答语言模式与提示音两项写入 / 回推
  *  共用同一 type 字面量（上下行同名，按 kind 分流），没有为两个配置项各开一条通道；
  *  实测 149，阈值同口径重算 150。
+ *  2026-11-25 常规页再加活动指标开关与复制诊断动作：沿用 `general_setting` 的
+ *  kind 分流（动作 kind 在宿主写入前拦下），零新 type ⇒ 实测仍 149，阈值不动。
  */
 const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 150;
 
