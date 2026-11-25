@@ -226,6 +226,13 @@ describe('助手窗微信心智对齐（ASSISTANT-WECHAT-UX-1）', () => {
     expect(css).toMatch(
       /\.round-group__footer \{\s*display: flex; align-items: center; justify-content: space-between;/,
     );
+    // FOOTER-GAP-1：助手侧气泡与底栏的垂直留白收到 2px，self 基础 4+4 逐字不动
+    expect(css).toMatch(
+      /body\[data-form='assistant'\] \.round-group__footer:not\(\.is-pending\) \{\s*margin-top: 0;\s*padding-top: var\(--sp-0, 2px\);\s*\}/,
+    );
+    expect(css).toMatch(
+      /\.round-group__footer \{\s*display: flex; align-items: center; justify-content: space-between;\s*gap: var\(--sp-2, 6px\);\s*margin-top: var\(--sp-1, 4px\);/,
+    );
   });
 
   it('⑧ BUBBLE-QUOTE-1：助手形态用户气泡 hover 栏有引用按钮，点击整条落到引用胶囊（复用 applyQuote）', () => {

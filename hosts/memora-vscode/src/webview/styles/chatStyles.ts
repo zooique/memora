@@ -2067,6 +2067,14 @@ export const chatStyles = `
     transform: translateY(-2px);
     transition: opacity var(--dur-base) ease, transform var(--dur-base) ease;
   }
+  /* FOOTER-GAP-1（2026-11-25 真机反馈）：助手气泡与底栏按钮之间过松。
+   * 基础 footer 的 margin-top + padding-top 合计 8px，此处只在助手形态收到 2px
+   * （margin 归零、padding 取 --sp-0），保留一点呼吸但不脱节。独立规则不碰上面的
+   * hover / 单边规则，self 形态基础声明逐字不动，令牌引用数也不变。 */
+  body[data-form='assistant'] .round-group__footer:not(.is-pending) {
+    margin-top: 0;
+    padding-top: var(--sp-0, 2px);
+  }
   body[data-form='assistant'] .round-group:hover .round-group__footer:not(.is-pending),
   body[data-form='assistant'] .round-group__footer:not(.is-pending):focus-within {
     opacity: 1;
