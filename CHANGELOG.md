@@ -8,6 +8,12 @@
 >
 > 本文件 2026-10-19 起按 `CHLOG-TRIM-1` 精简：只记「改了什么 + 为什么 + 对消费者的影响」；逐批拍板过程、变异验证收据、台账叙事的 SSOT 在仓库台账 `tasks/待完成任务.md` 对应 ID 条目（npm 包不含），此处只留 ID 锚保交叉引用。
 
+## [7.5.1] · 2026-11-25
+
+### Fixed（内核）
+
+- **内置角色包 `匠码工程师` 目录名改为 ASCII**（`VSIX-PATH-COLLAPSE-1` · **消费者可感知 · 随包资源路径变更**）：原中文目录名与 `共鸣小说家` 同为 5 个中文字（UTF-8 各 15 字节）。VS Marketplace 服务端解析 vsix 条目路径时按单字节编码解读，非 ASCII 逐字节变成 `?`，两者塌缩成同一个键，宿主发版卡在 Marketplace 那一步并被拒整包。**本版把目录改为 `role-packs/jiangma-engineer`**，`manifest.json` 的 `name: 匠码工程师` 文章不变 ⇒ 角色显示名、已装载状态、工具与技能面全部逐字不变。**对消费者**：按目录路径引用该包的自定义代码须改用新路径；按 `manifest.name` 引用者零变化。**npm 发布通道本身不受此问题影响**（tar 无「按名建字典」的解析环节，7.5.0 带同名中文目录已成功发布）——本版只为让 npm 代次与源码内容严格一致。
+
 ## [7.5.0] · 2026-11-25
 
 ### Added（内核）
@@ -18,6 +24,14 @@
 
 - **派活字段契约订正：追认 `text` 并补齐必填性**（`DESIGN-B2-TEXT-DRIFT-1` · **消费者可感知 · 随包规则订正**）：`memora宝` 的规则原写「title / paths 可选」，与派活工具的实际契约相悖——`rolePack` / `title` / `text` / `paths` 四键必填，其中 `text` 是 Worker 首轮唯一收到的指令（`mandate` 落 `workOrder` 作语义边界，不回传首轮）。已改为「四键必填 + `mandate` 派活时必填」（`mandate` 是 Worker 唯一的语义边界：要解决什么、不解决什么），并写明 `text` 只写「这一轮做什么」，不写文件 / 命令 / 实现路径。同时删去「证据来源含『我自核』」——助手包没有读工具，该来源不存在。**对消费者**：按旧规则省略 title / paths 会被工具直接拒收；其余包的派活行为零变化。
 - **派活协议注入与 `mandate` 解耦**（`DECOUPLE-1` · **消费者可感知 · 提示词行为**）：交回协议与收场自报两段原先挂在「有职责边界」上，而 `mandate` 是可选的 ⇒ 派活不填边界时两段静默不到 Worker（工具不报错、行为降级）。现判据改为「本会话是不是派活开出的」= `declaredPaths` 非空或 `workOrder` 非空——`declaredPaths` 由 `create_session` 四键必填的 `paths` 写入，比可选 `mandate` 可靠；职责边界段本身仍只在 `workOrder` 非空时出现（技术范围 ≠ 语义边界）。**对消费者**：派活未写 `mandate` 的 Worker 从此也能收到交回 / 自报协议；自助与普通会话提示词逐字不变。
+
+## [0.13.1] · 2026-11-25 · 宿主
+
+> **随包内核代次 = `7.5.1`**（内核 7.5.1 仅把内置角色包目录名改 ASCII，见内核区；本版宿主无功能变更）。**版本号判定：patch**——零功能变更、零协议变更、零新增入口。
+
+### Fixed（宿主）
+
+- **vsix 中文路径塌缩冲突致 Marketplace 发布失败**（`VSIX-PATH-COLLAPSE-1` · **消费者可感知 · 发布通道可用性**）：0.13.0 打出的 vsix 含 `role-packs/共鸣小说家` 与 `role-packs/匠码工程师` 两个各 5 个中文字的目录（UTF-8 同为 15 字节）；Marketplace 服务端解析 vsix 条目路径时按单字节编码解读，非 ASCII 逐字节变成 `?`，两者塌缩成同一个键，服务端抛 `An item with the same key has already been added` 拒绝整包——本地 `vsce package`、Open VSX（Java 侧）均不报错，故障只在 Marketplace 那一步暴露（0.12.0 能过是因为当时只有一个 5 字中文目录）。**修法**：`匠码工程师` 目录改为 ASCII 名 `jiangma-engineer`（`manifest.json` 的 `name` 仍是权威身份，角色显示名与已装载状态不变；`memora助手` / `memora宝` 因被 `BUILTIN_FALLBACK_PACK` / `ASSISTANT_ROLE_PACK` 及多处测试硬编码而保持原名）；新增打包期守卫 `scripts/verify-vsix-paths.mjs`（挂在 `npm run package` 末尾）复现同一塌缩判据，撞车即 exit 1，把这类故障从「发版时」前移到「打包时」。**对消费者**：功能与 0.13.0 完全一致；Open VSX 的 0.13.0 已存在且不可重发，本版为补齐 Marketplace 的唯一通道。
 
 ## [0.13.0] · 2026-11-25 · 宿主
 
