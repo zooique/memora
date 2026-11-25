@@ -45,15 +45,6 @@ const HTML = `
       <div id="recycleList"><p class="hint">回收站为空。</p></div>
     </details>
     <p id="memHint" class="mem-hint" hidden></p>
-    <div id="archiveMode" class="archive-mode">
-      <div class="archive-mode-item">
-        <label class="security-label" for="archiveModeSelect">会话归档模式</label>
-        <select id="archiveModeSelect" class="security-select">
-          <option value="full">自动归档</option>
-          <option value="manual">仅手动归档</option>
-        </select>
-      </div>
-    </div>
   </div>
 `;
 
@@ -706,64 +697,5 @@ describe('memoryView 展示层映射对齐内核契约', () => {
   });
 });
 
-// ─── 会话归档模式（内核 archiveMode 投影，2026-10-16） ───
-// 下拉只做「变更发消息 + 状态回显」两件事：持久化/热更新/回推全在 host 侧
-// （settingsPanel.setArchiveMode），webview 不做乐观翻转（与搜索引擎下拉同范式）。
-describe('memoryView 会话归档模式', () => {
-  beforeEach(() => {
-    document.body.innerHTML = '';
-  });
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('切换归档模式 → post archive_mode_set（合法枚举才发送）', () => {
-    const { postMessage } = mountMemoryView();
-    const select = document.getElementById('archiveModeSelect') as HTMLSelectElement;
-    select.value = 'manual';
-    select.dispatchEvent(new Event('change'));
-    expect(postMessage).toHaveBeenCalledWith({ type: 'archive_mode_set', mode: 'manual' });
-  });
-
-  it('archive_mode_status 回推 → 下拉回显（host 真相覆盖本地值）', () => {
-    mountMemoryView();
-    const select = document.getElementById('archiveModeSelect') as HTMLSelectElement;
-    select.value = 'manual';
-    window.dispatchEvent(
-      new MessageEvent('message', { data: { type: 'archive_mode_status', mode: 'full' } }),
-    );
-    expect(select.value).toBe('full');
-  });
-
-  it('首屏不发 archive_mode_set（等 host ready 握手回推，不主动推送偏好）', () => {
-    const { postMessage } = mountMemoryView();
-    expect(postMessage).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'archive_mode_set' }),
-    );
-  });
-
-  it('下拉被注入非法 option 并选中 → 不发送（DOM 篡改零信任，webview 侧不裸信 DOM）', () => {
-    // 生产判据：memoryView 下拉 change 处理器在发送 archive_mode_set 前的枚举自校验
-    // （`mode === 'full' || mode === 'manual'`）此前零覆盖——现有 3 例只喂合法值，等于假设「下拉枚举永不被改」。
-    // 下拉是封闭枚举只是**渲染层事实**，DOM 可被任意脚本/扩展篡改 ⇒ 发送前必须自校验，
-    // 否则会把越界值送进 host（host 侧亦有同一校验，属纵深防御的第二道）。
-    // 变异靶标：去掉配送侧的枚举判据 → 本例转红。
-    const { postMessage } = mountMemoryView();
-    const select = document.getElementById('archiveModeSelect') as HTMLSelectElement;
-    const rogue = document.createElement('option');
-    rogue.value = 'evil';
-    rogue.textContent = '越界值';
-    select.appendChild(rogue);
-    select.value = 'evil';
-
-    select.dispatchEvent(new Event('change'));
-
-    expect(postMessage).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'archive_mode_set' }),
-    );
-    // 对照：合法值仍然照发（证明上面的「不发」不是因为 change 监听没挂上）
-    select.value = 'manual';
-    select.dispatchEvent(new Event('change'));
-    expect(postMessage).toHaveBeenCalledWith({ type: 'archive_mode_set', mode: 'manual' });
-  });
-});
+// 会话归档模式入口 2026-11-25 迁至常规卡：行为守卫随之搬到 generalView.test.ts，
+// 本页不再持有该控件（结构守卫在 settingsView.test.ts 钉死「不在记忆卡内」）。

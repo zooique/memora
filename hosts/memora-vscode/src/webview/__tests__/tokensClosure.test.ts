@@ -576,9 +576,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
   // dim- 20→19：占用构成条（HOST-S3-2）由状态行常驻移入圆环 hover 卡片底部
   // （.context-segments 宽度 var(--dim-md) → 卡片内 100%，同源信号不双渲染）⇒ 减少 1 处
   // dim 消费者，随 count-token-refs.mjs 机械实测同步（2026-10-18）。
-  // line- 70→71：会话归档模式区（memoryStyles .archive-mode）分区描边 var(--line-solid)
-  //（与 .governance 同构：顶部分隔线），实数经 scripts/count-token-refs.mjs 实锤同步
-  // （2026-10-16 setArchiveMode 接线）。
+  // line- 70→71：会话归档模式区（2026-10-16 时在 memoryStyles .archive-mode）分区描边
+  // var(--line-solid)（与 .governance 同构：顶部分隔线），实数经 scripts/count-token-refs.mjs
+  // 实锤同步。2026-11-25 该区迁至 generalStyles（#general-root 前缀），选择器换名但引用数不变。
   // line- 71→72：web_search 裁决证据块（.round-block__search-evidence）顶部分隔线
   // var(--line-solid)（与 .round-block__tool-summary 同层但加分隔），实数经
   // scripts/count-token-refs.mjs 实锤同步（2026-10-17 web_search_result 证据接入宿主重放）。

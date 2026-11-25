@@ -13,6 +13,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createGeneralView } from '../scripts/generalView.js';
 import { buildGeneralBodyHtml } from '../panels/settingsGeneralHtml.js';
+import { buildMemoryBodyHtml } from '../panels/settingsMemoryHtml.js';
 import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
@@ -171,5 +172,63 @@ describe('常规视图 — 交互提示音', () => {
     const toggle = root.querySelector('#attentionSoundToggle') as HTMLInputElement;
     push({ type: 'general_setting', kind: 'attentionSound', value: true });
     expect(toggle.checked).toBe(true);
+  });
+});
+
+// ─── 会话归档模式（2026-11-25 自记忆卡迁入常规卡） ───
+// 消息仍走 archive_mode_set / archive_mode_status，不另开 general_setting kind。
+describe('常规视图 — 会话归档模式', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('入口只在常规卡：产线骨架含下拉，记忆卡骨架不再含（搬迁结构守卫）', () => {
+    expect(BODY_HTML).toContain('archiveModeSelect');
+    expect(buildMemoryBodyHtml({ t: (s) => s })).not.toContain('archiveModeSelect');
+  });
+
+  it('切换归档模式 → post archive_mode_set（合法枚举才发送）', () => {
+    const { postMessage, root } = mount();
+    const select = root.querySelector('#archiveModeSelect') as HTMLSelectElement;
+    select.value = 'manual';
+    select.dispatchEvent(new Event('change'));
+    expect(postMessage).toHaveBeenCalledWith({ type: 'archive_mode_set', mode: 'manual' });
+  });
+
+  it('archive_mode_status 回推 → 下拉回显（host 真相覆盖本地值）', () => {
+    const { push, root } = mount();
+    const select = root.querySelector('#archiveModeSelect') as HTMLSelectElement;
+    select.value = 'manual';
+    push({ type: 'archive_mode_status', mode: 'full' });
+    expect(select.value).toBe('full');
+  });
+
+  it('首屏不发 archive_mode_set（等 host ready 握手回推，不主动推送偏好）', () => {
+    const { postMessage } = mount();
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'archive_mode_set' }),
+    );
+  });
+
+  it('下拉被注入非法 option 并选中 → 不发送（DOM 篡改零信任）', () => {
+    // 生产判据：change 处理器在发送前的枚举自校验（`mode === 'full' || mode === 'manual'`）。
+    // 下拉只是渲染层封闭枚举，DOM 可被篡改；host 侧亦有同一校验（纵深防御第二道）。
+    const { postMessage, root } = mount();
+    const select = root.querySelector('#archiveModeSelect') as HTMLSelectElement;
+    const rogue = document.createElement('option');
+    rogue.value = 'evil';
+    rogue.textContent = '越界值';
+    select.appendChild(rogue);
+    select.value = 'evil';
+
+    select.dispatchEvent(new Event('change'));
+
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'archive_mode_set' }),
+    );
+    // 对照：合法值仍然照发（证明上面的「不发」不是因为监听没挂上）
+    select.value = 'manual';
+    select.dispatchEvent(new Event('change'));
+    expect(postMessage).toHaveBeenCalledWith({ type: 'archive_mode_set', mode: 'manual' });
   });
 });

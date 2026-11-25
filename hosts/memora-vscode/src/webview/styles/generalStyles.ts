@@ -62,4 +62,17 @@ export const generalStyles = `
   #general-root .general-status {
     font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6);
   }
+
+  /* ============ Components：会话归档模式区（2026-11-25 自记忆卡迁入） ============ */
+  /* 与常规卡其余分区同构：顶部分隔线 + 内边距；内部复用 select 组件类
+     （security-select 定义在 settingsStyles.ts，同文档打包进同一 webview，禁在此复制第二份） */
+  #general-root .archive-mode {
+    padding: var(--sp-3, 8px) var(--sp-5, 12px);
+    border-top: var(--line-solid);
+  }
+  #general-root .archive-mode-item {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--sp-3, 8px); margin-bottom: var(--sp-2, 6px);
+  }
+  #general-root .archive-mode-item .security-select { flex-shrink: 0; }
 `;

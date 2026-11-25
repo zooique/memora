@@ -2,8 +2,9 @@
  * 设置面板「常规」选项卡 HTML 主体片段
  *
  * 职责边界：只提供静态 DOM 骨架，零逻辑。交互（语言模式切换 / 写入 / 提示音开关 /
- * 活动指标开关 / 对话文字三档 / 复制诊断动作）由 `scripts/generalView.ts` 承担；持久值回显由宿主
- * `settingsStatusPush.pushGeneralStatus` 推送，复制诊断不回推——提示由命令自身给出。
+ * 活动指标开关 / 对话文字三档 / 会话归档模式 / 复制诊断动作）由 `scripts/generalView.ts` 承担；
+ * 持久值回显由宿主 `settingsStatusPush.pushGeneralStatus` 推送（归档模式走既有的
+ * `archive_mode_status`，不塞进 general_setting 的 kind），复制诊断不回推——提示由命令自身给出。
  * 三档 UI 只发档位名，px 映射真源在 tokens.ts 的 --font-chat-text，本页不持第二份数值。
  *
  * **语言边界（ADR-042）**：本页的「语言」只有 AI 回答语言可改；界面语言真源唯一 =
@@ -17,7 +18,8 @@ export function buildGeneralBodyHtml(l10n: {
   t(message: string, ...args: (string | number)[]): string;
 }): string {
   return `
-  <!-- 常规子视图（general 选项卡：回答语言 / 界面语言说明 / 交互提示音 / 活动指标 / 诊断） -->
+  <!-- 常规子视图（general 选项卡：回答语言 / 对话文字三档 / 会话归档模式 /
+       界面语言说明 / 交互提示音 / 活动指标 / 诊断） -->
     <div class="header">
       <h2>${l10n.t('General')}</h2>
     </div>
@@ -63,6 +65,16 @@ export function buildGeneralBodyHtml(l10n: {
             <span>${l10n.t('Large')}</span>
           </label>
         </div>
+      </div>
+      <div id="archiveMode" class="archive-mode" role="region" aria-label="${l10n.t('Conversation archiving')}">
+        <div class="archive-mode-item">
+          <label class="general-label" for="archiveModeSelect">${l10n.t('Conversation archive mode')}</label>
+          <select id="archiveModeSelect" class="security-select" aria-label="${l10n.t('Conversation archive mode')}">
+            <option value="full">${l10n.t('Automatic archiving')}</option>
+            <option value="manual">${l10n.t('Manual only')}</option>
+          </select>
+        </div>
+        <p class="general-desc">${l10n.t('Automatic: when you switch away from or fork a conversation, a conversation summary and topic are generated automatically (the search data for the history list). Manual only: generated only when triggered by hand. <strong>Round summaries are not affected</strong> (they are always generated, so conversation memories keep accumulating as usual). Switching while a conversation is running is rejected by the kernel for hot reload — the preference takes effect when the current conversation ends.')}</p>
       </div>
       <div class="general-item">
         <div class="general-item-header">

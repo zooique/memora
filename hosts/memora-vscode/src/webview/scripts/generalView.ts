@@ -2,9 +2,11 @@
  * generalView — 设置面板「常规」选项卡运行时
  *
  * 职责：AI 回答语言的自动 / 手动模式切换与写入、界面语言只读说明（无交互）、
- * 交互提示音与活动指标开关、对话文字三档、复制诊断动作。持久写入都发 `general_setting` 给宿主，
- * 由宿主走唯一写入封装 `settingsWrite.writeSetting()`；复制诊断同通道但按 kind
- * 分流为命令动作（不写配置、不回推），提示由命令自身弹。本模块零配置 API 调用、
+ * 交互提示音与活动指标开关、对话文字三档、会话归档模式、复制诊断动作。持久写入都发
+ * `general_setting` 给宿主，由宿主走唯一写入封装 `settingsWrite.writeSetting()`；复制诊断
+ * 同通道但按 kind 分流为命令动作（不写配置、不回推），提示由命令自身弹。归档模式入口
+ * 2026-11-25 自记忆卡迁入，但消息仍走既有 `archive_mode_set` / `archive_mode_status`——
+ * 不为「放在常规页」另开 kind，避免同一配置两条写入通道。本模块零配置 API 调用、
  * 零本地持久化。
  *
  * **模式的唯一真源是配置值本身**：空 / `auto` = 自动（宿主 `responseLanguage.ts` 判定），
@@ -39,6 +41,9 @@ export function createGeneralView({
   const metricsToggle = root.querySelector<HTMLInputElement>('#showMetricsToggle');
   const copyDiagnosticsBtn = root.querySelector<HTMLButtonElement>('#copyDiagnosticsBtn');
   const scaleRadios = [...root.querySelectorAll<HTMLInputElement>('input[name="chatTextScale"]')];
+  // 会话归档模式下拉（内核 archiveMode 投影；入口 2026-11-25 自记忆卡迁入）。
+  // 变更只发消息，回显由 host 推 archive_mode_status（与记忆视图同一契约，仅挂载页变了）。
+  const archiveModeSelect = root.querySelector<HTMLSelectElement>('#archiveModeSelect');
 
   /** 当前 UI 模式（只由宿主回推的 mode 改写；用户点 radio 是待保存的意图） */
   let mode: 'auto' | 'manual' = 'auto';
@@ -101,8 +106,23 @@ export function createGeneralView({
     vscode.postMessage({ type: 'general_setting', kind: 'copyDiagnostics' });
   });
 
+  // 归档模式切换：只发消息（持久化 + 热更新 + 回推全在 host 侧，webview 不做乐观翻转）。
+  // 下拉是封闭枚举（full/manual）：越界值（DOM 被篡改）不发送——host 侧亦有同一校验。
+  archiveModeSelect?.addEventListener('change', () => {
+    const mode = archiveModeSelect.value;
+    if (mode === 'full' || mode === 'manual') {
+      vscode.postMessage({ type: 'archive_mode_set', mode });
+    }
+  });
+
+  // 归档模式的回显不是 general_setting：必须在下面的 kind 分流 **之前** 接住，
+  // 否则会被 `msg.type !== 'general_setting'` 提前 return，下拉永远停在旧偏好上。
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
     const msg = event.data;
+    if (msg.type === 'archive_mode_status') {
+      if (archiveModeSelect) archiveModeSelect.value = msg.mode;
+      return;
+    }
     if (msg.type !== 'general_setting') return;
     // 按 kind 显式分发：不可「非 answerLanguage 就当提示音」，否则新增回推会静默写错控件。
     if (msg.kind === 'answerLanguage') {

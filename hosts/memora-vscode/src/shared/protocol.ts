@@ -846,7 +846,7 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'search_engine_set'; engine: SearchEngineSetting }
   /**
-   * 设置会话归档模式（设置面板「记忆」选项卡的归档模式下拉触发）
+   * 设置会话归档模式（设置面板「常规」选项卡的归档模式下拉触发；2026-11-25 自记忆卡迁入）
    *
    * full=自动归档（切换/分叉离开会话时自动生成会话摘要元数据，供历史列表检索）；
    * manual=仅手动归档。轮次摘要不受影响（无模式开关，总是生成）。
@@ -2059,7 +2059,7 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'search_engine_status'; engine: SearchEngineSetting }
   /**
-   * 会话归档模式状态推送（设置面板「记忆」选项卡下拉的回显真源）
+   * 会话归档模式状态推送（设置面板「常规」选项卡下拉的回显真源；2026-11-25 自记忆卡迁入）
    *
    * 推送时机：settings 视图 ready 握手 + 用户切换后回推。mode = 用户级设置
    * memora.archiveMode 的持久值（与 search_engine_status 同口径：下拉反映偏好，

@@ -6,8 +6,9 @@
  * 登记——共享文件里只要还有别的页签中文，整份文件就不能登记 `migrated`。按 tab 前缀
  * 拆文件后，每页的可见文案各自成网，翻完一页就能立刻被守卫钉住。
  *
- * 职责边界：**只给静态 DOM 骨架，零逻辑**。列表 / 回收站 / 治理统计 / 归档模式回显
- * 全由 `scripts/memoryView.ts` 消费消息渲染；本文件只负责「翻英文源键 + 注入本地化器」。
+ * 职责边界：**只给静态 DOM 骨架，零逻辑**。列表 / 回收站 / 治理统计全由
+ * `scripts/memoryView.ts` 消费消息渲染；本文件只负责「翻英文源键 + 注入本地化器」。
+ * 会话归档模式入口 2026-11-25 起迁至常规卡（默认首页），本页不再持有该控件。
  *
  * 注：本片段不带外层 root 容器（`buildHtml()` 用 `settingsRootId('memory')` 统一生成）。
  */
@@ -63,18 +64,6 @@ export function buildMemoryBodyHtml(l10n: {
         <button id="btnCleanup" class="btn btn-danger" title="${l10n.t('Permanently delete memories soft-deleted more than {0} days ago (cannot be undone)', MEMORY_RECYCLE_RETENTION_DAYS)}">${l10n.t('Clean up expired')}</button>
       </div>
       <p id="govDetail" class="governance-detail" hidden></p>
-    </div>
-
-    <!-- 会话归档模式：内核 archiveMode 投影（full=自动归档 / manual=仅手动；设置即热更新，繁忙顺延） -->
-    <div id="archiveMode" class="archive-mode" role="region" aria-label="${l10n.t('Conversation archiving')}">
-      <div class="archive-mode-item">
-        <label class="security-label" for="archiveModeSelect">${l10n.t('Conversation archive mode')}</label>
-        <select id="archiveModeSelect" class="security-select" aria-label="${l10n.t('Conversation archive mode')}">
-          <option value="full">${l10n.t('Automatic')}</option>
-          <option value="manual">${l10n.t('Manual only')}</option>
-        </select>
-      </div>
-      <p class="security-desc">${l10n.t('Automatic: when you switch away from or fork a conversation, a conversation summary and topic are generated automatically (the search data for the history list). Manual only: generated only when triggered by hand. <strong>Round summaries are not affected</strong> (they are always generated, so conversation memories keep accumulating as usual). Switching while a conversation is running is rejected by the kernel for hot reload — the preference takes effect when the current conversation ends.')}</p>
     </div>
 
     <p class="footer-hint">${l10n.t('Memories are sorted by importance. Click an entry to see its full text.')}</p>`;

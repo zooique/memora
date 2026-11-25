@@ -9,6 +9,9 @@
  * open_setting 导航）全部由 securityServerOps.ts（宿主）与 webview 侧 `scripts/securityView.ts`
  * 承担。片段内不得出现插值变量——一旦需要动态数据，说明它该留在宿主或走消息通道。
  *
+ * **2026-11-25 SSOT 收口**：活动指标与提示音的「Adjust in Settings」跳转卡已从本页删除——
+ * 常规卡持有真控件，本页再放跳转入口即两处描述同一配置。勿回填。
+ *
  * **本地化形态（B7）**：键 = 英文源文案本身，插值一律 `{0}`；本地化器由宿主注入
  * （`vscode.l10n`）。参数是**命名空间对象**而非裸 `t` 函数——静态键采集只认
  * `l10n.t('…')`，裸 `t('…')` 会让这些键脱离判据⑨的采集面。
@@ -70,20 +73,6 @@ export function buildSecurityBodyHtml(l10n: {
           <button class="btn btn-secondary open-setting-btn" type="button" data-setting-key="memora.scriptNodePath">${l10n.t('Adjust in Settings')}</button>
         </div>
         <p class="security-desc">${l10n.t('The node interpreter used by skill scripts and project scripts. Leave empty to use the system PATH; if a script reports "spawn node ENOENT" (node not found), enter the absolute path to the node executable here. Reload the window after changing this.')}</p>
-      </div>
-      <div class="security-item">
-        <div class="security-item-header">
-          <label class="security-label">${l10n.t('Activity metrics (debug)')}</label>
-          <button class="btn btn-secondary open-setting-btn" type="button" data-setting-key="memora.showMetrics">${l10n.t('Adjust in Settings')}</button>
-        </div>
-        <p class="security-desc">${l10n.t('Debug information such as LLM call counts / tokens / security audit / fingerprints in the activity drawer. Hidden by default; once enabled, it appears in the drawer starting from the next conversation.')}</p>
-      </div>
-      <div class="security-item">
-        <div class="security-item-header">
-          <label class="security-label">${l10n.t('Notification sound')}</label>
-          <button class="btn btn-secondary open-setting-btn" type="button" data-setting-key="memora.attentionSound">${l10n.t('Adjust in Settings')}</button>
-        </div>
-        <p class="security-desc">${l10n.t('When the chat panel is not in the foreground, a system sound plays when an approval card appears / the AI waits for an answer / a round completes. On by default; turning it off mutes it completely, while in-panel badges and unread counts are unaffected.')}</p>
       </div>
       <div class="security-item">
         <div class="security-item-header">

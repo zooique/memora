@@ -20,6 +20,7 @@ import type { CustomSearchEngineConfig, MemoryItemDto } from '../../shared/proto
 import { buildMcpBodyHtml } from '../panels/settingsMcpHtml.js';
 import { buildWorksBodyHtml } from '../panels/settingsWorksHtml.js';
 import { buildGeneralBodyHtml } from '../panels/settingsGeneralHtml.js';
+import { buildSecurityBodyHtml } from '../panels/settingsSecurityHtml.js';
 import { DEFAULT_SETTINGS_TAB, SETTINGS_TABS, settingsRootId } from '../../shared/settingsTabs.js';
 
 /** MCP 面板容器（root id 由 tab 表派生，不写死字符串） */
@@ -48,12 +49,6 @@ const HTML = `
     <div class="header"><h2>记忆</h2><span id="statBar" class="stat-bar" hidden></span></div>
     <div class="search-wrap"><input id="searchInput" class="search-input" type="text" placeholder="搜索记忆…" /></div>
     <div id="list"><p class="hint">加载中…</p></div>
-    <div id="archiveMode" class="archive-mode">
-      <select id="archiveModeSelect">
-        <option value="full">自动归档</option>
-        <option value="manual">仅手动归档</option>
-      </select>
-    </div>
     <p class="footer-hint">记忆按重要度排序，点击条目查看全文。</p>
   </div>
   <div id="roles-root" hidden>
@@ -100,7 +95,7 @@ const HTML = `
         <option value="baidu">百度</option>
         <option value="sogou">搜狗</option>
       </select>
-      <button class="btn btn-secondary open-setting-btn" type="button" data-setting-key="memora.showMetrics">在设置中调整</button>
+      <button class="btn btn-secondary open-setting-btn" type="button" data-setting-key="memora.scriptNodePath">在设置中调整</button>
     </div>
   </div>
   ${MCP_FIXTURE}
@@ -158,6 +153,13 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
     ).toBe(false);
   });
 
+  it('安全卡不再持有常规卡配置的跳转入口（SSOT 收口，夹具键与产线一致）', () => {
+    const body = buildSecurityBodyHtml({ t: (s) => s });
+    expect(body).toContain('data-setting-key="memora.scriptNodePath"');
+    expect(body).not.toContain('data-setting-key="memora.showMetrics"');
+    expect(body).not.toContain('data-setting-key="memora.attentionSound"');
+  });
+
   it('设置项导航按钮：点击发送 open_setting（配置读写真源在原生设置，设置页只导航）', () => {
     const { postMessage } = mountSettingsView();
     const btn = document.querySelector('.open-setting-btn') as HTMLButtonElement;
@@ -165,7 +167,7 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
     // 键名来自 data-setting-key，新增同类按钮零 JS 改动（统一绑定）
     expect(postMessage).toHaveBeenCalledWith({
       type: 'open_setting',
-      key: 'memora.showMetrics',
+      key: 'memora.scriptNodePath',
     });
     // 只投递一次：绑定若同时存在于容器层与子视图（双重绑定），这里会变 2（host 重复开设置）
     expect(
