@@ -103,8 +103,11 @@ import { join } from 'node:path';
  *  与 `open_workbench_tab`（W→E 抽屉开独立 editor tab：hostedPanel 拦截 assistant_open_workbench
  *  走抽屉，故需独立消息直达 executeCommand）。两条语义正交不可合并，也无法搭既有通道便车。
  *  实测 148，阈值同口径重算 149（当前计数 + 1 余量）。
+ *  2026-11-25 常规页 +1（`general_setting`）：回答语言模式与提示音两项写入 / 回推
+ *  共用同一 type 字面量（上下行同名，按 kind 分流），没有为两个配置项各开一条通道；
+ *  实测 149，阈值同口径重算 150。
  */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 149;
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 150;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {

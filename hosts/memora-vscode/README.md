@@ -164,7 +164,7 @@ After sending a message, hover the context-usage ring — the card footer shows 
 | `Memora: Run Capability Demo (Isolated Demo Area)` | Run the capability demo in an isolated demo area without touching real data |
 | `Memora: Reload Skills and Role Packs` | Rescan built-in and user skills and role packs |
 | `Memora: Import Skill or Role Pack (.zip)` | Import a skill or role pack from a zip (reload afterwards if needed) |
-| `Memora: Open Settings Panel` | Open the settings panel (models / search / archiving / MCP / security / works and rules — all preferences and lists in one place) |
+| `Memora: Open Settings Panel` | Open the settings panel (general / models / search / archiving / MCP / security / works and rules — all preferences and lists in one place) |
 | `Memora: Register Work Projection` | Register the current file as a work projection that can accumulate (explorer and editor context menus); once registered it shows up under **Settings → "Works and rules"** |
 | `Memora: Toggle Project Rule` | Toggle the "project rule" resident state of a right-clicked file (its body is injected every turn). If the file is not registered it only tells you to register first — it **never creates** a registration; the current state is reported in the receipt |
 | `Memora: Manage Project Rules` | Open a temporary QuickPick list to toggle / unregister entries one by one (the list-management surface) |
@@ -187,7 +187,7 @@ Extension data comes in two levels — **project level and user level**. The ext
 | Project | workspace `.memora/` directory | session records `sessions.json` / memories `memories.json` |
 | User | VS Code user settings `settings.json` | model provider config (alias / model / base URL, **no API keys**) |
 | User | VS Code user settings `settings.json` | search preferences: `memora.searchEngine` (a preset or a custom engine name) and `memora.customSearchEngines` (custom list, `application` scope = shared across projects) |
-| User | VS Code user settings `settings.json` | AI answer language: `memora.answerLanguage` (empty or `auto` = follow VS Code's display language; you can also type a language name such as `Japanese`. **Only affects the answer language, never the UI text**; takes effect from the next reply) |
+| User | VS Code user settings `settings.json` | AI answer language: `memora.answerLanguage` (empty or `auto` = follow VS Code's display language; you can also type a language name such as `Japanese`. **Only affects the answer language, never the UI text**; takes effect from the next reply). Also editable in **Settings › General** with Automatic / Manual modes |
 | User | VS Code user settings `settings.json` | MCP config: `memora.mcpServers` (external tool servers) and `memora.mcpToolAllowlist` (confirmation-free whitelist; user-level = shared across projects, **workspace level is not accepted** — see [mcp-setup.md](docs/mcp-setup.md)) |
 | User | VS Code global storage `globalStorage` | active role pack (shared across projects) |
 | User | VS Code SecretStorage | API keys (encrypted at rest) |

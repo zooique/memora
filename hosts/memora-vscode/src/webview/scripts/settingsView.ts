@@ -36,6 +36,8 @@ import { createWorksView } from './worksView.js';
 import { createSkillsView } from './skillsView.js';
 // 安全子视图已按 tab 外置（B7：执行审批 / 路径白名单 / 搜索引擎 / 恢复初始状态）
 import { createSecurityView } from './securityView.js';
+// 常规子视图（回答语言自动/手动 + 界面语言说明 + 提示音开关）
+import { createGeneralView } from './generalView.js';
 import { populateIcons } from './icons.js';
 // 全局通知 toast 单一实现（UI-TOAST-1 三面收口：settings notice 与 config 操作反馈合一）
 import { showToast } from '../helpers/toast.js';
@@ -87,6 +89,7 @@ export const SETTINGS_VIEW_MOUNTS: ReadonlyArray<{ name: SettingsTab; make: Moun
   { name: 'mcp', make: createMcpView },
   { name: 'security', make: createSecurityView },
   { name: 'works', make: createWorksView },
+  { name: 'general', make: createGeneralView },
 ];
 
 /**

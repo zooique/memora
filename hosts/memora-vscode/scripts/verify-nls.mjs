@@ -836,6 +836,17 @@ const WEBVIEW_PANELS = {
       'webview/styles/worksStyles.ts',
     ],
   },
+  // 常规页（2026-11-25）：骨架 / 运行时 / 样式三件套全走英文源键，登记即进 ⑰ 判据网。
+  // 共享壳 settingsStyles.ts / 容器 settingsView.ts 已在安全页名下登记，不重复挂。
+  general: {
+    state: 'migrated',
+    files: [
+      'shared/settingsTabs.ts',
+      'webview/panels/settingsGeneralHtml.ts',
+      'webview/scripts/generalView.ts',
+      'webview/styles/generalStyles.ts',
+    ],
+  },
 };
 
 /**

@@ -1523,5 +1523,19 @@
   "The active role pack \"{0}\" declares no tools": "当前角色包「{0}」没有声明任何工具",
   "Memora: approve role pack tools": "Memora：批准角色包工具",
   "Checked tools are granted to the model (each call is still audited). Script updates require re-approval.": "勾选的工具会授予模型使用（每次调用仍会记审计）。脚本更新后需重新批准。",
-  "Approved {0} tool(s) for role pack \"{1}\"": "已为角色包「{1}」批准 {0} 个工具"
+  "Approved {0} tool(s) for role pack \"{1}\"": "已为角色包「{1}」批准 {0} 个工具",
+  "AI answer language": "AI 回答语言",
+  "Choose how replies are worded. Automatic uses the VS Code display language as a hint; manual pins one language for every reply.": "选择回答的措辞语言。自动 = 以 VS Code 显示语言为参考；手动 = 固定使用指定语言。",
+  "Manual": "手动",
+  "Automatic: follow the display language, but follow you when you write in another language in the same turn. Manual: the chosen language always wins.": "自动：跟随显示语言，但如果你在本轮用其他语言提问，则跟随你的语言。手动：指定语言始终优先。",
+  "Custom answer language": "自定义回答语言",
+  "Language name, e.g. Japanese or English": "语言名，例如 Japanese / 日本語 / English",
+  "Interface language": "界面语言",
+  "The interface follows the VS Code display language and cannot be changed here. Run \"Configure Display Language\" from the VS Code Command Palette and restart the window.": "界面语言跟随 VS Code 显示语言，无法在此处更改。请在 VS Code 命令面板执行「Configure Display Language」并重启窗口。",
+  "Play a sound for approvals, questions and completed rounds": "审批卡、提问与轮次完成时播放提示音",
+  "When the chat panel is in the background, play a system sound for approval cards, questions and completed rounds. Turning it off mutes the sound; badges and unread counts are unaffected.": "对话面板不在前台时，审批卡、提问与轮次完成会播放系统提示音。关闭后完全静音，面板内的标记与未读计数不受影响。",
+  "Saving…": "正在保存…",
+  "Saved": "已保存",
+  "General setting could not be saved": "常规设置保存失败",
+  "General settings: answer language and interaction preferences": "常规设置：回答语言与交互偏好"
 }

@@ -60,6 +60,17 @@ function normalizeOverride(raw: string | undefined): string {
 }
 
 /**
+ * 当前值处于「自动（跟随显示语言）」还是「手动指定」——设置页 UI 回显的判据入口
+ *
+ * 复用 {@link normalizeOverride} 而非另写一份 `raw === 'auto'`：否则空白、大小写变体
+ * 会在指令判定与 UI 回显之间漂移（用户看到「手动」但实际按自动执行）。本函数只回答
+ * 模式，不改值；写入仍只有 `memora.answerLanguage` 一个键。
+ */
+export function isAnswerLanguageAuto(raw: string | undefined): boolean {
+  return normalizeOverride(raw) === '';
+}
+
+/**
  * 取本会话注入给模型的回答语言指令行（完整一行，含列表前缀）。
  *
  * @param input 显示语言 + 用户覆盖读取器；全缺省 ⇒ 英文软默认

@@ -94,6 +94,7 @@ import { postRolePackList } from '../helpers/rolePackListView.js';
 import {
   pushArchiveModePreference,
   pushCustomSearchEnginesStatus,
+  pushGeneralStatus,
   pushSearchEngineStatus,
   pushSecurityStatus,
 } from '../helpers/settingsStatusPush.js';
@@ -373,6 +374,20 @@ export class MemoraSettingsPanel {
       // 保证命令落点与用户意图一致（对齐 chatPanel replaySession 的 ready 时序修复）
       this.flushPendingTab();
       this.refreshAll();
+      return;
+    }
+    // 常规页写入：两条 kind 共用一条通道，落盘统一走唯一写入封装（settingsWrite）
+    if (msg.type === 'general_setting') {
+      const written = await writeSetting(msg.kind, msg.value);
+      if (!written.ok) {
+        this.post({
+          type: 'notice',
+          level: 'error',
+          message: writeErrorText(l10n.t('General setting could not be saved'), written),
+        });
+      }
+      // 成败都回推持久值：失败时 UI 复位到盘上真值，不谎报已保存
+      pushGeneralStatus((m) => this.post(m));
       return;
     }
     // 作品页：一条通道四个动作，执行面与文件右键 / QuickPick / 命令面板共用
@@ -1658,6 +1673,8 @@ export class MemoraSettingsPanel {
     pushSearchEngineStatus((m) => this.post(m));
     // 记忆子视图：会话归档模式当前值（归档模式下拉的回显真源）
     pushArchiveModePreference((m) => this.post(m));
+    // 常规子视图：回答语言模式 + 交互提示音的持久值
+    pushGeneralStatus((m) => this.post(m));
     // MCP 子视图：服务器/工具运行态（无独立拉取消息，统一由本函数推送——
     // 未装配时是合法空态，装配完成后由 extension 的热更回推覆盖）
     this.pushMcpStatus();

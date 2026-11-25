@@ -45,6 +45,9 @@ export const SETTINGS_TABS = [
   'mcp',
   'security',
   'works',
+  // 常规页刻意列在末尾：下标 0 = 默认首页，加页不改用户既有落点；
+  // 将来若真要升为「more 首页」，那是独立的行为变更，另笔拍板并同步首页守卫。
+  'general',
 ] as const;
 
 /** 单个选项卡标识（其余各处一律 `import type`，不得再手写联合） */
@@ -82,6 +85,7 @@ export const SETTINGS_TAB_LABELS: Record<SettingsTab, string> = {
   // 「只叫『作品』，用户不知道作品还能升级成规则」⇒ 可见名显式带出升级去向。
   // 仍不单叫「规则」：该页同时列未设为项目规则的作品，单叫会把一半条目说成不该在这儿。
   works: 'Works and rules',
+  general: 'General',
 };
 
 /**
@@ -101,6 +105,7 @@ export const SETTINGS_TAB_ARIA_LABELS: Record<SettingsTab, string> = {
   mcp: 'MCP tool servers',
   security: 'Security',
   works: 'Works and rules: list and project-rule evaluation',
+  general: 'General settings: answer language and interaction preferences',
 };
 
 /** 子视图根容器 id（此前每个 tab 的根容器 id 都在 HTML / webview 脚本 / CSS 三处各自硬写，单一来源即本文件 `SETTINGS_TABS`） */

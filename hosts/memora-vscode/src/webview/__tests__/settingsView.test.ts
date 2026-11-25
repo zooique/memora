@@ -19,12 +19,15 @@ import type { CustomSearchEngineConfig, MemoryItemDto } from '../../shared/proto
 // 静默失同步，而失同步的表现是「测试全绿、真机少一块」——正是这类夹具要防的东西。
 import { buildMcpBodyHtml } from '../panels/settingsMcpHtml.js';
 import { buildWorksBodyHtml } from '../panels/settingsWorksHtml.js';
+import { buildGeneralBodyHtml } from '../panels/settingsGeneralHtml.js';
 import { SETTINGS_TABS, settingsRootId } from '../../shared/settingsTabs.js';
 
 /** MCP 面板容器（root id 由 tab 表派生，不写死字符串） */
 const MCP_FIXTURE = `<div id="${settingsRootId('mcp')}" hidden>${buildMcpBodyHtml({ t: (s) => s })}</div>`;
 /** 作品面板容器：同取产线骨架，避免加 tab 时夹具漏一块导致 switchTab 撞 null */
 const WORKS_FIXTURE = `<div id="${settingsRootId('works')}" hidden>${buildWorksBodyHtml({ t: (s) => s })}</div>`;
+/** 常规面板容器：同上，取产线骨架——SETTINGS_TABS 每多一项 switchTab 就会多查一个 root */
+const GENERAL_FIXTURE = `<div id="${settingsRootId('general')}" hidden>${buildGeneralBodyHtml({ t: (s) => s })}</div>`;
 
 /** 覆盖 createSettingsView 全部查询引用 + 五个子视图骨架的最小 HTML（默认选项卡为「记忆」） */
 const HTML = `
@@ -35,6 +38,7 @@ const HTML = `
     <button class="tab-btn" data-tab="skills">技能</button>
     <button class="tab-btn" data-tab="security">安全</button>
     <button class="tab-btn" data-tab="works">作品和规则</button>
+    <button class="tab-btn" data-tab="general">常规</button>
   </div>
   <div id="memory-root">
     <div class="header"><h2>记忆</h2><span id="statBar" class="stat-bar" hidden></span></div>
@@ -97,6 +101,7 @@ const HTML = `
   </div>
   ${MCP_FIXTURE}
   ${WORKS_FIXTURE}
+  ${GENERAL_FIXTURE}
 `;
 
 /** 挂载 createSettingsView 并返回 postMessage mock */
@@ -678,6 +683,7 @@ describe('自定义搜索引擎（host/searchEngines 单一嫁接点，2026-10-1
       <div id="customSearchEngines"></div>
       <button id="addCustomEngineBtn" type="button">添加</button>
     </div>
+    ${GENERAL_FIXTURE}
   `;
 
   const MY_SITE: CustomSearchEngineConfig = {

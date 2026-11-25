@@ -856,6 +856,16 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'archive_mode_set'; mode: ArchiveMode }
   /**
+   * 常规设置的写入（设置 → 常规卡）
+   *
+   * 与下行同名消息共用一条通道（去重按 `type` 字面量）：上行是写入意图，下行是
+   * 当前持久值回推。`kind` 限定两个键，收口在宿主 `settingsPanel` 的 writeSetting 调用；
+   * 回答语言只有 value 一个真值（空串 = 自动），**不另设 mode 键**——mode 只是同一
+   * 配置值在 UI 上的派生显示，第二份存储必漂移。
+   */
+  | { type: 'general_setting'; kind: 'answerLanguage'; value: string }
+  | { type: 'general_setting'; kind: 'attentionSound'; value: boolean }
+  /**
    * MCP 域写操作（**唯一**写通道，按 `op` 分流；2026-10-24 协议治理）
    *
    * 为什么合成一条而不是每个动作一条：协议类型计数是稀缺预算（见 protocolGuard 阈值），
@@ -2000,6 +2010,14 @@ export type ExtensionToWebviewMessage =
    * 只剩执行确认一个开关；写入确认开关已退役（写文件一律直接落盘）。
    */
   | { type: 'security_status'; confirmScripts: boolean }
+  /**
+   * 常规设置当前持久值回推（ready / 隐藏转可见 / 写入后各推一次）
+   *
+   * `mode` 由宿主 `responseLanguage.ts` 的判定派生（空 / auto = 自动，其余 = 手动），
+   * webview 只读回显、不自行判 `auto` 字面量——判定唯一在宿主那一个函数。
+   */
+  | { type: 'general_setting'; kind: 'answerLanguage'; mode: 'auto' | 'manual'; value: string }
+  | { type: 'general_setting'; kind: 'attentionSound'; value: boolean }
   /**
    * 白名单额外允许路径状态推送（设置面板加载时推送当前列表）
    *

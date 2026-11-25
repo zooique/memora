@@ -1523,5 +1523,19 @@
   "The active role pack \"{0}\" declares no tools": "",
   "Memora: approve role pack tools": "",
   "Checked tools are granted to the model (each call is still audited). Script updates require re-approval.": "",
-  "Approved {0} tool(s) for role pack \"{1}\"": ""
+  "Approved {0} tool(s) for role pack \"{1}\"": "",
+  "AI answer language": "",
+  "Choose how replies are worded. Automatic uses the VS Code display language as a hint; manual pins one language for every reply.": "",
+  "Manual": "",
+  "Automatic: follow the display language, but follow you when you write in another language in the same turn. Manual: the chosen language always wins.": "",
+  "Custom answer language": "",
+  "Language name, e.g. Japanese or English": "",
+  "Interface language": "",
+  "The interface follows the VS Code display language and cannot be changed here. Run \"Configure Display Language\" from the VS Code Command Palette and restart the window.": "",
+  "Play a sound for approvals, questions and completed rounds": "",
+  "When the chat panel is in the background, play a system sound for approval cards, questions and completed rounds. Turning it off mutes the sound; badges and unread counts are unaffected.": "",
+  "Saving…": "",
+  "Saved": "",
+  "General setting could not be saved": "",
+  "General settings: answer language and interaction preferences": ""
 }

@@ -164,7 +164,7 @@ set MEMORA_API_KEY=你的key
 | `Memora: 运行能力演示（隔离演示区）` | 在隔离演示区跑一遍能力演示，不动真实数据 |
 | `Memora: 重载技能与角色包` | 重新扫描内置与用户技能、角色包 |
 | `Memora: 导入技能或角色包（.zip）` | 从 zip 包导入技能或角色包（导入后按需重载） |
-| `Memora: 打开设置面板` | 打开设置面板（模型 / 搜索 / 归档 / MCP / 安全 / 作品和规则等偏好与清单集中处） |
+| `Memora: 打开设置面板` | 打开设置面板（常规 / 模型 / 搜索 / 归档 / MCP / 安全 / 作品和规则等偏好与清单集中处） |
 | `Memora: 登记作品投影` | 把当前文件登记为可沉淀的作品投影（资源管理器与编辑器右键菜单），登记后出现在「设置 → 作品和规则」页 |
 | `Memora: 切换项目规则` | 对右键的文件切换「项目规则」常驻态（正文每轮注入）。未登记 ⇒ 只提示先登记，**绝不新建**；当前态由回执播报 |
 | `Memora: 管理项目规则` | 弹出临时 QuickPick 清单，逐条切换 / 移除登记（清单管理面） |
@@ -187,7 +187,7 @@ set MEMORA_API_KEY=你的key
 | 项目级 | 工作区 `.memora/` 目录 | 会话记录 `sessions.json` / 记忆 `memories.json` |
 | 用户级 | VS Code 用户设置 `settings.json` | 大模型 Provider 配置（别名 / 模型 / Base URL，**不含 API Key**） |
 | 用户级 | VS Code 用户设置 `settings.json` | 搜索引擎偏好：`memora.searchEngine`（预设或自定义引擎名）与 `memora.customSearchEngines`（自定义清单，`application` 作用域 = 跨项目共享） |
-| 用户级 | VS Code 用户设置 `settings.json` | AI 回答语言：`memora.answerLanguage`（留空或 `auto` = 跟随 VS Code 显示语言；也可直接填语言名，如 `日语`。**只影响回答语言，不改界面文案**，改完下一轮生效） |
+| 用户级 | VS Code 用户设置 `settings.json` | AI 回答语言：`memora.answerLanguage`（留空或 `auto` = 跟随 VS Code 显示语言；也可直接填语言名，如 `日语`。**只影响回答语言，不改界面文案**，改完下一轮生效）。也可在**设置 › 常规**中用「自动 / 手动」切换编辑 |
 | 用户级 | VS Code 用户设置 `settings.json` | MCP 配置：`memora.mcpServers`（外部工具服务器清单）与 `memora.mcpToolAllowlist`（免确认白名单；用户级 = 跨项目共享，**不接受工作区级**——见 [mcp-setup.md](docs/mcp-setup.md)） |
 | 用户级 | VS Code 全局存储 `globalStorage` | 激活角色包（跨项目共享） |
 | 用户级 | VS Code 安全存储 `SecretStorage` | API Key（加密存储） |

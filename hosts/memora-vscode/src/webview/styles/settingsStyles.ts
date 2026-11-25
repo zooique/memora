@@ -1,5 +1,5 @@
 /**
- * 设置面板样式 — 聚合 记忆 / 角色 / 大模型 / 技能 / MCP / 安全 / 作品和规则 七个子视图 + 选项卡栏
+ * 设置面板样式 — 聚合 记忆 / 角色 / 大模型 / 技能 / MCP / 安全 / 作品和规则 / 常规 八个子视图 + 选项卡栏
  *
  * 设计（对齐 ITCSS + tokens.ts 单一真理源）：
  *   - 设计令牌由 tokens.ts 单一真理源提供，本文件内嵌一次，五个子视图样式不再各自内嵌；
@@ -17,6 +17,7 @@ import { memoryStyles } from './memoryStyles.js';
 import { skillsStyles } from './skillsStyles.js';
 import { mcpStyles } from './mcpStyles.js';
 import { worksStyles } from './worksStyles.js';
+import { generalStyles } from './generalStyles.js';
 
 export const settingsStyles = `
   ${tokens}
@@ -239,6 +240,7 @@ export const settingsStyles = `
   ${skillsStyles}
   ${mcpStyles}
   ${worksStyles}
+  ${generalStyles}
 
   /* ============ Security：安全子视图（写入审批） ============ */
   #security-root { padding: var(--sp-3, 8px); }
