@@ -22,9 +22,9 @@ import {
 } from '../settingsTabs.js';
 
 describe('settingsTabs 选项卡单点定义（2026-10-24 收口）', () => {
-  it('默认首页 = tab 表下标 0（此前该事实只在产线 HTML 的 hidden 属性里）', () => {
+  it('默认首页 = tab 表下标 0（2026-11-25 起为 general；此前该事实只在产线 HTML 的 hidden 属性里）', () => {
     expect(DEFAULT_SETTINGS_TAB).toBe(SETTINGS_TABS[0]);
-    expect(DEFAULT_SETTINGS_TAB).toBe('memory');
+    expect(DEFAULT_SETTINGS_TAB).toBe('general');
   });
 
   it('root 容器 id 由 tab 派生，格式供 webview 侧 getElementById 对齐', () => {

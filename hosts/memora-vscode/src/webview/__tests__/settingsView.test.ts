@@ -20,27 +20,31 @@ import type { CustomSearchEngineConfig, MemoryItemDto } from '../../shared/proto
 import { buildMcpBodyHtml } from '../panels/settingsMcpHtml.js';
 import { buildWorksBodyHtml } from '../panels/settingsWorksHtml.js';
 import { buildGeneralBodyHtml } from '../panels/settingsGeneralHtml.js';
-import { SETTINGS_TABS, settingsRootId } from '../../shared/settingsTabs.js';
+import { DEFAULT_SETTINGS_TAB, SETTINGS_TABS, settingsRootId } from '../../shared/settingsTabs.js';
 
 /** MCP 面板容器（root id 由 tab 表派生，不写死字符串） */
 const MCP_FIXTURE = `<div id="${settingsRootId('mcp')}" hidden>${buildMcpBodyHtml({ t: (s) => s })}</div>`;
 /** 作品面板容器：同取产线骨架，避免加 tab 时夹具漏一块导致 switchTab 撞 null */
 const WORKS_FIXTURE = `<div id="${settingsRootId('works')}" hidden>${buildWorksBodyHtml({ t: (s) => s })}</div>`;
-/** 常规面板容器：同上，取产线骨架——SETTINGS_TABS 每多一项 switchTab 就会多查一个 root */
-const GENERAL_FIXTURE = `<div id="${settingsRootId('general')}" hidden>${buildGeneralBodyHtml({ t: (s) => s })}</div>`;
+/** 夹具初始 active / hidden 从产线默认首页派生（2026-11-25 起为 general）——不写死，改首页不会再出现「测试绿但真机是另一页」；骨架取产线构建函数，防手抄失同步 */
+const tabClass = (tab: string): string =>
+  tab === DEFAULT_SETTINGS_TAB ? 'tab-btn active' : 'tab-btn';
+const rootHidden = (tab: string): string => (tab === DEFAULT_SETTINGS_TAB ? '' : ' hidden');
 
-/** 覆盖 createSettingsView 全部查询引用 + 五个子视图骨架的最小 HTML（默认选项卡为「记忆」） */
+const GENERAL_FIXTURE = `<div id="${settingsRootId('general')}"${rootHidden('general')}>${buildGeneralBodyHtml({ t: (s) => s })}</div>`;
+
+/** 覆盖 createSettingsView 全部查询引用 + 子视图骨架的最小 HTML（默认选项卡由 DEFAULT_SETTINGS_TAB 派生） */
 const HTML = `
   <div class="tabs">
-    <button class="tab-btn active" data-tab="memory">记忆</button>
-    <button class="tab-btn" data-tab="roles">角色</button>
-    <button class="tab-btn" data-tab="config">大模型</button>
-    <button class="tab-btn" data-tab="skills">技能</button>
-    <button class="tab-btn" data-tab="security">安全</button>
-    <button class="tab-btn" data-tab="works">作品和规则</button>
-    <button class="tab-btn" data-tab="general">常规</button>
+    <button class="${tabClass('memory')}" data-tab="memory">记忆</button>
+    <button class="${tabClass('roles')}" data-tab="roles">角色</button>
+    <button class="${tabClass('config')}" data-tab="config">大模型</button>
+    <button class="${tabClass('skills')}" data-tab="skills">技能</button>
+    <button class="${tabClass('security')}" data-tab="security">安全</button>
+    <button class="${tabClass('works')}" data-tab="works">作品和规则</button>
+    <button class="${tabClass('general')}" data-tab="general">常规</button>
   </div>
-  <div id="memory-root">
+  <div id="memory-root"${rootHidden('memory')}>
     <div class="header"><h2>记忆</h2><span id="statBar" class="stat-bar" hidden></span></div>
     <div class="search-wrap"><input id="searchInput" class="search-input" type="text" placeholder="搜索记忆…" /></div>
     <div id="list"><p class="hint">加载中…</p></div>
@@ -131,9 +135,11 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
     expect(postMessage).toHaveBeenCalledWith({ type: 'ready' });
   });
 
-  it('初始选项卡为「记忆」（默认首页）：memory-root 可见，roles/config 隐藏', () => {
+  it('初始选项卡为默认首页（2026-11-25 起 = 常规）：general-root 可见，memory/roles/config 隐藏', () => {
     mountSettingsView();
-    expect((document.getElementById('memory-root') as HTMLElement).hidden).toBe(false);
+    expect(DEFAULT_SETTINGS_TAB).toBe('general');
+    expect((document.getElementById('general-root') as HTMLElement).hidden).toBe(false);
+    expect((document.getElementById('memory-root') as HTMLElement).hidden).toBe(true);
     expect((document.getElementById('roles-root') as HTMLElement).hidden).toBe(true);
     expect((document.getElementById('config-root') as HTMLElement).hidden).toBe(true);
   });

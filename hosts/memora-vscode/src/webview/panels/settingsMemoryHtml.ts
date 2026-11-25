@@ -24,7 +24,7 @@ import { MEMORY_RECYCLE_RETENTION_DAYS } from '../../shared/constants.js';
 export function buildMemoryBodyHtml(l10n: {
   t(message: string, ...args: (string | number)[]): string;
 }): string {
-  return `  <!-- 记忆子视图（memory 选项卡，默认首页） -->
+  return `  <!-- 记忆子视图（memory 选项卡；默认首页 2026-11-25 起为 general，勿在此写死） -->
     <div class="header">
       <h2>${l10n.t('Memory')}</h2>
       <span id="statBar" class="stat-bar" hidden></span>

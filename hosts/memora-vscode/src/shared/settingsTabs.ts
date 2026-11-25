@@ -38,6 +38,9 @@
  * 写死是谁是首页）。
  */
 export const SETTINGS_TABS = [
+  // 常规页置顶为默认首页（2026-11-25 用户拍板）：下标 0 = 默认首页，openSettings 不带 tab
+  // 参数时落这里。生产 HTML 的 active / hidden 均由 DEFAULT_SETTINGS_TAB 派生，勿在别处写死。
+  'general',
   'memory',
   'roles',
   'config',
@@ -45,9 +48,6 @@ export const SETTINGS_TABS = [
   'mcp',
   'security',
   'works',
-  // 常规页刻意列在末尾：下标 0 = 默认首页，加页不改用户既有落点；
-  // 将来若真要升为「more 首页」，那是独立的行为变更，另笔拍板并同步首页守卫。
-  'general',
 ] as const;
 
 /** 单个选项卡标识（其余各处一律 `import type`，不得再手写联合） */
