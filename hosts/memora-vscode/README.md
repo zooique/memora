@@ -4,11 +4,11 @@ Polish your design with AI, accumulate memory, generate skeletons — inside you
 
 **English** | [中文](./README.zh-cn.md)
 
-Memora is a kernel-driven **VS Code AI assistant**: a thin shell that assembles the kernel and reuses all of its capabilities. What the assistant *is* comes from **built-in role packs** (it ships with `memora助手` — the fallback contract pack, `只读项目顾问` — a read-only advisor that never modifies your project files, `白话方案设计师` — a plain-language solution designer, and `共鸣小说家` — a resonant novelist). The extension itself hard-codes no positioning.
+Memora is a kernel-driven **VS Code AI assistant**: a thin shell that assembles the kernel and reuses all of its capabilities. What the assistant *is* comes from **built-in role packs** (it ships with `memora助手` — the fallback contract pack, `只读项目顾问` — a read-only advisor that never modifies your project files, `白话方案设计师` — a plain-language solution designer, `共鸣小说家` — a resonant novelist, and `匠码工程师` — an engineering pack; it also bundles the `memora宝` assistant pack used only by assistant sessions and hidden from role pickers). The extension itself hard-codes no positioning.
 
 **Open source**: [github.com/zooique/memora](https://github.com/zooique/memora)
 
-**Kernel**: built on the npm package [@zooique/memora](https://www.npmjs.com/package/@zooique/memora) `7.4.0` (the kernel generation bundled into this version, reconciled with every host release)
+**Kernel**: built on the npm package [@zooique/memora](https://www.npmjs.com/package/@zooique/memora) `7.5.0` (the kernel generation bundled into this version, reconciled with every host release)
 
 ---
 
@@ -22,6 +22,8 @@ Memora is a kernel-driven **VS Code AI assistant**: a thin shell that assembles 
   - `只读项目顾问` — reads, searches and analyses your project, then tells you what to improve and why. Its tool set is **read-only**: it never edits your project files (asking questions and pausing are session state, not project files, so they are not restricted)
   - `白话方案设计师` — converges a vague idea into a plain-language design doc, then into a developer-ready spec (includes a single-source-of-truth consistency review)
   - `共鸣小说家` — three-layer fiction workflow (need → core → form)
+  - `匠码工程师` — engineering pack: audit before edits, keep evidence and delivery receipts
+  - `memora宝` — built-in assistant pack for orchestrating work sessions; hidden from role pickers and never the default for regular sessions
   - Switch packs, or set the default for new sessions, in **Settings › Roles** (or via `memora.defaultRolePack`)
 - **File-change confirmation**: AI edits land in a staging area first; confirm or revert with one click at the top of the editor — nothing is written to disk silently
 - **Web search**: the agent can look things up online — auto (default Bing→DuckDuckGo chain) / Bing / DuckDuckGo / Baidu / Sogou presets, plus custom engines (OpenSearch RSS / JSON API, connectivity is tested before saving)
