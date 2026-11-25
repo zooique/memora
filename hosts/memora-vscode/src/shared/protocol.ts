@@ -1707,9 +1707,9 @@ export type ExtensionToWebviewMessage =
       keyface?: StrategyKeyFace[];
       /**
        * 内置工具候选清单（SSOT 透传）：内核 listBuiltinToolFaces() 的派生投影，
-       * 供角色包编辑 UI 的 disableTools 文本框画候选提示（datalist）。
+       * 供角色包编辑 UI 的 disableTools 画可点选工具面板（勾选即填入文本框）。
        * 只含内置工具，非全集——宿主注册 / MCP / 包内工具不在内，故保留手输。
-       * webview 沙箱不可直连内核，故由此下发；缺省（旧载荷）= 不画候选提示，手输仍可用。
+       * webview 沙箱不可直连内核，故由此下发；缺省（旧载荷）= 不画候选面板，手输仍可用。
        */
       builtinToolFaces?: readonly BuiltinToolFaceDto[];
     }

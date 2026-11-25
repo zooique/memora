@@ -108,7 +108,7 @@ interface RolesPayload {
   keyface?: KeyFaceItem[];
   /**
    * 内置工具候选清单（内核 listBuiltinToolFaces 透传；缺省 = 旧载荷，disableTools 不画候选但手输仍可用）。
-   * 只含内置工具非全集，UI 只作 datalist 提示，禁当封闭选项。
+   * 只含内置工具非全集，UI 只作点选面板候选项，禁当封闭全集。
    */
   builtinToolFaces?: readonly BuiltinToolFaceItem[];
 }
@@ -196,7 +196,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   let lastData: RolesPayload | null = null;
   /** 策略键面（roles_loaded 下发；编辑表单的唯一数据源，缺省 = 编辑不可用） */
   let keyface: KeyFaceItem[] = [];
-  /** 内置工具候选（roles_loaded 下发；只作 disableTools 的 datalist 提示，不设选项边界） */
+  /** 内置工具候选（roles_loaded 下发；只作 disableTools 的点选面板候选项，不设选项边界） */
   let builtinToolFaces: readonly BuiltinToolFaceItem[] = [];
   /** 当前详情弹窗数据（roles_detail_data 写入；弹窗重渲染共用） */
   let detail: {
