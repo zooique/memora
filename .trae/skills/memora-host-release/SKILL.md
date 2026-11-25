@@ -15,6 +15,7 @@ agent_created: true
 **tag 是不可逆点，一切须在打 `git tag vscode@X.Y.Z` 前定稿并提交到该 tag 指向的 commit。**
 - 市场拒收「同版本重发」：GitHub Release asset 虽可 `--clobber` 覆盖同名，但 Open VSX / VS Code Marketplace 对**已发布版本号**的重新上传一律拒绝。一旦带伤的 `.vsix` 进了市场，只能 bump 版本号重发（旧版带伤常驻）。
 - 故：CHANGELOG 宿主区日期/内容、宿主文档去发布态陈述、版本号、台账归档 —— **全部在 tag 之前提交**。tag 触发 `host-release.yml` 从那个 commit 构建 `.vsix`，构建产物即上架物。
+- 🔴 **推送顺序不可合并**：本地提交 + tag 齐备后，**先单独 `git push origin main` 并只读核验远端 main == 本地 HEAD，再单独 `git push origin vscode@X.Y.Z`**。禁止合并成 `git push origin main vscode@X.Y.Z`（2026-11-25 0.13.0 实踩：合并推被工具安全层整体 SIGTERM，远端 main 与 tag 同时落空，无法判断是 main 还是 tag 出问题；拆开后 main 先行落地、tag 成为唯一待决点）。tag push 才是发版不可逆点，main 先推不触发任何 workflow。
 
 ## tag 格式真源（ADR-033 决策 2）
 
@@ -96,14 +97,16 @@ agent_created: true
 4. **提交前必跑台账硬闸**（命令 / 判据 / 数量一律以 `memora-ledger-governance` 闸门表为准，本技能不复制、不写死数量）。
 5. 🔴 **ID 白名单靠人肉编 ⇒ 漏扫是常态**（0.2.0 漏 45 条，欠账 `ARCH-DRAIN-1`；后补 9 条）。兜底 = 上一条的机检门；任何计数以**当场重扫实测**为准，不采信清点快照（快照会算术不闭合 + 随台账编辑漂移）。
 
-### Step 4：发版（打 tag 触发 host-release.yml）
+### Step 4：发版（先推 main，再推 tag 触发 host-release.yml）
 1. 确认 Step 0–3 全部已提交到当前 HEAD。
-2. `git tag vscode@x.y.z && git push origin vscode@x.y.z`。
+2. **先推 main（不触发发版）**：Bash 走 `env -u NODE_OPTIONS git push origin main`（push 不设 `LEFTHOOK=0`，pre-push 默认必须跑；如 shell 拦 credential-manager 按「已知坑」授权规则处理）。推完**只读核验** `git ls-remote origin refs/heads/main` == 本地 `git rev-parse HEAD`；不等 ⇒ 停在 main 这步排障，不得推 tag。
+3. **再单独推 tag（唯一不可逆点）**：`git tag vscode@x.y.z`（annotated，PowerShell）→ `env -u NODE_OPTIONS git push origin vscode@x.y.z`（Bash）。
+   - 🔴 **两步必须分命令**：禁止 `git push origin main vscode@x.y.z` 一次推双 ref（0.13.0 实踩：合并推被整体拦截时 main 与 tag 同时落空，无法判断哪一步失败；拆开则 main 先落地、tag 单独可控）。
    - ⚠️ 仓库 origin 双推 gitee+github，GitHub 收到 tag 触发 `host-release.yml`；gitee 端无对应 workflow，不重复发。
-3. 流水线（详见 `references/host-release-gates.md`）：① tag↔宿主 package.json version → ② 内核已发 npm → ③ format:check → build 内核 dist → build memora-mcp dist（跨宿主契约测试前置）→ 宿主依赖安装 `pnpm install --frozen-lockfile`（重链内核 dist——任何 pnpm install 都会重链 `file:../..`，否则测到上一代内核硬链接副本）→ typecheck → lint → 串行 test → package vsix → GitHub Release 自动挂 asset（`memora-vscode-x.y.z.vsix`，幂等 `--clobber`）。
+4. 流水线（详见 `references/host-release-gates.md`）：① tag↔宿主 package.json version → ② 内核已发 npm → ③ format:check → build 内核 dist → build memora-mcp dist（跨宿主契约测试前置）→ 宿主依赖安装 `pnpm install --frozen-lockfile`（重链内核 dist——任何 pnpm install 都会重链 `file:../..`，否则测到上一代内核硬链接副本）→ typecheck → lint → 串行 test → package vsix → GitHub Release 自动挂 asset（`memora-vscode-x.y.z.vsix`，幂等 `--clobber`）。
    - **tag 前可选预演**：`host-release.yml` 带 `workflow_dispatch`（dry-run——门禁全跑到打包为止，不挂 Release，tag 校验自动跳过）。本地全绿后若想提前暴露 CI 冷环境差异，从 main 手动空跑一次再打 tag。
    - 无 npm 2FA 审批（宿主不发 npm；内核那段已在发内核时批过）。
-4. 🔴 **CI 红后修 workflow / 测试 ⇒ 旧 tag 作废，删掉重打**：tag 触发的 CI 用 **tag 指向 commit 里的 workflow 文件版本**——改完 push 到 main 后重跑旧 run 用的还是旧 workflow，必须删远端+本地 tag → 在含修复的新 HEAD 重打 → 再推（0.2.0 实证两次：`pnpm install --offline` 冷 store 炸、平台相关用例 ubuntu 红）。
+5. 🔴 **CI 红后修 workflow / 测试 ⇒ 旧 tag 作废，删掉重打**：tag 触发的 CI 用 **tag 指向 commit 里的 workflow 文件版本**——改完 push 到 main 后重跑旧 run 用的还是旧 workflow，必须删远端+本地 tag → 在含修复的新 HEAD 重打 → 再推（0.2.0 实证两次：`pnpm install --offline` 冷 store 炸、平台相关用例 ubuntu 红）。
 
 ### Step 5：分发出口核对（三市场 live 态）
 
@@ -156,7 +159,8 @@ agent_created: true
 - 🔴 **CHANGELOG 双区**：宿主发版只动 `## [Unreleased] · 宿主` 区，内核区（`## [5.0.0] …`）不动。
 - 🔴 **host-release.yml 不含 `verify:changelog` / `verify:publish-docs`** ⇒ 须人工跑/核对（内核有、宿主无，这是两链最易踩的差异）。
 - 🔴 **Open VSX 与 VS Marketplace 的 Trusted Publishing 都绑定 workflow 文件名** ⇒ `host-release.yml` 不得改名（改名两边注册都要重来）。
-- 🔴 **Windows 上 Bash 跑 git 写操作会污染索引**（曾致 `tasks/` 十余文件被误标删除）——归档/提交/打 tag 用 PowerShell 直接命令或 `node -e`，忌用 Bash 流。push 若 PowerShell 拦 credential-manager（网络 git 静默 EXIT=128）走 Bash `env -u NODE_OPTIONS git push`，**不设 `LEFTHOOK=0`**——pre-push 默认必须跑；确需绕行按 `memora-kernel-release-readiness` 提交环节的三件（用户显式授权并引原话 / 写明原因 / 补跑同一门禁并进收据）。
+- 🔴 **Windows 上 Bash 跑 git 写操作会污染索引**（曾致 `tasks/` 十余文件被误标删除）——归档/提交/打 tag 用 PowerShell 直接命令或 `node -e`，忌用 Bash 流。push 走 Bash `env -u NODE_OPTIONS git push`，**不设 `LEFTHOOK=0`**——pre-push 默认必须跑；确需绕行按 `memora-kernel-release-readiness` 提交环节的三件（用户显式授权并引原话 / 写明原因 / 补跑同一门禁并进收据）。
+- 🔴 **push 分两次、顺序 main → tag**（0.13.0 实踩）：一次合并推 `git push origin main <tag>` 一旦被工具安全层 SIGTERM，远端 main 与 tag 同时未落，难以定位；先单独推 main 并用 `git ls-remote` 坐实 == 本地 HEAD，再单独推 tag。main 推送不触发 `host-release.yml`，tag 推送才是发版点。
 - 🔴 **CI 冷 store 勿用 `--offline`**（0.2.0 首跑实证，run 39889566947）：根与宿主是两个独立 pnpm 工程（无 workspace），CI 只装了根依赖；宿主 lockfile 239 包中 ~187 个根没有（vsce/@vscode 系）⇒ 冷 store offline 解析必炸。workflow 安装步已定 `--frozen-lockfile`，**勿改回 `--offline`**；本地 store 已暖，本地跑 `--offline` 仍可。
 - 🔴 **平台相关 API 的断言写 `runIf(平台)` 互斥孪生**（0.2.0 二跑实证，run 39890131524）：`path.relative` / findFiles `fsPath` 等语义随 OS 变，反斜杠形态只在 Windows 运行时出现，ubuntu 上喂 Windows 路径必错。win32 用例 `runIf(process.platform === 'win32')` + POSIX 孪生 `runIf(!win32)` 各跑真实形态——**不产生隐藏 skip**，任一平台都有在跑的用例。
 - 🔴 **跨宿主契约测试的前置是 memora-mcp dist**：`crossHostLayout.test.ts` 加载 `hosts/memora-mcp/dist` 产物（非源码）且有 mtime 守卫。workflow 已带构建步（mcp 无 lockfile ⇒ `--no-frozen-lockfile`，mcp 出包补 lockfile 后收紧为 frozen）；本地新 clone 同样先 build mcp。

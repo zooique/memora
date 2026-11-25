@@ -4,6 +4,7 @@
 
 ## 触发
 
+- 🔴 **推 tag 前必须先单独推 main 并核验远端 `refs/heads/main` == 本地 HEAD**（0.13.0 实踩：合并推 main + tag 被工具安全层整体 SIGTERM，两 ref 同时落空）。main 推送不触发 workflow；tag 推送才是唯一发版点。详见技能 SKILL.md Step 4 与头号铁律。
 - 推送形如 `vscode@X.Y.Z` 的 tag（如 `vscode@0.2.0`）→ 触发 `host-release.yml`。
 - **workflow_dispatch 手动预演（dry-run）**：从 main 触发，门禁全跑到打包为止，**不挂 Release**（上传步 `if: github.event_name == 'push'` 闸）；tag 一致性校验跳过（无 tag 上下文），可选 input `expected_version` 做版本断言。tag 前空跑一次提前暴露 CI 冷环境差异（0.2.0 两次首跑缺陷本可这样提前暴露，省「删 tag 重打」往返）。
 - 与内核 `release.yml`（`v[0-9]*`，发 npm）**互不干扰**：ADR-033 双版本线，两轴门禁不同、产物不同、节奏有先后。
