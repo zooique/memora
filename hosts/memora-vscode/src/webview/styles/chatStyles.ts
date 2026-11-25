@@ -2191,13 +2191,15 @@ export const chatStyles = `
   /* 输入区控件基类：无边框，状态用底色/颜色表达；控件自身禁止再带 border。
    * 可点性 = hover 底色 + 前景色提亮；键盘焦点环压到 1px（全局 2px 对紧凑按钮偏重）。
    * 禁用态只认 aria-disabled——「is-vision-off」等 class 是状态标记（测试/数据面），
-   * 视觉统一由本基类承载，避免「class 一套、aria 一套」两份判据。 */
+   * 视觉统一由本基类承载，避免「class 一套、aria 一套」两份判据。
+   * 高度（COMPOSER-GEOM-1）：min-height 取 sq-xl(28) 与 min-width 同档，令图标按钮成正方形，
+   * 并与选择器胶囊的 --control-h(28) 齐高——Row1 除发送(32)外同一基线，消除 24/28 参差。 */
   .ctl {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     min-width: var(--sq-xl, 28px);
-    min-height: var(--sq-lg, 24px);
+    min-height: var(--sq-xl, 28px);
     border: none;
     border-radius: var(--radius-sm, 2px);
     background: transparent;
@@ -2303,10 +2305,15 @@ export const chatStyles = `
     user-select: none;
   }
   /* 润色按钮（图标化，弱化样式）：边框/圆角/尺寸基座由 .ctl 提供，此处只留差异。
-   * hover 提亮到 accent（比通用 .ctl 的 --text-primary 更有指向性）。 */
+   * hover 提亮到 accent（比通用 .ctl 的 --text-primary 更有指向性）。
+   * 分组缝（COMPOSER-GEOM-1）：左缘 margin 与 .composer-left 的 gap 叠加成 16px 组间缝，
+   * 把「Skill + 模型」（选择器组）与「润色 + 图片」（动作组）在视觉上分开；组内仍 6px。
+   * 只加 margin 不动 DOM：不新增 wrapper、不碰生产/测试双骨架，零结构伤；固定 28px 宽
+   * 不触发 narrowWidthGuard（它只管 max-width），窄窗下 flex-shrink 由胶囊省略号兜底。 */
   .polish-btn-icon {
     width: var(--sq-xl, 28px);
-    height: var(--sq-lg, 24px);
+    height: var(--sq-xl, 28px);
+    margin-left: var(--sp-4, 10px);
     padding: 0;
     cursor: pointer;
   }
@@ -2325,7 +2332,7 @@ export const chatStyles = `
    * 视觉弱化由 .ctl[aria-disabled='true'] 承载（class 只作状态标记，不再自写 opacity/border）。 */
   .image-attach-btn {
     width: var(--sq-xl, 28px);
-    height: var(--sq-lg, 24px);
+    height: var(--sq-xl, 28px);
     padding: 0;
     cursor: pointer;
   }
