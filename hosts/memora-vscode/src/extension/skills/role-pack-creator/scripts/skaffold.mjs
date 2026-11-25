@@ -12,11 +12,14 @@ import { cp, readFile, writeFile, mkdir, access } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// 兜底契约包名（memora 内置角色，禁止同名创建）
+// 保留名集合（memora 随包分发的内置角色，禁止同名创建覆盖内置人格）
 // ⚠️ 镜像点（刻意为之，勿强行收口）：本脚本遵守文件头声明的「纯 Node 标准库、零第三方依赖」
-// 约束，不能 import 内核 @zooique/memora 取该常量，故在此保留字面量。
-// 内核真源：src/role-pack/constants.ts（改名须走 ADR 并同步此处）。
-const BUILTIN_FALLBACK_PACK = 'memora助手';
+// 约束，不能 import 内核 @zooique/memora 或宿主模块取常量，故在此保留字面量。
+// 真源两处：内核兜底包 src/role-pack/constants.ts#BUILTIN_FALLBACK_PACK（改名走 ADR）、
+// 宿主助手包 hosts/memora-vscode/src/shared/rolePackKind.ts#ASSISTANT_ROLE_PACK。
+// 同值守卫：hosts/memora-vscode/src/extension/host/__tests__/rolePackVerify.test.ts
+// 逐字读本文件断言两常量仍相等——改真源或改此处任一侧，守卫即转红。
+const RESERVED_PACK_NAMES = ['memora助手', 'memora宝'];
 // 角色名合法字符（中文+CJK、字母、数字、下划线、连字符），长度 1~64
 const NAME_RE = /^[A-Za-z0-9\u4e00-\u9fa5_-]{1,64}$/;
 // 模板目录：本脚本 ../templates/standard/
@@ -70,8 +73,8 @@ function parseArgs(argv) {
  */
 function validateName(name) {
   if (!name) return '角色名不能为空';
-  if (name === BUILTIN_FALLBACK_PACK)
-    return `保留名 "${BUILTIN_FALLBACK_PACK}" 不可创建/替换（memora 内置兜底角色，避免冲突）`;
+  if (RESERVED_PACK_NAMES.includes(name))
+    return `保留名 "${name}" 不可创建/替换（memora 内置角色，避免覆盖内置人格）`;
   if (name.startsWith('.')) return '角色名不能以 "." 开头';
   if (!NAME_RE.test(name)) return '角色名仅允许 中文/字母/数字/下划线/连字符（长度 1~64）';
   return '';

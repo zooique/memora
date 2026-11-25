@@ -26,8 +26,10 @@ import {
   verifySkillDocument,
 } from '../../_lib/verify-core.mjs';
 
-/** 角色包保留名（真源 role-pack-creator/scripts/skaffold.mjs，避免与内置角色撞名） */
-const RESERVED_NAMES = new Set(['memora助手']);
+/** 角色包保留名（避免与内置角色撞名）：镜像点，真源两处 = 内核 BUILTIN_FALLBACK_PACK +
+ * 宿主 ASSISTANT_ROLE_PACK；与 skaffold.mjs 的 RESERVED_PACK_NAMES 同值，由
+ * rolePackVerify.test.ts 逐字守卫。零第三方依赖约束下不能 import 真源，故保留字面量。 */
+const RESERVED_NAMES = new Set(['memora助手', 'memora宝']);
 
 /** 包名合法字符集（与 skaffold.mjs 同口径；内核 validator 另做长度/结构校验） */
 const PACK_NAME_RE = /^[A-Za-z0-9\u4e00-\u9fa5_-]{1,64}$/;

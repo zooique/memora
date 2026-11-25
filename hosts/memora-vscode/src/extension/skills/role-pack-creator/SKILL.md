@@ -53,7 +53,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 ```
 
 - `<角色名>` 必填；`--out` 缺省为当前工作目录（产物 = `./<角色名>/`）；
-- 脚本**拒绝**：空名 / 非法目录名 / 目标已存在（防覆盖）/ 保留名 `memora助手`；覆盖需 `--force`；
+- 脚本**拒绝**：空名 / 非法目录名 / 目标已存在（防覆盖）/ 保留名 `memora助手` / `memora宝`（两个随包分发的内置角色，禁止同名创建覆盖内置人格）；覆盖需 `--force`；
 - 框架产出 4 个文件：`manifest.json`、`persona.md`、`rules.md`、`skills/README.md`（占位符已替换）。
 
 ### 第三步：LLM 精修（核心设计环节）
@@ -119,7 +119,7 @@ node scripts/verify-pack.mjs <角色名> [--kernel-root <内核仓库根>]
 |------|----------|------|
 | manifest-json / manifest | 合法 JSON；displayName、description（宿主展示必需的两项产品级字段） | 本脚本仅此两项 |
 | manifest-kernel | `formatVersion` 版本语义、策略键区间/枚举/内容红线；能加载内核时由 `validateManifestText` 判定，加载不到则明确 SKIP | `src/role-pack/validator.ts`（唯一真源，包侧不自判） |
-| pack-name | 1~64 位中文/字母/数字/下划线/连字符，不以 `.` 开头；禁止保留名 `memora助手` | `src/role-pack/validator.ts` + `skaffold.mjs` |
+| pack-name | 1~64 位中文/字母/数字/下划线/连字符，不以 `.` 开头；禁止保留名 `memora助手` / `memora宝` | `src/role-pack/validator.ts` + `skaffold.mjs` |
 | skills | 每份内嵌技能 frontmatter 可解析、description 合规、H1 中文展示名、L3 引用存在 | `src/skill/skillManager.ts` + `src/utils/scanner.ts` |
 | ref-closure | persona/rules 与技能双向闭合：每个技能至少被引用一次；每条反引号 kebab 词指向真实技能 | `src/role-pack/__tests__/builtinPackCoverage.test.ts` |
 
@@ -177,7 +177,7 @@ node scripts/verify-pack.mjs <角色名> [--kernel-root <内核仓库根>]
 
 - 禁止手写 manifest.json 结构（一律从模板生成，防止键名/区间漂移）。
 - 禁止把产物复制进任何宿主目录（memora 的 role-packs/、用户 skills 目录均不负责）。
-- 禁止创建保留名 `memora助手`。
+- 禁止创建保留名 `memora助手` / `memora宝`（随包分发的内置角色，同名会顶替内置人格）。
 - 禁止漏校验：`verify-pack.mjs` 任一 FAIL 必须修到 PASS，SKIP 必须在交付报告里说明原因。
 - 禁止交付未校验的产物。
 

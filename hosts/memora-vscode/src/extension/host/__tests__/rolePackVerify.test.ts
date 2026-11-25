@@ -7,11 +7,13 @@
  *   3. 内核期望值漂移时本组用例会转红（配合 `strategyKeys.ts#isTemperature` 变异验证）。
  */
 import { describe, it, expect } from 'vitest';
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { BUILTIN_FALLBACK_PACK } from '@zooique/memora';
+import { ASSISTANT_ROLE_PACK } from '../../../shared/rolePackKind.js';
 
 /** 仓库根（本测试位于 hosts/memora-vscode/src/extension/host/__tests__/，向上六级） */
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', '..', '..');
@@ -19,12 +21,31 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..'
 /** 源侧校验脚本（宿主构建期会整目录复制进 dist） */
 const SKILLS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'skills');
 const VERIFY_PACK = join(SKILLS_DIR, 'role-pack-creator', 'scripts', 'verify-pack.mjs');
+const SCAFFOLD = join(SKILLS_DIR, 'role-pack-creator', 'scripts', 'skaffold.mjs');
+
+/**
+ * 从脚本源码抽取保留名数组字面量（脚本受零第三方依赖约束、不能 import 真源，
+ * 故以字面量镜像两处常量；本守卫逐字断言镜像未漂移，任一侧改名即转红）。
+ */
+function reservedNamesFrom(source: string, constName: string): string[] {
+  // 兼容裸数组（skaffold）与 new Set([...])（verify-pack）两种写法
+  const match = new RegExp(`const\\s+${constName}\\s*=\\s*(?:new\\s+Set\\()?\\[([^\\]]+)\\]`).exec(
+    source,
+  );
+  expect(match, `脚本中未找到 ${constName} 保留名数组字面量`).not.toBeNull();
+  return (match?.[1] ?? '')
+    .split(',')
+    .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+    .filter(Boolean);
+}
 
 /** 一份最小合法 manifest（策略只声明温度，其余走内核默认） */
-function manifestText(overrides: { formatVersion?: string; temperature?: number } = {}): string {
+function manifestText(
+  overrides: { name?: string; formatVersion?: string; temperature?: number } = {},
+): string {
   return JSON.stringify(
     {
-      name: 'verify-demo',
+      name: overrides.name ?? 'verify-demo',
       displayName: '校验演示包',
       description: '仅用于 verify-pack 回归测试',
       formatVersion: overrides.formatVersion ?? '1.0.0',
@@ -109,4 +130,31 @@ describe('verify-pack 的内核单真源契约', () => {
     expect(result.stdout).toContain('[manifest-kernel]');
     expect(result.stdout).toContain('未能加载内核');
   });
+});
+
+describe('角色包制作脚本的保留名镜像守卫（ASSISTANT-PACK-NAME-RESERVED-1）', () => {
+  const expectedReserved = [BUILTIN_FALLBACK_PACK, ASSISTANT_ROLE_PACK];
+
+  it('skaffold.mjs / verify-pack.mjs 的保留名与两处真源同值', () => {
+    const scaffoldSrc = readFileSync(SCAFFOLD, 'utf8');
+    const verifySrc = readFileSync(VERIFY_PACK, 'utf8');
+    expect(reservedNamesFrom(scaffoldSrc, 'RESERVED_PACK_NAMES').sort()).toEqual(
+      [...expectedReserved].sort(),
+    );
+    expect(reservedNamesFrom(verifySrc, 'RESERVED_NAMES').sort()).toEqual(
+      [...expectedReserved].sort(),
+    );
+  });
+
+  for (const reserved of expectedReserved) {
+    it(`verify-pack 拒绝保留名 ${reserved}（防同名顶替内置人格）`, () => {
+      const packDir = createPack(manifestText({ name: reserved }));
+      const result = runVerifyPack(packDir);
+      rmSync(packDir, { recursive: true, force: true });
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain('[pack-name]');
+      expect(result.stdout).toContain('保留名');
+    });
+  }
 });
