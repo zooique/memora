@@ -6,6 +6,7 @@
  *   - 传 footerAction 时：分隔线 + 单按钮，.id 落到 data-treedd-id（点击委托命中即分流）
  *   - 尾项 label 走 textContent（本地化文本来自调用方，禁止 innerHTML 拼用户数据）
  *   - 空列表 + 尾项：空态文案与尾项共存，尾项仍可点（无模型时仍可去配置）
+ *   - 选中态语义通道：aria-current 从 isActive 派生，动作尾项不冒领（MODEL-PICKER-STATE-1）
  */
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -69,5 +70,24 @@ describe('pickerView 固定尾项（MODEL-PICKER-ADD-1）', () => {
     });
     expect(menu.querySelector('.treedd__empty')?.textContent).toBe('No model configured');
     expect(menu.querySelector('[data-treedd-id="+add-provider"]')).not.toBeNull();
+  });
+
+  it('选中态语义通道：aria-current 由 isActive 派生，动作尾项不冒领', () => {
+    view.renderPicker(
+      menu,
+      trigger,
+      [
+        { name: 'a', displayName: 'A' },
+        { name: 'b', displayName: 'B' },
+      ],
+      'b',
+      { ...OPTS, footerAction: { id: '+add-provider', label: 'Add model' } },
+    );
+    const items = [...menu.querySelectorAll<HTMLElement>('.treedd__item')];
+    expect(items[0].getAttribute('aria-current')).toBe('false');
+    expect(items[1].getAttribute('aria-current')).toBe('true');
+    expect(items[1].classList.contains('is-active')).toBe(true);
+    // 尾项是「添加模型」动作，不是候选模型，不携带选中语义
+    expect(items[2].hasAttribute('aria-current')).toBe(false);
   });
 });

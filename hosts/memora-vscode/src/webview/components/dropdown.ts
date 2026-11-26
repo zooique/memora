@@ -230,7 +230,15 @@ export function initDropdowns(
       closeOtherDropdowns(root, el);
       const willOpen = !el.classList.contains('is-open');
       setDropdownOpen(el, willOpen);
-      if (willOpen) menuItems(el)[0]?.focus();
+      if (willOpen) {
+        // 首焦按菜单能力选择：含搜索框的面板（技能 / 加号门）先给搜索框，
+        // 纯命令菜单仍首焦首项。搜索框打字守卫已在 bindMenuKeyboardNav 内，
+        // 方向键留在文本光标、Escape 照常关菜单并归还焦点，两条语义不打架。
+        // 斜杠入口直接 setDropdownOpen、不走触发器 click，其「焦点留正文」拍板不受影响。
+        const menu = el.querySelector<HTMLElement>('.treedd__menu');
+        const search = menu?.querySelector<HTMLInputElement>('.treedd__search');
+        (search ?? menuItems(el)[0])?.focus();
+      }
     });
 
     // 触发器键盘：Enter/Space 经 click 触发；Arrow 直接开菜单；Escape 关闭

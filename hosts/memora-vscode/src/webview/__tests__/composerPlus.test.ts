@@ -13,6 +13,7 @@
  *   ② 分流单一：技能名与清除项走 skillPickerView.select，图片/引用复用既有入口，零新协议；
  *   ③ 滚动分层：技能区自身滚动，两个动作项固定底部，长列表不把动作挤出可视区；
  *   ④ 替身同形：夹具只搭容器，条目由生产同一组件生成（夹具凭空多 id 会撞骨架一致性守卫）。
+ *   ⑤ 选中态双通道（MODEL-PICKER-STATE-1）：模型选中项浅底复用菜单令牌，公共条目规则不被牵连。
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -178,5 +179,19 @@ describe('加号面板守卫（COMPOSER-PLUS-FLAT-1）', () => {
     expect(FIXTURE).not.toContain('treedd skill-picker');
     // 夹具不得硬编码 data-treedd-id：骨架一致性守卫会把它们当成夹具凭空多出的 id
     expect(FIXTURE).not.toMatch(/data-treedd-id="(image|file|skill)"/);
+  });
+
+  it('模型选中态双通道：浅底复用菜单令牌，公共条目规则不被牵连', () => {
+    const active = cssRule('.model-picker .treedd__item.is-active');
+    expect(active).toContain('background: var(--menu-selection-bg)');
+    expect(active).toContain('color: var(--accent');
+    expect(active).toContain('font-weight: 600');
+    const DROPDOWN_CSS = readFileSync(join(HERE, '..', 'styles', 'dropdown.ts'), 'utf8');
+    const baseAt = DROPDOWN_CSS.indexOf('.treedd__item {');
+    const base = DROPDOWN_CSS.slice(baseAt, DROPDOWN_CSS.indexOf('}', baseAt));
+    expect(base, '公共条目基础规则必须保持透明底色').toContain('background: transparent');
+    // 浅底在公共规则里仍只归 hover / focus-visible，选中态是 model-picker 的差异定制
+    expect(DROPDOWN_CSS).toContain('.treedd__item:focus-visible {');
+    expect(DROPDOWN_CSS).toContain('background: var(--menu-selection-bg, rgba(14, 99, 156, 0.06))');
   });
 });

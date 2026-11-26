@@ -76,6 +76,10 @@ export function createPickerView(deps: PickerViewDeps): PickerView {
         const btn = document.createElement('button');
         btn.className = 'treedd__item' + (isActive ? ' is-active' : '');
         btn.setAttribute('role', 'menuitem');
+        // 选中态第二通道：aria-current 是全局属性，对 menuitem 合法；
+        // aria-selected 只归 role=tab（设置页 / 历史分组），搬到菜单项是无效语义。
+        // 值直接从 isActive 派生，不复制第二份真源。
+        btn.setAttribute('aria-current', String(isActive));
         btn.setAttribute('data-treedd-id', p.name);
         const nameEl = document.createElement('span');
         nameEl.className = 'dd-item-name';

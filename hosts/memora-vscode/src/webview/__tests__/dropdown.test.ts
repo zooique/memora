@@ -85,6 +85,22 @@ describe('dropdown 键盘可访问性', () => {
     expect(document.activeElement).toBe(items[0]);
   });
 
+  it('含搜索框的菜单首焦给搜索框；无搜索框仍首焦首项（能力检测，非组件特判）', () => {
+    const { trigger, menu, items } = mountDropdown();
+    trigger.click();
+    expect(document.activeElement).toBe(items[0]);
+    trigger.click();
+    const search = document.createElement('input');
+    search.className = 'treedd__search';
+    menu.appendChild(search);
+    trigger.click();
+    expect(document.activeElement, '技能面板展开后应能直接输入搜索').toBe(search);
+    search.remove();
+    trigger.click();
+    trigger.click();
+    expect(document.activeElement, '纯命令菜单契约不得漂移').toBe(items[0]);
+  });
+
   it('再次点击触发器收起：aria-expanded=false', () => {
     const { el, trigger } = mountDropdown();
     trigger.click();
@@ -215,8 +231,10 @@ describe('dropdown 键盘可访问性', () => {
     key(input, 'Escape');
     expect(el.classList.contains('is-open')).toBe(false);
     expect(document.activeElement).toBe(trigger);
-    // 反向守卫：菜单项上的同名按键仍照常导航（守卫只对输入框生效）
+    // 反向守卫：菜单项上的同名按键仍照常导航（守卫只对输入框生效）。
+    // 含搜索框的菜单现在首焦搜索框，故先显式聚焦菜单项再按键，恢复本用例原意图。
     trigger.click();
+    items[0].focus();
     key(items[0], 'ArrowDown');
     expect(document.activeElement).toBe(items[1]);
   });

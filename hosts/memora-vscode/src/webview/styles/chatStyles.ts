@@ -2721,6 +2721,9 @@ export const chatStyles = `
     text-overflow: ellipsis;
   }
   .model-picker .treedd__item.is-active {
+    /* 选中态双通道：accent 文字之外补既有 hover 同款浅底（复用菜单令牌、零新裸值），
+     * 高对比 / 强制颜色模式下颜色通道被抹平时仍有底纹区分；与 hover 同令牌不造第二真源。 */
+    background: var(--menu-selection-bg);
     color: var(--accent, #0e639c);
     font-weight: 600;
   }
