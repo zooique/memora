@@ -2190,12 +2190,18 @@ export const chatStyles = `
    * 技能用 visibility:hidden 而非 display:none —— 后者令 getBoundingClientRect() 归零，
    * applyDropDirection 会把菜单误判成向下弹（输入卡片贴面板底缘 ⇒ 必被裁切）；
    * 改 position:absolute 脱离 flex 流不留空槽，触发器可见盒仍在原位供弹出方向判定。
+   * 🔴 命中面必须落在**容器**上（pointer-events:none）：只隐藏 trigger 时，.skill-picker
+   * 容器仍是可见盒子，absolute 定位在 left:0 且 DOM 序在 `+` 门之后（同级 z-index 后绘制在上），
+   * 会盖住 28px 的加号并把点击吃掉——表现即「点加号没反应」（COMPOSER-PLUS-HIT-1）。
+   * 菜单是兄弟节点、不继承 trigger 的 visibility，但要显式 pointer-events:auto 覆盖容器的 none，
+   * 否则 `+` → 技能项程序化展开的菜单能看见却点不动。
    * 图片无菜单锚定问题，display:none 直接移出流；点击由 `+` 门委托 .click() 复用
    * imageCapture 二分行为（有能力→选图，无→跳设置），不复制第二份判据。 */
   /* 提 specificity 到 (0,2,0)：dropdownStyles 注入在本文件之后，其 .treedd{position:relative}
    * 同为 (0,1,0) 会按源序压过单类选择器；不提 specificity 则锚点仍是 relative、触发器照占槽。 */
-  .composer-left .skill-picker { position: absolute; left: 0; bottom: 0; }
-  .composer-left .skill-picker > .treedd__trigger { visibility: hidden; pointer-events: none; }
+  .composer-left .skill-picker { position: absolute; left: 0; bottom: 0; pointer-events: none; }
+  .composer-left .skill-picker > .treedd__trigger { visibility: hidden; }
+  .composer-left .skill-picker .treedd__menu { pointer-events: auto; }
   #imageAttachBtn { display: none; }
   /* 右侧发送按钮容器：唯一主操作，绝不收缩（视觉焦点恒定）。
    * 生成中并列「暂停」按钮（.pause-btn），容器为 flex 横向排列两钮 */

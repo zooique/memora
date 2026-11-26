@@ -12,7 +12,9 @@
  *      删节点 = 断链，不是「清理」。
  *   ② 三项复用既有入口（openMenu / imageAttachBtn.click / mention_open），零新协议。
  *   ③ 隐藏用 visibility:hidden + position:absolute，不用 display:none——
- *      后者令 getBoundingClientRect() 归零，applyDropDirection 会把技能菜单翻向下、被底缘裁掉。
+ *      后者令 getBoundingClientRect() 归零，applyDropDirection 会把技能菜单翻向下、被底缘裁掉；
+ *   ④ 命中面断在 skill-picker **容器**（pointer-events:none），菜单单独恢复 auto——
+ *      只隐藏 trigger 时容器仍盖住加号（COMPOSER-PLUS-HIT-1），是「点加号没反应」的真因。
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -72,12 +74,34 @@ describe('`+` 挂载门守卫（COMPOSER-PLUS-1）', () => {
   });
 
   it('CSS 折叠保几何：visibility + absolute，不用 display:none 断锚点', () => {
-    expect(CSS).toMatch(/\.composer-left \.skill-picker \{ position: absolute; left: 0; bottom: 0; \}/);
-    expect(CSS).toMatch(/\.composer-left \.skill-picker > \.treedd__trigger \{ visibility: hidden; pointer-events: none; \}/);
+    expect(CSS).toMatch(
+      /\.composer-left \.skill-picker \{ position: absolute; left: 0; bottom: 0; pointer-events: none; \}/,
+    );
+    expect(CSS).toMatch(/\.composer-left \.skill-picker > \.treedd__trigger \{ visibility: hidden; \}/);
     expect(CSS).not.toMatch(/\.skill-picker \{ display: none/);
     expect(CSS).toMatch(/#imageAttachBtn \{ display: none; \}/);
     // 锚点 containing block 必须存在，否则 absolute 落到更外层、菜单位置漂移
     expect(CSS).toMatch(/\.composer-left \{[\s\S]{0,400}position: relative;/);
+  });
+
+  it('命中穿透：技能容器不吞加号点击，展开后的菜单仍可点（COMPOSER-PLUS-HIT-1）', () => {
+    // 按右花括号截到本规则末尾——定长切片会把下一条菜单规则吞进来，造出假红
+    const rule = (selector: string): string => {
+      const at = CSS.indexOf(`${selector} {`);
+      if (at < 0) return '';
+      const end = CSS.indexOf('}', at);
+      return CSS.slice(at, end < 0 ? at + 160 : end + 1);
+    };
+    const hit = rule('.composer-left .skill-picker');
+    expect(hit, '容器缺 pointer-events:none 会盖在加号上吞点击').toContain('pointer-events: none');
+    expect(hit).toContain('position: absolute');
+    // 触发器不再单独声明命中：单点断在容器，避免两处判据漂移
+    const trigger = rule('.composer-left .skill-picker > .treedd__trigger');
+    expect(trigger).toContain('visibility: hidden');
+    expect(trigger).not.toContain('pointer-events');
+    // 菜单是容器的子元素，继承 none 后必须显式恢复，否则看得见点不动
+    const menu = rule('.composer-left .skill-picker .treedd__menu');
+    expect(menu, '菜单缺 pointer-events:auto 会导致技能项点不动').toContain('pointer-events: auto');
   });
 
   it('测试替身与生产骨架同形：+ 门容器/回调名一致、技能节点保留', () => {
