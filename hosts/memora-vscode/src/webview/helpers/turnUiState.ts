@@ -121,6 +121,12 @@ export interface ButtonSemantics {
   pause: { icon: 'pause' | 'play'; title: string; ariaLabel: string } | null;
   /** 发送按钮语义（`loading` = 呈现为停止方块） */
   send: { loading: boolean; title: string; ariaLabel: string; disabled: boolean };
+  /**
+   * 润色按钮可用态（POLISH-EMPTY-1）：与发送键**共用** `hasInput` 自变量，不另立阈值、不读
+   * `composer_state`（那是宿主落定判据，拿来做 UI 态就是第二真源）。自助形态运行中禁用——
+   * 此时输入会被当作 interject / 续跑补充，改文本会让提交语义漂移；助手座位无运行时。
+   */
+  polish: { disabled: boolean };
 }
 
 /**
@@ -162,6 +168,7 @@ export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemant
         ariaLabel: hasInput ? l10n.t('Send follow-up') : l10n.t('Send'),
         disabled: !hasInput,
       },
+      polish: { disabled: !hasInput },
     };
   }
 
@@ -200,6 +207,7 @@ export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemant
             ariaLabel: l10n.t('Stop generating'),
             disabled: false,
           },
+      polish: { disabled: true },
     };
   }
 
@@ -229,6 +237,7 @@ export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemant
         ariaLabel: l10n.t('Stop generating'),
         disabled: false,
       },
+      polish: { disabled: true },
     };
   }
 
@@ -240,5 +249,6 @@ export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemant
       ariaLabel: l10n.t('Send'),
       disabled: !hasInput,
     },
+    polish: { disabled: !hasInput },
   };
 }

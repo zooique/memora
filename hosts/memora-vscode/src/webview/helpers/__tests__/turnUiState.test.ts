@@ -352,6 +352,62 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
   });
 });
 
+describe('deriveButtonSemantics · 润色可用态（POLISH-EMPTY-1）', () => {
+  /** 与发送键共用 hasInput 自变量、同一次派生快照，禁止另立阈值或读 composer_state */
+  const CASES: Array<{
+    name: string;
+    state: SkeletonState;
+    hasInput: boolean;
+    form?: 'assistant' | 'self';
+    expected: boolean;
+  }> = [
+    { name: 'done 空输入', state: { phase: 'idle' }, hasInput: false, expected: true },
+    { name: 'done 有输入', state: { phase: 'settled' }, hasInput: true, expected: false },
+    { name: 'thinking 空输入', state: { phase: 'running' }, hasInput: false, expected: true },
+    { name: 'thinking 有输入（提交语义会漂移）', state: { phase: 'running' }, hasInput: true, expected: true },
+    {
+      name: 'waiting(pause) 有输入',
+      state: { phase: 'waiting', reason: 'pause' },
+      hasInput: true,
+      expected: true,
+    },
+    {
+      name: 'waiting(ask) 有输入',
+      state: { phase: 'waiting', reason: 'ask' },
+      hasInput: true,
+      expected: true,
+    },
+    {
+      name: '助手座位 空输入',
+      state: { phase: 'idle' },
+      hasInput: false,
+      form: 'assistant',
+      expected: true,
+    },
+    {
+      name: '助手座位 有输入',
+      state: { phase: 'running' },
+      hasInput: true,
+      form: 'assistant',
+      expected: false,
+    },
+  ];
+
+  it.each(CASES)('$name → polish.disabled=$expected', ({ state, hasInput, form, expected }) => {
+    const spec = deriveButtonSemantics({ state, hasInput, form });
+    expect(spec.polish.disabled).toBe(expected);
+  });
+
+  it('与发送键同源：done 态下 polish 与 send 的禁用态逐格一致', () => {
+    for (const state of [{ phase: 'idle' }, { phase: 'settled' }] as SkeletonState[]) {
+      for (const hasInput of [false, true]) {
+        const spec = deriveButtonSemantics({ state, hasInput });
+        expect(spec.polish.disabled).toBe(spec.send.disabled);
+      }
+    }
+  });
+});
+
 describe('deriveButtonSemantics · 助手座位（微信心智，发送了就脱手）', () => {
   /** 全状态枚举（含 pausePending 变体，锁「助手座位无运行时」的全格不变量） */
   const ALL_STATES: SkeletonState[] = [

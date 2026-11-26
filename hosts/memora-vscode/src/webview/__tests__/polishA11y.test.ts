@@ -10,6 +10,51 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { dispatch, mountChatView } from './helpers/chatViewTestEnv.js';
 
+describe('润色空态禁用（POLISH-EMPTY-1）', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('空输入 → 按钮禁用，点击不发 polish_input', () => {
+    const { postMessage } = mountChatView();
+    const btn = document.getElementById('polishBtn') as HTMLButtonElement;
+
+    expect(btn.disabled).toBe(true);
+    btn.click();
+    expect(postMessage).not.toHaveBeenCalledWith({ type: 'polish_input', text: '' });
+  });
+
+  it('输入事件 → 按钮点亮；清空 → 重新禁用（与发送键同翻转）', () => {
+    mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    const send = document.getElementById('send') as HTMLButtonElement;
+    const btn = document.getElementById('polishBtn') as HTMLButtonElement;
+
+    input.value = '有内容了';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(btn.disabled).toBe(false);
+    expect(send.disabled).toBe(false);
+
+    input.value = '   ';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(btn.disabled).toBe(true);
+    expect(send.disabled).toBe(true);
+  });
+
+  it('程序化回填（润色结果）也同步可用态，不等用户再敲一个键', () => {
+    mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    const btn = document.getElementById('polishBtn') as HTMLButtonElement;
+    input.value = '待润色';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    btn.click();
+    dispatch({ type: 'polish_input_result', ok: false, message: 'boom' });
+
+    expect(input.value).toBe('待润色');
+    expect(btn.disabled).toBe(false);
+  });
+});
+
 describe('润色 loading 无障碍双通道（POLISH-A11Y-1）', () => {
   afterEach(() => {
     document.body.innerHTML = '';
@@ -20,6 +65,7 @@ describe('润色 loading 无障碍双通道（POLISH-A11Y-1）', () => {
     const input = document.getElementById('input') as HTMLTextAreaElement;
     const btn = document.getElementById('polishBtn') as HTMLButtonElement;
     input.value = '这段需要润色';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
     btn.click();
 
     expect(postMessage).toHaveBeenCalledWith({ type: 'polish_input', text: '这段需要润色' });
@@ -32,6 +78,7 @@ describe('润色 loading 无障碍双通道（POLISH-A11Y-1）', () => {
     const input = document.getElementById('input') as HTMLTextAreaElement;
     const btn = document.getElementById('polishBtn') as HTMLButtonElement;
     input.value = '这段需要润色';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
     btn.click();
     expect(btn.getAttribute('aria-busy')).toBe('true');
 
@@ -47,6 +94,7 @@ describe('润色 loading 无障碍双通道（POLISH-A11Y-1）', () => {
     const input = document.getElementById('input') as HTMLTextAreaElement;
     const btn = document.getElementById('polishBtn') as HTMLButtonElement;
     input.value = '这段需要润色';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
     btn.click();
 
     dispatch({ type: 'polish_input_result', ok: false, message: 'boom' });

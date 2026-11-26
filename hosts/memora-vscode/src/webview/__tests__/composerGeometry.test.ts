@@ -60,6 +60,14 @@ describe('输入区 Row1 几何守卫（COMPOSER-GEOM-1）', () => {
     expect(blockOf('.composer-left {')).toMatch(/gap:\s*var\(--sp-2,\s*6px\)/);
   });
 
+  it('润色空态禁用有视觉档位（POLISH-EMPTY-1）：disabled 与发送键同用 op-3', () => {
+    const disabled = blockOf('.polish-btn-icon:disabled {');
+    expect(disabled).toMatch(/opacity:\s*var\(--op-3(?:\s*\)|,)/);
+    expect(disabled).toMatch(/cursor:\s*not-allowed/);
+    // 置灰按钮不得在 hover 时提亮成假 affordance
+    expect(CSS).toMatch(/\.polish-btn-icon:hover:not\(:disabled\)/);
+  });
+
   it('不改判定语义：图片按钮的置灰仍由 aria-disabled 承载，角色徽章不被隐藏', () => {
     // 排雷④：aria-disabled 是刻意的「置灰但可点跳设置」，几何打磨不得顺手改成 disabled
     expect(CSS).toMatch(/\.ctl\[aria-disabled='true'\]/);

@@ -2369,17 +2369,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 文本润色处理（输入框版本）
    *
-   * 调 agent.polish(text) 调用内核 TextPolishManager 润色输入框内容。
+   * 调 agent.polish(text, signal?, styleHint) 调用内核 TextPolishManager 润色输入框内容。
    * 内核已实现 2000 字上限和 15s 超时控制，润色完成后回执 polish_input_result
    * （输入框润色无 msgId 概念——结果整体替换输入框，不按单条消息回写）。
+   *
+   * 风格来源（POLISH-STYLE-1，**单向依赖**）：宿主从当前会话 Agent 的角色包装配结果读
+   * `personaBasePrompt` 传给内核；角色包定义零改动、不需要知道润色存在，协议也不加字段。
+   * 没有激活角色包 / 没有 persona 时传 undefined，内核走历史 prompt 逐字不变。
    *
    * @param text 待润色的文本（输入框当前内容）
    */
   private async handlePolishInput(text: string): Promise<void> {
     // 失败回执形状单点（3 处失败出口共用：改字段只改一处，避免漂移）
-    const fail = (message: string): void => {
+    const fail = (message: string): void =>
       this.post({ type: 'polish_input_result', ok: false, message });
-    };
     const agent = await this.getAgentOrWarn();
     if (!agent) {
       fail(l10n.t('Memora: Agent is not ready; retry shortly'));
@@ -2391,7 +2394,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     try {
-      const result = await polisher.polish(text);
+      // personaBasePrompt = 角色包「正文 + 规则」的既有装配真源；不在宿主另建风格映射表。
+      const styleHint = agent.rolePackManager?.getActive()?.personaBasePrompt;
+      const result = await polisher.polish(text, undefined, styleHint);
       // 成功回执同形状，仅 text 不同（润色生效取 polished，否则原样回传）
       this.post({
         type: 'polish_input_result',

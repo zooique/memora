@@ -641,7 +641,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // 不造新档；实数经 scripts/count-token-refs.mjs 实锤同步）。
     // 2026-11-18 授权请求卡随异步授权流退役（HOSTED-CONFIRM-SOFT-1）⇒ 21-2=19
     //（等待态卡体 + 按钮 disabled 两处 var(--op-5) 同批删除；机械实测同步）。
-    'op-': 19, // 输入区控件去边框（2026-11-02）：.ctl[aria-disabled] 承接上传按钮置灰 opacity +1，
+    // 20：POLISH-EMPTY-1 润色按钮空态禁用 opacity: var(--op-3) +1（与发送键同一弱化档位，
+    // 不造新令牌；实数经 scripts/count-token-refs.mjs 实锤同步）。
+    'op-': 20, // 输入区控件去边框（2026-11-02）：.ctl[aria-disabled] 承接上传按钮置灰 opacity +1，
     //            .image-attach-btn.is-vision-off 自写 opacity 退役 -1 ⇒ 净不变（19，机械实测同步）。
     'icon-': 17,
     // 24：助手形态状态签（chatStyles）左侧 accent 圆点宽/高各引 var(--dot-sm) +2

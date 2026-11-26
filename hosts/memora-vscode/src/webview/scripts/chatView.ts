@@ -1576,14 +1576,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 同步发送按钮**可用态**：判据 = 语义派生的 `send.disabled`（唯一真源 = `helpers/turnUiState.ts`）。
+   * 同步发送 / 润色按钮**可用态**：判据 = 语义派生的 `send.disabled` + `polish.disabled`
+   * （唯一真源 = `helpers/turnUiState.ts`，两态共用同一 `hasInput` 自变量与同一快照）。
    *
-   * `disabled` 只出现在 **done + 空输入**（空输入无法发送）；运行中（thinking/paused）无论有无输入
-   * 都可用——有输入 = interject 排队 / 带补充续跑，空输入 = 停止 / 继续。该不变量由派生层单测穷举锁定。
+   * 发送的 `disabled` 只出现在 **done + 空输入**（空输入无法发送）；运行中（thinking/paused）
+   * 无论有无输入都可用——有输入 = interject 排队 / 带补充续跑，空输入 = 停止 / 继续。
+   * 润色的 `disabled` = **空输入，或自助形态运行中**（此时输入会被当作 interject / 续跑
+   * 补充，改文本会让提交语义漂移）；助手座位无运行时，只按 hasInput 判。与发送键同随输入
+   * 事件翻转，不另立阈值、不读 `composer_state`（POLISH-EMPTY-1）。派生层单测穷举锁定。
    * 调用点 = 一切输入内容/按钮状态变化处：input 事件、程序化预填/清空、setStatus。
    */
   function syncSendEnabled(): void {
-    send.disabled = currentButtonSemantics().send.disabled;
+    const spec = currentButtonSemantics();
+    send.disabled = spec.send.disabled;
+    if (polishBtn) polishBtn.disabled = spec.polish.disabled;
   }
 
   /** 上次上报给宿主的「输入框有未发送文本」（只在翻转时上行，不做按键级高频） */

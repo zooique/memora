@@ -2361,14 +2361,17 @@ export const chatStyles = `
     padding: 0;
     cursor: pointer;
   }
-  .polish-btn-icon:hover {
+  /* 空态禁用（POLISH-EMPTY-1）：与 .send-btn-primary:disabled 同一弱化范式与令牌；
+   * hover / active 只在可用态生效，避免「置灰却能提亮」的假 affordance。 */
+  .polish-btn-icon:hover:not(:disabled) {
     color: var(--accent, #0e639c);
   }
-  .polish-btn-icon:active { transform: scale(0.95); }
+  .polish-btn-icon:active:not(:disabled) { transform: scale(0.95); }
   .polish-btn-icon.loading {
     opacity: var(--op-5);
     pointer-events: none;
   }
+  .polish-btn-icon:disabled { opacity: var(--op-3); cursor: not-allowed; }
   .polish-btn-icon.loading svg { animation: spin var(--dur-spin) linear infinite; }
 
   /* 上传图片按钮（IMG-2 Q3，常驻 D27）：与润色按钮同一图标化弱化范式。

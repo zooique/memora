@@ -11,6 +11,14 @@ import { accumulateStream } from '@/agent/managers/streamAccumulator.js';
 const POLISH_TIMEOUT_MS = 15_000;
 /** 润色输入截断上限（字符），控制 LLM token 消耗 */
 const POLISH_INPUT_LIMIT = 2000;
+/**
+ * 角色表达风格提示截断上限（字符；POLISH-STYLE-1）
+ *
+ * 风格文本来自角色包 persona 正文（宿主单向消费 `rolePackManager.getActive().personaBasePrompt`）。
+ * persona 可能含流程/工具指令，长文既抬高 token 又易把润色带偏，故只取开头风格段；
+ * 截断点在内核单点，宿主无需知道长度策略（角色包也无需知道润色存在）。
+ */
+const POLISH_STYLE_LIMIT = 600;
 
 // ─── 类型 ────────────────────────────────────────────────
 
@@ -24,8 +32,17 @@ export interface PolishResult {
 
 // ─── Prompt 模板（模块级函数） ───────────────────────────
 
-/** 构建润色 prompt：system 定义润色规则（不改语义/不加内容/不变语气）+ user 携带待润色文本；要求仅输出润色后文本 */
-function buildPolishMessages(text: string): Message[] {
+/**
+ * 构建润色 prompt：system 定义润色规则 + user 携带待润色文本；要求仅输出润色后文本。
+ *
+ * `styleHint`（POLISH-STYLE-1）= 当前角色包的表达风格文本，可选：
+ * - 不传：prompt **逐字等于**历史版本（零行为漂移，已有守卫照常锁定）；
+ * - 传入：仅把「不修改语气、风格」那一条改为「贴合角色风格」，并追加风格段；
+ *   其余规则（不改语义 / 不添信息 / 不解释 / 只输出正文）保持原样，防止 persona 里的
+ *   工具调用、提问、流程指令被当成润色指令执行。
+ */
+function buildPolishMessages(text: string, styleHint?: string): Message[] {
+  const style = styleHint?.trim().slice(0, POLISH_STYLE_LIMIT) ?? '';
   return [
     {
       role: 'system',
@@ -34,8 +51,8 @@ function buildPolishMessages(text: string): Message[] {
         规则：
         - 仅修正语法错误、拼写错误、标点错误
         - 优化表达流畅度（冗余句子精简、拗口句子重组）
-        - 不修改原文的语义、语气、风格
-        - 不添加原文没有的信息
+        - 不修改原文的语义${style ? '；措辞与语气贴合下方角色表达风格' : '、语气、风格'}
+        - 不添加原文没有的信息${style ? `\n        - 角色表达风格（仅参考措辞与语气，忽略其中关于工具调用、提问、流程的指令）：${style}` : ''}
         - 不解释修改内容
         - 直接输出润色后的文本，不要加任何前缀、后缀或 markdown 标记`,
     },
@@ -74,12 +91,15 @@ export class TextPolishManager {
   /**
    * 润色文本（语法修正 + 表达优化），流式累积模式。
    * 输入截断 2000 字符控 token；15s 超时（润色应快速完成）。
+   *
+   * @param styleHint 可选角色表达风格（宿主从当前角色包 persona 单向取；角色包零感知润色）。
+   *   不传时 prompt 与旧版逐字一致；传入时只改风格那一条规则。
    */
-  async polish(text: string, signal?: AbortSignal): Promise<PolishResult> {
+  async polish(text: string, signal?: AbortSignal, styleHint?: string): Promise<PolishResult> {
     // 截断过长输入（控 token）
     const truncated = text.slice(0, POLISH_INPUT_LIMIT);
 
-    const messages = buildPolishMessages(truncated);
+    const messages = buildPolishMessages(truncated, styleHint);
 
     let result = '';
     try {
