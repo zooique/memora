@@ -100,14 +100,17 @@ describe('加号面板守卫（COMPOSER-PLUS-FLAT-1）', () => {
     const TOKENS = readFileSync(join(HERE, '..', 'styles', 'tokens.ts'), 'utf8');
     const DROPDOWN_CSS = readFileSync(join(HERE, '..', 'styles', 'dropdown.ts'), 'utf8');
     // 窄窗兜底由公共组件承担（min/max 同锚视口），加号门只换刻度不换几何契约。
-    // 2026-11-26 真机反馈 280 偏宽 ⇒ 同令牌派生收至 264（dim-xl − sp-6）：不新增裸值/令牌，
-    // 家族计数零漂移；回退成 280 或 240 的定值写法即红。
-    expect(TOKENS).toMatch(/--composer-plus-menu-w:\s*calc\(var\(--dim-xl\) - var\(--sp-6\)\)/);
-    // 字符串锁只防「表达式被换掉」，不防两端刻度被改：把 264 变成机器真值。
-    // 否则注释 / 台账写 264 而实际宽度已漂移时全门仍绿（同一事实两处登记必漂移）。
+    // 2026-11-26 真机红框目标 192px ⇒ dim-xl − sp-6 − 3×sp-8：不新增裸值/令牌，
+    // 家族计数零漂移；回退成 280 / 264 / 240 的定值写法即红。
+    expect(TOKENS).toMatch(
+      /--composer-plus-menu-w:\s*calc\(var\(--dim-xl\) - var\(--sp-6\)(?: - var\(--sp-8\)){3}\)/,
+    );
+    // 字符串锁只防「表达式被换掉」，不防两端刻度被改：把 192 变成机器真值。
+    // 否则注释 / 台账写 192 而实际宽度已漂移时全门仍绿（同一事实两处登记必漂移）。
     const dimXl = Number(TOKENS.match(/--dim-xl:\s*(\d+)px/)?.[1]);
     const sp6 = Number(TOKENS.match(/--sp-6:\s*(\d+)px/)?.[1]);
-    expect(dimXl - sp6, '加号菜单派生宽度必须是 264px').toBe(264);
+    const sp8 = Number(TOKENS.match(/--sp-8:\s*(\d+)px/)?.[1]);
+    expect(dimXl - sp6 - 3 * sp8, '加号菜单派生宽度必须是 192px').toBe(192);
     // 公共 capsule 取值不动：不能为了修加号宽度顺手改 model-picker 的共享档
     expect(TOKENS).toMatch(/--dd-menu-min-w:\s*160px/);
     expect(TOKENS).toMatch(/--dd-menu-max-w:\s*240px/);
