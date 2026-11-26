@@ -274,8 +274,10 @@ export function buildHtml(
                  零新协议：图片复用 #imageAttachBtn.click()，引用走 mention_open，技能复用既有菜单与搜索状态。 -->
             ${buildDropdownHtml(
               [
-                { id: 'image', label: vscode.l10n.t('Add image') },
-                { id: 'file', label: vscode.l10n.t('Reference files') },
+                // 图标走组件 icon 字段（populateIcons 单点注入 SVG），label 仍是纯 l10n 文本：
+                // 「图片」与「引用」是立即动作，与上方技能选择列表在形态上分层，不再同构。
+                { id: 'image', label: vscode.l10n.t('Add image'), icon: 'image' },
+                { id: 'file', label: vscode.l10n.t('Reference files'), icon: 'paperclip' },
               ],
               {
                 extraClass: 'composer-plus treedd--capsule',

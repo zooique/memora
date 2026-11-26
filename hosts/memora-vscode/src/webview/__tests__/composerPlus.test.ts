@@ -92,6 +92,35 @@ describe('加号面板守卫（COMPOSER-PLUS-FLAT-1）', () => {
     expect(CSS).not.toContain('.skill-picker .treedd__menu { pointer-events: auto');
   });
 
+  it('视觉分层（COMPOSER-PLUS-VISUAL-1）：加宽走局部取值、动作项图标走组件字段', () => {
+    const menu = cssRule('.composer-plus.treedd--capsule .treedd__menu');
+    // 宽度只在加号门覆写：公共 capsule 令牌仍服务 model-picker，禁止改全局取值
+    expect(menu).toContain('--dd-menu-min-w: var(--composer-plus-menu-w)');
+    expect(menu).toContain('--dd-menu-max-w: var(--composer-plus-menu-w)');
+    const TOKENS = readFileSync(join(HERE, '..', 'styles', 'tokens.ts'), 'utf8');
+    const DROPDOWN_CSS = readFileSync(join(HERE, '..', 'styles', 'dropdown.ts'), 'utf8');
+    // 窄窗兜底由公共组件承担（min/max 同锚视口），加号门只换刻度不换几何契约
+    expect(TOKENS).toMatch(/--composer-plus-menu-w:\s*var\(--dim-xl\)/);
+    expect(DROPDOWN_CSS).toContain(
+      'min-width: min(var(--dd-menu-min-w, 160px), calc(100vw - var(--sp-6)))',
+    );
+    // 动作项带图标但 label 仍是纯 l10n 文本：键面扫描不撞新增中文注释，翻译表不漂移
+    const head = leftHead(HTML);
+    expect(head).toMatch(/\{ id: 'image', label: vscode\.l10n\.t\('Add image'\), icon: 'image' \}/);
+    expect(head).toMatch(
+      /\{ id: 'file', label: vscode\.l10n\.t\('Reference files'\), icon: 'paperclip' \}/,
+    );
+    // 图标由组件单点注入 data-icon 占位，不把 SVG 塞进 label（label 同时担文案与结构两套职责即漂移）
+    const COMPONENT = readFileSync(join(HERE, '..', 'components', 'dropdown.ts'), 'utf8');
+    expect(COMPONENT).toContain('data-icon="${it.icon}"');
+    expect(COMPONENT).toContain('it.icon ? `<span class="treedd__item-icon"');
+    // 搜索框分层 + 细滚动条：只在本门覆写，公共 sticky / border-bottom 契约不动
+    expect(cssRule('.composer-plus .treedd__search')).toContain('background: var(--surface-inset');
+    expect(cssRule('.composer-plus .treedd__menu > .skill-picker')).toContain('scrollbar-width: thin');
+    expect(DROPDOWN_CSS).toContain('.treedd__search {');
+    expect(DROPDOWN_CSS).toMatch(/position: sticky; top: 0/);
+  });
+
   it('测试替身与生产骨架同形：夹具只搭容器，无独立技能 treedd / 旧回调', () => {
     expect(FIXTURE).toMatch(
       /class="treedd composer-plus treedd--capsule" data-treedd data-on-select="__composerPlusOnSelect"/,

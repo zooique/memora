@@ -61,6 +61,21 @@ export const dropdownStyles = `
   }
   .treedd__item.is-danger { color: var(--status-fail); }
   .treedd__item.is-danger:hover { color: var(--status-fail); }
+  /* 图标项（可选 icon 字段）：图标弱化、标签承接文案，行内对齐不抬行高。
+   * 不传 icon 的项走原纯文本分支，DOM 与既往逐字一致（新增 class 也不会落到它们身上）。 */
+  .treedd__item.has-icon {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 6px);
+  }
+  .treedd__item-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    color: var(--text-secondary, #9aa0a6);
+  }
+  .treedd__item-icon svg { display: block; }
   /* 后缀徽记（技能「已禁用」等）：说明「条目存在但状态受限」，
    * 弱化呈现、不遮挡主标题。与 is-disabled 配套使用（前者表状态、后者改主色）。 */
   .treedd__item-note {

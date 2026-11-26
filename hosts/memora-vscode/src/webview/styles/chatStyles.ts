@@ -2186,7 +2186,15 @@ export const chatStyles = `
   .composer-plus.treedd--capsule .treedd__trigger::after { content: none; }
   /* 加号菜单左对齐且外层不滚（COMPOSER-PLUS-FLAT-1）：滚动职责下放到技能区，
    * 使「图片 / 引用文件」两个动作项固定在菜单底部，长列表不会把它们挤出可视区。 */
-  .composer-plus.treedd--capsule .treedd__menu { left: 0; right: auto; overflow: hidden; }
+  .composer-plus.treedd--capsule .treedd__menu {
+    left: 0;
+    right: auto;
+    overflow: hidden;
+    /* COMPOSER-PLUS-VISUAL-1：只在本门覆写宽度取值——公共 capsule 令牌仍服务 model-picker。
+     * 变量取值在 dropdown.ts 的 min()/max() 里消费，视口兜底 calc(100vw - sp-6) 原样保留。 */
+    --dd-menu-min-w: var(--composer-plus-menu-w);
+    --dd-menu-max-w: var(--composer-plus-menu-w);
+  }
   /* 技能菜单已内联：原隐藏 treedd 节点与其命中穿透规则一并退役——两级点击与吞点击的覆盖盒同时消失。
    * .skill-picker 现在是菜单内的内容容器（搜索框 + 列表由 skillPickerView 挂载），独立滚动；
    * flex:1 + min-height:0 是让子容器在 max-height 的 flex 菜单里真正可滚的关键（缺 min-height 会撑破父级）。
@@ -2196,6 +2204,15 @@ export const chatStyles = `
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    /* 长技能列表的滚动条弱化：细轨 + 与菜单边框同源的滑块色，避免亮条抢读搜索框。 */
+    scrollbar-width: thin;
+    scrollbar-color: var(--menu-border, rgba(128, 128, 128, 0.4)) transparent;
+  }
+  /* 搜索框从「列表第一行」里浮出来：静态内嵌底色 + 圆角，与下方技能项分层。
+   * 只在本门覆写，公共 .treedd__search 的 sticky / border-bottom / gap 契约不动。 */
+  .composer-plus .treedd__search {
+    background: var(--surface-inset, rgba(127, 127, 127, 0.15));
+    border-radius: var(--radius-sm, 2px);
   }
   .composer-plus .treedd__menu > .treedd__divider,
   .composer-plus .treedd__menu > .treedd__item { flex: 0 0 auto; }

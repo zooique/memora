@@ -24,16 +24,18 @@
  *     内部默认值 `getIconSvg`（自足兜底），二者**同源于 icons.ts**；SSOT 未破，破的是
  *     「注入机制单一路径」。
  */
-import { getIconSvg } from '../scripts/icons.js';
+import { getIconSvg, type IconName } from '../scripts/icons.js';
 import { dropdownStyles } from '../styles/dropdown.js';
 
 export interface DropdownItem {
   /** 事件标识：面板在回调中据此分发 */
   id: string;
-  /** 显示文本 */
+  /** 显示文本（纯文本，勿塞 HTML——图标走 icon 字段，避免 label 同时承担文案与结构两职） */
   label: string;
   /** 危险操作（红色高亮，如清空对话） */
   danger?: boolean;
+  /** 可选图标：走 populateIcons 单点注入 SVG；不传时产物与既往逐字一致 */
+  icon?: IconName;
 }
 
 /** 生成下拉组件 HTML（默认触发器 = ellipsis 内联 SVG；onSelect 指定该项点击后调用的全局回调名）
@@ -76,7 +78,7 @@ export function buildDropdownHtml(
   const itemHtml = items
     .map(
       (it) =>
-        `<button class="treedd__item${it.danger ? ' is-danger' : ''}" data-treedd-id="${it.id}" role="menuitem">${it.label}</button>`,
+        `<button class="treedd__item${it.danger ? ' is-danger' : ''}${it.icon ? ' has-icon' : ''}" data-treedd-id="${it.id}" role="menuitem">${it.icon ? `<span class="treedd__item-icon" data-icon="${it.icon}" aria-hidden="true"></span><span class="treedd__item-label">${it.label}</span>` : it.label}</button>`,
     )
     .join('');
   return `
