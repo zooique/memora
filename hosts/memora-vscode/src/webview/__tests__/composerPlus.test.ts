@@ -1,20 +1,18 @@
 /**
- * `+` 挂载门守卫（COMPOSER-PLUS-1）—— 2026-11-26 技能/图片/引用收拢到最左 `+` 门
+ * 加号面板守卫（COMPOSER-PLUS-FLAT-1）—— 2026-11-26 技能菜单内联，消除两级点击
  *
- * 背景：Row1 曾有 5 个控件，其中「技能」是低频强制路径（默认由内核渐进披露自动触发），
- * 却占了常驻显名胶囊位；图片同样是低频入口。`+` 门把三个键盘入口做成鼠标等价物。
+ * 演进：COMPOSER-PLUS-1 把技能做成加号菜单里的「链接项」，点击后才从另一个隐藏 treedd
+ * 弹出技能菜单 ⇒ 两次点击、无面包屑；那个隐藏容器还曾吞掉加号点击（COMPOSER-PLUS-HIT-1）。
+ * 本版把技能搜索列表直接内联进加号面板，隐藏节点与中间跳转一并退役。
  *
- * 判据（源码级）：形态由生产骨架字符串 + chatView 回调映射 + chatStyles 承载，jsdom 骨架
- * 是镜像而非真源；故守卫读生产文件，同时锁测试替身同步（防静默失测）。
+ * 判据（源码级）：形态由生产骨架 + chatView 回调映射 + chatStyles 承载，jsdom 骨架是镜像非真源；
+ * 守卫读生产文件，同时锁测试替身同步（防静默失测）。
  *
- * 三条硬约束（任一破即红）：
- *   ① 技能节点**保留**（skillPickerView 的搜索框/菜单宿主挂其上），只 CSS 隐藏触发器；
- *      删节点 = 断链，不是「清理」。
- *   ② 三项复用既有入口（openMenu / imageAttachBtn.click / mention_open），零新协议。
- *   ③ 隐藏用 visibility:hidden + position:absolute，不用 display:none——
- *      后者令 getBoundingClientRect() 归零，applyDropDirection 会把技能菜单翻向下、被底缘裁掉；
- *   ④ 命中面断在 skill-picker **容器**（pointer-events:none），菜单单独恢复 auto——
- *      只隐藏 trigger 时容器仍盖住加号（COMPOSER-PLUS-HIT-1），是「点加号没反应」的真因。
+ * 四条硬约束（任一破即红）：
+ *   ① 一步可达：菜单内直接挂 .skill-picker 容器，不存在 id=skill 的中间项 / 独立技能 treedd；
+ *   ② 分流单一：技能名与清除项走 skillPickerView.select，图片/引用复用既有入口，零新协议；
+ *   ③ 滚动分层：技能区自身滚动，两个动作项固定底部，长列表不把动作挤出可视区；
+ *   ④ 替身同形：夹具只搭容器，条目由生产同一组件生成（夹具凭空多 id 会撞骨架一致性守卫）。
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -28,89 +26,80 @@ const VIEW = readFileSync(join(HERE, '..', 'scripts', 'chatView.ts'), 'utf8');
 const SKILL = readFileSync(join(HERE, '..', 'scripts', 'skillPickerView.ts'), 'utf8');
 const FIXTURE = readFileSync(join(HERE, 'helpers', 'chatViewTestEnv.ts'), 'utf8');
 
-/** 取 composer-left 起始到模型选择器之前的片段（`+` 门 + 技能节点都在这段） */
+/** 取 composer-left 起始到模型选择器之前的片段（加号门就在这段） */
 function leftHead(src: string): string {
   const at = src.indexOf('class="composer-left"');
   if (at < 0) return '';
-  return src.slice(at, src.indexOf('extraClass: \'model-picker', at));
+  return src.slice(at, src.indexOf("extraClass: 'model-picker", at));
 }
 
-describe('`+` 挂载门守卫（COMPOSER-PLUS-1）', () => {
-  it('生产骨架：`+` 门在 Row1 最左，三项用既有文案，技能节点仍在', () => {
+/** 按右花括号截到本规则末尾——定长切片会把下一条规则吞进来，造出假红 */
+function cssRule(selector: string): string {
+  const at = CSS.indexOf(`${selector} {`);
+  if (at < 0) return '';
+  const end = CSS.indexOf('}', at);
+  return CSS.slice(at, end < 0 ? at + 180 : end + 1);
+}
+
+describe('加号面板守卫（COMPOSER-PLUS-FLAT-1）', () => {
+  it('生产骨架：加号门在最左，技能容器内联进菜单，无中间链接项', () => {
     const head = leftHead(HTML);
     expect(head, '生产骨架缺 composer-left').not.toBe('');
-    // 门在技能胶囊之前（最左）
-    expect(head.indexOf("extraClass: 'composer-plus")).toBeLessThan(
-      head.indexOf("extraClass: 'skill-picker"),
+    expect(HTML.indexOf("extraClass: 'composer-plus")).toBeLessThan(
+      HTML.indexOf("extraClass: 'model-picker"),
     );
-    // 三项 ID 固定：JS 回调按此分发，改键即静默失联
-    for (const id of ['skill', 'image', 'file']) {
-      expect(head).toContain(`{ id: '${id}', label:`);
-    }
-    // 技能节点保留（菜单/chip 宿主），不是从骨架里删掉
-    expect(head).toContain("extraClass: 'skill-picker treedd--capsule'");
-    // 回调名与 chatView 映射一一对应
+    // 技能内容容器直接挂在菜单头部：点一次加号就看到搜索框与技能列表
+    expect(head).toMatch(/menuLeadingHtml:\s*'<div class="skill-picker"><\/div><div class="treedd__divider"><\/div>'/);
+    // 两个立即动作项仍在，但「skill」链接项已退役（否则又变回两步）
+    expect(head).toContain("{ id: 'image', label:");
+    expect(head).toContain("{ id: 'file', label:");
+    expect(head).not.toContain("{ id: 'skill', label:");
+    // 独立技能 treedd 删除：两级宿主与吞点击覆盖盒一并消失
+    expect(head).not.toContain("extraClass: 'skill-picker treedd--capsule'");
     expect(head).toContain("onSelect: '__composerPlusOnSelect'");
   });
 
-  it('三项复用既有入口：零新协议、零第二份搜索 UI', () => {
-    const cb = VIEW.slice(
-      VIEW.indexOf('__composerPlusOnSelect:'),
-      VIEW.indexOf('__composerPlusOnSelect:') + 420,
-    );
-    expect(cb, 'chatView 缺 + 门回调').not.toBe('');
-    expect(cb).toContain("id === 'skill'");
-    expect(cb).toContain('skillPickerView.openMenu()');
+  it('分流单一：技能名与清除项走域内 select，图片/引用复用既有入口，零新协议', () => {
+    const at = VIEW.indexOf('__composerPlusOnSelect:');
+    expect(at, 'chatView 缺加号回调').toBeGreaterThan(-1);
+    const cb = VIEW.slice(at, at + 500);
     expect(cb).toContain("id === 'image'");
     expect(cb).toContain('imageAttachBtn?.click()');
     expect(cb).toContain("id === 'file'");
     expect(cb).toContain("type: 'mention_open'");
-    // 不许在门里自建技能搜索框 / 新协议消息
+    expect(cb, '技能项必须落在原有 select 单点').toContain('skillPickerView.select(id)');
+    // 不再有「先开另一个菜单」的中间跳转；也不许在回调里自建搜索 UI / 新协议
+    expect(cb).not.toContain('skillPickerView.openMenu()');
     expect(cb).not.toMatch(/createElement\('input'|skill_pick|composer_plus/);
-    // openMenu 复用斜杠开菜单单点，不是第二份 closeOtherDropdowns/setDropdownOpen 组合
+    // 斜杠入口仍复用 openSlashHint（与加号面板同一菜单、同一搜索状态）
     const openMenu = SKILL.slice(SKILL.indexOf('openMenu(): void {'), SKILL.indexOf('openMenu(): void {') + 80);
     expect(openMenu).toContain('openSlashHint()');
     expect(openMenu).not.toContain('setDropdownOpen');
   });
 
-  it('CSS 折叠保几何：visibility + absolute，不用 display:none 断锚点', () => {
-    expect(CSS).toMatch(
-      /\.composer-left \.skill-picker \{ position: absolute; left: 0; bottom: 0; pointer-events: none; \}/,
+  it('滚动分层：技能区自身滚动、动作项固定底部，隐藏 treedd 规则已退役', () => {
+    const skills = cssRule('.composer-plus .treedd__menu > .skill-picker');
+    expect(skills, '技能区缺独立滚动容器').toContain('flex: 1 1 auto');
+    expect(skills).toContain('min-height: 0');
+    expect(skills).toContain('overflow-y: auto');
+    const menu = cssRule('.composer-plus.treedd--capsule .treedd__menu');
+    expect(menu, '外层必须收滚动，否则技能列表会把动作项顶出可视区').toContain('overflow: hidden');
+    expect(menu).toContain('left: 0');
+    // 动作项不参与伸缩（长列表滚的是技能区，不是整个菜单）
+    expect(CSS).toMatch(/\.composer-plus \.treedd__menu > \.treedd__item \{ flex: 0 0 auto; \}/);
+    // 旧隐藏容器与其命中穿透判据不得复活（复活即两级 + 吞点击回归）
+    expect(CSS).not.toContain('.composer-left .skill-picker');
+    expect(CSS).not.toContain('.skill-picker .treedd__menu { pointer-events: auto');
+  });
+
+  it('测试替身与生产骨架同形：夹具只搭容器，无独立技能 treedd / 旧回调', () => {
+    expect(FIXTURE).toMatch(
+      /class="treedd composer-plus treedd--capsule" data-treedd data-on-select="__composerPlusOnSelect"/,
     );
-    expect(CSS).toMatch(/\.composer-left \.skill-picker > \.treedd__trigger \{ visibility: hidden; \}/);
-    expect(CSS).not.toMatch(/\.skill-picker \{ display: none/);
-    expect(CSS).toMatch(/#imageAttachBtn \{ display: none; \}/);
-    // 锚点 containing block 必须存在，否则 absolute 落到更外层、菜单位置漂移
-    expect(CSS).toMatch(/\.composer-left \{[\s\S]{0,400}position: relative;/);
-  });
-
-  it('命中穿透：技能容器不吞加号点击，展开后的菜单仍可点（COMPOSER-PLUS-HIT-1）', () => {
-    // 按右花括号截到本规则末尾——定长切片会把下一条菜单规则吞进来，造出假红
-    const rule = (selector: string): string => {
-      const at = CSS.indexOf(`${selector} {`);
-      if (at < 0) return '';
-      const end = CSS.indexOf('}', at);
-      return CSS.slice(at, end < 0 ? at + 160 : end + 1);
-    };
-    const hit = rule('.composer-left .skill-picker');
-    expect(hit, '容器缺 pointer-events:none 会盖在加号上吞点击').toContain('pointer-events: none');
-    expect(hit).toContain('position: absolute');
-    // 触发器不再单独声明命中：单点断在容器，避免两处判据漂移
-    const trigger = rule('.composer-left .skill-picker > .treedd__trigger');
-    expect(trigger).toContain('visibility: hidden');
-    expect(trigger).not.toContain('pointer-events');
-    // 菜单是容器的子元素，继承 none 后必须显式恢复，否则看得见点不动
-    const menu = rule('.composer-left .skill-picker .treedd__menu');
-    expect(menu, '菜单缺 pointer-events:auto 会导致技能项点不动').toContain('pointer-events: auto');
-  });
-
-  it('测试替身与生产骨架同形：+ 门容器/回调名一致、技能节点保留', () => {
-    // 夹具只搭容器与回调（条目由生产 buildDropdownHtml 生成，夹具内硬编码 id 会撞
-    // chatView.test 的「夹具不得凭空多出生产没有的 id」守卫——生产源码里没有 id="skill" 字面量）。
-    expect(FIXTURE).toMatch(/class="treedd composer-plus treedd--capsule" data-treedd data-on-select="__composerPlusOnSelect"/);
-    expect(FIXTURE).toContain('data-on-select="__composerPlusOnSelect"');
-    expect(FIXTURE).toContain('data-on-select="__skillPickerOnSelect"');
-    // 技能触发器仍显名（被 CSS 隐藏而非删节点）
-    expect(FIXTURE).toMatch(/treedd skill-picker[\s\S]{0,240}<span class="dd-trigger-name">选择技能<\/span>/);
+    expect(FIXTURE).toMatch(/<div class="treedd__menu" role="menu"><div class="skill-picker"><\/div>/);
+    expect(FIXTURE).not.toContain('data-on-select="__skillPickerOnSelect"');
+    expect(FIXTURE).not.toContain('treedd skill-picker');
+    // 夹具不得硬编码 data-treedd-id：骨架一致性守卫会把它们当成夹具凭空多出的 id
+    expect(FIXTURE).not.toMatch(/data-treedd-id="(image|file|skill)"/);
   });
 });

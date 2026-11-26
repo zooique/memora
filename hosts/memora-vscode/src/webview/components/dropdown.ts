@@ -57,6 +57,9 @@ export function buildDropdownHtml(
     triggerTitle: string;
     /** 触发器读屏名（必传：同 triggerTitle） */
     triggerAriaLabel: string;
+    /** 菜单内前置 HTML：插在 items 之前，供动态内容域（技能搜索/列表）挂载。
+     *  纯追加参数，不传时产物与既往逐字一致；调用方负责其内容的可访问性与事件归属。 */
+    menuLeadingHtml?: string;
   },
 ): string {
   const extra = opts.extraClass ? ` ${opts.extraClass}` : '';
@@ -79,7 +82,7 @@ export function buildDropdownHtml(
   return `
     <div class="treedd${extra}" data-treedd${onSelectAttr}>
       <button class="treedd__trigger${triggerExtra}" title="${opts.triggerTitle}" aria-label="${opts.triggerAriaLabel}" aria-haspopup="menu">${triggerLabel}</button>
-      <div class="treedd__menu" role="menu">${itemHtml}</div>
+      <div class="treedd__menu" role="menu">${opts.menuLeadingHtml ?? ''}${itemHtml}</div>
     </div>`;
 }
 

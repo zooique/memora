@@ -10508,7 +10508,8 @@ describe('技能启停：对话区（用户通道）显式标注（SKILL-S2）',
   it('skills_loaded 带 disabled → 下拉项标 is-disabled + 「已禁用」后缀，且条目保留不隐藏', () => {
     mountChatView();
     dispatchSkills();
-    const menu = document.querySelector('.skill-picker .treedd__menu') as HTMLElement;
+    // 技能菜单已内联进加号面板：列表宿主就是 .skill-picker 容器（COMPOSER-PLUS-FLAT-1）。
+    const menu = document.querySelector('.skill-picker') as HTMLElement;
     const off = menu.querySelector('[data-treedd-id="已禁用技能"]') as HTMLElement;
     const on = menu.querySelector('[data-treedd-id="正常技能"]') as HTMLElement;
     // 标记在：弱化 + 后缀（复用设置页同一词汇，不新增术语）

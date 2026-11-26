@@ -243,13 +243,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const polishBtn = document.getElementById('polishBtn') as HTMLButtonElement | null;
   // 上传图片按钮（常驻，D27）：绑定/置灰态归 imageCapture（Q3），这里只递元素
   const imageAttachBtn = document.getElementById('imageAttachBtn') as HTMLButtonElement | null;
-  // Skill 选择器：域已外置 `skillPickerView`，此处只查元素作 deps 注入（选中态 / 菜单 / chip 全在工厂内）
-  const skillPicker = document.querySelector<HTMLElement>('.skill-picker');
+  // Skill 选择器：菜单宿主已内联进加号面板（COMPOSER-PLUS-FLAT-1），根 = 加号 treedd。
+  // trigger 传 null：加号触发器的 title / aria / 染色归 dropdown 与自身语义，技能域不覆写。
+  const composerPlus = document.querySelector<HTMLElement>('.composer-plus');
   const skillPickerView = createSkillPickerView({
     document,
-    root: skillPicker,
-    menu: skillPicker ? skillPicker.querySelector<HTMLElement>('.treedd__menu') : null,
-    trigger: skillPicker ? skillPicker.querySelector<HTMLElement>('.treedd__trigger') : null,
+    root: composerPlus,
+    menu: composerPlus ? composerPlus.querySelector<HTMLElement>('.skill-picker') : null,
+    trigger: null,
     // 附件行（选择态行）：输入盒内、文字上方展示当前已选 Skill（名称 + × 可移除）
     chipRow: document.getElementById('skillChips') as HTMLElement | null,
     input, // 斜杠触发观测主输入框（`/` 在行首或空白后打开选择器）
@@ -3983,17 +3984,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     __modelPickerOnSelect: (id) => vscode.postMessage({ type: 'chat_set_provider', name: id }),
     // 历史下拉：条目（.treedd__item）点击 → 加载该会话（host 切入并回放，SSOT 剪枝 v2）
     __historyOnSelect: (id) => vscode.postMessage({ type: 'switch_session', sessionId: id }),
-    // Skill 下拉：选择真实技能名后设为当前 skill（SSOT 收紧，与设置面板同一清单；发送时传技能名走内核）
-    // 选中/清除判别、pinned 预开、斜杠 token 撤除全部收口在域内 `select`，此处只转发 id。
-    __skillPickerOnSelect: (id) => skillPickerView.select(id),
-    // `+` 挂载门（COMPOSER-PLUS-1）：三项全部复用既有入口，零新协议、零新状态。
-    // skill → 域内 openMenu（与斜杠共用 openSlashHint 单点，不重建搜索 UI / 不插 / 字符）；
-    // image → 触发既有的常驻按钮（能力判定与置灰跳设置仍归 imageCapture 独占，不在此复制）；
-    // file  → mention_open（走宿主 QuickPick；菜单路径无 @ 落点，removeMentionAt 落点校验自动 no-op）。
+    // 加号面板（COMPOSER-PLUS-FLAT-1）：技能名与清除项走同一委托，分流到技能域；两个动作项复用既有入口。
+    // 技能 → select（含 __clear_skill；token 撤除、钉住落盘都在域内，零新状态）；
+    // image → 触发既有常驻按钮（置灰跳设置仍归 imageCapture，不复制判据）；
+    // file  → mention_open（菜单路径无 @ 落点，removeMentionAt 落点校验自动 no-op）。
     __composerPlusOnSelect: (id) => {
-      if (id === 'skill') skillPickerView.openMenu();
-      else if (id === 'image') imageAttachBtn?.click();
+      if (id === 'image') imageAttachBtn?.click();
       else if (id === 'file') vscode.postMessage({ type: 'mention_open' });
+      else skillPickerView.select(id);
     },
   });
 

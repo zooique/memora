@@ -2168,8 +2168,8 @@ export const chatStyles = `
     gap: var(--sp-2, 6px);
     flex-shrink: 1;
     min-width: 0;
-    /* 折叠的技能菜单锚点（COMPOSER-PLUS-1）：技能触发器脱离 flex 流后以此为定位基准，
-     * 菜单仍以 .skill-picker 根向上弹出；加 position 不改几何（无偏移），只建 containing block。 */
+    /* 下拉浮层的层叠上下文基准：加号与模型胶囊自身已是 relative，此处保持既有定位层，
+     * 避免菜单浮层在窄窗重排时落到别的 containing block（技能菜单内联后仍守此几何）。 */
     position: relative;
     /* 输入区胶囊触发器去边框的唯一落点（UI-CTL-BORDER-1）：
      * dropdown.ts 的公共规则按 var(--dd-trigger-border) 取值，这里只改取值，
@@ -2184,24 +2184,21 @@ export const chatStyles = `
     padding: 0;
   }
   .composer-plus.treedd--capsule .treedd__trigger::after { content: none; }
-  .composer-plus.treedd--capsule .treedd__menu { left: 0; right: auto; }
-  /* 折叠的原常驻触发器：节点保留（菜单宿主 / 能力态绑定 / chip 回显都挂在节点上，删节点=断链），
-   * 仅从 Row1 视觉与命中面移除。
-   * 技能用 visibility:hidden 而非 display:none —— 后者令 getBoundingClientRect() 归零，
-   * applyDropDirection 会把菜单误判成向下弹（输入卡片贴面板底缘 ⇒ 必被裁切）；
-   * 改 position:absolute 脱离 flex 流不留空槽，触发器可见盒仍在原位供弹出方向判定。
-   * 🔴 命中面必须落在**容器**上（pointer-events:none）：只隐藏 trigger 时，.skill-picker
-   * 容器仍是可见盒子，absolute 定位在 left:0 且 DOM 序在 `+` 门之后（同级 z-index 后绘制在上），
-   * 会盖住 28px 的加号并把点击吃掉——表现即「点加号没反应」（COMPOSER-PLUS-HIT-1）。
-   * 菜单是兄弟节点、不继承 trigger 的 visibility，但要显式 pointer-events:auto 覆盖容器的 none，
-   * 否则 `+` → 技能项程序化展开的菜单能看见却点不动。
-   * 图片无菜单锚定问题，display:none 直接移出流；点击由 `+` 门委托 .click() 复用
-   * imageCapture 二分行为（有能力→选图，无→跳设置），不复制第二份判据。 */
-  /* 提 specificity 到 (0,2,0)：dropdownStyles 注入在本文件之后，其 .treedd{position:relative}
-   * 同为 (0,1,0) 会按源序压过单类选择器；不提 specificity 则锚点仍是 relative、触发器照占槽。 */
-  .composer-left .skill-picker { position: absolute; left: 0; bottom: 0; pointer-events: none; }
-  .composer-left .skill-picker > .treedd__trigger { visibility: hidden; }
-  .composer-left .skill-picker .treedd__menu { pointer-events: auto; }
+  /* 加号菜单左对齐且外层不滚（COMPOSER-PLUS-FLAT-1）：滚动职责下放到技能区，
+   * 使「图片 / 引用文件」两个动作项固定在菜单底部，长列表不会把它们挤出可视区。 */
+  .composer-plus.treedd--capsule .treedd__menu { left: 0; right: auto; overflow: hidden; }
+  /* 技能菜单已内联：原隐藏 treedd 节点与其命中穿透规则一并退役——两级点击与吞点击的覆盖盒同时消失。
+   * .skill-picker 现在是菜单内的内容容器（搜索框 + 列表由 skillPickerView 挂载），独立滚动；
+   * flex:1 + min-height:0 是让子容器在 max-height 的 flex 菜单里真正可滚的关键（缺 min-height 会撑破父级）。
+   * 图片原常驻按钮 display:none 移出流；点击由加号委托 .click() 复用 imageCapture
+   * 二分行为（有能力→选图，无→跳设置），不复制第二份判据。 */
+  .composer-plus .treedd__menu > .skill-picker {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .composer-plus .treedd__menu > .treedd__divider,
+  .composer-plus .treedd__menu > .treedd__item { flex: 0 0 auto; }
   #imageAttachBtn { display: none; }
   /* 右侧发送按钮容器：唯一主操作，绝不收缩（视觉焦点恒定）。
    * 生成中并列「暂停」按钮（.pause-btn），容器为 flex 横向排列两钮 */
@@ -2371,12 +2368,9 @@ export const chatStyles = `
   }
   .image-attach-btn:active { transform: scale(0.95); }
 
-  /* Skill 选择器胶囊差异（共用 .treedd--capsule 外壳，见 dropdown.ts）：
-   * 显名触发器（Select skill，与模型的 Select model 对称）。胶囊底色/箭头/尺寸全复用 capsule；此处仅：
-   * 1) 选中态由触发器 .ctl--on（accent 文字染色）回显，不再靠边框；
-   * 2) 菜单左对齐（左起触发器若沿用 capsule 的 right:0 会往左溢出面板边缘）；
-   * 3) 菜单内当前项高亮（菜单打开时「我用了哪个 Skill」的入口；chip 在 textarea 上方）；
-   * 4) 触发器窄兜底（标签短于模型名，引 tokens.ts 变体令牌，禁裸值）。 */
+  /* 技能内容容器（内联在加号面板内）：窄触发器令牌消费点保留——斜杠与加号共用同一菜单，
+   * 若日后恢复显名入口可直接复用该变量，无需再动令牌层。当前加号是方形触发器，不消费它；
+   * 菜单宽度仍走 dropdown.ts 的 --dd-menu-*。当前项高亮与禁用弱化见本块下方 .is-active / .is-disabled。 */
   .skill-picker { --dd-trigger-max-w: var(--dd-trigger-max-w-narrow); }
   /* 输入区下拉触发器残余差异（作用域仅限 .composer-left）：
    * 边框已改由 --dd-trigger-border: none（见上方 .composer-left）单点取值，此处**不再**
@@ -2401,7 +2395,6 @@ export const chatStyles = `
     color: var(--accent);
     background: var(--surface-hover);
   }
-  .skill-picker.treedd--capsule .treedd__menu { left: 0; right: auto; }
   .skill-picker .treedd__item.is-active {
     color: var(--accent, #0e639c);
     font-weight: 600;

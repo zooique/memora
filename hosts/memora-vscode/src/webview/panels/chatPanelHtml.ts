@@ -267,15 +267,13 @@ export function buildHtml(
         <div class="composer-row composer-row--main">
           <!-- 左侧功能群：加号挂载门（最左） + 模型选择 + 润色（次级功能，弱化展示） -->
           <div class="composer-left">
-            <!-- 加号挂载门（COMPOSER-PLUS-1）：把三个既有键盘入口做成鼠标等价物，零新协议。
-                 ① 技能 → skillPickerView.openMenu()（复用斜杠开菜单单点，不重建搜索 UI）；
-                 ② 图片 → 既有 #imageAttachBtn.click()（置灰跳设置的语义由 imageCapture 独占）；
-                 ③ 引用文件 → mention_open（既有 @ QuickPick；菜单路径不留 @ 字符，removeMentionAt 落点校验自动 no-op）。
-                 技能 + 图片的原常驻触发器**保留 DOM 但 CSS 隐藏**（菜单宿主 / chip 回显 / 能力态绑定仍在），
-                 不删节点——删了 skillPickerView 的搜索框与菜单宿主就没了，违反 SSOT。 -->
+            <!-- 加号挂载门（COMPOSER-PLUS-FLAT-1）：一步直出技能搜索列表，不再有「技能」链接项的第二击。
+                 技能区容器挂 .skill-picker（skillPickerView 的搜索框与列表宿主，class 兼作样式/测试锚点）；
+                 图片 / 引用文件是菜单底部的立即动作项，与技能项共用同一条条目委托。
+                 技能 id（技能名 / 清除项）也走该委托，由 chatView 回调分流到 skillPickerView.select。
+                 零新协议：图片复用 #imageAttachBtn.click()，引用走 mention_open，技能复用既有菜单与搜索状态。 -->
             ${buildDropdownHtml(
               [
-                { id: 'skill', label: vscode.l10n.t('Select skill') },
                 { id: 'image', label: vscode.l10n.t('Add image') },
                 { id: 'file', label: vscode.l10n.t('Reference files') },
               ],
@@ -286,20 +284,12 @@ export function buildHtml(
                 triggerLabel: getIconSvg('plus', 16, 16),
                 triggerTitle: vscode.l10n.t('Add to message'),
                 triggerAriaLabel: vscode.l10n.t('Add to message'),
+                menuLeadingHtml: '<div class="skill-picker"></div><div class="treedd__divider"></div>',
               },
             )}
-            <!-- Skill 选择器：触发器由 COMPOSER-PLUS-1 隐藏，菜单与 chip 宿主保留。
-                 菜单经加号门「技能」项 / 斜杠两条入口打开，同一 openSlashHint 单点；
-                 当前项由触发器 .ctl--on（accent 文字染色）、菜单内 is-active 高亮、输入盒内 skill chip 与 title 兜底。
-                 名称不进触发器：chip 已承载名称 + pin + 移除，两处写同一状态必漂移。 -->
-            ${buildDropdownHtml([], {
-              extraClass: 'skill-picker treedd--capsule',
-              triggerClass: 'ctl',
-              onSelect: '__skillPickerOnSelect',
-              triggerLabel: `<span class="dd-trigger-name">${vscode.l10n.t('Select skill')}</span>`,
-              triggerTitle: vscode.l10n.t('Select skill'),
-              triggerAriaLabel: vscode.l10n.t('Select skill'),
-            })}
+            <!-- Skill 菜单已内联进加号面板的 .skill-picker 容器（COMPOSER-PLUS-FLAT-1）：
+                 原独立显名胶囊与隐藏触发器一并退役；斜杠入口仍经 skillPickerView.openMenu 打开同一面板。
+                 选中态唯一回显 = 输入盒内 skill chip（名称 + pin + 移除），不在入口二次登记。 -->
             <!-- 模型选择器：共用 capsule 变体，名称省略/菜单尺寸由 .model-picker 差异定制；触发器带 .ctl 去边框 -->
             ${buildDropdownHtml([], {
               extraClass: 'model-picker treedd--capsule',
