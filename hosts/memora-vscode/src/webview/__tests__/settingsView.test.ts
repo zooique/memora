@@ -67,6 +67,7 @@ const HTML = `
           <input id="f-name" /><input id="f-display" /><input id="f-model" /><input id="f-baseurl" /><input id="f-apikey" />
           <select id="f-providertype"><option value="cloud">云端</option><option value="local">本地</option></select>
           <div id="toolcalling-field"><label class="checkbox-label" for="f-toolcalling"><input id="f-toolcalling" type="checkbox" /></label></div>
+          <label for="f-vision"><input id="f-vision" type="checkbox" /></label>
           <input id="f-contextwindow" type="text" />
           <div id="f-contextwindow-feedback" hidden></div>
           <input id="f-maxtokens" type="text" />
@@ -185,6 +186,31 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
     expect(document.querySelector('.tab-btn[data-tab="roles"]')?.classList.contains('active')).toBe(
       true,
     );
+  });
+
+  it('MODEL-PICKER-ADD-1：settings_switch_tab 带 addProvider → 切到 config 并展开既有新增弹窗', () => {
+    mountSettingsView();
+    const configRoot = document.getElementById(settingsRootId('config')) as HTMLElement;
+    const modal = configRoot.querySelector('#modal') as HTMLElement;
+    expect(modal.classList.contains('visible')).toBe(false);
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'settings_switch_tab', tab: 'config', addProvider: true },
+      }),
+    );
+    expect(configRoot.hidden).toBe(false);
+    expect(modal.classList.contains('visible')).toBe(true);
+  });
+
+  it('MODEL-PICKER-ADD-1：不带 addProvider 的切页不弹窗（既有 configureModel 行为逐字不变）', () => {
+    mountSettingsView();
+    const configRoot = document.getElementById(settingsRootId('config')) as HTMLElement;
+    const modal = configRoot.querySelector('#modal') as HTMLElement;
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'settings_switch_tab', tab: 'config' } }),
+    );
+    expect(configRoot.hidden).toBe(false);
+    expect(modal.classList.contains('visible')).toBe(false);
   });
 
   it('id 空间隔离：各子视图数据只渲染进各自根容器（不跨根串扰）', () => {

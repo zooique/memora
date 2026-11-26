@@ -465,8 +465,12 @@ export type WebviewToExtensionMessage =
    * 一条命令与映射，把这份债固化进协议。
    * 放宽不新增消息类型（protocolGuard 计数不变），只放宽字面量取值面。
    * 2026-10-24 协议治理：原 open_config / open_roles 两条同构通道合并为一条。
+   *
+   * `addProvider`（2026-11-26 MODEL-PICKER-ADD-1）：可选标记，仅 `tab:'config'` 有意义——
+   * 落页后顺带展开「新增 API」弹窗（模型选择器「添加模型」入口）。仍是导航意图，
+   * 弹窗展开复用设置页既有 `#btnAdd`，不在协议里搬表单数据；不传 = 只切页（既有行为不变）。
    */
-  | { type: 'open_settings_tab'; tab: SettingsTab }
+  | { type: 'open_settings_tab'; tab: SettingsTab; addProvider?: true }
   /**
    * 打开 VS Code 原生设置中的指定配置项（设置面板「在设置中调整」按钮触发）
    *
@@ -1832,8 +1836,13 @@ export type ExtensionToWebviewMessage =
   | { type: 'governance_result'; ok: boolean; message?: string; action: 'cleanup' }
 
   // ─── 设置面板消息 ───
-  /** 切换设置面板的子选项卡（host → webview 指令；tab 清单真源 = settingsTabs.ts） */
-  | { type: 'settings_switch_tab'; tab: SettingsTab }
+  /**
+   * 切换设置面板的子选项卡（host → webview 指令；tab 清单真源 = settingsTabs.ts）
+   *
+   * `addProvider`（MODEL-PICKER-ADD-1）：与上行 `open_settings_tab` 同名的可选标记，
+   * 由 ready 握手缓冲透传；webview 切页后据此触发既有 `#btnAdd` 展开新增弹窗。
+   */
+  | { type: 'settings_switch_tab'; tab: SettingsTab; addProvider?: true }
   /**
    * MCP 服务器状态（host 主动推；**列表基线 = 配置原值，状态 = 运行态 ∪ 失败表**）
    *

@@ -25,6 +25,14 @@ export interface PickerViewDeps {
   document: Document;
 }
 
+/** 下拉尾项（固定动作，不占 items 真源；MODEL-PICKER-ADD-1「添加模型」） */
+export interface PickerFooterAction {
+  /** 事件 id：由调用方的 onSelect 分流，不得与 provider name 冲突 */
+  id: string;
+  /** 显示文本（调用方已本地化） */
+  label: string;
+}
+
 /** 下拉渲染窄接口：chatView 仅经此驱动 */
 export interface PickerView {
   /** 渲染下拉选择器：构建菜单项 + 更新触发器文本 + 可访问性标签（textContent 防注入） */
@@ -33,7 +41,13 @@ export interface PickerView {
     trigger: HTMLElement | null,
     items: PickerItem[],
     activeName: string | undefined,
-    opts: { emptyText?: string; labelFallback: string; ariaLabel: string },
+    opts: {
+      emptyText?: string;
+      labelFallback: string;
+      ariaLabel: string;
+      /** 可选固定尾项（分隔线 + 单按钮）；不传则产物逐字不变 */
+      footerAction?: PickerFooterAction;
+    },
   ): void;
 }
 
@@ -46,7 +60,12 @@ export function createPickerView(deps: PickerViewDeps): PickerView {
     trigger: HTMLElement | null,
     items: PickerItem[],
     activeName: string | undefined,
-    opts: { emptyText?: string; labelFallback: string; ariaLabel: string },
+    opts: {
+      emptyText?: string;
+      labelFallback: string;
+      ariaLabel: string;
+      footerAction?: PickerFooterAction;
+    },
   ): void {
     if (!menu) return;
     // 防注入：名称来自用户配置/角色包，禁止 innerHTML 拼接，一律 createElement + textContent
@@ -76,6 +95,20 @@ export function createPickerView(deps: PickerViewDeps): PickerView {
       empty.className = 'treedd__empty';
       empty.textContent = opts.emptyText;
       menu.appendChild(empty);
+    }
+    // 固定尾项（MODEL-PICKER-ADD-1）：分隔线 + 动作按钮，走与菜单项相同的委托链
+    // （.treedd__item + data-treedd-id ⇒ initDropdowns closest 命中即回调）。
+    // 刻意不塞进 items：provider name 是真源，塞哨兵会让「已配置模型」列表谎报一项。
+    if (opts.footerAction) {
+      const divider = document.createElement('div');
+      divider.className = 'treedd__divider';
+      menu.appendChild(divider);
+      const action = document.createElement('button');
+      action.className = 'treedd__item';
+      action.setAttribute('role', 'menuitem');
+      action.setAttribute('data-treedd-id', opts.footerAction.id);
+      action.textContent = opts.footerAction.label;
+      menu.appendChild(action);
     }
     // 更新触发器显示当前项（textContent 防注入）。
     // SSOT：用 <span class="dd-trigger-name"> 包裹名称，CSS 只对此 span 做 ellipsis 截断，

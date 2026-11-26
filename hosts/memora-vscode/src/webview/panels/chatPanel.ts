@@ -1359,7 +1359,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     } else if (msg.type === 'open_settings_tab') {
       // 设置面板选项卡导航（空态引导 → 大模型 / 角色徽章 → 角色；只导航——切换执行仍走各视图单路径）。
       // **不维护「tab → 命令名」映射表**：那是第二真源，加一页要补一行且 protocol 得同步放宽。tab 直投命令。
-      void vscode.commands.executeCommand('memora.openSettings', msg.tab);
+      void vscode.commands.executeCommand('memora.openSettings', msg.tab, msg.addProvider);
     } else if (msg.type === 'open_setting') {
       // 指标空态指引「在设置中开启」：只做导航，配置读写真源 = VS Code 原生设置
       // （对话面板不写配置；键名由 webview 传入，本分支不复制键名清单）

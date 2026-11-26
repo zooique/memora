@@ -6600,6 +6600,43 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
     expect((document.getElementById('occPercent') as HTMLElement).textContent).toBe('0%');
   });
 
+  it('MODEL-PICKER-ADD-1：模型菜单尾项「添加模型」点击 → open_settings_tab(config, addProvider) 而非 chat_set_provider', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'chat_providers',
+      providers: [{ name: 'deepseek', displayName: 'DeepSeek', contextWindow: 128000 }],
+      activeName: 'deepseek',
+    });
+    const menu = document.querySelector('.model-picker .treedd__menu') as HTMLElement;
+    const addBtn = menu.querySelector('[data-treedd-id="+add-provider"]') as HTMLButtonElement;
+    expect(addBtn).not.toBeNull();
+    expect(addBtn.textContent).toBe('Add model');
+    addBtn.click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'open_settings_tab',
+      tab: 'config',
+      addProvider: true,
+    });
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'chat_set_provider' }),
+    );
+  });
+
+  it('MODEL-PICKER-ADD-1：点真实模型项仍走 chat_set_provider（尾项不劫持模型选择）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'chat_providers',
+      providers: [{ name: 'deepseek', displayName: 'DeepSeek', contextWindow: 128000 }],
+      activeName: 'deepseek',
+    });
+    const menu = document.querySelector('.model-picker .treedd__menu') as HTMLElement;
+    (menu.querySelector('[data-treedd-id="deepseek"]') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'chat_set_provider', name: 'deepseek' });
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'open_settings_tab' }),
+    );
+  });
+
   it('context_occupancy 真实占用覆盖首屏容量（内核为总容量唯一真理源）', () => {
     mountChatView();
     dispatch({

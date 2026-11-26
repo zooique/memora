@@ -92,6 +92,24 @@ describe('加号面板守卫（COMPOSER-PLUS-FLAT-1）', () => {
     expect(CSS).not.toContain('.skill-picker .treedd__menu { pointer-events: auto');
   });
 
+  it('MODEL-PICKER-ELASTIC-1：模型菜单下限复用窄档、宽档令牌退役，加号门不受牵连', () => {
+    const css = cssRule('.model-picker');
+    // 下限从固定 200 改为既有窄档 120：短模型名贴内容、长名由 --dim-xl(280) 兜底
+    expect(css).toContain('--dd-menu-min-w: var(--dd-trigger-max-w-narrow)');
+    expect(css).toContain('--dd-menu-max-w: var(--dim-xl)');
+    const TOKENS = readFileSync(join(HERE, '..', 'styles', 'tokens.ts'), 'utf8');
+    // 零消费者令牌须退役（否则僵尸守卫红）；窄档与 --dim-xl 仍保留
+    expect(TOKENS).not.toContain('--dd-menu-min-w-wide:');
+    expect(TOKENS).toMatch(/--dd-trigger-max-w-narrow:\s*120px/);
+    expect(TOKENS).toMatch(/--dim-xl:\s*280px/);
+    // 加号门自己的取值不动（192 派生式），公共 capsule 默认值不动
+    expect(TOKENS).toMatch(
+      /--composer-plus-menu-w:\s*calc\(var\(--dim-xl\) - var\(--sp-6\)(?: - var\(--sp-8\)){3}\)/,
+    );
+    expect(TOKENS).toMatch(/--dd-menu-min-w:\s*160px/);
+    expect(TOKENS).toMatch(/--dd-menu-max-w:\s*240px/);
+  });
+
   it('视觉分层（COMPOSER-PLUS-VISUAL-1）：加宽走局部取值、动作项图标走组件字段', () => {
     const menu = cssRule('.composer-plus.treedd--capsule .treedd__menu');
     // 宽度只在加号门覆写：公共 capsule 令牌仍服务 model-picker，禁止改全局取值

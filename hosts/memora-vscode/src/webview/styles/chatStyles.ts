@@ -2704,9 +2704,12 @@ export const chatStyles = `
     min-width: 0;
     /* 差异定制变量（capsule 变体读取）：超长模型名兜底省略 + 菜单尺寸。
      * 触发器兜底沿用 L3 默认（--dd-trigger-max-w: 200）——本面板不需加宽，故不覆写；
-     * 菜单加宽经 tokens.ts 变体令牌供值（--dd-menu-min-w-wide / --dim-xl 复用），
+     * 菜单尺寸经 tokens.ts 具名令牌供值（下限窄档 / --dim-xl 上限复用），
      * 覆写只留 var() 引用、禁裸值（A 类债收口，1:1 零视觉变化）。 */
-    --dd-menu-min-w: var(--dd-menu-min-w-wide);
+    /* MODEL-PICKER-ELASTIC-1：菜单宽度随内容弹性收缩，不再被 200px 下限撑成固定宽。
+     * min 取既有窄档 --dd-trigger-max-w-narrow(120)：短模型名菜单贴内容、长名由 max(--dim-xl 280) 兜底；
+     * 两档都是 tokens.ts 既有令牌，零新增裸值 / 令牌，公共 capsule 160/240 与视口兜底不动。 */
+    --dd-menu-min-w: var(--dd-trigger-max-w-narrow);
     --dd-menu-max-w: var(--dim-xl);
   }
   .model-picker .treedd__item.is-active {

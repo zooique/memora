@@ -173,6 +173,8 @@ export class MemoraSettingsPanel {
     ((teams: { leader: string; members: string[] }[]) => TeamBroadcastResult) | undefined;
   /** 待切换的子选项卡（configureModel 命令在视图未就绪时缓存，webview ready 后补发） */
   private _pendingTab: SettingsTab | undefined;
+  /** 待切页附带的「展开新增弹窗」标记（MODEL-PICKER-ADD-1）：与 _pendingTab 同槽同清，避免只补发页不补发动作 */
+  private _pendingAddProvider: true | undefined;
   /** webview 是否已发 `ready`（html context 已建立 + 全部子视图监听器已注册）。
    *  **不是** `_panel` 的副本：`_panel` 有值 = tab 存在，与此事实正交；生命周期严格跟随当前
    *  panel（创建即 false，dispose 归 false），写点仅此两处 + ready 分支一处。 */
@@ -1696,9 +1698,11 @@ export class MemoraSettingsPanel {
    *
    * @param tab 目标选项卡——**任意** tab 均可。此前形参是手写联合且漏了 `'security'`
    *   （编译期就把安全页挡在路由之外），现统一取 {@link SettingsTab}：加 tab 无需回来补签名。
+   * @param addProvider 落页后展开「新增 API」弹窗（MODEL-PICKER-ADD-1），与 tab 同槽缓冲/同槽清空。
    */
-  public switchTab(tab: SettingsTab): void {
+  public switchTab(tab: SettingsTab, addProvider?: true): void {
     this._pendingTab = tab; // 唯一缓冲：不具备投递条件时留在此，等下一个可投时机补发
+    this._pendingAddProvider = addProvider;
     this.flushPendingTab();
   }
 
@@ -1712,8 +1716,13 @@ export class MemoraSettingsPanel {
    */
   private flushPendingTab(): void {
     if (!this._pendingTab || !this.isDeliverable()) return;
-    this.post({ type: 'settings_switch_tab', tab: this._pendingTab });
+    this.post({
+      type: 'settings_switch_tab',
+      tab: this._pendingTab,
+      ...(this._pendingAddProvider ? { addProvider: true } : {}),
+    });
     this._pendingTab = undefined;
+    this._pendingAddProvider = undefined;
   }
 
   /**

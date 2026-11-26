@@ -1046,6 +1046,33 @@ describe('settingsPanel.switchTab —— 导航落点兜底（不可投递时只
     expect(pendingTab()).toBeUndefined();
   });
 
+  it('MODEL-PICKER-ADD-1：addProvider 与 tab 同槽缓冲，ready 前不丢、补发一次且同槽清空', async () => {
+    provider.open();
+
+    // 面板未 ready：导航带 addProvider 只记缓冲，不得提前投递
+    provider.switchTab('config', true);
+    expect(posted.filter((m) => m.type === 'settings_switch_tab')).toEqual([]);
+    expect(pendingTab()).toBe('config');
+
+    await sendReady();
+    expect(posted.filter((m) => m.type === 'settings_switch_tab')).toEqual([
+      { type: 'settings_switch_tab', tab: 'config', addProvider: true },
+    ]);
+    expect(pendingTab()).toBeUndefined();
+    expect(
+      (provider as unknown as { _pendingAddProvider: true | undefined })._pendingAddProvider,
+    ).toBeUndefined();
+  });
+
+  it('MODEL-PICKER-ADD-1：不传 addProvider 的切页产物逐字不变（既有导航零回归）', async () => {
+    provider.open();
+    await sendReady();
+    provider.switchTab('config');
+    expect(posted.filter((m) => m.type === 'settings_switch_tab')).toEqual([
+      { type: 'settings_switch_tab', tab: 'config' },
+    ]);
+  });
+
   it('重复 open 复用同一 panel：只 reveal 不新建（单例判据）', () => {
     provider.open();
     const panel = (provider as unknown as { _panel: { reveal: ReturnType<typeof vi.fn> } })._panel;

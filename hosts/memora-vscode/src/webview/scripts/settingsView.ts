@@ -155,7 +155,13 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
   // host 指令切换（configureModel 命令 → 大模型选项卡）
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
     const msg = event.data;
-    if (msg.type === 'settings_switch_tab') switchTab(msg.tab);
+    if (msg.type === 'settings_switch_tab') {
+      switchTab(msg.tab);
+      // MODEL-PICKER-ADD-1：带 addProvider 标记时切页后触发既有 #btnAdd，
+      // 展开逻辑仍归 configView 的 openModal 单点——本层只投递点击意图，不复制表单逻辑。
+      // 子视图已在 ready 之前挂载完毕（host 仅在 ready 后可投递），故监听器此刻必已就位。
+      if (msg.addProvider) roots.config.querySelector<HTMLButtonElement>('#btnAdd')?.click();
+    }
     // notice 是 settings 侧操作反馈（角色/模型/引擎/审批等）的唯一入口——不消费则反馈被
     // 静默丢弃（SSOT 跨侧断链）。toast 实现已收口到 helpers/toast.ts（UI-TOAST-1：与
     // config 操作反馈、chat 活动条同元素/同时长/同分级/同令牌，勿在本文件再写一份）。

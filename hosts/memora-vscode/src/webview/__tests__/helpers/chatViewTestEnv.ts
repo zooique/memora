@@ -128,7 +128,7 @@ const HTML = `
         <div class="composer-row composer-row--actions">
           <div class="composer-actions">
             <div class="treedd composer-plus treedd--capsule" data-treedd data-on-select="__composerPlusOnSelect"><button class="treedd__trigger" title="添加到消息" aria-label="添加到消息" aria-haspopup="menu"></button><div class="treedd__menu" role="menu"><div class="skill-picker"></div><div class="treedd__divider"></div></div></div>
-            <div class="model-picker treedd--capsule"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
+            <div class="treedd model-picker treedd--capsule" data-treedd data-on-select="__modelPickerOnSelect"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
             <!-- 润色按钮：消费侧 getElementById('polishBtn') 带 null 守卫，缺它不会崩但整条
                  润色链路（点击→loading 态→回填）在夹具里恒不执行＝静默失测（P6 守卫锁此id）。 -->
             <button id="polishBtn" class="polish-btn-icon" title="润色输入内容" aria-label="润色"><span class="btn-icon" data-icon="sparkle"></span></button>

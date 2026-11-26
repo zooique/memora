@@ -964,8 +964,10 @@ export function activate(context: vscode.ExtensionContext): void {
   //      补发；顺序写反即落点丢失（三处各写一遍迟早有一处写反）；
   //   ② tab 参数化后，webview 侧 `open_settings_tab` 不必再维护「tab → 命令名」映射表
   //      （那张表是第二真源：加一页要回来补一行，且 protocol 还得同步收窄类型）。
-  const openSettingsAt = (tab?: SettingsTab): void => {
-    if (tab) settingsProvider.switchTab(tab);
+  // addProvider（MODEL-PICKER-ADD-1）：可选「落页后展开新增弹窗」标记，仅 config 页有意义。
+  // 沿 switchTab 的既有缓冲链路透传（未就绪也不丢），不新增第二条导航路径。
+  const openSettingsAt = (tab?: SettingsTab, addProvider?: true): void => {
+    if (tab) settingsProvider.switchTab(tab, addProvider);
     settingsProvider.open();
   };
 
@@ -975,8 +977,9 @@ export function activate(context: vscode.ExtensionContext): void {
   // 命令参数 `tab` 可选：不传 = 默认首页（`DEFAULT_SETTINGS_TAB`）；代码内可直接
   // `executeCommand('memora.openSettings', 'mcp')` 直达某页（命令面板调用恒无参）。
   context.subscriptions.push(
-    vscode.commands.registerCommand('memora.openSettings', (tab?: SettingsTab) =>
-      openSettingsAt(tab),
+    vscode.commands.registerCommand(
+      'memora.openSettings',
+      (tab?: SettingsTab, addProvider?: true) => openSettingsAt(tab, addProvider),
     ),
   );
 

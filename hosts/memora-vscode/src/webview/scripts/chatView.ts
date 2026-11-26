@@ -1794,6 +1794,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       emptyText: l10n.t('No model configured'),
       labelFallback: l10n.t('Select model'),
       ariaLabel: l10n.t('Select model'),
+      // MODEL-PICKER-ADD-1：固定尾项，id 含 `+`（alias 仅许 letters/digits/.-_）⇒ 不与任何 provider name 冲突
+      footerAction: { id: '+add-provider', label: l10n.t('Add model') },
     });
   }
 
@@ -3981,7 +3983,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 键名与 buildDropdownHtml 的 data-on-select 属性值一一对应。
   // toolbar 为模型选择器（角色切换独立到「角色」视图）
   initDropdowns(document, {
-    __modelPickerOnSelect: (id) => vscode.postMessage({ type: 'chat_set_provider', name: id }),
+    __modelPickerOnSelect: (id) =>
+      id === '+add-provider'
+        ? vscode.postMessage({ type: 'open_settings_tab', tab: 'config', addProvider: true })
+        : vscode.postMessage({ type: 'chat_set_provider', name: id }),
     // 历史下拉：条目（.treedd__item）点击 → 加载该会话（host 切入并回放，SSOT 剪枝 v2）
     __historyOnSelect: (id) => vscode.postMessage({ type: 'switch_session', sessionId: id }),
     // 加号面板（COMPOSER-PLUS-FLAT-1）：技能名与清除项走同一委托，分流到技能域；两个动作项复用既有入口。
