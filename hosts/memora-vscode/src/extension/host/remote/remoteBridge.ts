@@ -100,8 +100,13 @@ export interface RemoteBridgeSecurity {
     noteFailure(key: string): RemoteRateLimitState;
     noteSuccess(key: string): void;
   };
-  /** 追加式审计（实现必须永不抛出） */
-  audit: (event: { event: string; deviceFp?: string; ip?: string; detail?: string }) => void;
+  /** 追加式审计（实现必须永不 reject；返回 Promise 时 `stop()` 会等它落盘） */
+  audit: (event: {
+    event: string;
+    deviceFp?: string;
+    ip?: string;
+    detail?: string;
+  }) => void | Promise<void>;
 }
 
 /** 桥启动参数 */
@@ -248,14 +253,28 @@ export class RemoteBridge {
     }
     this.connections.clear();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    if (!external) return;
-    await new Promise<void>((resolve) => {
-      if (!external.listening) {
-        resolve();
-        return;
+    if (external) {
+      await new Promise<void>((resolve) => {
+        if (!external.listening) {
+          resolve();
+          return;
+        }
+        external.close(() => resolve());
+      });
+    }
+    // 监听停止是安全事实（§16.2 G5）：只在实际监听过的 LAN 档（有 security）留痕。
+    // ⚠️ 必须 **await**：deactivate 里 stop() 返回后扩展宿主进程随即退出，
+    // fire-and-forget 的 append 会来不及落盘（真机实测丢过 bridge_stopped）。
+    // 边界：Shift+F5 / 进程被杀等**强杀**不执行 deactivate，该路径没有停止审计
+    // （与 `extension.ts` deactivate 已登记的「崩溃 / 强杀不承诺清理」同一边界）。
+    const security = this.options.security;
+    if (security) {
+      try {
+        await security.audit({ event: 'bridge_stopped' });
+      } catch (err) {
+        this.options.log?.(`[REMOTE-BRIDGE] audit failed: ${String(err)}`);
       }
-      external.close(() => resolve());
-    });
+    }
   }
 
   /**
@@ -325,7 +344,17 @@ export class RemoteBridge {
       conn.deviceFp = fingerprint;
     }
     this.connections.add(conn);
-    ws.on('close', () => this.connections.delete(conn));
+    ws.on('close', () => {
+      this.connections.delete(conn);
+      // 已握手设备的断开也留痕（只记完成 hello 的连接：握手前的探测断开不制造噪音）
+      if (security && conn.deviceFp && conn.deviceId) {
+        this.audit(security, {
+          event: 'device_disconnected',
+          deviceFp: conn.deviceFp,
+          ip: conn.peerIp,
+        });
+      }
+    });
     // 连接级错误必须接管：未接管的 'error' 会以未捕获异常形式冒到宿主进程
     ws.on('error', (err) => this.options.log?.(`[REMOTE-BRIDGE] connection error: ${String(err)}`));
     ws.on('message', (data) => this.onMessage(conn, data));
@@ -438,6 +467,7 @@ export class RemoteBridge {
     // 已配对：首次信任已固定，后续连接只校验指纹，不再弹窗（§5.4）
     if (security.tierOf(deviceFp)) {
       conn.deviceId = deviceFp;
+      this.audit(security, { event: 'device_connected', deviceFp, ip: conn.peerIp });
       this.sendHelloOk(conn);
       return;
     }
@@ -476,6 +506,8 @@ export class RemoteBridge {
     security.registerDevice({ fingerprint: deviceFp, shortFp, name: frame.deviceId });
     security.rateLimit.noteSuccess(ip);
     this.audit(security, { event: 'device_paired', deviceFp, ip });
+    // 配对成功同时就是一次「已连接」：两个事实分别写，事后可按连接/配对两种视角回查
+    this.audit(security, { event: 'device_connected', deviceFp, ip });
     conn.deviceId = deviceFp;
     this.sendHelloOk(conn);
   }

@@ -1,13 +1,14 @@
 /**
- * 安全传输层单测 —— 真 TLS 握手 / 已配对可连 / 未配对被断开 / 指纹映射
+ * 安全传输层单测 —— 真 TLS 握手 / 证书指纹映射 / 无证书与握手失败的限流审计
  *
  * 判据来源：docs/方案-手机远程控制-20261110.md §19.9（双向自签证书 + DER 指纹固定）、
- *   §16.2 G3（直连档必须 TLS）
+ *   §16.2 G3（直连档必须 TLS）/ G4（失败限流）/ G5（追加式审计）
  *
  * 这里**必须用真 TLS**：证书指纹映射是 Node tls 的行为，假 socket 测不出来。
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { request as httpsRequest } from 'node:https';
+import { connect as netConnect } from 'node:net';
 import { connect as tlsConnect, type TLSSocket } from 'node:tls';
 import { WebSocket } from 'ws';
 import type { TurnState } from '../../../../shared/protocol.js';
@@ -16,7 +17,11 @@ import {
   type RemoteIdentity,
   type RemoteIdentitySecretStore,
 } from '../remoteIdentity.js';
-import { createRemoteSecureServer, type RemoteSecureServer } from '../remoteSecureServer.js';
+import {
+  createRemoteSecureServer,
+  type RemoteSecureServer,
+  type RemoteSecureServerSecurity,
+} from '../remoteSecureServer.js';
 import {
   RemoteBridge,
   type RemoteBridgePorts,
@@ -51,6 +56,30 @@ async function makeIdentity(): Promise<RemoteIdentity> {
   return loadOrCreateRemoteIdentity(new MemorySecretStore());
 }
 
+/**
+ * 握手层安全旁路记录器
+ *
+ * 不接真限流器：本文件只验证「失败 / 拒绝是否被计数与留痕」这条接线，
+ * 限流阈值与封禁时长归 `remoteRateLimiter` 自己的单测。
+ */
+function makeSecureSecurity(overrides: { blocked?: boolean } = {}): {
+  security: RemoteSecureServerSecurity;
+  failures: string[];
+  audits: Array<{ event: string; deviceFp?: string; ip?: string; detail?: string }>;
+} {
+  const failures: string[] = [];
+  const audits: Array<{ event: string; deviceFp?: string; ip?: string; detail?: string }> = [];
+  return {
+    security: {
+      isBlocked: () => overrides.blocked ?? false,
+      noteFailure: (ip) => failures.push(ip),
+      audit: (event) => audits.push(event),
+    },
+    failures,
+    audits,
+  };
+}
+
 /** 发起一次 TLS 连接（信任服务端自签证书；与手机端行为一致） */
 function connectClient(port: number, identity?: RemoteIdentity): TLSSocket {
   return tlsConnect({
@@ -71,14 +100,11 @@ afterEach(async () => {
   }
 });
 
-describe('RemoteSecureServer — 已配对设备', () => {
-  it('已配对手机证书能建立 TLS，且服务端指纹映射正确', async () => {
+describe('RemoteSecureServer — 证书指纹映射', () => {
+  it('客户端证书能建立 TLS，且服务端指纹映射正确', async () => {
     const pc = await makeIdentity();
     const phone = await makeIdentity();
-    const secure = createRemoteSecureServer({
-      identity: pc,
-      isPaired: (fingerprint) => fingerprint === phone.fingerprint,
-    });
+    const secure = createRemoteSecureServer({ identity: pc });
     opened.push(secure);
     const port = await secure.listen({ host: '127.0.0.1', port: 0 });
 
@@ -104,10 +130,7 @@ describe('RemoteSecureServer — 已配对设备', () => {
   it('HTTPS 请求的 req.socket 能查到设备指纹（桥使用的查表路径）', async () => {
     const pc = await makeIdentity();
     const phone = await makeIdentity();
-    const secure = createRemoteSecureServer({
-      identity: pc,
-      isPaired: (fingerprint) => fingerprint === phone.fingerprint,
-    });
+    const secure = createRemoteSecureServer({ identity: pc });
     opened.push(secure);
     // 模拟桥的用法：在请求侧拿 req.socket 去查指纹（不是握手事件的 socket）
     let requestSocket: unknown;
@@ -140,42 +163,34 @@ describe('RemoteSecureServer — 已配对设备', () => {
   });
 });
 
-describe('RemoteSecureServer — 未配对 / 无证书', () => {
-  it('未配对手机的证书：握手后被服务端断开，且不登记指纹', async () => {
+describe('RemoteSecureServer — 未配对证书 / 无证书 / 握手失败', () => {
+  it('未配对证书：握手放行并登记指纹（首次配对由 hello 口令 + 人工批准完成）', async () => {
     const pc = await makeIdentity();
-    const phone = await makeIdentity();
     const stranger = await makeIdentity();
-    const secure = createRemoteSecureServer({
-      identity: pc,
-      isPaired: (fingerprint) => fingerprint === phone.fingerprint,
-    });
+    const secure = createRemoteSecureServer({ identity: pc });
     opened.push(secure);
     const port = await secure.listen({ host: '127.0.0.1', port: 0 });
 
     const captured: TLSSocket[] = [];
     secure.server.on('secureConnection', (socket: TLSSocket) => captured.push(socket));
 
-    // 未配对：服务端 destroy ⇒ 客户端收到 close（不断言 secureConnect，避免时序抖动）
+    // ⚠️ 这里刻意断言「能连上」：若本层按设备表拒绝，首次配对永远到不了 hello
+    const client = connectClient(port, stranger);
     await new Promise<void>((resolve, reject) => {
-      const client = connectClient(port, stranger);
-      const timer = setTimeout(() => {
-        client.destroy();
-        reject(new Error('未配对连接没有被断开'));
-      }, 3_000);
-      client.on('error', () => undefined);
-      client.once('close', () => {
-        clearTimeout(timer);
-        resolve();
-      });
+      client.once('secureConnect', () => resolve());
+      client.once('error', reject);
     });
 
     await waitFor(() => captured.length === 1);
-    expect(secure.fingerprintOf(captured[0])).toBeUndefined();
+    expect(secure.fingerprintOf(captured[0])).toBe(stranger.fingerprint);
+
+    client.destroy();
   });
 
-  it('客户端不出示证书：同样被断开', async () => {
+  it('客户端不出示证书：断开 + 审计 tls_peer_rejected + 记一次失败', async () => {
     const pc = await makeIdentity();
-    const secure = createRemoteSecureServer({ identity: pc, isPaired: () => true });
+    const { security, failures, audits } = makeSecureSecurity();
+    const secure = createRemoteSecureServer({ identity: pc, security });
     opened.push(secure);
     const port = await secure.listen({ host: '127.0.0.1', port: 0 });
 
@@ -195,7 +210,61 @@ describe('RemoteSecureServer — 未配对 / 无证书', () => {
       });
     });
 
-    await waitFor(() => captured.length === 1);
+    await waitFor(() => audits.length === 1);
+    expect(secure.fingerprintOf(captured[0])).toBeUndefined();
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toBeTruthy();
+    expect(audits[0]).toMatchObject({
+      event: 'tls_peer_rejected',
+      detail: 'no_client_certificate',
+    });
+  });
+
+  it('握手层垃圾字节：审计 tls_handshake_failed + 记一次失败', async () => {
+    const pc = await makeIdentity();
+    const { security, failures, audits } = makeSecureSecurity();
+    const secure = createRemoteSecureServer({ identity: pc, security });
+    opened.push(secure);
+    const port = await secure.listen({ host: '127.0.0.1', port: 0 });
+
+    // 非 TLS 字节：Node 在握手阶段判定 EPROTO ⇒ tlsClientError
+    const raw = netConnect(port, '127.0.0.1');
+    await new Promise<void>((resolve) => raw.once('connect', () => resolve()));
+    raw.on('error', () => undefined);
+    raw.write('not-a-tls-handshake\r\n\r\n');
+
+    await waitFor(() => audits.some((e) => e.event === 'tls_handshake_failed'));
+    expect(failures.length).toBeGreaterThanOrEqual(1);
+    expect(failures[0]).toBeTruthy();
+    raw.destroy();
+  });
+
+  it('封禁中的来源：握手完成后立刻断开，且不登记指纹', async () => {
+    const pc = await makeIdentity();
+    const phone = await makeIdentity();
+    const { security, audits } = makeSecureSecurity({ blocked: true });
+    const secure = createRemoteSecureServer({ identity: pc, security });
+    opened.push(secure);
+    const port = await secure.listen({ host: '127.0.0.1', port: 0 });
+
+    const captured: TLSSocket[] = [];
+    secure.server.on('secureConnection', (socket: TLSSocket) => captured.push(socket));
+
+    await new Promise<void>((resolve, reject) => {
+      const client = connectClient(port, phone);
+      const timer = setTimeout(() => {
+        client.destroy();
+        reject(new Error('封禁来源没有被断开'));
+      }, 3_000);
+      client.on('error', () => undefined);
+      client.once('close', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+
+    await waitFor(() => audits.length === 1);
+    expect(audits[0]).toMatchObject({ event: 'tls_peer_rejected', detail: 'rate_limited' });
     expect(secure.fingerprintOf(captured[0])).toBeUndefined();
   });
 });
@@ -204,10 +273,7 @@ describe('RemoteSecureServer + RemoteBridge — LAN 组合（真 TLS）', () => 
   it('已配对手机经 wss 握手 → hello_ok（req.socket 指纹映射贯通）', async () => {
     const pc = await makeIdentity();
     const phone = await makeIdentity();
-    const secure = createRemoteSecureServer({
-      identity: pc,
-      isPaired: (fingerprint) => fingerprint === phone.fingerprint,
-    });
+    const secure = createRemoteSecureServer({ identity: pc });
     opened.push(secure);
     const ports: RemoteBridgePorts = {
       listSessions: () => ({ sessions: [], archivedIds: [], assistantSid: 'assist-1' }),
@@ -273,7 +339,7 @@ describe('RemoteSecureServer + RemoteBridge — LAN 组合（真 TLS）', () => 
 describe('RemoteSecureServer — 生命周期', () => {
   it('close 幂等：重复调用不抛错', async () => {
     const pc = await makeIdentity();
-    const secure = createRemoteSecureServer({ identity: pc, isPaired: () => false });
+    const secure = createRemoteSecureServer({ identity: pc });
     await secure.listen({ host: '127.0.0.1', port: 0 });
     await secure.close();
     await expect(secure.close()).resolves.toBeUndefined();
@@ -281,7 +347,7 @@ describe('RemoteSecureServer — 生命周期', () => {
 
   it('已关闭后不能再 listen', async () => {
     const pc = await makeIdentity();
-    const secure = createRemoteSecureServer({ identity: pc, isPaired: () => false });
+    const secure = createRemoteSecureServer({ identity: pc });
     await secure.listen({ host: '127.0.0.1', port: 0 });
     await secure.close();
     await expect(secure.listen({ host: '127.0.0.1', port: 0 })).rejects.toThrow();

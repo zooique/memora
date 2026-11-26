@@ -418,9 +418,28 @@ function makeSecurity(
       },
       noteSuccess: (key) => state.successKeys.push(key),
     },
-    audit: (event) => state.audits.push(event),
+    audit: (event) => {
+      state.audits.push(event);
+    },
   };
   return { security, state };
+}
+
+/**
+ * 轮询等待某类审计事件落地
+ *
+ * 服务端的 ws `close` 事件在客户端 close 之后异步到达，不能假定同一 tick 内已记账。
+ */
+async function waitAudit(
+  audits: Array<{ event: string }>,
+  event: string,
+  timeoutMs = 1_000,
+): Promise<void> {
+  const started = Date.now();
+  while (!audits.some((e) => e.event === event)) {
+    if (Date.now() - started > timeoutMs) throw new Error(`未等到审计事件 ${event}`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
 
 describe('RemoteBridge — security 缺省（回环档行为不变）', () => {
@@ -520,8 +539,8 @@ describe('RemoteBridge — LAN 档握手（security 存在）', () => {
     expect(state.audits.some((e) => e.event === 'pairing_denied')).toBe(true);
   });
 
-  it('已配对（tierOf 有值）：无需口令直接 hello_ok', async () => {
-    const { security } = makeSecurity({ tier: 'observe' });
+  it('已配对（tierOf 有值）：无需口令直接 hello_ok，并审计 device_connected', async () => {
+    const { security, state } = makeSecurity({ tier: 'observe' });
     const { ports } = makePorts();
     const { port } = await startBridge(ports, security);
     const client = await TestClient.connect(port);
@@ -529,6 +548,25 @@ describe('RemoteBridge — LAN 档握手（security 存在）', () => {
     client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
     const helloOk = await client.next<{ t: string }>();
     expect(helloOk.t).toBe('hello_ok');
+    expect(state.audits.some((e) => e.event === 'device_connected')).toBe(true);
+
+    // 断开也是安全事实：close 后应留一条 device_disconnected
+    client.close();
+    await waitAudit(state.audits, 'device_disconnected');
+  });
+
+  it('stop → 审计 bridge_stopped，且等异步审计落盘后才返回', async () => {
+    const { security, state } = makeSecurity({ tier: 'observe' });
+    // 异步审计模拟真实 fs append：stop() 必须等它完成（真机丢过 fire-and-forget 的行）
+    security.audit = async (event) => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      state.audits.push(event);
+    };
+    const { ports } = makePorts();
+    const { bridge } = await startBridge(ports, security);
+
+    await bridge.stop();
+    expect(state.audits.some((e) => e.event === 'bridge_stopped')).toBe(true);
   });
 });
 

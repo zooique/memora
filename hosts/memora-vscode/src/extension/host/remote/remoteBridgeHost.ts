@@ -286,11 +286,19 @@ async function startLanBridge(
     // ④ 一次性口令 + 失败限流（均为进程内状态，重启即重置）
     const pairing = new RemotePairing();
     const limiter = new RemoteFailureLimiter({ log });
-    // ⑤ TLS 面：客户端证书指纹 → 配对白名单
+    // ⑤ TLS 面：证书指纹映射 + 握手层失败限流 / 审计（与 hello 共用同一限流器与审计文件）
     const secureServer = createRemoteSecureServer({
       identity,
-      isPaired: (fingerprint) => devices.get(fingerprint) !== undefined,
       log,
+      security: {
+        // 封禁判据与桥的 hello 直连同一个 limiter：TLS 层与业务层不各记一套账
+        isBlocked: (ip) => limiter.check(ip).blocked,
+        noteFailure: (ip) => {
+          limiter.noteFailure(ip);
+        },
+        // 握手层审计与桥共用同一追加式文件（record 永不 reject）
+        audit: (event) => auditLog.record(event),
+      },
     });
     // 供 catch 分支关闭半启动的 server（正常路径由 bridge.stop() 关闭）
     secure = secureServer;
@@ -321,10 +329,8 @@ async function startLanBridge(
           noteFailure: (key) => limiter.noteFailure(key),
           noteSuccess: (key) => limiter.noteSuccess(key),
         },
-        audit: (event) => {
-          // record 约定永不抛出；仍用 void 显式标记「不等待」
-          void auditLog.record(event);
-        },
+        // record 约定永不 reject；返回 Promise，桥 stop() 会等 bridge_stopped 落盘
+        audit: (event) => auditLog.record(event),
       },
       log,
     });
@@ -333,6 +339,8 @@ async function startLanBridge(
     const challenge = pairing.start();
     const addresses = listLanAddresses();
     const where = addresses.length > 0 ? addresses.join(' / ') : '（未找到局域网地址）';
+    // 监听成功 / 停止都是安全事实（§16.2 G5）：地址 + 端口与用户看到的提示同源
+    void auditLog.record({ event: 'bridge_listening', detail: `${where}:${started.port}` });
     // 设备管理命令的运行时句柄：与桥共用同一套设备表 / 口令 / 审计实例（不重建第二份）
     remoteLanHandle = {
       devices,
