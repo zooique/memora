@@ -14,7 +14,7 @@
  *   - 会话列表 → `buildSessionListMessage`（webview 历史列表的同一构建点）
  *   - 投影     → `chatPanel.projectSession`（与侧栏共用 `deriveSessionProjection`）
  *   - 相位     → `remotePhaseOf`（唯一折算点）
- *   - 答复投递 → `chatPanel.handleInput`（落到同一个 `handleInput`）
+ *   - 输入投递 → `chatPanel.handleInput`（answer / send / resume 落到同一个 `handleInput`）
  *   - 身份/设备/限流/审计 → 本目录新模块（各自单一职责）
  *
  * ⚠️ 证书栈惰性加载（激活成本约束）：本文件在**扩展激活路径**上（`extension.ts` 静态
@@ -143,12 +143,10 @@ export function createRemoteBridgePorts(deps: RemoteBridgeHostDeps): RemoteBridg
     phaseOf: (sessionId) => remotePhaseOf(panel.projectSession(sessionId).state, false),
     snapshot: (sessionId) => panel.projectSession(sessionId),
     // 投递：与 webview 同一个入口；失败只记日志（投递可靠性不靠桥重试，靠手机重拉快照）
-    deliverAnswer: (sessionId, answers) => {
-      void panel
-        .handleInput({ type: 'input', kind: 'answer', answers: [...answers] }, sessionId)
-        .catch((err: unknown) => {
-          deps.log(`[REMOTE-BRIDGE] 答复投递失败 sid=${sessionId}: ${String(err)}`);
-        });
+    deliverInput: (sessionId, input) => {
+      void panel.handleInput(input, sessionId).catch((err: unknown) => {
+        deps.log(`[REMOTE-BRIDGE] 输入投递失败 sid=${sessionId}: ${String(err)}`);
+      });
     },
   };
 }

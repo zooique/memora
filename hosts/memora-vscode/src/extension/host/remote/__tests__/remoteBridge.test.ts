@@ -14,6 +14,8 @@ import {
 } from '../remoteBridge.js';
 import type { RemoteDeviceTier } from '../remoteDevices.js';
 import type { PairingVerdict } from '../remotePairing.js';
+import type { RemoteInputMessage } from '../remoteCommandRouter.js';
+import type { RemotePhase } from '../remoteCommandPolicy.js';
 import { TRIMMED_RECENT_EVENTS, TRIMMED_RECENT_LOG } from '../remoteSnapshotTrim.js';
 
 /** 单帧等待上限（防用例挂死；正常应远小于它） */
@@ -101,9 +103,9 @@ const WAITING_ASK: TurnState = { phase: 'waiting', reason: 'ask' };
  */
 function makePorts(overrides: Partial<RemoteBridgePorts> = {}): {
   ports: RemoteBridgePorts;
-  delivered: Array<{ sid: string; answers: readonly string[] }>;
+  delivered: Array<{ sid: string; input: RemoteInputMessage }>;
 } {
-  const delivered: Array<{ sid: string; answers: readonly string[] }> = [];
+  const delivered: Array<{ sid: string; input: RemoteInputMessage }> = [];
   const state: TurnState = WAITING_ASK;
   const ports: RemoteBridgePorts = {
     listSessions: () => ({
@@ -114,7 +116,7 @@ function makePorts(overrides: Partial<RemoteBridgePorts> = {}): {
     hasSession: (sid) => sid === 's1',
     phaseOf: () => (state.phase === 'waiting' ? 'waiting-ask' : 'idle'),
     snapshot: () => ({ state, rounds: ROUNDS, pendingQueue: [] }),
-    deliverAnswer: (sid, answers) => delivered.push({ sid, answers }),
+    deliverInput: (sid, input) => delivered.push({ sid, input }),
     ...overrides,
   };
   return { ports, delivered };
@@ -316,7 +318,12 @@ describe('RemoteBridge — 命令（profile 2 只放行 answer）', () => {
     const evt = await client.next<{ t: string; kind: string }>();
     expect(evt.t).toBe('evt');
     expect(evt.kind).toBe('snapshot');
-    expect(delivered).toEqual([{ sid: 's1', answers: ['第一问', '', '第三问'] }]);
+    expect(delivered).toEqual([
+      {
+        sid: 's1',
+        input: { type: 'input', kind: 'answer', answers: ['第一问', '', '第三问'] },
+      },
+    ]);
   });
 
   it('非 waiting-ask 下 answer → err stale_phase 且不投递', async () => {
@@ -652,18 +659,111 @@ describe('RemoteBridge — LAN 档命令（设备权限档）', () => {
     const evt = await client.next<{ t: string; kind: string }>();
     expect(evt.t).toBe('evt');
     expect(evt.kind).toBe('snapshot');
-    expect(delivered).toEqual([{ sid: 's1', answers: ['好'] }]);
+    expect(delivered).toEqual([
+      { sid: 's1', input: { type: 'input', kind: 'answer', answers: ['好'] } },
+    ]);
   });
 
-  it('LAN 档其余命令仍 forbidden（send 等不受档位放开）', async () => {
-    const { security } = makeSecurity({ tier: 'approve' });
+  it('send 档 + idle 发 send → 投递到 handleInput 并回推快照', async () => {
+    const { security } = makeSecurity({ tier: 'send' });
+    const { ports, delivered } = makePorts({
+      phaseOf: () => 'idle',
+      snapshot: () => ({ state: IDLE, rounds: [], pendingQueue: [] }),
+    });
+    const { port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
+    await client.next();
+    client.send({ t: 'sub', sid: 's1' });
+    await client.next();
+
+    client.send({ t: 'cmd', ch: 'cmd', rid: 'u-6', sid: 's1', kind: 'send', p: { text: '你好' } });
+    const evt = await client.next<{ t: string; kind: string }>();
+    expect(evt.t).toBe('evt');
+    expect(evt.kind).toBe('snapshot');
+    expect(delivered).toEqual([
+      { sid: 's1', input: { type: 'input', kind: 'send', text: '你好' } },
+    ]);
+  });
+
+  it('send 档 + running 发 send → err busy（相位层面拒绝，不投递）', async () => {
+    const { security } = makeSecurity({ tier: 'send' });
+    const { ports, delivered } = makePorts({
+      phaseOf: () => 'running',
+      snapshot: () => ({
+        state: { phase: 'running', roundId: 'r1' },
+        rounds: [],
+        pendingQueue: [],
+      }),
+    });
+    const { port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
+    await client.next();
+
+    client.send({ t: 'cmd', ch: 'cmd', rid: 'u-7', sid: 's1', kind: 'send', p: { text: '继续' } });
+    const err = await client.next<{ t: string; code: string }>();
+    expect(err.code).toBe('busy');
+    expect(delivered).toHaveLength(0);
+  });
+
+  it('observe 档发 send → err forbidden（档位门先于载荷解析）', async () => {
+    const { security } = makeSecurity({ tier: 'observe' });
     const { ports, delivered } = makePorts();
     const { port } = await startBridge(ports, security);
     const client = await TestClient.connect(port);
     client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
     await client.next();
 
-    client.send({ t: 'cmd', ch: 'cmd', rid: 'u-3', sid: 's1', kind: 'send', p: {} });
+    client.send({ t: 'cmd', ch: 'cmd', rid: 'u-8', sid: 's1', kind: 'send', p: { text: '你好' } });
+    const err = await client.next<{ t: string; code: string }>();
+    expect(err.code).toBe('forbidden');
+    expect(delivered).toHaveLength(0);
+  });
+
+  it('send 档：waiting-pause 发 resume 投递；idle 发 resume 回 already_resumed（幂等）', async () => {
+    const { security } = makeSecurity({ tier: 'send' });
+    const phase: { value: RemotePhase } = { value: 'waiting-pause' };
+    const { ports, delivered } = makePorts({
+      phaseOf: () => phase.value,
+      snapshot: () => ({
+        state: { phase: 'waiting', reason: 'pause' },
+        rounds: [],
+        pendingQueue: [],
+      }),
+    });
+    const { port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
+    await client.next();
+    client.send({ t: 'sub', sid: 's1' });
+    await client.next();
+
+    client.send({ t: 'cmd', ch: 'cmd', rid: 'u-9', sid: 's1', kind: 'resume', p: {} });
+    const evt = await client.next<{ t: string; kind: string }>();
+    expect(evt.t).toBe('evt');
+    expect(delivered).toEqual([{ sid: 's1', input: { type: 'input', kind: 'resume' } }]);
+
+    // 已不在暂停态：重复解暂停按幂等成功处理（不投递第二条）
+    phase.value = 'idle';
+    client.send({ t: 'cmd', ch: 'cmd', rid: 'u-10', sid: 's1', kind: 'resume', p: {} });
+    const err = await client.next<{ t: string; code: string }>();
+    expect(err.code).toBe('already_resumed');
+    expect(delivered).toHaveLength(1);
+  });
+
+  it('pause 虽在档位表内，但本切片未接入 → forbidden 且零投递', async () => {
+    const { security } = makeSecurity({ tier: 'approve' });
+    const { ports, delivered } = makePorts({
+      phaseOf: () => 'running',
+      snapshot: () => ({ state: { phase: 'running' }, rounds: [], pendingQueue: [] }),
+    });
+    const { port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
+    await client.next();
+
+    client.send({ t: 'cmd', ch: 'cmd', rid: 'u-11', sid: 's1', kind: 'pause', p: {} });
     const err = await client.next<{ t: string; code: string }>();
     expect(err.code).toBe('forbidden');
     expect(delivered).toHaveLength(0);
@@ -710,7 +810,9 @@ describe('RemoteBridge — LAN 档命令（设备权限档）', () => {
     const evt = await client.next<{ t: string; kind: string }>();
     expect(evt.t).toBe('evt');
     expect(evt.kind).toBe('snapshot');
-    expect(delivered).toEqual([{ sid: 's1', answers: ['改档后'] }]);
+    expect(delivered).toEqual([
+      { sid: 's1', input: { type: 'input', kind: 'answer', answers: ['改档后'] } },
+    ]);
   });
 
   it('disconnectDevice 按已认证指纹断开连接（撤销后不再有读通道）', async () => {

@@ -10,18 +10,20 @@
  * ⚠️ 三条硬约束（§16.4，越界 = 方案作废）——本文件**刻意**没有这些东西：
  *   ① 不调 webview 的 `post()` / 不 import `chatPanel`：所有宿主能力经 `RemoteBridgePorts` 注入；
  *   ② 不做 `switch_session`：订阅只影响「发给谁」，不改 PC 当前显示会话；
- *   ③ 不绕过相位裁决直调内核：命令先过 `evaluateRemoteCommand` 真值表，
- *      `answer` 再交 `routeRemoteAnswer`（定址 + 查表 + 投递都不在这里重写）。
+ *   ③ 不绕过裁决直调内核：命令先过档位门 `evaluateTierGate`（§5.9）与相位表
+ *      `evaluateRemoteCommand`，再交 `routeRemoteCommand`（定址 + 查表 + 投递都不在这里重写）。
  *
  * profile 2 的能力边界（写在代码里，防止后来者把它读成「桥已完成」）：
  *   - 只发 `evt{kind:'snapshot', seq:0}`，**没有** `delta` 与水位补洞（`resume` 一律回 `reset_required`）；
- *   - 只投递 `answer`（只读 + 可答档）；其余命令回 `err{code:'forbidden'}`；
+ *   - **只投递 `answer`**（回环档可能被任意本地进程连上，不放开写命令）；其余命令回 `err{code:'forbidden'}`；
  *   - 回环档（`security` 缺省）无配对 / 指纹 / 限流 / 审计，只绑 `127.0.0.1`。
  *
  * profile 3（LAN）的差异段（§5.9 / §16.2 / §19.9）——**判据全部由宿主经 `security` 注入**：
  *   - 连接层：设备指纹来自 TLS 客户端证书（`security.fingerprintOf`）；
  *   - 握手层：`phoneFp` 必须与 TLS 指纹一致；未配对需一次性口令 + PC 人工批准；
- *   - 命令层：设备权限档由 `security.tierOf` 决定，`answer` 需 `approve` 档；
+ *   - 命令层：设备权限档由 `security.tierOf` 决定，档位门查 `evaluateTierGate`；
+ *     **本轮已接入** `answer` / `send` / `resume`（全部落 `handleInput`），其余六条虽在档位表内，
+ *     但宿主尚无按 sid 的落点 ⇒ 一律回 `forbidden`（**未接入**，不是相位/档位拒绝）；
  *   - 旁路：失败限流（`security.rateLimit`）与追加式审计（`security.audit`）。
  *   桥**不自己**判指纹 / 档位 / 口令——那会在真理源之外造第二份判据。
  */
@@ -30,9 +32,19 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import type { Server as HttpsServer } from 'node:https';
 import type { IncomingMessage } from 'node:http';
 import type { RoundView, TurnState } from '../../../shared/protocol.js';
-import { routeRemoteAnswer } from './remoteAnswerRouter.js';
+import {
+  routeRemoteCommand,
+  type RemoteInputCommand,
+  type RemoteInputMessage,
+} from './remoteCommandRouter.js';
 import { trimRound } from './remoteSnapshotTrim.js';
-import { REMOTE_COMMAND_CODES, REMOTE_CTL_CODES, type RemotePhase } from './remoteCommandPolicy.js';
+import {
+  REMOTE_COMMAND_CODES,
+  REMOTE_CTL_CODES,
+  evaluateTierGate,
+  type RemoteCommand,
+  type RemotePhase,
+} from './remoteCommandPolicy.js';
 import { normalizeFingerprint, shortFingerprint } from './remoteFingerprint.js';
 import type { RemoteDeviceTier } from './remoteDevices.js';
 import type { RemoteRateLimitState } from './remoteRateLimiter.js';
@@ -62,14 +74,14 @@ export interface RemoteBridgePorts {
   hasSession: (sessionId: string) => boolean;
   /** 该 sid 当前相位（由宿主按 `deriveSessionProjection` 折算，见 `remotePhaseOf`） */
   phaseOf: (sessionId: string) => RemotePhase;
-  /** 该 sid 的只读投影（不含附件 URL；桥负责剥掉 webview 专属字段） */
+  /** 该 sid 的只读投影（出桥前的裁剪见 `remoteSnapshotTrim`，端口不自行裁） */
   snapshot: (sessionId: string) => {
     state: TurnState;
     rounds: readonly RoundView[];
     pendingQueue: readonly string[];
   };
-  /** 投递答复（实现必须就是 `handleInput({kind:'answer'})` 那条路） */
-  deliverAnswer: (sessionId: string, answers: readonly string[]) => void;
+  /** 投递输入（实现必须就是 `panel.handleInput(input, sid)` 那条路，不另建投递链） */
+  deliverInput: (sessionId: string, input: RemoteInputMessage) => void;
 }
 
 /**
@@ -564,12 +576,16 @@ export class RemoteBridge {
   /**
    * 业务命令
    *
-   * 顺序不可换：**先权限档、再相位表、最后投递**。
-   *   - 权限档：回环档只放行 `answer`（只读 + 可答）；LAN 档再叠一层设备档
-   *     （`tierOf` 为 undefined ⇒ `forbidden`；`answer` 需 `approve` 档，§5.9）；
-   *   - 相位表：由 `routeRemoteAnswer` 内部查 `evaluateRemoteCommand('answer', …)`——
-   *     桥不自己再查一遍，避免「桥一套、路由一套」的两份判据；
-   *   - 投递：`routeRemoteAnswer` 定址 + 查表 + 调宿主端口，三件事都不在桥里重写。
+   * 顺序不可换：**先档位门、再载荷解析、最后定址/相位/投递**。
+   *   - 档位门：LAN 档查 `evaluateTierGate`（设备档由宿主设备表给出）；回环档保持
+   *     profile 2 能力边界——只放行 `answer`，不因「没有档位表」就默认高权限；
+   *   - 载荷解析：本切片的桥层职责（未知/未接入命令 → `forbidden`；写坏 → 断开连接）；
+   *   - 定址 + 相位 + 投递：全在 `routeRemoteCommand`，桥不自己再查一遍相位表，
+   *     避免「桥一套、路由一套」的两份判据。
+   *
+   * ⚠️ 未接入 ≠ 相位/档位拒绝：`interject / pause / stop / confirm_answer /
+   * remove_pending_item / clear_pending_queue` 在档位表内是允许的，但宿主尚无按 sid 的落点，
+   * 这里统一回 `forbidden`（固定错误码集合里没有「未实现」格，不新增码）。
    */
   private handleCommand(
     conn: ClientConnection,
@@ -579,32 +595,38 @@ export class RemoteBridge {
     const security = this.options.security;
     if (security) {
       // 档位判定放在桥里是因为「这台设备能不能发这个命令」是桥的授权面（§5.6 L3），
-      // 但档位本身由宿主设备表给出（`tierOf`），桥只做查档，不维护第二份权限表
+      // 但档位本身由宿主设备表给出（`tierOf`），桥只查表，不维护第二份权限表
       const tier = conn.deviceFp ? security.tierOf(conn.deviceFp) : undefined;
       if (!tier) {
         this.send(conn, { t: 'err', ch: 'cmd', rid, sid, code: REMOTE_COMMAND_CODES.FORBIDDEN });
         return;
       }
-      if (kind === 'answer' && tier !== 'approve') {
-        this.send(conn, { t: 'err', ch: 'cmd', rid, sid, code: REMOTE_COMMAND_CODES.FORBIDDEN });
+      const gate = evaluateTierGate(tier, kind);
+      if (!gate.allow) {
+        this.send(conn, { t: 'err', ch: 'cmd', rid, sid, code: gate.code });
         return;
       }
-    }
-    if (kind !== 'answer') {
+    } else if (kind !== 'answer') {
+      // 回环档可能被任意本地进程连上：写命令一律拒绝（缺省拒绝写在分支里，不靠档位缺省值）
       this.send(conn, { t: 'err', ch: 'cmd', rid, sid, code: REMOTE_COMMAND_CODES.FORBIDDEN });
       return;
     }
-    const answers = readAnswers(frame.p);
-    if (!answers) {
+    const command = parseInputCommand(kind, frame.p);
+    if (command === 'malformed') {
       // 载荷写坏了 → 协议错误（不是相位问题，也不是权限问题）
-      conn.ws.close(1008, 'cmd.p.answers must be string[]');
+      conn.ws.close(1008, 'cmd payload malformed');
       return;
     }
-    const decision = routeRemoteAnswer(sid, answers, {
+    if (!command) {
+      // 本切片未接入的命令：如实拒绝，不伪造执行
+      this.send(conn, { t: 'err', ch: 'cmd', rid, sid, code: REMOTE_COMMAND_CODES.FORBIDDEN });
+      return;
+    }
+    const decision = routeRemoteCommand(command, sid, {
       hasSession: (id) => this.ports.hasSession(id),
       // 相位素材来自宿主投影（`remotePhaseOf` 是唯一折算点，桥不再从 TurnState 推第二遍）
       phaseOf: (id) => this.ports.phaseOf(id),
-      deliverAnswer: (id, list) => this.ports.deliverAnswer(id, list),
+      deliverInput: (id, input) => this.ports.deliverInput(id, input),
     });
     if (!decision.ok) {
       this.send(conn, { t: 'err', ch: 'cmd', rid, sid, code: decision.code });
@@ -647,4 +669,50 @@ function readAnswers(payload: unknown): readonly string[] | undefined {
   if (!Array.isArray(answers)) return undefined;
   if (!answers.every((a): a is string => typeof a === 'string')) return undefined;
   return answers;
+}
+
+/**
+ * 从命令载荷里取 send 正文
+ *
+ * 空串 / 纯空白按「写坏」处理：发一条空消息没有意义，还会白占一次 turn
+ * （真正的空态拦截在 webview，这里只是不替它兜底造行为）。
+ */
+function readText(payload: unknown): string | undefined {
+  if (typeof payload !== 'object' || payload === null) return undefined;
+  const text = (payload as { text?: unknown }).text;
+  if (typeof text !== 'string') return undefined;
+  return text.trim().length > 0 ? text : undefined;
+}
+
+/**
+ * 载荷解析结果：已解析命令 / 未接入（`undefined`）/ 写坏（`'malformed'`）
+ *
+ * 三种结果对应三条不同的处置：正常路由 / 回固定码 `forbidden` / 断开连接，
+ * 所以不用 `undefined` 同时表达两种失败——那会把「协议错误」与「未实现」混成一句话。
+ */
+type ParsedInputCommand = RemoteInputCommand | 'malformed' | undefined;
+
+/**
+ * 把上行命令解析成本切片执行面的命令（§6.6 的载荷形状）
+ *
+ * @param kind    命令名（已过档位门）
+ * @param payload 原始载荷（`frame.p`，未信任）
+ */
+function parseInputCommand(kind: RemoteCommand, payload: unknown): ParsedInputCommand {
+  switch (kind) {
+    case 'send': {
+      const text = readText(payload);
+      return text === undefined ? 'malformed' : { kind: 'send', text };
+    }
+    case 'answer': {
+      const answers = readAnswers(payload);
+      return answers === undefined ? 'malformed' : { kind: 'answer', answers };
+    }
+    case 'resume':
+      // 业务命令 resume（解暂停）≠ ctl 帧 `t:'resume'`（重连水位），此处无载荷
+      return { kind: 'resume' };
+    default:
+      // 其余六条本切片没有按 sid 的宿主落点（interject 还需新的回执载荷），故未接入
+      return undefined;
+  }
 }
