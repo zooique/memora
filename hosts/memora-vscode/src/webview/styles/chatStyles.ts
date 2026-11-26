@@ -2730,6 +2730,12 @@ export const chatStyles = `
     color: var(--accent, #0e639c);
     font-weight: 600;
   }
+  /* MODEL-PICKER-NEW-1：新出现的模型加左侧竖条，语义 = 刚出现（非已保存/已切换）。
+   * inset 阴影 ⇒ 不占盒宽、不进 textContent，模型名单行省略与触发器文案都不被污染；
+   * accent 与选中态同色但形态不同（竖条 vs 浅底），二者正交可并存。宽度走既有 sp-0 令牌。 */
+  .model-picker .treedd__item.is-new {
+    box-shadow: inset var(--sp-0, 2px) 0 var(--accent, #0e639c);
+  }
   /* 模型触发器位于左组（非右缘），菜单左对齐往右展开，避免向右溢出面板裁切 */
   .model-picker.treedd--capsule .treedd__menu { left: 0; right: auto; }
   .treedd__empty {

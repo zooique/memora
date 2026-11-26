@@ -6637,6 +6637,47 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
     );
   });
 
+  it('MODEL-PICKER-NEW-1：首次 providers 快照不标新；后续新增模型才加 is-new，重推即清', () => {
+    mountChatView();
+    const menu = () => document.querySelector('.model-picker .treedd__menu') as HTMLElement;
+    const item = (name: string) =>
+      menu().querySelector(`[data-treedd-id="${name}"]`) as HTMLButtonElement;
+
+    // 首次快照：存量模型不标新（冷启动零误报）
+    dispatch({
+      type: 'chat_providers',
+      providers: [{ name: 'a', displayName: 'A' }],
+      activeName: 'a',
+    });
+    expect(item('a').classList.contains('is-new')).toBe(false);
+
+    // 新增 b：只有 b 标新，且 title 走本地化文案；a 仍是 is-active，不互相冒充
+    dispatch({
+      type: 'chat_providers',
+      providers: [
+        { name: 'a', displayName: 'A' },
+        { name: 'b', displayName: 'B' },
+      ],
+      activeName: 'a',
+    });
+    expect(item('a').classList.contains('is-new')).toBe(false);
+    expect(item('a').classList.contains('is-active')).toBe(true);
+    expect(item('b').classList.contains('is-new')).toBe(true);
+    expect(item('b').getAttribute('title')).toBe('Newly added model');
+    expect(item('b').getAttribute('aria-current')).toBe('false');
+
+    // 列表未变的重推（如切会话）：差集清空，角标消失
+    dispatch({
+      type: 'chat_providers',
+      providers: [
+        { name: 'a', displayName: 'A' },
+        { name: 'b', displayName: 'B' },
+      ],
+      activeName: 'a',
+    });
+    expect(item('b').classList.contains('is-new')).toBe(false);
+  });
+
   it('context_occupancy 真实占用覆盖首屏容量（内核为总容量唯一真理源）', () => {
     mountChatView();
     dispatch({

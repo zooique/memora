@@ -57,6 +57,7 @@ import {
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import * as l10n from '@vscode/l10n';
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
+import { diffNewProviderNames } from '../helpers/modelPickerNews.js';
 import {
   buildMetricsLines,
   buildRoundSummaryText,
@@ -407,6 +408,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
   let currentProviders: ChatProviderItem[] = [];
   let currentActive: string | undefined;
+  // 模型菜单「新出现项」差集快照（MODEL-PICKER-NEW-1）：只记上一份 name 列表，
+  // 差集 = diffNewProviderNames(prev, next)，首次快照不标。派生态，不进协议、不跨面板。
+  let previousProviderNames: string[] = [];
+  let justAddedProviderNames: ReadonlySet<string> = new Set();
   /** 激活 Provider 查找单点（find 模式第 4 处收口：模型名 / 置灰态 / IMG-8 预检共用） */
   function findActiveProvider(): ChatProviderItem | undefined {
     return currentProviders.find((p) => p.name === currentActive);
@@ -1802,6 +1807,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       ariaLabel: l10n.t('Select model'),
       // MODEL-PICKER-ADD-1：固定尾项，id 含 `+`（alias 仅许 letters/digits/.-_）⇒ 不与任何 provider name 冲突
       footerAction: { id: '+add-provider', label: l10n.t('Add model') },
+      // MODEL-PICKER-NEW-1：刚出现的模型加独立角标，与 is-active（已切换）正交
+      justAddedNames: justAddedProviderNames,
+      newLabel: l10n.t('Newly added model'),
     });
   }
 
@@ -3487,6 +3495,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 归档模式运行时真值：只驱动留存按钮文案（manual 模式按钮兼做归档触发；是否有数据收在容器内）
       historyMenuApi.setArchiveMode(msg.mode);
     } else if (msg.type === 'chat_providers') {
+      // MODEL-PICKER-NEW-1：差集先算后换快照；首次快照不标，列表未变的重推自然清空角标。
+      // 纯派生态（diffNewProviderNames），不读 cfg_result、不碰 is-active、不进协议。
+      const nextNames = (msg.providers || []).map((p) => p.name);
+      justAddedProviderNames = diffNewProviderNames(previousProviderNames, nextNames);
+      previousProviderNames = nextNames;
       currentProviders = msg.providers || [];
       currentActive = msg.activeName;
       // 更新当前模型名（用于 AI 消息头部标签展示）

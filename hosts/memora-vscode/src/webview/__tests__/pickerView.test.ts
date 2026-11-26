@@ -7,6 +7,8 @@
  *   - 尾项 label 走 textContent（本地化文本来自调用方，禁止 innerHTML 拼用户数据）
  *   - 空列表 + 尾项：空态文案与尾项共存，尾项仍可点（无模型时仍可去配置）
  *   - 选中态语义通道：aria-current 从 isActive 派生，动作尾项不冒领（MODEL-PICKER-STATE-1）
+ *   - 新出现项通道（MODEL-PICKER-NEW-1）：is-new + title 从 justAddedNames 派生，
+ *     与 is-active 正交（同项可并存），不传则产物逐字不变
  */
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -89,5 +91,50 @@ describe('pickerView 固定尾项（MODEL-PICKER-ADD-1）', () => {
     expect(items[1].classList.contains('is-active')).toBe(true);
     // 尾项是「添加模型」动作，不是候选模型，不携带选中语义
     expect(items[2].hasAttribute('aria-current')).toBe(false);
+  });
+
+  it('不传 justAddedNames：产物逐字不变（无 is-new class、无 title 角标）', () => {
+    view.renderPicker(menu, trigger, [{ name: 'a', displayName: 'A' }], 'a', OPTS);
+    const item = menu.querySelector('.treedd__item') as HTMLElement;
+    expect(item.classList.contains('is-new')).toBe(false);
+    expect(item.hasAttribute('title')).toBe(false);
+  });
+
+  it('新出现项：is-new + title 只落命中 name，aria-current 仍由 isActive 独立派生', () => {
+    view.renderPicker(
+      menu,
+      trigger,
+      [
+        { name: 'a', displayName: 'A' },
+        { name: 'b', displayName: 'B' },
+      ],
+      'a', // 选中 a，新出现 b ⇒ 两通道落在同一集合的不同项，互不冒充
+      {
+        ...OPTS,
+        justAddedNames: new Set(['b']),
+        newLabel: 'Newly added model',
+        footerAction: { id: '+add-provider', label: 'Add model' },
+      },
+    );
+    const items = [...menu.querySelectorAll<HTMLElement>('.treedd__item')];
+    expect(items[0].classList.contains('is-active')).toBe(true);
+    expect(items[0].classList.contains('is-new')).toBe(false);
+    expect(items[1].classList.contains('is-new')).toBe(true);
+    expect(items[1].getAttribute('title')).toBe('Newly added model');
+    expect(items[1].getAttribute('aria-current')).toBe('false');
+    // 尾项不冒领新项语义
+    expect(items[2].classList.contains('is-new')).toBe(false);
+  });
+
+  it('同一项可既是 is-active 又是 is-new（选中刚新增的模型后两通道并存）', () => {
+    view.renderPicker(menu, trigger, [{ name: 'a', displayName: 'A' }], 'a', {
+      ...OPTS,
+      justAddedNames: new Set(['a']),
+      newLabel: 'Newly added model',
+    });
+    const item = menu.querySelector('.treedd__item') as HTMLElement;
+    expect(item.classList.contains('is-active')).toBe(true);
+    expect(item.classList.contains('is-new')).toBe(true);
+    expect(item.getAttribute('aria-current')).toBe('true');
   });
 });

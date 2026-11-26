@@ -47,6 +47,14 @@ export interface PickerView {
       ariaLabel: string;
       /** 可选固定尾项（分隔线 + 单按钮）；不传则产物逐字不变 */
       footerAction?: PickerFooterAction;
+      /**
+       * 可选「刚出现」标记（MODEL-PICKER-NEW-1）：命中 name 的项加 `is-new` 视觉通道，
+       * 与 is-active（已切换语义）正交——差集由调用方从 chat_providers 派生，本域只消费。
+       * 不传则产物逐字不变。
+       */
+      justAddedNames?: ReadonlySet<string>;
+      /** is-new 项的无障碍说明文案（调用方已本地化）；不传则只加 class，不写 title */
+      newLabel?: string;
     },
   ): void;
 }
@@ -65,6 +73,8 @@ export function createPickerView(deps: PickerViewDeps): PickerView {
       labelFallback: string;
       ariaLabel: string;
       footerAction?: PickerFooterAction;
+      justAddedNames?: ReadonlySet<string>;
+      newLabel?: string;
     },
   ): void {
     if (!menu) return;
@@ -73,9 +83,12 @@ export function createPickerView(deps: PickerViewDeps): PickerView {
     if (items.length > 0) {
       items.forEach((p) => {
         const isActive = p.name === activeName;
+        const isNew = opts.justAddedNames?.has(p.name) === true;
         const btn = document.createElement('button');
-        btn.className = 'treedd__item' + (isActive ? ' is-active' : '');
+        btn.className = 'treedd__item' + (isActive ? ' is-active' : '') + (isNew ? ' is-new' : '');
         btn.setAttribute('role', 'menuitem');
+        // 新项文字提示走 title（伪元素角标不进读屏）：is-new 与 is-active 正交，同项可并存
+        if (isNew && opts.newLabel) btn.title = opts.newLabel;
         // 选中态第二通道：aria-current 是全局属性，对 menuitem 合法；
         // aria-selected 只归 role=tab（设置页 / 历史分组），搬到菜单项是无效语义。
         // 值直接从 isActive 派生，不复制第二份真源。

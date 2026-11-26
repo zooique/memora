@@ -194,4 +194,15 @@ describe('加号面板守卫（COMPOSER-PLUS-FLAT-1）', () => {
     expect(DROPDOWN_CSS).toContain('.treedd__item:focus-visible {');
     expect(DROPDOWN_CSS).toContain('background: var(--menu-selection-bg, rgba(14, 99, 156, 0.06))');
   });
+
+  it('新出现项角标（MODEL-PICKER-NEW-1）：inset 竖条复用既有令牌，与选中态浅底正交', () => {
+    const isNew = cssRule('.model-picker .treedd__item.is-new');
+    expect(isNew).toContain('box-shadow: inset var(--sp-0');
+    expect(isNew).toContain('var(--accent');
+    // 角标不写 background（避免覆盖 is-active 的浅底），两通道可并存
+    expect(isNew).not.toContain('background:');
+    // 基线：公共条目规则未被牵连
+    const DROPDOWN_CSS = readFileSync(join(HERE, '..', 'styles', 'dropdown.ts'), 'utf8');
+    expect(DROPDOWN_CSS).not.toContain('.treedd__item.is-new');
+  });
 });
