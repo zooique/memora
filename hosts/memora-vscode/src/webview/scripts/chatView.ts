@@ -1586,9 +1586,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *
    * 发送的 `disabled` 只出现在 **done + 空输入**（空输入无法发送）；运行中（thinking/paused）
    * 无论有无输入都可用——有输入 = interject 排队 / 带补充续跑，空输入 = 停止 / 继续。
-   * 润色的 `disabled` = **空输入，或自助形态运行中**（此时输入会被当作 interject / 续跑
-   * 补充，改文本会让提交语义漂移）；助手座位无运行时，只按 hasInput 判。与发送键同随输入
-   * 事件翻转，不另立阈值、不读 `composer_state`（POLISH-EMPTY-1）。派生层单测穷举锁定。
+   * 润色的 `disabled` = **恒等于空输入**（只看 hasInput，与 turn 状态无关）：运行中补充输入
+   * 同样可润色，润色只改写待发送文本、不改变提交语义。与发送键同随输入事件翻转，
+   * 不另立阈值、不读 `composer_state`（POLISH-EMPTY-1）。派生层单测穷举锁定。
    * 调用点 = 一切输入内容/按钮状态变化处：input 事件、程序化预填/清空、setStatus。
    */
   function syncSendEnabled(): void {

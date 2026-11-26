@@ -122,9 +122,10 @@ export interface ButtonSemantics {
   /** 发送按钮语义（`loading` = 呈现为停止方块） */
   send: { loading: boolean; title: string; ariaLabel: string; disabled: boolean };
   /**
-   * 润色按钮可用态（POLISH-EMPTY-1）：与发送键**共用** `hasInput` 自变量，不另立阈值、不读
-   * `composer_state`（那是宿主落定判据，拿来做 UI 态就是第二真源）。自助形态运行中禁用——
-   * 此时输入会被当作 interject / 续跑补充，改文本会让提交语义漂移；助手座位无运行时。
+   * 润色按钮可用态（POLISH-EMPTY-1）：**只由 `hasInput` 决定**（`disabled === !hasInput`），
+   * 与 turn 状态（thinking / paused / done）无关。润色只改写待发送文本、不改变提交语义，
+   * 运行时补充输入（interject / 续跑补充）同样需要润色，故不随运行态禁用。不另立阈值、
+   * 不读 `composer_state`（那是宿主落定判据，拿来做 UI 态就是第二真源）。
    */
   polish: { disabled: boolean };
 }
@@ -143,15 +144,19 @@ export interface ButtonSemantics {
  * 用户输入也就答非所问（一条文本无法定位到 N 题）。
  * 故提交当前由 webview `sendMessage` 与宿主 `sendInput` 双层拒收，答题唯一入口 = 内联提问卡。
  *
- * `disabled` 判据：**只有 `done` + 空输入**才禁用——运行中（thinking/paused）无论有无输入
+ * `disabled` 判据（发送键）：**只有 `done` + 空输入**才禁用——运行中（thinking/paused）无论有无输入
  * 都可用（有输入 = interject 排队 / 带补充续跑；ask 期有输入虽 enabled，但提交被上述
  * 双侧守卫拒收并指引内联卡，不会落地为答题）。
+ *
+ * `polish.disabled` 判据：**恒等于 `!hasInput`**，不随 turn 状态分叉（运行中补充输入同样可润色）。
  */
 export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemantics {
   const { state, hasInput } = input;
   const form: UiForm = input.form ?? 'self';
   const sessionUiState = deriveSessionUiState(state);
   const pausePending = derivePausePending(state);
+  // 润色只看输入是否有内容（与 turn 状态无关）：运行中补充输入同样可润色，四分支统一取此值
+  const polishDisabled = !hasInput;
 
   // 助手座位 = 微信心智模型（2026-11-16 用户拍板）：发送了就脱手，没有运行时。
   // 发送键恒为发送语义——空输入禁用（微信空消息不可发），有输入 = 排队（interjection
@@ -168,7 +173,7 @@ export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemant
         ariaLabel: hasInput ? l10n.t('Send follow-up') : l10n.t('Send'),
         disabled: !hasInput,
       },
-      polish: { disabled: !hasInput },
+      polish: { disabled: polishDisabled },
     };
   }
 
@@ -207,7 +212,7 @@ export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemant
             ariaLabel: l10n.t('Stop generating'),
             disabled: false,
           },
-      polish: { disabled: true },
+      polish: { disabled: polishDisabled },
     };
   }
 
@@ -237,7 +242,7 @@ export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemant
         ariaLabel: l10n.t('Stop generating'),
         disabled: false,
       },
-      polish: { disabled: true },
+      polish: { disabled: polishDisabled },
     };
   }
 
@@ -249,6 +254,6 @@ export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemant
       ariaLabel: l10n.t('Send'),
       disabled: !hasInput,
     },
-    polish: { disabled: !hasInput },
+    polish: { disabled: polishDisabled },
   };
 }

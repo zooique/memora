@@ -364,18 +364,23 @@ describe('deriveButtonSemantics · 润色可用态（POLISH-EMPTY-1）', () => {
     { name: 'done 空输入', state: { phase: 'idle' }, hasInput: false, expected: true },
     { name: 'done 有输入', state: { phase: 'settled' }, hasInput: true, expected: false },
     { name: 'thinking 空输入', state: { phase: 'running' }, hasInput: false, expected: true },
-    { name: 'thinking 有输入（提交语义会漂移）', state: { phase: 'running' }, hasInput: true, expected: true },
+    {
+      name: 'thinking 有输入（润色不随运行态禁用）',
+      state: { phase: 'running' },
+      hasInput: true,
+      expected: false,
+    },
     {
       name: 'waiting(pause) 有输入',
       state: { phase: 'waiting', reason: 'pause' },
       hasInput: true,
-      expected: true,
+      expected: false,
     },
     {
       name: 'waiting(ask) 有输入',
       state: { phase: 'waiting', reason: 'ask' },
       hasInput: true,
-      expected: true,
+      expected: false,
     },
     {
       name: '助手座位 空输入',
@@ -396,6 +401,23 @@ describe('deriveButtonSemantics · 润色可用态（POLISH-EMPTY-1）', () => {
   it.each(CASES)('$name → polish.disabled=$expected', ({ state, hasInput, form, expected }) => {
     const spec = deriveButtonSemantics({ state, hasInput, form });
     expect(spec.polish.disabled).toBe(expected);
+  });
+
+  it('全状态恒等：polish.disabled 恒等于 !hasInput（与 turn 状态无关）', () => {
+    const states: SkeletonState[] = [
+      { phase: 'idle' },
+      { phase: 'running' },
+      { phase: 'waiting', reason: 'pause' },
+      { phase: 'waiting', reason: 'ask' },
+      { phase: 'settled' },
+    ];
+    for (const state of states) {
+      for (const hasInput of [false, true]) {
+        for (const form of ['self', 'assistant'] as const) {
+          expect(deriveButtonSemantics({ state, hasInput, form }).polish.disabled).toBe(!hasInput);
+        }
+      }
+    }
   });
 
   it('与发送键同源：done 态下 polish 与 send 的禁用态逐格一致', () => {
