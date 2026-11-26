@@ -48,12 +48,16 @@ describe('输入区 Row1 几何守卫（COMPOSER-GEOM-1）', () => {
     expect(TOKENS).toMatch(/--sq-lg:\s*24px/);
   });
 
-  it('分组缝只在润色左缘：组内 6px、组间 16px，且不靠新增 DOM wrapper', () => {
+  // 判据变更留痕（2026-11-26）：组间缝 16→10 由用户真机反馈「润色与模型间距过大」驱动，
+  // 是止血（真机结论推翻原设计值），不是为让守卫转绿而放宽。真机复验仍待用户，未留量测证据。
+  it('分组缝只在润色左缘：组内 6px、组间 10px，且不靠新增 DOM wrapper', () => {
     const polish = blockOf('.polish-btn-icon {');
-    // 组间缝 = gap(6) + margin-left(10) = 16，是组内 6 的 2.67 倍
-    expect(polish).toMatch(/margin-left:\s*var\(--sp-4,\s*10px\)/);
+    // 组间缝 = gap(6) + margin-left(4) = 10，是组内 6 的 1.67 倍
+    expect(polish).toMatch(/margin-left:\s*var\(--sp-1,\s*4px\)/);
     // 分组靠 CSS margin，不在骨架里加 wrapper 节点（避免生产/测试双骨架漂移）
     expect(polish).not.toMatch(/margin-left:\s*\d+px/);
+    // 原值不得回潮（真机已否 16px）
+    expect(polish).not.toMatch(/margin-left:\s*var\(--sp-4,\s*10px\)/);
     // 图片按钮不得自带左缘 margin —— 它与润色同组，组内仍走 .composer-left 的 gap
     expect(blockOf('.image-attach-btn {')).not.toMatch(/margin-left/);
     // .composer-left 的 gap 维持 6px（组内节奏不被改动）

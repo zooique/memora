@@ -39,13 +39,10 @@ describe('pickerView 固定尾项（MODEL-PICKER-ADD-1）', () => {
   });
 
   it('传 footerAction：分隔线 + 单按钮，id 落到 data-treedd-id 供委托分流', () => {
-    view.renderPicker(
-      menu,
-      trigger,
-      [{ name: 'mimo', displayName: 'Mimo' }],
-      'mimo',
-      { ...OPTS, footerAction: { id: '+add-provider', label: 'Add model' } },
-    );
+    view.renderPicker(menu, trigger, [{ name: 'mimo', displayName: 'Mimo' }], 'mimo', {
+      ...OPTS,
+      footerAction: { id: '+add-provider', label: 'Add model' },
+    });
     expect(menu.querySelector('.treedd__divider')).not.toBeNull();
     const items = [...menu.querySelectorAll('.treedd__item')];
     expect(items.map((b) => b.textContent)).toEqual(['Mimo', 'Add model']);

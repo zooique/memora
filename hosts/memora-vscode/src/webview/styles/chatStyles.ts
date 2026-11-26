@@ -2184,7 +2184,7 @@ export const chatStyles = `
      * 不再另写一条 border 覆盖规则（第二落点会随特异性/注入顺序漂移）。 */
     --dd-trigger-border: none;
   }
-  /* `+` 挂载门（COMPOSER-PLUS-1）：Row1 最左唯一聚合入口。capsule 变体复用 dropdown.ts，
+  /* 「+」挂载门（COMPOSER-PLUS-1）：Row1 最左唯一聚合入口。capsule 变体复用 dropdown.ts，
    * 仅方形化（28×28 与 .ctl 同高）与去箭头（+ 本身即「添加」语义，再挂 ▾ 是双重承诺）。 */
   .composer-plus.treedd--capsule .treedd__trigger {
     width: var(--sq-xl, 28px);
@@ -2358,14 +2358,16 @@ export const chatStyles = `
   }
   /* 润色按钮（图标化，弱化样式）：边框/圆角/尺寸基座由 .ctl 提供，此处只留差异。
    * hover 提亮到 accent（比通用 .ctl 的 --text-primary 更有指向性）。
-   * 分组缝（COMPOSER-GEOM-1）：左缘 margin 与 .composer-left 的 gap 叠加成 16px 组间缝，
-   * 把「Skill + 模型」（选择器组）与「润色 + 图片」（动作组）在视觉上分开；组内仍 6px。
+   * 分组缝（COMPOSER-GEOM-1 · 2026-11-26 真机反馈收窄）：左缘 margin 与 .composer-left
+   * 的 gap 叠加成 10px 组间缝，把「Skill + 模型」（选择器组）与「润色 + 图片」（动作组）
+   * 在视觉上分开；组内仍 6px（组间:组内 ≈ 1.7:1）。原 16px（margin sp-4）经用户真机反馈
+   * 「间距过大」后收窄为 sp-1 —— 判据由真机结论改写，非为让守卫转绿而放宽。
    * 只加 margin 不动 DOM：不新增 wrapper、不碰生产/测试双骨架，零结构伤；固定 28px 宽
    * 不触发 narrowWidthGuard（它只管 max-width），窄窗下 flex-shrink 由胶囊省略号兜底。 */
   .polish-btn-icon {
     width: var(--sq-xl, 28px);
     height: var(--sq-xl, 28px);
-    margin-left: var(--sp-4, 10px);
+    margin-left: var(--sp-1, 4px);
     padding: 0;
     cursor: pointer;
   }

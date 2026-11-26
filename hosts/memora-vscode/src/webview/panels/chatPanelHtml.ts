@@ -286,7 +286,8 @@ export function buildHtml(
                 triggerLabel: getIconSvg('plus', 16, 16),
                 triggerTitle: vscode.l10n.t('Add to message'),
                 triggerAriaLabel: vscode.l10n.t('Add to message'),
-                menuLeadingHtml: '<div class="skill-picker"></div><div class="treedd__divider"></div>',
+                menuLeadingHtml:
+                  '<div class="skill-picker"></div><div class="treedd__divider"></div>',
               },
             )}
             <!-- Skill 菜单已内联进加号面板的 .skill-picker 容器（COMPOSER-PLUS-FLAT-1）：

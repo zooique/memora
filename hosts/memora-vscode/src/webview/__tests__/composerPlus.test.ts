@@ -50,7 +50,9 @@ describe('加号面板守卫（COMPOSER-PLUS-FLAT-1）', () => {
       HTML.indexOf("extraClass: 'model-picker"),
     );
     // 技能内容容器直接挂在菜单头部：点一次加号就看到搜索框与技能列表
-    expect(head).toMatch(/menuLeadingHtml:\s*'<div class="skill-picker"><\/div><div class="treedd__divider"><\/div>'/);
+    expect(head).toMatch(
+      /menuLeadingHtml:\s*'<div class="skill-picker"><\/div><div class="treedd__divider"><\/div>'/,
+    );
     // 两个立即动作项仍在，但「skill」链接项已退役（否则又变回两步）
     expect(head).toContain("{ id: 'image', label:");
     expect(head).toContain("{ id: 'file', label:");
@@ -73,7 +75,10 @@ describe('加号面板守卫（COMPOSER-PLUS-FLAT-1）', () => {
     expect(cb).not.toContain('skillPickerView.openMenu()');
     expect(cb).not.toMatch(/createElement\('input'|skill_pick|composer_plus/);
     // 斜杠入口仍复用 openSlashHint（与加号面板同一菜单、同一搜索状态）
-    const openMenu = SKILL.slice(SKILL.indexOf('openMenu(): void {'), SKILL.indexOf('openMenu(): void {') + 80);
+    const openMenu = SKILL.slice(
+      SKILL.indexOf('openMenu(): void {'),
+      SKILL.indexOf('openMenu(): void {') + 80,
+    );
     expect(openMenu).toContain('openSlashHint()');
     expect(openMenu).not.toContain('setDropdownOpen');
   });
@@ -165,7 +170,9 @@ describe('加号面板守卫（COMPOSER-PLUS-FLAT-1）', () => {
     expect(COMPONENT).toContain('it.icon ? `<span class="treedd__item-icon"');
     // 搜索框分层 + 细滚动条：只在本门覆写，公共 sticky / border-bottom 契约不动
     expect(cssRule('.composer-plus .treedd__search')).toContain('background: var(--surface-inset');
-    expect(cssRule('.composer-plus .treedd__menu > .skill-picker')).toContain('scrollbar-width: thin');
+    expect(cssRule('.composer-plus .treedd__menu > .skill-picker')).toContain(
+      'scrollbar-width: thin',
+    );
     expect(DROPDOWN_CSS).toContain('.treedd__search {');
     expect(DROPDOWN_CSS).toMatch(/position: sticky; top: 0/);
   });
@@ -174,7 +181,9 @@ describe('加号面板守卫（COMPOSER-PLUS-FLAT-1）', () => {
     expect(FIXTURE).toMatch(
       /class="treedd composer-plus treedd--capsule" data-treedd data-on-select="__composerPlusOnSelect"/,
     );
-    expect(FIXTURE).toMatch(/<div class="treedd__menu" role="menu"><div class="skill-picker"><\/div>/);
+    expect(FIXTURE).toMatch(
+      /<div class="treedd__menu" role="menu"><div class="skill-picker"><\/div>/,
+    );
     expect(FIXTURE).not.toContain('data-on-select="__skillPickerOnSelect"');
     expect(FIXTURE).not.toContain('treedd skill-picker');
     // 夹具不得硬编码 data-treedd-id：骨架一致性守卫会把它们当成夹具凭空多出的 id
