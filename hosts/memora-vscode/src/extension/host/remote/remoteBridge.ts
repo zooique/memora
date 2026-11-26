@@ -16,13 +16,26 @@
  * profile 2 的能力边界（写在代码里，防止后来者把它读成「桥已完成」）：
  *   - 只发 `evt{kind:'snapshot', seq:0}`，**没有** `delta` 与水位补洞（`resume` 一律回 `reset_required`）；
  *   - 只投递 `answer`（只读 + 可答档）；其余命令回 `err{code:'forbidden'}`；
- *   - 无配对 / 指纹 / E2EE / 限流 / 审计（六项安全底线随 profile 3 同批落地）。
+ *   - 回环档（`security` 缺省）无配对 / 指纹 / 限流 / 审计，只绑 `127.0.0.1`。
+ *
+ * profile 3（LAN）的差异段（§5.9 / §16.2 / §19.9）——**判据全部由宿主经 `security` 注入**：
+ *   - 连接层：设备指纹来自 TLS 客户端证书（`security.fingerprintOf`）；
+ *   - 握手层：`phoneFp` 必须与 TLS 指纹一致；未配对需一次性口令 + PC 人工批准；
+ *   - 命令层：设备权限档由 `security.tierOf` 决定，`answer` 需 `approve` 档；
+ *   - 旁路：失败限流（`security.rateLimit`）与追加式审计（`security.audit`）。
+ *   桥**不自己**判指纹 / 档位 / 口令——那会在真理源之外造第二份判据。
  */
 
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
+import type { Server as HttpsServer } from 'node:https';
+import type { IncomingMessage } from 'node:http';
 import type { RoundView, TurnState } from '../../../shared/protocol.js';
 import { routeRemoteAnswer } from './remoteAnswerRouter.js';
-import { REMOTE_COMMAND_CODES, type RemotePhase } from './remoteCommandPolicy.js';
+import { REMOTE_COMMAND_CODES, REMOTE_CTL_CODES, type RemotePhase } from './remoteCommandPolicy.js';
+import { shortFingerprint } from './remoteIdentity.js';
+import type { RemoteDeviceTier } from './remoteDevices.js';
+import type { RemoteRateLimitState } from './remoteRateLimiter.js';
+import type { PairingVerdict } from './remotePairing.js';
 import {
   parseBridgeFrame,
   serializeBridgeFrame,
@@ -58,14 +71,62 @@ export interface RemoteBridgePorts {
   deliverAnswer: (sessionId: string, answers: readonly string[]) => void;
 }
 
+/**
+ * 桥的安全端口（profile 3 / LAN 档；**全部由宿主注入，桥不自己判**）
+ *
+ * 这一层刻意只收窄函数：桥回答「谁在连、他是什么档、口令对不对、准不准入、要不要记账」，
+ * 但每个答案的生产权都在宿主（TLS 证书 / 设备表 / 一次性口令 / 限流器 / 审计文件）。
+ * 若桥自己实现其中任何一条，就会出现「桥一套、宿主一套」的两份判据（§19.2 不变量 1）。
+ */
+export interface RemoteBridgeSecurity {
+  /** 已认证设备指纹（来自 TLS 客户端证书；取不到 = 未认证连接） */
+  fingerprintOf: (socket: unknown) => string | undefined;
+  /** 已配对设备的权限档（undefined = 未配对） */
+  tierOf: (fingerprint: string) => RemoteDeviceTier | undefined;
+  /** 校验一次性配对口令（语义见 `remotePairing`） */
+  verifyPasscode: (code: string) => PairingVerdict;
+  /** 首次配对：请求 PC 侧人工批准（true = 允许） */
+  requestApproval: (info: {
+    fingerprint: string;
+    shortFp: string;
+    name: string;
+    ip?: string;
+  }) => Promise<boolean>;
+  /** 配对通过后登记设备（默认 `observe` 档由宿主实现决定） */
+  registerDevice: (info: { fingerprint: string; shortFp: string; name: string }) => void;
+  /** 失败限流（按 IP / 指纹维度） */
+  rateLimit: {
+    check(key: string): RemoteRateLimitState;
+    noteFailure(key: string): RemoteRateLimitState;
+    noteSuccess(key: string): void;
+  };
+  /** 追加式审计（实现必须永不抛出） */
+  audit: (event: { event: string; deviceFp?: string; ip?: string; detail?: string }) => void;
+}
+
 /** 桥启动参数 */
 export interface RemoteBridgeOptions {
   /** 稳定主机身份（多窗口区分用，§8-P1-8） */
   pcId: string;
-  /** 能力协商（§6.8）：profile 2 只有 observe + answer */
+  /** 能力协商（§6.8）：回环档只有 observe + answer */
   caps?: readonly string[];
   /** 端口；0 = 由系统分配（测试用），缺省 = 0（**不猜固定端口**，避免与真机端口占用混淆） */
   port?: number;
+  /**
+   * 监听地址；缺省 `127.0.0.1`
+   *
+   * 绑定地址是安全边界（§16.2 G1）：LAN 档由宿主显式传 `0.0.0.0`，桥不替用户决定暴露面。
+   */
+  host?: string;
+  /**
+   * 外部 HTTPS server（LAN 档）
+   *
+   * 提供时桥用 `new WebSocketServer({ server })` 挂上来，并在 `start()` 里让它监听；
+   * 不提供时桥自己建 WS server 并只绑 `127.0.0.1`（回环档现状）。
+   */
+  server?: HttpsServer;
+  /** 安全端口（提供 = LAN 档；缺省 = 回环档，行为与 profile 2 一致） */
+  security?: RemoteBridgeSecurity;
   /** 日志口（连接级 / 服务级异常只记这里，不弹窗、不抛给 VS Code 事件循环） */
   log?: (message: string) => void;
 }
@@ -75,6 +136,10 @@ interface ClientConnection {
   ws: WebSocket;
   /** 握手成功后的设备 id；undefined = 未完成 hello */
   deviceId?: string;
+  /** TLS 客户端证书指纹（LAN 档；undefined = 未认证 / 回环档） */
+  deviceFp?: string;
+  /** 来源 IP（限流维度 + 审计留痕；undefined = 取不到） */
+  peerIp?: string;
   /** 本连接订阅的会话集合（订阅生命周期与「手机在看哪个 tab」解耦，§19.6.3 第 2 条） */
   subs: Set<string>;
 }
@@ -91,6 +156,8 @@ const DEFAULT_MAX_FRAME = 1024 * 1024;
 export class RemoteBridge {
   /** WS server（未 start 时 undefined；`stop()` 后复位） */
   private server?: WebSocketServer;
+  /** 外部 HTTPS server（LAN 档；stop 时一并关闭，幂等） */
+  private externalServer?: HttpsServer;
   /** 活动连接（stop 时统一关闭） */
   private readonly connections = new Set<ClientConnection>();
   /** 实际监听端口（未监听时 undefined） */
@@ -109,51 +176,71 @@ export class RemoteBridge {
   /**
    * 开始监听
    *
-   * **只绑 `127.0.0.1`**：绑定地址是安全边界（§19.1 第 3 条），不是可替换实现细节，
-   * 故这里不接受 host 参数——要开 LAN 档必须走 profile 3 的六项安全底线，而不是改个字符串。
+   * 两种形态（同一个 `start()`，差异只在是否有外部 server）：
+   *   - **回环档**（无 `server`）：桥自建 WS server，**只绑 `127.0.0.1`**——
+   *     绑定地址是安全边界（§16.2 G1），不接受 host 参数；
+   *   - **LAN 档**（有 `server`）：挂在宿主传入的 HTTPS server 上，由它监听 `host` / `port`；
+   *     安全底线（TLS / 配对 / 限流 / 审计）由 `security` 端口提供。
    *
    * @returns 实际端口（`port:0` 时由系统分配）
    * @throws 监听失败（端口占用 / 权限不足）——调用方必须显式报错并保持未监听态
    */
   start(): Promise<{ port: number }> {
     if (this.server) return Promise.reject(new Error('RemoteBridge already started'));
-    const server = new WebSocketServer({
-      host: '127.0.0.1',
-      port: this.options.port ?? 0,
-      maxPayload: DEFAULT_MAX_FRAME,
-    });
+    const external = this.options.server;
+    const server = external
+      ? new WebSocketServer({ server: external, maxPayload: DEFAULT_MAX_FRAME })
+      : new WebSocketServer({
+          host: '127.0.0.1',
+          port: this.options.port ?? 0,
+          maxPayload: DEFAULT_MAX_FRAME,
+        });
     this.server = server;
-    server.on('connection', (ws) => this.onConnection(ws));
+    this.externalServer = external;
+    // 连接回调带 req：LAN 档要从 `req.socket` 取 TLS 指纹与来源 IP
+    server.on('connection', (ws, req) => this.onConnection(ws, req));
+    // 常驻 error 监听：EventEmitter 的 'error' 无人接管会直接抛出，把扩展宿主进程拖崩
+    server.on('error', (err) => this.options.log?.(`[REMOTE-BRIDGE] server error: ${String(err)}`));
+    // 有外部 server 时，监听事件发在它身上（ws 只是 upgrade 的旁挂）
+    const listenTarget = external ?? server;
     return new Promise((resolve, reject) => {
       // 监听失败必须冒泡（§16.2：禁止「失败但 UI 显示已连接」）
-      server.once('error', (err) => {
+      listenTarget.once('error', (err) => {
         this.server = undefined;
+        this.externalServer = undefined;
         this.port = undefined;
         reject(err);
       });
-      server.once('listening', () => {
-        const address = server.address();
+      listenTarget.once('listening', () => {
+        const address = listenTarget.address();
         const port = typeof address === 'object' && address ? address.port : 0;
         this.port = port;
-        // 监听后仍需一个常驻 error 监听：EventEmitter 的 'error' 无人接管会直接抛出，
-        // 把扩展宿主进程拖崩（端口这类已建立的监听之后仍可能有底层错误）
-        server.on('error', (err) =>
-          this.options.log?.(`[REMOTE-BRIDGE] server error: ${String(err)}`),
-        );
+        // 外部 HTTPS server 的常驻 error 监听（除上面的 reject 监听外还要兜后续错误）
+        if (external) {
+          external.on('error', (err) =>
+            this.options.log?.(`[REMOTE-BRIDGE] https server error: ${String(err)}`),
+          );
+        }
         resolve({ port });
       });
+      if (external) {
+        external.listen({ host: this.options.host ?? '127.0.0.1', port: this.options.port ?? 0 });
+      }
     });
   }
 
   /**
    * 停止监听并关闭全部连接
    *
-   * 幂等：未启动时直接返回（deactivate 会无条件调用）。
+   * 幂等：未启动时直接返回（deactivate 会无条件调用）。带外部 server 时一并关闭它
+   * （half-open 的 HTTPS server 比「关干净」更危险：端口占着、却没有 WS 消费者）。
    */
   async stop(): Promise<void> {
     const server = this.server;
     if (!server) return;
+    const external = this.externalServer;
     this.server = undefined;
+    this.externalServer = undefined;
     this.port = undefined;
     for (const conn of this.connections) {
       // 1001 = going away：告诉对端是宿主主动关闭，不是网络故障
@@ -161,6 +248,14 @@ export class RemoteBridge {
     }
     this.connections.clear();
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (!external) return;
+    await new Promise<void>((resolve) => {
+      if (!external.listening) {
+        resolve();
+        return;
+      }
+      external.close(() => resolve());
+    });
   }
 
   /**
@@ -184,9 +279,28 @@ export class RemoteBridge {
 
   // ─── 连接与帧分派 ───────────────────────────────────────────────────
 
-  /** 新连接：登记 + 绑定两个事件（close 时移除，避免连接集合泄漏） */
-  private onConnection(ws: WebSocket): void {
-    const conn: ClientConnection = { ws, subs: new Set() };
+  /**
+   * 新连接：登记 + 绑定两个事件（close 时移除，避免连接集合泄漏）
+   *
+   * LAN 档额外做一次 TLS 身份采集：`security` 存在却取不到客户端证书指纹 ⇒ 立刻断开
+   * （不回业务帧，避免给探测者任何信号），并留一条审计。
+   */
+  private onConnection(ws: WebSocket, req: IncomingMessage): void {
+    const conn: ClientConnection = {
+      ws,
+      subs: new Set(),
+      peerIp: req.socket.remoteAddress,
+    };
+    const security = this.options.security;
+    if (security) {
+      const fingerprint = security.fingerprintOf(req.socket);
+      if (!fingerprint) {
+        this.audit(security, { event: 'tls_identity_missing', ip: conn.peerIp });
+        ws.close(1008, 'tls identity missing');
+        return;
+      }
+      conn.deviceFp = fingerprint;
+    }
     this.connections.add(conn);
     ws.on('close', () => this.connections.delete(conn));
     // 连接级错误必须接管：未接管的 'error' 会以未捕获异常形式冒到宿主进程
@@ -225,7 +339,11 @@ export class RemoteBridge {
     }
     switch (frame.t) {
       case 'hello':
-        this.handleHello(conn, frame.deviceId);
+        // 握手可能 await 人工批准：异步失败必须收回本连接，不能漏成未处理拒绝
+        void this.handleHello(conn, frame).catch((err: unknown) => {
+          this.options.log?.(`[REMOTE-BRIDGE] hello failed: ${String(err)}`);
+          conn.ws.close(1011, 'hello failed');
+        });
         return;
       case 'ping':
         this.send(conn, { t: 'pong', ch: 'ctl' });
@@ -254,9 +372,93 @@ export class RemoteBridge {
     }
   }
 
+  /**
+   * 握手（回环档 = 直接接受；LAN 档 = 指纹核对 + 已配对判定 + 一次性口令 + 人工批准）
+   *
+   * 判据顺序不可换（§5.3 / §5.8 / §5.9）：
+   *   ① TLS 身份必须存在（连接层已拦，这里只是防御分支）；
+   *   ② `phoneFp`（客户端声明）必须等于 TLS 证书指纹——声明与证书不符 = 冒充；
+   *   ③ 已配对（设备表有该指纹）⇒ 直接 `hello_ok`，不弹窗（首次信任即固定，§5.4）；
+   *   ④ 未配对 ⇒ 先查限流（封禁中直接拒绝），再校验一次性口令，最后 PC 人工批准；
+   *   ⑤ 批准 ⇒ 登记为 `observe` 档（默认最小权限，§5.9）并清掉失败计数。
+   */
+  private async handleHello(
+    conn: ClientConnection,
+    frame: Extract<BridgeClientFrame, { t: 'hello' }>,
+  ): Promise<void> {
+    const security = this.options.security;
+    if (!security) {
+      // 回环档（profile 2）：保持今天的行为——不校验 phoneFp、不需要 pid
+      conn.deviceId = frame.deviceId;
+      this.sendHelloOk(conn);
+      return;
+    }
+    const deviceFp = conn.deviceFp;
+    if (!deviceFp) {
+      // 正常路径不会到这里（连接层已断开）；保留分支是为了 fail-closed，而不是 fail-open。
+      // 不新增文档外错误码：未认证连接按「不给探测信号」直接断开（§4.5.5）。
+      this.audit(security, { event: 'hello_identity_missing', ip: conn.peerIp });
+      conn.ws.close(1008, 'tls identity missing');
+      return;
+    }
+    if (frame.phoneFp.trim().toUpperCase() !== deviceFp) {
+      this.audit(security, {
+        event: 'hello_fp_mismatch',
+        deviceFp,
+        ip: conn.peerIp,
+        detail: 'phoneFp 与 TLS 证书指纹不符',
+      });
+      this.send(conn, { t: 'err', ch: 'ctl', code: REMOTE_CTL_CODES.BAD_PASSCODE });
+      conn.ws.close(1008, 'phone fingerprint mismatch');
+      return;
+    }
+    // 已配对：首次信任已固定，后续连接只校验指纹，不再弹窗（§5.4）
+    if (security.tierOf(deviceFp)) {
+      conn.deviceId = deviceFp;
+      this.sendHelloOk(conn);
+      return;
+    }
+    // ── 未配对：限流 → 口令 → 人工批准（三步缺一不可） ──
+    const ip = conn.peerIp ?? 'unknown';
+    if (security.rateLimit.check(ip).blocked) {
+      this.audit(security, { event: 'pairing_rate_limited', deviceFp, ip });
+      this.send(conn, { t: 'err', ch: 'ctl', code: REMOTE_CTL_CODES.BAD_PASSCODE });
+      conn.ws.close(1008, 'rate limited');
+      return;
+    }
+    const verdict = security.verifyPasscode(frame.pid ?? '');
+    if (verdict !== 'ok') {
+      security.rateLimit.noteFailure(ip);
+      this.audit(security, { event: 'pairing_rejected', deviceFp, ip, detail: verdict });
+      this.send(conn, { t: 'err', ch: 'ctl', code: REMOTE_CTL_CODES.BAD_PASSCODE });
+      conn.ws.close(1008, 'pairing rejected');
+      return;
+    }
+    const shortFp = shortFingerprint(deviceFp);
+    const approved = await security.requestApproval({
+      fingerprint: deviceFp,
+      shortFp,
+      name: frame.deviceId,
+      ip: conn.peerIp,
+    });
+    // 审批期间连接可能已断开（用户取消 / 网络断了）：不再尝试回帧
+    if (conn.ws.readyState !== conn.ws.OPEN) return;
+    if (!approved) {
+      security.rateLimit.noteFailure(ip);
+      this.audit(security, { event: 'pairing_denied', deviceFp, ip });
+      this.send(conn, { t: 'err', ch: 'ctl', code: REMOTE_CTL_CODES.BAD_PASSCODE });
+      conn.ws.close(1008, 'pairing denied');
+      return;
+    }
+    security.registerDevice({ fingerprint: deviceFp, shortFp, name: frame.deviceId });
+    security.rateLimit.noteSuccess(ip);
+    this.audit(security, { event: 'device_paired', deviceFp, ip });
+    conn.deviceId = deviceFp;
+    this.sendHelloOk(conn);
+  }
+
   /** 握手应答（`assistantSid` 直接取宿主投影，桥不推断助手身份） */
-  private handleHello(conn: ClientConnection, deviceId: string): void {
-    conn.deviceId = deviceId;
+  private sendHelloOk(conn: ClientConnection): void {
     const assistantSid = this.ports.listSessions().assistantSid;
     const frame: BridgeServerFrame = {
       t: 'hello_ok',
@@ -268,6 +470,18 @@ export class RemoteBridge {
       assistantSid,
     };
     this.send(conn, frame);
+  }
+
+  /** 审计旁路（实现约定永不抛出；这里再兜一层，保证审计异常不影响握手 / 连接） */
+  private audit(
+    security: RemoteBridgeSecurity,
+    event: { event: string; deviceFp?: string; ip?: string; detail?: string },
+  ): void {
+    try {
+      security.audit(event);
+    } catch (err) {
+      this.options.log?.(`[REMOTE-BRIDGE] audit failed: ${String(err)}`);
+    }
   }
 
   /** 订阅：定址判据只问 `hasSession`；命中即回一次快照（`seq` 归零重建，§6.7） */
@@ -295,7 +509,8 @@ export class RemoteBridge {
    * 业务命令
    *
    * 顺序不可换：**先权限档、再相位表、最后投递**。
-   *   - 权限档：profile 2 只放行 `answer`（只读 + 可答），其余回 `forbidden`；
+   *   - 权限档：回环档只放行 `answer`（只读 + 可答）；LAN 档再叠一层设备档
+   *     （`tierOf` 为 undefined ⇒ `forbidden`；`answer` 需 `approve` 档，§5.9）；
    *   - 相位表：由 `routeRemoteAnswer` 内部查 `evaluateRemoteCommand('answer', …)`——
    *     桥不自己再查一遍，避免「桥一套、路由一套」的两份判据；
    *   - 投递：`routeRemoteAnswer` 定址 + 查表 + 调宿主端口，三件事都不在桥里重写。
@@ -305,6 +520,20 @@ export class RemoteBridge {
     frame: Extract<BridgeClientFrame, { t: 'cmd' }>,
   ): void {
     const { sid, rid, kind } = frame;
+    const security = this.options.security;
+    if (security) {
+      // 档位判定放在桥里是因为「这台设备能不能发这个命令」是桥的授权面（§5.6 L3），
+      // 但档位本身由宿主设备表给出（`tierOf`），桥只做查档，不维护第二份权限表
+      const tier = conn.deviceFp ? security.tierOf(conn.deviceFp) : undefined;
+      if (!tier) {
+        this.send(conn, { t: 'err', ch: 'cmd', rid, sid, code: REMOTE_COMMAND_CODES.FORBIDDEN });
+        return;
+      }
+      if (kind === 'answer' && tier !== 'approve') {
+        this.send(conn, { t: 'err', ch: 'cmd', rid, sid, code: REMOTE_COMMAND_CODES.FORBIDDEN });
+        return;
+      }
+    }
     if (kind !== 'answer') {
       this.send(conn, { t: 'err', ch: 'cmd', rid, sid, code: REMOTE_COMMAND_CODES.FORBIDDEN });
       return;

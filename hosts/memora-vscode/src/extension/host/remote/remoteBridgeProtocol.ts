@@ -20,6 +20,7 @@ import {
   REMOTE_COMMANDS,
   type RemoteCommand,
   type RemoteCommandCode,
+  type RemoteCtlCode,
 } from './remoteCommandPolicy.js';
 
 /**
@@ -190,13 +191,13 @@ export interface ResetRequiredFrame {
   sid: string;
 }
 
-/** 错误帧（`code` 只从 `REMOTE_COMMAND_CODES` 取，禁自造字符串） */
+/** 错误帧（`code` 只从固定集合取：命令面 `REMOTE_COMMAND_CODES` + 控制面 `REMOTE_CTL_CODES`，禁自造字符串） */
 export interface ErrFrame {
   t: 'err';
   ch: 'ctl' | 'events' | 'cmd' | 'blob';
   rid?: string;
   sid?: string;
-  code: RemoteCommandCode;
+  code: RemoteCommandCode | RemoteCtlCode;
   msg?: string;
 }
 

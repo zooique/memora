@@ -48,6 +48,26 @@ export const REMOTE_COMMAND_CODES = {
 export type RemoteCommandCode = (typeof REMOTE_COMMAND_CODES)[keyof typeof REMOTE_COMMAND_CODES];
 
 /**
+ * 控制面错误码（`ch: 'ctl'` 握手相关 · 唯一常量来源）
+ *
+ * 设计源：docs/方案-手机远程控制-20261110.md §5.3 / §6.1 —— 握手失败用固定码，
+ * 手机侧据此判断「口令」这一类问题，不与命令面的相位错误混用。
+ *   - `bad_passcode`：一次性口令错误 / 过期 / 已耗尽，或未配对设备被拒绝（§5.3）
+ *
+ * **不新增 `bad_identity`**：mTLS 身份缺失 / 与 `hello.phoneFp` 不符属于「不给探测信号」的
+ * 断连面（§4.5.5），且 §6.1 的错误码表里没有这一格；自造第四码会让「固定集合」失效。
+ *
+ * 为什么这个码不并入 `REMOTE_COMMAND_CODES`：后者是「相位 × 命令」表的产物，
+ * 与握手无关；混在一起会让「表里没有这一格」看起来像漏实现。
+ */
+export const REMOTE_CTL_CODES = {
+  BAD_PASSCODE: 'bad_passcode',
+} as const;
+
+/** 控制面错误码类型（由常量对象派生） */
+export type RemoteCtlCode = (typeof REMOTE_CTL_CODES)[keyof typeof REMOTE_CTL_CODES];
+
+/**
  * 远程命令相位（本策略表的行坐标）
  *
  * 与 `TurnState` 的对应关系见 `remotePhaseOf`：

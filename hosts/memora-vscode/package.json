@@ -522,9 +522,11 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
+    "@peculiar/x509": "^3.1.0",
     "@vscode/l10n": "^0.0.18",
     "dompurify": "^3.4.13",
     "marked": "^18.0.9",
+    "reflect-metadata": "^0.2.2",
     "ws": "^8.23.0",
     "yauzl": "3.4.0"
   }

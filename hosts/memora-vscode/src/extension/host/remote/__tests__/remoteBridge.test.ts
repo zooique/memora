@@ -7,7 +7,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import type { RoundView, TurnState } from '../../../../shared/protocol.js';
-import { RemoteBridge, type RemoteBridgePorts } from '../remoteBridge.js';
+import {
+  RemoteBridge,
+  type RemoteBridgePorts,
+  type RemoteBridgeSecurity,
+} from '../remoteBridge.js';
+import type { RemoteDeviceTier } from '../remoteDevices.js';
+import type { PairingVerdict } from '../remotePairing.js';
 
 /** 单帧等待上限（防用例挂死；正常应远小于它） */
 const FRAME_TIMEOUT = 2000;
@@ -18,6 +24,10 @@ const FRAME_TIMEOUT = 2000;
 class TestClient {
   private readonly inbox: unknown[] = [];
   private readonly waiters: Array<(frame: unknown) => void> = [];
+  /** 连接是否已关闭（LAN 档拒绝后必须断开） */
+  private closedFlag = false;
+  /** 等待关闭的回调（close 事件只触发一次） */
+  private readonly closeWaiters: Array<() => void> = [];
 
   private constructor(private readonly ws: WebSocket) {
     ws.on('message', (data) => {
@@ -25,6 +35,10 @@ class TestClient {
       const waiter = this.waiters.shift();
       if (waiter) waiter(frame);
       else this.inbox.push(frame);
+    });
+    ws.on('close', () => {
+      this.closedFlag = true;
+      for (const waiter of this.closeWaiters.splice(0)) waiter();
     });
   }
 
@@ -58,6 +72,18 @@ class TestClient {
 
   close(): void {
     this.ws.close();
+  }
+
+  /** 等待连接关闭（拒绝路径必须断开；超时即失败） */
+  waitClosed(): Promise<void> {
+    if (this.closedFlag) return Promise.resolve();
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('close timeout')), FRAME_TIMEOUT);
+      this.closeWaiters.push(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
   }
 }
 
@@ -98,8 +124,9 @@ const opened: Array<{ bridge: RemoteBridge; client?: TestClient }> = [];
 
 async function startBridge(
   ports: RemoteBridgePorts,
+  security?: RemoteBridgeSecurity,
 ): Promise<{ bridge: RemoteBridge; port: number }> {
-  const bridge = new RemoteBridge(ports, { pcId: 'pc-test' });
+  const bridge = new RemoteBridge(ports, { pcId: 'pc-test', security });
   const { port } = await bridge.start();
   opened.push({ bridge });
   return { bridge, port };
@@ -342,5 +369,229 @@ describe('RemoteBridge — 监听失败显式报错', () => {
     const started = await again.start();
     expect(started.port).toBe(port);
     await again.stop();
+  });
+});
+
+// ─── profile 3：security 端口（配对 / 档位） ─────────────────────────────
+
+/** 测试用设备指纹（64 位 hex，形态与真实证书 DER 指纹一致） */
+const DEVICE_FP = 'ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789';
+
+/**
+ * 构造假 security（无需真 TLS；只验证桥的判据接线）
+ *
+ * 指纹固定为 `DEVICE_FP`；档位 / 口令结论 / 批准结果由用例指定。
+ */
+function makeSecurity(
+  overrides: {
+    tier?: RemoteDeviceTier;
+    passcode?: PairingVerdict;
+    approval?: boolean;
+    blocked?: boolean;
+  } = {},
+): {
+  security: RemoteBridgeSecurity;
+  state: {
+    registered: Array<{ fingerprint: string; shortFp: string; name: string }>;
+    audits: Array<{ event: string; deviceFp?: string; ip?: string; detail?: string }>;
+    successKeys: string[];
+    failureKeys: string[];
+  };
+} {
+  const state = {
+    registered: [] as Array<{ fingerprint: string; shortFp: string; name: string }>,
+    audits: [] as Array<{ event: string; deviceFp?: string; ip?: string; detail?: string }>,
+    successKeys: [] as string[],
+    failureKeys: [] as string[],
+  };
+  const security: RemoteBridgeSecurity = {
+    fingerprintOf: () => DEVICE_FP,
+    tierOf: () => overrides.tier,
+    verifyPasscode: () => overrides.passcode ?? 'mismatch',
+    requestApproval: async () => overrides.approval ?? false,
+    registerDevice: (info) => state.registered.push(info),
+    rateLimit: {
+      check: () => ({ blocked: overrides.blocked ?? false, retryAfterMs: 0 }),
+      noteFailure: (key) => {
+        state.failureKeys.push(key);
+        return { blocked: false, retryAfterMs: 0 };
+      },
+      noteSuccess: (key) => state.successKeys.push(key),
+    },
+    audit: (event) => state.audits.push(event),
+  };
+  return { security, state };
+}
+
+describe('RemoteBridge — security 缺省（回环档行为不变）', () => {
+  it('没有 security 时不校验 phoneFp（任意值都回 hello_ok）', async () => {
+    const { ports } = makePorts();
+    const { port } = await startBridge(ports);
+    const client = await TestClient.connect(port);
+
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: '这不是指纹' });
+    const helloOk = await client.next<{ t: string }>();
+    expect(helloOk.t).toBe('hello_ok');
+  });
+});
+
+describe('RemoteBridge — LAN 档握手（security 存在）', () => {
+  it('phoneFp 与 TLS 指纹不符 → err bad_passcode + 断开 + 审计', async () => {
+    const { security, state } = makeSecurity({ tier: 'approve' });
+    const { ports } = makePorts();
+    const { port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: 'FFFF' });
+    const err = await client.next<{ t: string; ch: string; code: string }>();
+    expect(err.t).toBe('err');
+    expect(err.ch).toBe('ctl');
+    expect(err.code).toBe('bad_passcode');
+    await client.waitClosed();
+    expect(state.audits.some((e) => e.event === 'hello_fp_mismatch')).toBe(true);
+  });
+
+  it('未配对 + 错口令 → err bad_passcode、记录失败、断开', async () => {
+    const { security, state } = makeSecurity({ passcode: 'mismatch' });
+    const { ports } = makePorts();
+    const { port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+
+    client.send({
+      t: 'hello',
+      v: 1,
+      deviceId: 'd1',
+      nonce: 'n1',
+      phoneFp: DEVICE_FP,
+      pid: '00000000',
+    });
+    const err = await client.next<{ t: string; code: string }>();
+    expect(err.code).toBe('bad_passcode');
+    await client.waitClosed();
+    expect(state.failureKeys).toHaveLength(1);
+    expect(state.registered).toHaveLength(0);
+    expect(state.audits.some((e) => e.event === 'pairing_rejected')).toBe(true);
+  });
+
+  it('未配对 + 正确口令 + 人工批准 → 登记设备并回 hello_ok', async () => {
+    const { security, state } = makeSecurity({ passcode: 'ok', approval: true });
+    const { ports } = makePorts();
+    const { port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+
+    client.send({
+      t: 'hello',
+      v: 1,
+      deviceId: '我的手机',
+      nonce: 'n1',
+      phoneFp: DEVICE_FP,
+      pid: '00000042',
+    });
+    const helloOk = await client.next<{ t: string; pcId: string }>();
+    expect(helloOk.t).toBe('hello_ok');
+    expect(helloOk.pcId).toBe('pc-test');
+
+    expect(state.registered).toEqual([
+      { fingerprint: DEVICE_FP, shortFp: 'ABCD-EF01', name: '我的手机' },
+    ]);
+    expect(state.successKeys).toHaveLength(1);
+    expect(state.audits.some((e) => e.event === 'device_paired')).toBe(true);
+  });
+
+  it('未配对 + 正确口令 + 拒绝批准 → err bad_passcode、记录失败、断开', async () => {
+    const { security, state } = makeSecurity({ passcode: 'ok', approval: false });
+    const { ports } = makePorts();
+    const { port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+
+    client.send({
+      t: 'hello',
+      v: 1,
+      deviceId: 'd1',
+      nonce: 'n1',
+      phoneFp: DEVICE_FP,
+      pid: '00000042',
+    });
+    const err = await client.next<{ t: string; code: string }>();
+    expect(err.code).toBe('bad_passcode');
+    await client.waitClosed();
+    expect(state.failureKeys).toHaveLength(1);
+    expect(state.registered).toHaveLength(0);
+    expect(state.audits.some((e) => e.event === 'pairing_denied')).toBe(true);
+  });
+
+  it('已配对（tierOf 有值）：无需口令直接 hello_ok', async () => {
+    const { security } = makeSecurity({ tier: 'observe' });
+    const { ports } = makePorts();
+    const { port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
+    const helloOk = await client.next<{ t: string }>();
+    expect(helloOk.t).toBe('hello_ok');
+  });
+});
+
+describe('RemoteBridge — LAN 档命令（设备权限档）', () => {
+  it('observe 档发 answer → err forbidden，且不投递', async () => {
+    const { security } = makeSecurity({ tier: 'observe' });
+    const { ports, delivered } = makePorts();
+    const { port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
+    await client.next();
+
+    client.send({
+      t: 'cmd',
+      ch: 'cmd',
+      rid: 'u-1',
+      sid: 's1',
+      kind: 'answer',
+      p: { answers: ['a'] },
+    });
+    const err = await client.next<{ t: string; ch: string; code: string }>();
+    expect(err.t).toBe('err');
+    expect(err.ch).toBe('cmd');
+    expect(err.code).toBe('forbidden');
+    expect(delivered).toHaveLength(0);
+  });
+
+  it('approve 档发 answer → 投递到宿主端口', async () => {
+    const { security } = makeSecurity({ tier: 'approve' });
+    const { ports, delivered } = makePorts();
+    const { port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
+    await client.next();
+    // 先订阅：受理后桥会回推快照，用它作为「命令已处理」的确定性信号（不靠 sleep）
+    client.send({ t: 'sub', sid: 's1' });
+    await client.next();
+
+    client.send({
+      t: 'cmd',
+      ch: 'cmd',
+      rid: 'u-2',
+      sid: 's1',
+      kind: 'answer',
+      p: { answers: ['好'] },
+    });
+    const evt = await client.next<{ t: string; kind: string }>();
+    expect(evt.t).toBe('evt');
+    expect(evt.kind).toBe('snapshot');
+    expect(delivered).toEqual([{ sid: 's1', answers: ['好'] }]);
+  });
+
+  it('LAN 档其余命令仍 forbidden（send 等不受档位放开）', async () => {
+    const { security } = makeSecurity({ tier: 'approve' });
+    const { ports, delivered } = makePorts();
+    const { port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
+    await client.next();
+
+    client.send({ t: 'cmd', ch: 'cmd', rid: 'u-3', sid: 's1', kind: 'send', p: {} });
+    const err = await client.next<{ t: string; code: string }>();
+    expect(err.code).toBe('forbidden');
+    expect(delivered).toHaveLength(0);
   });
 });

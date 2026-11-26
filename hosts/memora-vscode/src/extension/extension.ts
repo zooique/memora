@@ -49,8 +49,8 @@ import { createImageReadPort } from './host/imageReadPort.js';
 import { readChatTextScale } from './host/chatTextScaleConfig.js';
 import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
-// 远程桥（profile 2 回环 · 仅开发验证）：默认不监听，见 host/remote/remoteBridgeHost.ts
-import { startRemoteBridgeForDev } from './host/remote/remoteBridgeHost.js';
+// 远程桥（profile 2 回环 / profile 3 局域网）：默认不监听，见 host/remote/remoteBridgeHost.ts
+import { startRemoteBridge } from './host/remote/remoteBridgeHost.js';
 import type { RemoteBridge } from './host/remote/remoteBridge.js';
 import { formatDiagnosticsSnapshot } from '../webview/panels/hostDiagnostics.js';
 import { MemoraSettingsPanel } from '../webview/panels/settingsPanel.js';
@@ -165,9 +165,10 @@ let gcScheduler: MemoryGcScheduler | null = null;
 let hostSessionStore: WorkspaceSessionStore | null = null;
 
 /**
- * 远程桥实例（profile 2 `loopback` · **仅开发验证不交付**）
+ * 远程桥实例（`loopback` / `lan` 档）
  *
- * 默认不监听：只有显式设置 `MEMORA_REMOTE_BRIDGE=1` 才会创建。
+ * 默认不监听：只有显式设置 `MEMORA_REMOTE_BRIDGE=loopback|lan` 才会创建
+ * （旧值 `1` 等同 `loopback`）。
  * 停用路径必须 stop（网络监听与连接不能留到进程退出）。
  */
 let hostRemoteBridge: RemoteBridge | undefined;
@@ -775,14 +776,17 @@ export function activate(context: vscode.ExtensionContext): void {
   // 注入过程事件落盘目标（v1.5）：与 viewLoader 同一 WorkspaceRoundStore 单例，生命周期原子一致
   chatProvider.setRoundStore(roundStore);
 
-  // 远程桥（profile 2 回环 · 仅开发验证）：默认不监听，显式设置 MEMORA_REMOTE_BRIDGE=1 才启动。
+  // 远程桥（回环 / 局域网）：默认不监听，只有显式设置 MEMORA_REMOTE_BRIDGE=loopback|lan 才启动。
   // 监听失败由该函数显式弹警告并保持未监听态（禁止「失败但 UI 显示已连接」）。
   // 刻意不 await：开端口不该阻塞激活链路；实例落到模块级引用供 deactivate stop。
-  void startRemoteBridgeForDev({
-    panel: chatProvider,
-    store: sessionStore,
-    log: (message) => memoraOutput.appendLine(message),
-  }).then((bridge) => {
+  void startRemoteBridge(
+    {
+      panel: chatProvider,
+      store: sessionStore,
+      log: (message) => memoraOutput.appendLine(message),
+    },
+    { context },
+  ).then((bridge) => {
     hostRemoteBridge = bridge;
     // 只在实际监听时才接线推送触发口（未监听 / 启动失败 ⇒ 不接线，宿主每次 turn 变更零开销）
     if (bridge && bridge.listeningPort !== undefined) {
