@@ -3416,8 +3416,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         reportComposerState(); // 润色回填同样要让宿主知道「输入框里已有字」
       }
       // 恢复润色按钮状态（图标按钮，无需恢复文本）
+      // aria-busy 与 loading class 同源同清：读屏用户在旋转图标之外还有语义通道
+      //（POLISH-A11Y-1）。结果到达即撤，失败分支同样经过此处，不留「忙」态。
       if (polishBtn) {
         polishBtn.classList.remove('loading');
+        polishBtn.removeAttribute('aria-busy');
       }
       if (!msg.ok && msg.message) {
         activityDrawerView.showActivity('info', l10n.t('Polish failed: {0}', msg.message));
@@ -4173,6 +4176,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const text = input.value.trim();
       if (!text) return;
       polishBtn.classList.add('loading');
+      polishBtn.setAttribute('aria-busy', 'true');
       vscode.postMessage({ type: 'polish_input', text });
     });
   }

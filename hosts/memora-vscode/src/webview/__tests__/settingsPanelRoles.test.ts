@@ -1073,6 +1073,59 @@ describe('settingsPanel.switchTab —— 导航落点兜底（不可投递时只
     ]);
   });
 
+  /**
+   * DEEPLINK-RETURN-1：深链新增模型保存成功后把焦点交回对话侧栏。
+   * 用既有 viewType.focus 命令（roles_handoff 同款），零新协议 / 零新命令 / 零新配置字段。
+   * 这里走 handleMessage 真实入口 + store.save stub，钉的是行为而非私有字段形状。
+   */
+  async function saveConfig(ok: boolean): Promise<void> {
+    (provider as unknown as { store: { save: ReturnType<typeof vi.fn> } }).store = {
+      save: vi.fn().mockResolvedValue({ ok, ...(ok ? {} : { message: 'boom' }) }),
+    } as never;
+    await (provider as unknown as { handleMessage(m: unknown): Promise<void> }).handleMessage({
+      type: 'cfg_save',
+      config: { name: 'deeplink-provider', model: 'm' },
+      isEditing: false,
+    });
+  }
+
+  it('DEEPLINK-RETURN-1：深链 addProvider → 保存成功 → 仅聚焦对话侧栏一次，意图消费清零', async () => {
+    provider.open();
+    await sendReady();
+    provider.switchTab('config', true);
+    await saveConfig(true);
+
+    expect(vscode.commands.executeCommand).toHaveBeenCalledTimes(1);
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('memora.chat.focus');
+    expect(
+      (provider as unknown as { _returnToChatAfterSave: boolean })._returnToChatAfterSave,
+    ).toBe(false);
+  });
+
+  it('DEEPLINK-RETURN-1：普通切页保存成功不抢焦点（既有 configureModel 路径零回归）', async () => {
+    provider.open();
+    await sendReady();
+    provider.switchTab('config');
+    await saveConfig(true);
+
+    expect(vscode.commands.executeCommand).not.toHaveBeenCalled();
+  });
+
+  it('DEEPLINK-RETURN-1：保存失败不消费回程意图，重试成功仍回焦（失败可恢复）', async () => {
+    provider.open();
+    await sendReady();
+    provider.switchTab('config', true);
+    await saveConfig(false);
+    expect(vscode.commands.executeCommand).not.toHaveBeenCalled();
+    expect(
+      (provider as unknown as { _returnToChatAfterSave: boolean })._returnToChatAfterSave,
+    ).toBe(true);
+
+    vi.mocked(vscode.commands.executeCommand).mockClear();
+    await saveConfig(true);
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('memora.chat.focus');
+  });
+
   it('重复 open 复用同一 panel：只 reveal 不新建（单例判据）', () => {
     provider.open();
     const panel = (provider as unknown as { _panel: { reveal: ReturnType<typeof vi.fn> } })._panel;

@@ -175,6 +175,15 @@ export class MemoraSettingsPanel {
   private _pendingTab: SettingsTab | undefined;
   /** 待切页附带的「展开新增弹窗」标记（MODEL-PICKER-ADD-1）：与 _pendingTab 同槽同清，避免只补发页不补发动作 */
   private _pendingAddProvider: true | undefined;
+  /**
+   * 深链新增 Provider 的回程意图（DEEPLINK-RETURN-1）：仅 addProvider 导航置位，
+   * 供 cfg_save 成功后把焦点交回对话侧栏。
+   * ⚠️ 与 `_pendingAddProvider` **不同槽**：后者在 flushPendingTab 投递后即清（导航一次性），
+   * 本标记必须活到保存回执，否则「弹窗已展开、还没填完」时意图就被抹掉。
+   * 消费点唯一 = cfg_save 成功分支；失败/取消不清（用户可重试，意图仍在）；
+   * 面板 dispose 随实例消亡（不跨 tab 生命周期）——不新增协议字段、不新增命令。
+   */
+  private _returnToChatAfterSave = false;
   /** webview 是否已发 `ready`（html context 已建立 + 全部子视图监听器已注册）。
    *  **不是** `_panel` 的副本：`_panel` 有值 = tab 存在，与此事实正交；生命周期严格跟随当前
    *  panel（创建即 false，dispose 归 false），写点仅此两处 + ready 分支一处。 */
@@ -521,7 +530,16 @@ export class MemoraSettingsPanel {
       try {
         const r = await this.store.save(msg.config, msg.isEditing);
         this.post({ type: 'cfg_result', ok: r.ok, message: r.message, action: 'save' });
-        if (r.ok) await this.loadConfig();
+        if (r.ok) {
+          await this.loadConfig();
+          // 深链新增成功 → 把焦点交回对话侧栏（DEEPLINK-RETURN-1）。复用面板既有的
+          // viewType.focus 命令（roles_handoff 同款），不新增命令、不新增协议字段；
+          // 菜单刷新仍走 onDidChangeConfiguration → pushProviders 的既有链，本处只管焦点。
+          if (this._returnToChatAfterSave) {
+            this._returnToChatAfterSave = false;
+            void vscode.commands.executeCommand(`${MemoraChatViewProvider.viewType}.focus`);
+          }
+        }
       } catch (err) {
         this.post({
           type: 'cfg_result',
@@ -1703,6 +1721,9 @@ export class MemoraSettingsPanel {
   public switchTab(tab: SettingsTab, addProvider?: true): void {
     this._pendingTab = tab; // 唯一缓冲：不具备投递条件时留在此，等下一个可投时机补发
     this._pendingAddProvider = addProvider;
+    // 回程意图与导航标记同置位、不同生命周期：_pendingAddProvider 投递即清，
+    // 本标记留到保存回执（DEEPLINK-RETURN-1）；普通 configureModel 导航不置位。
+    if (addProvider) this._returnToChatAfterSave = true;
     this.flushPendingTab();
   }
 
