@@ -784,6 +784,10 @@ export function activate(context: vscode.ExtensionContext): void {
     log: (message) => memoraOutput.appendLine(message),
   }).then((bridge) => {
     hostRemoteBridge = bridge;
+    // 只在实际监听时才接线推送触发口（未监听 / 启动失败 ⇒ 不接线，宿主每次 turn 变更零开销）
+    if (bridge && bridge.listeningPort !== undefined) {
+      chatProvider.onTurnProjected = (sessionId) => bridge.notifyTurnUpdate(sessionId);
+    }
   });
 
   // ─── 文件改动可视化（host-only，零内核改动；见 docs/方案-文件改动diff可视化-20260926.md）───

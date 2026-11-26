@@ -733,6 +733,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * （见 docs/方案-文件改动diff可视化-20260926.md §3.2）。未注入时功能静默关闭。
    */
   private _fileChangeSink: FileChangeSink | undefined;
+  /** 会话投影变化的外部通知口（远程桥订阅用；未接线时为 undefined ⇒ 零开销，见 remoteBridge.notifyTurnUpdate） */
+  public onTurnProjected?: (sessionId: string) => void;
   /** 脚本类工具（opaque 写）执行前 workspace 文本快照：键 = toolCallId → 路径→内容 */
   private readonly scriptSnapshots = new Map<string, Map<string, string> | null>();
   /** 未确认改动路径清单的取值函数（由 extension 注入；真源 = 宿主 FileChangeView） */
@@ -2664,10 +2666,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
   /** 某会话此刻是否有视图在显示（侧栏当前会话，或某附加视图绑定的会话） */
   private viewsMayShow(sessionId: string): boolean {
-    return (
-      (Boolean(this._view) && sessionId === this._currentSessionId) ||
-      this._views.hasSession(sessionId)
-    );
+    // 侧栏正显示该会话，或某附加视图（助手窗）绑定了它
+    const shownByPrimary = Boolean(this._view) && sessionId === this._currentSessionId;
+    return shownByPrimary || this._views.hasSession(sessionId);
   }
 
   /**
@@ -2723,6 +2724,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 这样助手会话在后台跑时，它的轮次与流态仍能投到绑定它的视图（判据 ③）。
    */
   private postTurnUpdateFor(sessionId: string, live?: PendingLiveRound, replay = false): void {
+    // 远程桥订阅：先通知（**不受视图可见性限制**——桥要看的正是没有视图的后台会话）；
+    // 未接线时 `onTurnProjected` 为 undefined，可选链零开销
+    this.onTurnProjected?.(sessionId);
     // 没有视图在看这条会话 ⇒ 不投影（后台代理会话的 IO 不白做；助手窗绑定它时照常投）
     if (!this.viewsMayShow(sessionId)) return;
     const { state, rounds, pendingQueue } = this.projectSession(sessionId, live);

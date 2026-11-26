@@ -163,6 +163,25 @@ export class RemoteBridge {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 
+  /**
+   * 会话投影变化通知（**宿主 → 桥的推送触发口**）
+   *
+   * 由宿主在每次「该 sid 的 turn 投影可能变化」时调用（接线点见 chatPanel 的 onTurnProjected）；
+   * 桥只对**已订阅该 sid** 的连接扇出一帧 `evt snapshot`。未监听 / 无订阅时零开销。
+   *
+   * ⚠️ profile 2 只发整帧快照（无 `delta`、无水位）：供本地回环上的开发客户端验证
+   * 「后台会话状态实时可见」。真正的增量在 profile 3 落地时替换**帧形态**，
+   * 本触发口（谁在什么时刻通知桥）不变——故这里是生长点而非一次性实现。
+   *
+   * @param sessionId 投影发生变化的会话
+   */
+  notifyTurnUpdate(sessionId: string): void {
+    if (!this.server) return;
+    for (const conn of this.connections) {
+      if (conn.subs.has(sessionId)) this.pushSnapshot(conn, sessionId);
+    }
+  }
+
   // ─── 连接与帧分派 ───────────────────────────────────────────────────
 
   /** 新连接：登记 + 绑定两个事件（close 时移除，避免连接集合泄漏） */

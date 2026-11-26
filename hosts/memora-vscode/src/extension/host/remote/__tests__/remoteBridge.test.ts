@@ -194,6 +194,44 @@ describe('RemoteBridge — 订阅与快照', () => {
   });
 });
 
+describe('RemoteBridge — 宿主推送（订阅联动）', () => {
+  it('订阅后 notifyTurnUpdate → 收到第二帧 evt snapshot', async () => {
+    const { ports } = makePorts();
+    const { bridge, port } = await startBridge(ports);
+    const client = await TestClient.connect(port);
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: 'AB12' });
+    await client.next();
+    client.send({ t: 'sub', sid: 's1' });
+    await client.next(); // 首帧快照
+
+    bridge.notifyTurnUpdate('s1');
+    const evt = await client.next<{ t: string; sid: string; seq: number; kind: string }>();
+    expect(evt.t).toBe('evt');
+    expect(evt.sid).toBe('s1');
+    expect(evt.seq).toBe(0);
+    expect(evt.kind).toBe('snapshot');
+  });
+
+  it('未订阅的会话不推送（下一帧仍是自己的请求应答）', async () => {
+    const { ports } = makePorts();
+    const { bridge, port } = await startBridge(ports);
+    const client = await TestClient.connect(port);
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: 'AB12' });
+    await client.next();
+
+    bridge.notifyTurnUpdate('s1');
+    client.send({ t: 'session_list' });
+    const list = await client.next<{ t: string }>();
+    // 若误推了 evt，这里先收到的会是 evt 而不是应答
+    expect(list.t).toBe('session_list_ok');
+  });
+
+  it('未监听的桥收到通知不抛错（零开销）', () => {
+    const bridge = new RemoteBridge(makePorts().ports, { pcId: 'pc-idle' });
+    expect(() => bridge.notifyTurnUpdate('s1')).not.toThrow();
+  });
+});
+
 describe('RemoteBridge — 命令（profile 2 只放行 answer）', () => {
   it('waiting-ask 下 answer 落到端口（位次与空串原样透传），并回推快照', async () => {
     const { ports, delivered } = makePorts();
