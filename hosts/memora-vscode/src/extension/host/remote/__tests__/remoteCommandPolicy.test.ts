@@ -11,11 +11,13 @@ import {
   REMOTE_COMMANDS,
   REMOTE_PHASES,
   evaluateRemoteCommand,
+  evaluateTierGate,
   remotePhaseOf,
   type RemoteCommand,
   type RemoteCommandCode,
   type RemotePhase,
 } from '../remoteCommandPolicy.js';
+import type { RemoteDeviceTier } from '../remoteDevices.js';
 
 /** 期望表的一格：'allow' 或固定错误码字面量 */
 type ExpectedCell = 'allow' | RemoteCommandCode;
@@ -152,6 +154,71 @@ describe('remoteCommandPolicy — 相位 × 命令 真值表逐格钉住', () =>
       });
     }
   }
+});
+
+describe('remoteCommandPolicy — 档位 × 命令 准入表逐格钉住', () => {
+  /**
+   * 期望档位表（手写 · 与实现独立）
+   *
+   * 依据方案 §5.9：档位累积，approve ⊃ send ⊃ observe。
+   * `observe` 只读 ⇒ 一条命令都不许；`send` 管执行控制面与自建内容编辑；
+   * `approve` 额外管两类作答（ask / 执行类审批）。
+   */
+  const EXPECTED_TIER: Record<RemoteDeviceTier, readonly RemoteCommand[]> = {
+    observe: [],
+    send: [
+      'send',
+      'interject',
+      'pause',
+      'stop',
+      'resume',
+      'remove_pending_item',
+      'clear_pending_queue',
+    ],
+    approve: [
+      'send',
+      'interject',
+      'answer',
+      'resume',
+      'pause',
+      'stop',
+      'confirm_answer',
+      'remove_pending_item',
+      'clear_pending_queue',
+    ],
+  };
+
+  it('档位全集与设备表的合法集合一致，且期望表覆盖九条命令', () => {
+    expect(Object.keys(EXPECTED_TIER).sort()).toEqual(['approve', 'observe', 'send']);
+    for (const tier of ['observe', 'send', 'approve'] as const) {
+      expect([...EXPECTED_TIER[tier]].sort()).toEqual(
+        REMOTE_COMMANDS.filter((command) => EXPECTED_TIER[tier].includes(command)).sort(),
+      );
+    }
+    // 九条命令必须被某个档位覆盖（漏一条 = 该命令永远发不出去）
+    const covered = new Set(Object.values(EXPECTED_TIER).flat());
+    expect([...covered].sort()).toEqual([...REMOTE_COMMANDS].sort());
+  });
+
+  // 3 档 × 9 命令 = 27 格，一格一条
+  for (const tier of ['observe', 'send', 'approve'] as const) {
+    for (const command of REMOTE_COMMANDS) {
+      const allowed = EXPECTED_TIER[tier].includes(command);
+      it(`${tier} × ${command} → ${allowed ? 'allow' : 'forbidden'}`, () => {
+        const decision = evaluateTierGate(tier, command);
+        if (allowed) {
+          expect(decision.allow).toBe(true);
+          return;
+        }
+        expect(decision.allow).toBe(false);
+        expect(decision.allow === false && decision.code).toBe(REMOTE_COMMAND_CODES.FORBIDDEN);
+      });
+    }
+  }
+
+  it('放行结果复用同一对象（防止调用点以为拿到了可变的第二份判定）', () => {
+    expect(evaluateTierGate('approve', 'answer')).toBe(evaluateTierGate('send', 'send'));
+  });
 });
 
 describe('remoteCommandPolicy — TurnState → 远程相位折算', () => {

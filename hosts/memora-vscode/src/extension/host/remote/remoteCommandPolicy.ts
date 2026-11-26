@@ -18,6 +18,9 @@
  */
 
 import type { TurnState } from '../../../shared/protocol.js';
+// 只引类型：档位语义的唯一来源是方案 §5.9，设备表（remoteDevices）只负责把它落盘；
+// 这里不 import 运行时，保证本文件仍是零 IO 的纯策略模块。
+import type { RemoteDeviceTier } from './remoteDevices.js';
 
 /**
  * 远程命令错误码（固定集合 · 唯一常量来源）
@@ -231,6 +234,64 @@ export function evaluateRemoteCommand(
   phase: RemotePhase,
 ): RemoteCommandDecision {
   return TABLE[command][phase];
+}
+
+/**
+ * 档位 × 命令 的准入表（写死 · 与相位表是**两个正交维度**）
+ *
+ * 判据来源：方案 §5.9「权限档位（默认最小）」——档位是**累积**的（`approve ⊃ send ⊃ observe`），
+ * 所以只写每一档**新增**的能力，再由 `TIER_COMMANDS` 逐级拼出全集：
+ *   - `observe`：看会话列表 / 轮次 / 状态——**不含任何命令**（只读即无写入口径）；
+ *   - `send`：发消息、插话、暂停/停止，以及同属「执行控制面」的 `resume`
+ *     （只给 `pause` 不给 `resume` 会让设备卡在暂停态，故二者同档）与插话队列编辑
+ *     （`remove_pending_item` / `clear_pending_queue` 改的是自己刚发的内容）；
+ *   - `approve`：在 `send` 全集之上，额外允许 `answer`（答 ask）与 `confirm_answer`
+ *     （答执行类审批）——§5.9 明写审批「默认关闭，单独开关」。
+ *
+ * ⚠️ 本表只回答「这台设备的档位能不能发这条命令」，**不回答**「现在这个相位能不能发」——
+ * 后者是 `TABLE`（相位表）的职责；两层在调用点串联，不合并。
+ */
+const TIER_ADDITIONS: Readonly<Record<RemoteDeviceTier, readonly RemoteCommand[]>> = {
+  observe: [],
+  send: [
+    'send',
+    'interject',
+    'pause',
+    'stop',
+    'resume',
+    'remove_pending_item',
+    'clear_pending_queue',
+  ],
+  approve: ['answer', 'confirm_answer'],
+};
+
+/**
+ * 档位 → 允许命令的全集（累积合成，唯一一次）
+ *
+ * 用集合而非再抄一份全量清单：新增一条 `send` 档命令时，`approve` 自动继承，
+ * 不会出现「send 加了、approve 忘了」的两份表漂移。
+ */
+const TIER_COMMANDS: Readonly<Record<RemoteDeviceTier, ReadonlySet<RemoteCommand>>> = {
+  observe: new Set(TIER_ADDITIONS.observe),
+  send: new Set(TIER_ADDITIONS.send),
+  // approve = send 全集 + 自身增量（累积档位：高档位天然包含低档位的全部能力）
+  approve: new Set([...TIER_ADDITIONS.send, ...TIER_ADDITIONS.approve]),
+};
+
+/**
+ * 档位门：某设备档位能否执行某条命令
+ *
+ * 与 `evaluateRemoteCommand` 一样返回同一种判定结构（放行复用共享 `ALLOW`，
+ * 拒绝码只取 `REMOTE_COMMAND_CODES.FORBIDDEN`），调用点无需区分两层拒绝的形状。
+ *
+ * @param tier    该设备的权限档（设备表给出；未配对设备由调用方先回 `forbidden`）
+ * @param command 上行命令（`cmd.kind`）
+ */
+export function evaluateTierGate(
+  tier: RemoteDeviceTier,
+  command: RemoteCommand,
+): RemoteCommandDecision {
+  return TIER_COMMANDS[tier].has(command) ? ALLOW : reject(REMOTE_COMMAND_CODES.FORBIDDEN);
 }
 
 /**
