@@ -14,6 +14,7 @@ import {
 } from '../remoteBridge.js';
 import type { RemoteDeviceTier } from '../remoteDevices.js';
 import type { PairingVerdict } from '../remotePairing.js';
+import { TRIMMED_RECENT_EVENTS, TRIMMED_RECENT_LOG } from '../remoteSnapshotTrim.js';
 
 /** 单帧等待上限（防用例挂死；正常应远小于它） */
 const FRAME_TIMEOUT = 2000;
@@ -199,6 +200,41 @@ describe('RemoteBridge — 订阅与快照', () => {
     expect(evt.kind).toBe('snapshot');
     expect(evt.p.state).toEqual(WAITING_ASK);
     expect(evt.p.rounds[0]).not.toHaveProperty('attachmentUris');
+  });
+
+  it('sub 快照的 rounds 走 TrimmedRound：过程事件与前序回答只留最近 N 条', async () => {
+    // 超限一轮：过程事件 60 条、前序回答 30 段（上限见 remoteSnapshotTrim 的单一常量）
+    const longRound = {
+      id: 'r-long',
+      status: 'complete',
+      createdAt: 't1',
+      processEvents: Array.from({ length: TRIMMED_RECENT_EVENTS + 10 }, (_, i) => ({
+        type: `e${i}`,
+      })),
+      assistantLog: Array.from({ length: TRIMMED_RECENT_LOG + 10 }, (_, i) => ({
+        id: `a${i}`,
+        role: 'assistant',
+        content: `段${i}`,
+        timestamp: `t${i}`,
+      })),
+    } as unknown as RoundView;
+    const { ports } = makePorts({
+      snapshot: () => ({ state: WAITING_ASK, rounds: [longRound], pendingQueue: [] }),
+    });
+    const { port } = await startBridge(ports);
+    const client = await TestClient.connect(port);
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: 'AB12' });
+    await client.next();
+
+    client.send({ t: 'sub', sid: 's1' });
+    const evt = await client.next<{
+      p: { rounds: Array<Record<string, unknown>> };
+    }>();
+    const round = evt.p.rounds[0]!;
+    expect((round.processEvents as unknown[]).length).toBe(TRIMMED_RECENT_EVENTS);
+    expect((round.assistantLog as unknown[]).length).toBe(TRIMMED_RECENT_LOG);
+    expect(round.truncated).toEqual({ processEvents: 10, assistantLog: 10 });
+    expect('attachmentUris' in round).toBe(false);
   });
 
   it('sub 不存在的会话 → err no_session；resume 只能回 reset_required', async () => {

@@ -31,6 +31,7 @@ import type { Server as HttpsServer } from 'node:https';
 import type { IncomingMessage } from 'node:http';
 import type { RoundView, TurnState } from '../../../shared/protocol.js';
 import { routeRemoteAnswer } from './remoteAnswerRouter.js';
+import { trimRound } from './remoteSnapshotTrim.js';
 import { REMOTE_COMMAND_CODES, REMOTE_CTL_CODES, type RemotePhase } from './remoteCommandPolicy.js';
 import { normalizeFingerprint, shortFingerprint } from './remoteFingerprint.js';
 import type { RemoteDeviceTier } from './remoteDevices.js';
@@ -624,8 +625,9 @@ export class RemoteBridge {
       kind: 'snapshot',
       p: {
         state: snapshot.state,
-        // 附件预览 URL 是 webview 专属产物（远端 origin 必 404，方案 §6.4 第 2 条），出桥前剥掉
-        rounds: snapshot.rounds.map(({ attachmentUris: _unused, ...rest }) => rest),
+        // 出桥前统一裁剪（§6.4）：剥 attachmentUris（远端 origin 必 404）+
+        // processEvents / assistantLog 只留最近 N 条。裁剪口径只在 remoteSnapshotTrim 一处
+        rounds: snapshot.rounds.map(trimRound),
         pendingQueue: snapshot.pendingQueue,
       },
     });
