@@ -99,8 +99,10 @@ describe('加号面板守卫（COMPOSER-PLUS-FLAT-1）', () => {
     expect(menu).toContain('--dd-menu-max-w: var(--composer-plus-menu-w)');
     const TOKENS = readFileSync(join(HERE, '..', 'styles', 'tokens.ts'), 'utf8');
     const DROPDOWN_CSS = readFileSync(join(HERE, '..', 'styles', 'dropdown.ts'), 'utf8');
-    // 窄窗兜底由公共组件承担（min/max 同锚视口），加号门只换刻度不换几何契约
-    expect(TOKENS).toMatch(/--composer-plus-menu-w:\s*var\(--dim-xl\)/);
+    // 窄窗兜底由公共组件承担（min/max 同锚视口），加号门只换刻度不换几何契约。
+    // 2026-11-26 真机反馈 280 偏宽 ⇒ 同令牌派生收至 264（dim-xl − sp-6）：不新增裸值/令牌，
+    // 家族计数零漂移；回退成 280 或 240 的定值写法即红。
+    expect(TOKENS).toMatch(/--composer-plus-menu-w:\s*calc\(var\(--dim-xl\) - var\(--sp-6\)\)/);
     expect(DROPDOWN_CSS).toContain(
       'min-width: min(var(--dd-menu-min-w, 160px), calc(100vw - var(--sp-6)))',
     );

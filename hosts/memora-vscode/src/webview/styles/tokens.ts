@@ -373,10 +373,12 @@ export const tokens = `
     --dd-trigger-max-w-narrow: 120px; /* 显名胶囊（skill-picker）：「选择技能」+ 箭头的窄窗兜底 */
     --dd-menu-min-w-wide: 200px;      /* 宽名胶囊（model-picker）：长模型名不逼截菜单 */
     /* 加号面板菜单宽度（COMPOSER-PLUS-VISUAL-1）：技能搜索框占位 + 技能名 + 底部动作项同列，
-     * 共享 240 档在侧栏里把「Search skills (name / description)」截成半句 ⇒ 专属放大到 280。
-     * 与 --history-menu-max-w 同构：单组件专属放大档不引全局共享令牌（后者另有 5+ 消费者）。
+     * 共享 240 档在侧栏里把「Search skills (name / description)」截成半句 ⇒ 走专属放大档。
+     * 2026-11-26 真机反馈 280 偏宽 ⇒ 用既有刻度派生到 264（dim-xl − sp-6）：
+     * 不造并列裸值 / 令牌，dim- 与 sp- 族消费计数零漂移，搜索占位仍完整。
+     * 与 --history-menu-max-w 同构：单组件专属尺寸不引全局共享令牌（后者另有 5+ 消费者）。
      * 视口兜底仍由 dropdown.ts 的 min(令牌, calc(100vw - sp-6)) 承担，窄侧栏自动收缩。 */
-    --composer-plus-menu-w: var(--dim-xl);
+    --composer-plus-menu-w: calc(var(--dim-xl) - var(--sp-6));
 
     /* 历史会话浮层尺寸（HIST-TAB-ORDER-1 · 2026-11-20）：会话条目含标题/主题/摘要/时间，
      * 共享刻度 --dim-xl(280) 容纳不下 ⇒ 历史菜单专属放大档（400×480），不引全局共享令牌
