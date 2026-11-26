@@ -19,10 +19,12 @@
  *   ⑦ 单文件确认/回退按钮：每行一个、带 path 分流，打开链路逐字不动。
  *   ⑧ 单文件按钮文案走宿主多语言：源码 t() 调用 + 两份 bundle 键面/译文对齐
  *      （2026-11-21 真机唯一瑕疵：行内「Revert」漏译文，中文界面回落英文源键）。
+ *   ⑨ 主位态外框：紧邻 #dockPanel 的 bar 补上/右/下三边 --line-solid；左缘 warn 色条
+ *     仍由基础规则单点持有，收纳态不重复描边（2026-11-26 真机「外边框消失」反馈）。
  *
  * 变异靶标：删 bar 的 z-index（层级真因）/ list 的 position 改 static / 删 bottom /
- * 恢复 flex:1 0 100% / 背景退回 surface-card / 删 right:0 / 删单文件回退按钮 ⇒ 对应用例红；
- * 恢复后全绿、字节一致。
+ * 恢复 flex:1 0 100% / 背景退回 surface-card / 删 right:0 / 删单文件回退按钮 /
+ * 删主位三边描边或让它盖掉左缘色条 ⇒ 对应用例红；恢复后全绿、字节一致。
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -151,5 +153,17 @@ describe('文件改动清单悬浮浮层形态守卫（FILE-CHANGES-FLOAT-1）',
     }
     expect(zh['Revert']).toBe('回退');
     expect(zh['Confirm']).toBe('确认');
+  });
+
+  it('⑨ 主位态外框：三边 --line-solid 只给主位条，左缘 warn 色条仍由基础规则单点持有', () => {
+    const head = STYLES.match(/#dockPanel\s*\+\s*\.file-changes-bar\s*\{([^}]*)\}/);
+    expect(head, 'missing CSS block: 主位态 .file-changes-bar').not.toBeNull();
+    const frame = head![1]!;
+    for (const side of ['top', 'right', 'bottom']) {
+      expect(frame).toMatch(new RegExp(`border-${side}:\\s*var\\(--line-solid\\)`));
+    }
+    expect(frame).not.toMatch(/border-left/); // 左缘不在主位规则里重复，避免第二真源
+    const bar = blockFor('.file-changes-bar');
+    expect(bar).toMatch(/border-left:\s*3px solid var\(--warn/);
   });
 });

@@ -1177,6 +1177,14 @@ export const chatStyles = `
     line-height: var(--lh-tight);
     color: var(--text-secondary, #9aa0a6);
   }
+  /* 主位态整圈描边（真机 2026-11-26 反馈）：文件改动条升主位后脱离 #dockPanel，
+   * 原先借抽屉外框形成的「有边框」观感随归位消失。这里只补上/右/下三边，复用 --line-solid；
+   * 左缘 warn 色条仍由基础规则单点持有，收纳态外框继续由 #dockPanel 负责，避免双框。 */
+  #dockPanel + .file-changes-bar {
+    border-top: var(--line-solid);
+    border-right: var(--line-solid);
+    border-bottom: var(--line-solid);
+  }
   /* 标题行 = 展开开关：整块可点、带 hover/focus 反馈，复用 badge + label 两子元素（不造新文案） */
   .file-changes-bar__toggle {
     display: inline-flex;
@@ -3426,7 +3434,7 @@ export const chatStyles = `
   }
   .round-block__tool-summary { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); padding: 0 0 var(--sp-1, 4px); }
   /* 工具行文件路径（TOOL-FILE-LINK-1）：只在配对回执判成功时才挂链接，视觉语言与正文链接同档；
-   * 色板复用 --text-link / --text-link-hover，不新增令牌（令牌闭包 321 不漂移）。 */
+   * 色板复用 --text-link / --text-link-hover，不新增令牌（令牌闭包机械真值同步）。 */
   .round-block__tool-filelink { color: var(--text-link); text-decoration: underline; cursor: pointer; }
   .round-block__tool-filelink:hover { color: var(--text-link-hover); }
   /* web_search 裁决证据块：工具行展开体内的归因三件套（端点/条数/命中标题），与结果摘要同层。

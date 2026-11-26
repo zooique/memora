@@ -681,7 +681,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     // （2026-11-21，与头部「全部确认」同款既有令牌，实数经 count-token-refs.mjs 实锤）。
     // 99：常规页 generalStyles 页头 / 卡片 / 输入框三处 var(--line-solid) +3（2026-11-25，
     // 账实复核；实数经 scripts/count-token-refs.mjs 实锤同步）。
-    'line-': 99, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
+    // 102：文件改动确认条主位态补上/右/下三边 var(--line-solid) +3（2026-11-26，真机反馈
+    // 「外边框消失」；左缘 warn 色条不重复，实数经 scripts/count-token-refs.mjs 实锤同步）。
+    'line-': 102, // 输入区状态行分隔（2026-11-04）：`.composer-row--status` 的 border-top:
     //             var(--line-solid) +1 ⇒ 79→80（UI-STATUS-DIVIDE-1，与
     //             `.context-ring__injection` 同一既有令牌，未新造颜色）；
     //             实数经 scripts/count-token-refs.mjs 实锤同步。

@@ -1751,6 +1751,8 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     const inputBar = document.getElementById('inputBar') as HTMLElement;
     // 位置断言：插到 inputBar 的**前一个兄弟**（若实现改成 append 会立即变红）
     expect(bar.nextElementSibling).toBe(inputBar);
+    // 主位外框选择器真绑定：静态链 #dockPanel → 主位条 → #inputBar（2026-11-26 真机反馈）
+    expect(bar.matches('#dockPanel + .file-changes-bar')).toBe(true);
   });
 
   it('「全部确认」按钮 → post confirm_all_file_changes', () => {
