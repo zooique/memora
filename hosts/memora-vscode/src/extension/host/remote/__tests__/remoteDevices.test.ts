@@ -85,3 +85,42 @@ describe('RemoteDeviceStore — 读写', () => {
     expect(new RemoteDeviceStore(new MemoryMemento()).list()).toEqual([]);
   });
 });
+
+describe('RemoteDeviceStore — 改档与撤销', () => {
+  it('setTier：只改目标设备档位，其他设备与字段原样保留', async () => {
+    const store = new RemoteDeviceStore(new MemoryMemento());
+    await store.upsert(record('AAAA1111', '手机一'));
+    await store.upsert(record('BBBB2222', '手机二'));
+
+    expect(await store.setTier('aaaa1111', 'approve')).toBe(true);
+    expect(store.get('AAAA1111')?.tier).toBe('approve');
+    // 改档不得顺手抹掉名称 / 配对时间 / 短码
+    expect(store.get('AAAA1111')?.name).toBe('手机一');
+    expect(store.get('AAAA1111')?.pairedAt).toBe(1);
+    expect(store.get('AAAA1111')?.shortFp).toBe('AAAA-1111');
+    expect(store.get('BBBB2222')?.tier).toBe('observe');
+  });
+
+  it('setTier：设备不存在时返回 false 且不写表', async () => {
+    const memento = new MemoryMemento();
+    const store = new RemoteDeviceStore(memento);
+    await store.upsert(record('AAAA1111', '手机一'));
+    const before = JSON.stringify(memento.get(REMOTE_DEVICES_KEY));
+
+    expect(await store.setTier('FFFF9999', 'send')).toBe(false);
+    expect(JSON.stringify(memento.get(REMOTE_DEVICES_KEY))).toBe(before);
+  });
+
+  it('remove：删除目标设备、保留其余；不存在时返回 false', async () => {
+    const store = new RemoteDeviceStore(new MemoryMemento());
+    await store.upsert(record('AAAA1111', '手机一'));
+    await store.upsert(record('BBBB2222', '手机二'));
+
+    expect(await store.remove('AAAA1111')).toBe(true);
+    expect(store.get('AAAA1111')).toBeUndefined();
+    expect(store.get('BBBB2222')?.name).toBe('手机二');
+
+    // 重复撤销是幂等的「没删到」，返回 false 而不是抛错
+    expect(await store.remove('AAAA1111')).toBe(false);
+  });
+});

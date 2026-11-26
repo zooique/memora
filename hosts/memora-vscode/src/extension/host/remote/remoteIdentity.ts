@@ -8,8 +8,9 @@
  *   - §5.7：PC 长期私钥只放 `context.secrets`（VS Code SecretStorage），
  *     绝不写进工作区 `.memora` 目录 / 日志
  *
- * 为什么要有本文件：证书与私钥是「这台 PC 是谁」的唯一载体；生成、落库、读回、
- * 指纹派生必须只有一份实现，否则宿主 / 桥 / UI 各自算一套指纹，设备表对不上。
+ * 为什么要有本文件：证书与私钥是「这台 PC 是谁」的唯一载体；生成、落库、读回必须只有
+ * 一份实现，否则宿主 / 桥 / UI 各自算一套身份，设备表对不上。指纹派生本身已外置到
+ * `remoteFingerprint.ts`（不碰证书库），本文件只消费它。
  *
  * 边界：
  *   - 只做身份材料（生成 / 读写 / 指纹），**不做配对、不做连接判定**；
@@ -20,8 +21,9 @@
 // ⚠️ 必须是第一条 import：@peculiar/x509 依赖 tsyringe，tsyringe 需要 reflect-metadata
 // 先完成 Reflect 元数据扩展（缺它时运行期报 Reflect.getMetadata 不存在）。
 import 'reflect-metadata';
-import { createHash, webcrypto } from 'node:crypto';
+import { webcrypto } from 'node:crypto';
 import { X509Certificate, X509CertificateGenerator } from '@peculiar/x509';
+import { fingerprintOfCertDer, shortFingerprint } from './remoteFingerprint.js';
 
 /** PC 身份（落库形态 + 派生指纹） */
 export interface RemoteIdentity {
@@ -54,29 +56,6 @@ const IDENTITY_VALIDITY_MS = 10 * 365 * 24 * 60 * 60 * 1000;
 
 /** 私钥 PEM 每行 base64 宽度（PEM 规范惯例，非判据） */
 const PEM_LINE_WIDTH = 64;
-
-/**
- * 证书 DER → SHA-256 指纹（全大写 hex）
- *
- * 指纹是身份的**唯一判据**：设备表、白名单、`phoneFp` / `pcFp` 全用同一形态。
- *
- * @param der 证书 DER 字节
- */
-export function fingerprintOfCertDer(der: Uint8Array): string {
-  return createHash('sha256').update(der).digest('hex').toUpperCase();
-}
-
-/**
- * 长指纹 → 短码（前 8 hex，`AB12-CD34`）
- *
- * 只承担**展示**职责（人工比对 / 日志），不承担任何判据职责——判据永远用全长指纹。
- *
- * @param fingerprint 全长指纹（大小写不敏感；非 hex 字符会被剔除）
- */
-export function shortFingerprint(fingerprint: string): string {
-  const hex = fingerprint.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
-  return `${hex.slice(0, 4)}-${hex.slice(4, 8)}`;
-}
 
 /**
  * 读取或创建 PC 身份

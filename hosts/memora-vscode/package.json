@@ -168,6 +168,11 @@
         "command": "memora.copyDiagnostics",
         "title": "%command.copyDiagnostics.title%",
         "icon": "$(copy)"
+      },
+      {
+        "command": "memora.remoteDevices",
+        "title": "%command.remoteDevices.title%",
+        "icon": "$(device-mobile)"
       }
     ],
     "configuration": {

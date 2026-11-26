@@ -17,9 +17,14 @@
  *   - 本文件不建立 WebSocket、不解析业务帧（那是 `remoteBridge`）。
  */
 
+// ⚠️ 必须是第一条 import：本文件与 remoteIdentity 同属 LAN 档惰性链，而
+// @peculiar/x509 依赖 tsyringe，tsyringe 需要 reflect-metadata 先完成 Reflect 元数据扩展。
+// 扩展激活路径不会加载本文件（remoteBridgeHost 只在 LAN 分支动态 import）。
+import 'reflect-metadata';
 import { createServer, type Server } from 'node:https';
 import type { TLSSocket } from 'node:tls';
-import { fingerprintOfCertDer, type RemoteIdentity } from './remoteIdentity.js';
+import { fingerprintOfCertDer } from './remoteFingerprint.js';
+import type { RemoteIdentity } from './remoteIdentity.js';
 
 /** 构造参数 */
 export interface RemoteSecureServerOptions {

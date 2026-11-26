@@ -32,7 +32,7 @@ import type { IncomingMessage } from 'node:http';
 import type { RoundView, TurnState } from '../../../shared/protocol.js';
 import { routeRemoteAnswer } from './remoteAnswerRouter.js';
 import { REMOTE_COMMAND_CODES, REMOTE_CTL_CODES, type RemotePhase } from './remoteCommandPolicy.js';
-import { shortFingerprint } from './remoteIdentity.js';
+import { normalizeFingerprint, shortFingerprint } from './remoteFingerprint.js';
 import type { RemoteDeviceTier } from './remoteDevices.js';
 import type { RemoteRateLimitState } from './remoteRateLimiter.js';
 import type { PairingVerdict } from './remotePairing.js';
@@ -256,6 +256,29 @@ export class RemoteBridge {
       }
       external.close(() => resolve());
     });
+  }
+
+  /**
+   * 断开某台已配对设备的全部连接（设备撤销时调用）
+   *
+   * 判据用 `conn.deviceFp`（TLS 层认证过的指纹），**不信**客户端自称的 `deviceId`：
+   * LAN 档 `deviceId` 已由握手归一为指纹，但回环档没有指纹，故回环下恒为 0。
+   *
+   * 为什么必须断开而不是只靠 `tierOf` 拒绝：撤销后连接仍在，订阅的 `evt snapshot`
+   * 会继续推送会话内容——「撤销」必须连读权限一起终止（§5.9 撤销语义）。
+   *
+   * @param fingerprint 设备证书指纹（大小写不敏感）
+   * @returns 实际断开的连接数
+   */
+  disconnectDevice(fingerprint: string): number {
+    const target = normalizeFingerprint(fingerprint);
+    let closed = 0;
+    for (const conn of this.connections) {
+      if (conn.deviceFp !== target) continue;
+      conn.ws.close(1008, 'device revoked');
+      closed += 1;
+    }
+    return closed;
   }
 
   /**

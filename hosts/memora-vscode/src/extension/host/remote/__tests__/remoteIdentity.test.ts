@@ -8,10 +8,11 @@ import { describe, expect, it } from 'vitest';
 import { createSecureContext } from 'node:tls';
 import {
   loadOrCreateRemoteIdentity,
-  shortFingerprint,
   REMOTE_IDENTITY_SECRET_KEY,
   type RemoteIdentitySecretStore,
 } from '../remoteIdentity.js';
+// 指纹短码已迁到纯模块（激活链路不加载证书栈），测试按新归属引入
+import { shortFingerprint } from '../remoteFingerprint.js';
 
 /** 内存版 SecretStorage（模拟 vscode.secrets 的读写语义） */
 class MemorySecretStore implements RemoteIdentitySecretStore {

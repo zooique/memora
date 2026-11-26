@@ -15,6 +15,8 @@
  *   - 不 import vscode：`globalState` 经 `RemoteDeviceMemento` 窄接口注入。
  */
 
+import { normalizeFingerprint } from './remoteFingerprint.js';
+
 /** 权限档位（§5.9；`approve` 才能答执行类审批 / ask 提问） */
 export type RemoteDeviceTier = 'observe' | 'send' | 'approve';
 
@@ -45,11 +47,6 @@ export const REMOTE_DEVICES_KEY = 'memora.remote.devices.v1';
 
 /** 合法档位集合（读时校验的唯一来源，避免散落 if 判断） */
 const DEVICE_TIERS: readonly RemoteDeviceTier[] = ['observe', 'send', 'approve'];
-
-/** 指纹归一（大小写不敏感；设备表与握手比较共用同一形态） */
-function normalizeFingerprint(fingerprint: string): string {
-  return fingerprint.trim().toUpperCase();
-}
 
 /** 是否为合法档位 */
 function isDeviceTier(value: unknown): value is RemoteDeviceTier {
@@ -128,6 +125,44 @@ export class RemoteDeviceStore {
     const next = this.list().filter((item) => item.fingerprint !== normalized.fingerprint);
     next.push(normalized);
     await this.write(next);
+  }
+
+  /**
+   * 改一台设备的权限档（其他设备原样保留）
+   *
+   * 只改档位、不动配对时间与展示名；设备不存在时**不写表**并返回 false，
+   * 让调用方能把「设备已被撤销」如实告知用户，而不是静默成功。
+   *
+   * @param fingerprint 设备指纹（大小写不敏感）
+   * @param tier        目标档位
+   * @returns true = 已写入；false = 设备不存在
+   */
+  async setTier(fingerprint: string, tier: RemoteDeviceTier): Promise<boolean> {
+    const target = normalizeFingerprint(fingerprint);
+    const records = this.list();
+    const index = records.findIndex((record) => record.fingerprint === target);
+    if (index < 0) return false;
+    records[index] = { ...records[index], tier };
+    await this.write(records);
+    return true;
+  }
+
+  /**
+   * 撤销一台设备（从设备表删除该行）
+   *
+   * 撤销后该指纹不再命中 `tierOf`，桥的下一次握手 / 命令即按未配对拒绝；
+   * 手机侧证书不删，但会被永久拒绝（§5.9「撤销」语义）。
+   *
+   * @param fingerprint 设备指纹（大小写不敏感）
+   * @returns true = 已删除；false = 设备不存在
+   */
+  async remove(fingerprint: string): Promise<boolean> {
+    const target = normalizeFingerprint(fingerprint);
+    const records = this.list();
+    const next = records.filter((record) => record.fingerprint !== target);
+    if (next.length === records.length) return false;
+    await this.write(next);
+    return true;
   }
 
   /**

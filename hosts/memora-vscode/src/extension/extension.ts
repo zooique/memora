@@ -50,7 +50,7 @@ import { readChatTextScale } from './host/chatTextScaleConfig.js';
 import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 // 远程桥（profile 2 回环 / profile 3 局域网）：默认不监听，见 host/remote/remoteBridgeHost.ts
-import { startRemoteBridge } from './host/remote/remoteBridgeHost.js';
+import { remoteDevicesCommand, startRemoteBridge } from './host/remote/remoteBridgeHost.js';
 import type { RemoteBridge } from './host/remote/remoteBridge.js';
 import { formatDiagnosticsSnapshot } from '../webview/panels/hostDiagnostics.js';
 import { MemoraSettingsPanel } from '../webview/panels/settingsPanel.js';
@@ -987,6 +987,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // 命令：添加图片到对话（IMG-2 Q3）：拾取编排（开框/读盘/落盘/回执）全归 chatPanel.pickAndAttachImages 单点
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.attachImage', () => chatProvider.pickAndAttachImages()),
+  );
+  // 命令：远程设备管理（改档 / 撤销 / 重新生成配对口令）——桥未启动时只给信息提示
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.remoteDevices', () => remoteDevicesCommand()),
   );
   // 设置面板打开入口的**唯一实现**（下面三个命令都是它的薄包装）。
   // 为什么收成一个本地函数而不是各写一遍：

@@ -27,6 +27,7 @@
   "command.fileChange.confirmFile.title": "Memora: Confirm Changes in This File",
   "command.fileChange.restoreFile.title": "Memora: Revert Changes in This File",
   "command.copyDiagnostics.title": "Memora: Copy Diagnostic Summary",
+  "command.remoteDevices.title": "Memora: Remote Devices",
   "config.providers.description": "Configured model provider list (API keys excluded; keys are kept in secure storage)",
   "config.activeProvider.description": "Alias of the currently active model provider",
   "config.backgroundProvider.description": "Provider alias used for background tasks (turn summaries / session archiving / polishing / deduplication). Empty = same as live chat. User-level preference: follows the user, not the project. Requires a window reload to take effect",

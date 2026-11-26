@@ -594,4 +594,64 @@ describe('RemoteBridge — LAN 档命令（设备权限档）', () => {
     expect(err.code).toBe('forbidden');
     expect(delivered).toHaveLength(0);
   });
+
+  it('改档后同一连接的下一条 answer 生效（桥每次命令实时查 tierOf）', async () => {
+    const { security } = makeSecurity({ tier: 'observe' });
+    // 宿主设备表可变：模拟用户在本轮运行中把该设备从 observe 提到 approve
+    let currentTier: RemoteDeviceTier | undefined = 'observe';
+    security.tierOf = () => currentTier;
+    const { ports, delivered } = makePorts();
+    const { port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
+    await client.next();
+
+    // 改档前：observe 档发 answer → forbidden，不投递
+    client.send({
+      t: 'cmd',
+      ch: 'cmd',
+      rid: 'u-4',
+      sid: 's1',
+      kind: 'answer',
+      p: { answers: ['a'] },
+    });
+    const forbidden = await client.next<{ t: string; code: string }>();
+    expect(forbidden.code).toBe('forbidden');
+    expect(delivered).toHaveLength(0);
+
+    // 宿主改档（不重启桥、不断连接）
+    currentTier = 'approve';
+
+    // 用订阅快照作为「已处理」的时序锚点，再发同一条连接上的 answer
+    client.send({ t: 'sub', sid: 's1' });
+    await client.next();
+    client.send({
+      t: 'cmd',
+      ch: 'cmd',
+      rid: 'u-5',
+      sid: 's1',
+      kind: 'answer',
+      p: { answers: ['改档后'] },
+    });
+    const evt = await client.next<{ t: string; kind: string }>();
+    expect(evt.t).toBe('evt');
+    expect(evt.kind).toBe('snapshot');
+    expect(delivered).toEqual([{ sid: 's1', answers: ['改档后'] }]);
+  });
+
+  it('disconnectDevice 按已认证指纹断开连接（撤销后不再有读通道）', async () => {
+    const { security } = makeSecurity({ tier: 'approve' });
+    const { ports } = makePorts();
+    const { bridge, port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
+    await client.next();
+    client.send({ t: 'sub', sid: 's1' });
+    await client.next();
+
+    // 大小写不敏感：撤销入口传什么形态都应命中同一台设备
+    const closed = bridge.disconnectDevice(DEVICE_FP.toLowerCase());
+    expect(closed).toBe(1);
+    await client.waitClosed();
+  });
 });

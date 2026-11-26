@@ -16,6 +16,12 @@
  *   - 相位     → `remotePhaseOf`（唯一折算点）
  *   - 答复投递 → `chatPanel.handleInput`（落到同一个 `handleInput`）
  *   - 身份/设备/限流/审计 → 本目录新模块（各自单一职责）
+ *
+ * ⚠️ 证书栈惰性加载（激活成本约束）：本文件在**扩展激活路径**上（`extension.ts` 静态
+ * import `startRemoteBridge`），但 `@peculiar/x509` / `reflect-metadata` 只在 LAN 分支
+ * 里用 `await import('./remoteIdentity.js')` / `await import('./remoteSecureServer.js')`
+ * 动态拉起。因此远程桥未开（缺省态）时，激活过程**不会**加载证书栈——这里是唯一的
+ * 加载边界，新增对这两个模块的引用时必须保持 `import type` 或在 LAN 分支内动态 import。
  */
 
 import * as fs from 'node:fs';
@@ -28,12 +34,22 @@ import type { WebviewToExtensionMessage } from '../../../shared/protocol.js';
 import type { SessionViewProjection } from '../../../shared/sessionProjection.js';
 import { remotePhaseOf } from './remoteCommandPolicy.js';
 import { RemoteBridge, type RemoteBridgePorts } from './remoteBridge.js';
-import { loadOrCreateRemoteIdentity } from './remoteIdentity.js';
-import { RemoteDeviceStore } from './remoteDevices.js';
-import { RemotePairing } from './remotePairing.js';
+// 只引类型：运行期的证书 / TLS 模块必须在 LAN 分支内动态 import（见文件头「惰性加载」）
+import type { RemoteIdentity } from './remoteIdentity.js';
+import { RemoteDeviceStore, type RemoteDeviceRecord } from './remoteDevices.js';
+import { RemotePairing, type PairingChallenge } from './remotePairing.js';
 import { RemoteFailureLimiter } from './remoteRateLimiter.js';
-import { RemoteAuditLog, type RemoteAuditSink } from './remoteAudit.js';
-import { createRemoteSecureServer } from './remoteSecureServer.js';
+import { RemoteAuditLog, type RemoteAuditEvent, type RemoteAuditSink } from './remoteAudit.js';
+import type { RemoteSecureServer } from './remoteSecureServer.js';
+import {
+  buildConfirm,
+  buildDeviceActions,
+  buildDeviceList,
+  deviceMenuLabel,
+  requiresConfirmation,
+  tierLabel,
+  type RemoteDeviceMenuSelection,
+} from './remoteDeviceMenu.js';
 import { confirmModal } from '../ui/confirmModal.js';
 
 /** 桥需要的面板窄接口（只列本适配用到的三个方法，防止顺手把整个面板传进桥） */
@@ -63,6 +79,47 @@ export interface RemoteBridgeHostDeps {
 export interface RemoteBridgeHostEnv {
   /** 扩展上下文（secrets / globalState / globalStorageUri） */
   context: vscode.ExtensionContext;
+}
+
+/**
+ * LAN 档运行时句柄（设备管理命令的**唯一取数口**）
+ *
+ * 为什么要句柄而不是让命令重建一套对象：设备表 / 口令 / 审计必须在**同一个实例**上
+ * 读写——命令若新建 `RemoteDeviceStore`，桥的 `tierOf` 与命令的写入会各自看一份缓存，
+ * 出现「UI 改了档、桥还按旧档拒绝」的两份判据。句柄在 LAN 启动成功后赋值，未启动 /
+ * 回环档恒为 `undefined`。
+ */
+export interface RemoteLanHandle {
+  /** 设备表（改档 / 撤销的唯一写入面；桥的 `tierOf` 也读它） */
+  devices: RemoteDeviceStore;
+  /** PC 身份（配对口令提示里的指纹短码） */
+  identity: RemoteIdentity;
+  /** 一次性口令状态机（重新生成口令时复用同一实例） */
+  pairing: RemotePairing;
+  /** 主局域网地址（展示用；取不到时为 `0.0.0.0`） */
+  address: string;
+  /** 实际监听端口 */
+  port: number;
+  /** 重新生成配对口令（覆盖旧口令并重置尝试计数，TTL 从头算） */
+  regeneratePairingCode: () => PairingChallenge;
+  /** 断开该设备的全部在线连接（撤销配对时用；返回断开数） */
+  disconnectDevice: (fingerprint: string) => number;
+  /** 审计写入（与桥共用同一个 `RemoteAuditLog`；失败不抛出） */
+  audit: (event: Omit<RemoteAuditEvent, 'at'>) => void;
+  /** 输出通道日志（与桥共用同一个日志口） */
+  log: (message: string) => void;
+}
+
+/** 当前 LAN 句柄（仅 LAN 启动成功后赋值；deactivate 时由订阅清理） */
+let remoteLanHandle: RemoteLanHandle | undefined;
+
+/**
+ * 取 LAN 运行时句柄
+ *
+ * @returns 句柄；LAN 未启动 / 启动失败 / 回环档 = `undefined`
+ */
+export function getRemoteLanHandle(): RemoteLanHandle | undefined {
+  return remoteLanHandle;
 }
 
 /**
@@ -202,10 +259,14 @@ async function startLanBridge(
     );
     return undefined;
   }
-  let secure: ReturnType<typeof createRemoteSecureServer> | undefined;
+  let secure: RemoteSecureServer | undefined;
   try {
+    // 证书栈（@peculiar/x509 + reflect-metadata）**只在这一支惰性加载**：
+    // 扩展激活路径（extension.ts → 本文件）不 import 它们，远程桥未开时零加载成本。
+    const { loadOrCreateRemoteIdentity } = await import('./remoteIdentity.js');
+    const { createRemoteSecureServer } = await import('./remoteSecureServer.js');
     // ① 身份：SecretStorage 里的长期证书 / 私钥（缺失或损坏自动重建）
-    const identity = await loadOrCreateRemoteIdentity(
+    const identity: RemoteIdentity = await loadOrCreateRemoteIdentity(
       {
         get: async (key) => context.secrets.get(key),
         store: async (key, value) => {
@@ -272,6 +333,26 @@ async function startLanBridge(
     const challenge = pairing.start();
     const addresses = listLanAddresses();
     const where = addresses.length > 0 ? addresses.join(' / ') : '（未找到局域网地址）';
+    // 设备管理命令的运行时句柄：与桥共用同一套设备表 / 口令 / 审计实例（不重建第二份）
+    remoteLanHandle = {
+      devices,
+      identity,
+      pairing,
+      address: addresses[0] ?? '0.0.0.0',
+      port: started.port,
+      regeneratePairingCode: () => pairing.start(),
+      disconnectDevice: (fingerprint) => bridge.disconnectDevice(fingerprint),
+      audit: (event) => {
+        void auditLog.record(event);
+      },
+      log,
+    };
+    // deactivate 时清空句柄（stop 与 deactivate 是同一退出路径，见 extension.ts deactivate）
+    context.subscriptions.push({
+      dispose: () => {
+        remoteLanHandle = undefined;
+      },
+    });
     log(
       `[REMOTE-BRIDGE] listening on ${where}:${started.port}（LAN · 配对口令 ${challenge.code}，PC 指纹 ${identity.shortFp}）`,
     );
@@ -342,4 +423,122 @@ function listLanAddresses(): string[] {
     }
   }
   return addresses;
+}
+
+// ─── 设备管理命令（`memora.remoteDevices`）──────────────────────────────
+
+/**
+ * 设备管理命令（`memora.remoteDevices`）
+ *
+ * 两层 QuickPick：
+ *   ① 首项「生成新的配对口令」+ 每台已配对设备（`名称 · AB12-CD34` + 当前档位）；
+ *   ② 选中设备后选择动作（改为只读 / 可发 / 可答 / 撤销配对）。
+ *
+ * 失败口径：桥未启动只给**信息提示**（不是错误——用户可能只是没设环境变量），
+ * 不弹错误框、不抛异常。设备表写入 / 审计全部经 LAN 句柄，命令层不重建实例。
+ */
+export async function remoteDevicesCommand(): Promise<void> {
+  const handle = getRemoteLanHandle();
+  if (!handle) {
+    void vscode.window.showInformationMessage('远程桥当前未启动（需要 MEMORA_REMOTE_BRIDGE=lan）');
+    return;
+  }
+  const picked = await vscode.window.showQuickPick(buildDeviceList(handle.devices.list()), {
+    title: 'Memora 远程设备',
+    placeHolder: '选择设备调整权限，或生成新的配对口令',
+  });
+  if (!picked) return;
+  if (picked.selection.kind === 'regenerate') {
+    regenerateLanPairingCode(handle);
+    return;
+  }
+  // 设备可能在菜单弹出期间被撤销：以设备表实时读取为准
+  const device = handle.devices.get(picked.selection.fingerprint);
+  if (!device) {
+    void vscode.window.showInformationMessage('该设备已不在设备表中（可能已被撤销）。');
+    return;
+  }
+  const action = await vscode.window.showQuickPick(buildDeviceActions(device.fingerprint), {
+    title: `设备：${deviceMenuLabel(device)}`,
+    placeHolder: '选择要执行的操作',
+  });
+  if (!action) return;
+  await applyDeviceAction(handle, device, action.selection);
+}
+
+/**
+ * 重新生成配对口令并展示（口令 + PC 指纹短码 + 监听地址:端口）
+ *
+ * TTL 从「用户看到」开始算（`pairing.start()` 覆盖旧口令并重置尝试计数）；
+ * 同时写输出通道日志与 `pairing_code_regenerated` 审计，便于事后回查谁在何时重发过口令。
+ *
+ * @param handle LAN 运行时句柄
+ */
+function regenerateLanPairingCode(handle: RemoteLanHandle): void {
+  const challenge = handle.regeneratePairingCode();
+  const where = `${handle.address}:${handle.port}`;
+  handle.audit({ event: 'pairing_code_regenerated' });
+  handle.log(
+    `[REMOTE-BRIDGE] 已重新生成配对口令（监听 ${where}，PC 指纹 ${handle.identity.shortFp}）`,
+  );
+  void vscode.window.showInformationMessage(
+    `新的配对口令 ${challenge.code}（5 分钟内有效、一次即废）；` +
+      `PC 指纹 ${handle.identity.shortFp}；监听 ${where}`,
+  );
+}
+
+/**
+ * 执行第二层菜单选中的动作（改档 / 撤销）
+ *
+ * 高风险动作（可答 / 撤销）先过 `confirmModal`；只读 / 可发直接生效。
+ * 每次变更都写审计（`device_tier_changed` 的 detail = `from→to`；`device_revoked`），
+ * 并弹一条信息提示。设备已被撤销时如实提示，不静默成功。
+ *
+ * @param handle    LAN 运行时句柄
+ * @param device    目标设备（菜单选中时的快照；写前以设备表为准判存在）
+ * @param selection 第二层菜单的选中结果
+ */
+async function applyDeviceAction(
+  handle: RemoteLanHandle,
+  device: RemoteDeviceRecord,
+  selection: RemoteDeviceMenuSelection,
+): Promise<void> {
+  if (selection.kind !== 'set_tier' && selection.kind !== 'revoke') return;
+  if (requiresConfirmation(selection)) {
+    const confirmed = await confirmModal(buildConfirm(device, selection));
+    if (!confirmed) return;
+  }
+  if (selection.kind === 'set_tier') {
+    const before = device.tier;
+    const changed = await handle.devices.setTier(device.fingerprint, selection.tier);
+    if (!changed) {
+      void vscode.window.showInformationMessage('该设备已不在设备表中（可能已被撤销）。');
+      return;
+    }
+    // 审计 detail 用档位代码（机器可读），用户提示用话术（人可读）
+    handle.audit({
+      event: 'device_tier_changed',
+      deviceFp: device.fingerprint,
+      detail: `${before}→${selection.tier}`,
+    });
+    handle.log(
+      `[REMOTE-BRIDGE] 设备 ${device.name}（${device.shortFp}）权限 ${before} → ${selection.tier}`,
+    );
+    void vscode.window.showInformationMessage(
+      `「${device.name}」的权限已改为${tierLabel(selection.tier)}。`,
+    );
+    return;
+  }
+  const removed = await handle.devices.remove(device.fingerprint);
+  if (!removed) {
+    void vscode.window.showInformationMessage('该设备已不在设备表中。');
+    return;
+  }
+  handle.audit({ event: 'device_revoked', deviceFp: device.fingerprint });
+  // 撤销必须连在线读权限一起终止：只删设备表的话，已订阅的快照仍会继续推送
+  const closed = handle.disconnectDevice(device.fingerprint);
+  handle.log(
+    `[REMOTE-BRIDGE] 已撤销设备 ${device.name}（${device.shortFp}）的配对，断开 ${closed} 条连接`,
+  );
+  void vscode.window.showInformationMessage(`已撤销「${device.name}」的配对。`);
 }
