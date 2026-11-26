@@ -110,6 +110,20 @@ describe('加号面板守卫（COMPOSER-PLUS-FLAT-1）', () => {
     expect(TOKENS).toMatch(/--dd-menu-max-w:\s*240px/);
   });
 
+  it('MODEL-PICKER-NOWRAP-1：模型名单行由内容撑宽，公共下拉项换行规则不受牵连', () => {
+    const item = cssRule('.model-picker .treedd__item');
+    expect(item).toContain('white-space: nowrap');
+    expect(item).toContain('overflow: hidden');
+    expect(item).toContain('text-overflow: ellipsis');
+    // 不带伤：会话历史 / 技能等仍走公共 .treedd__item，不能被顺手改成 nowrap
+    expect(cssRule('.treedd__item')).not.toContain('white-space: nowrap');
+    // 宽度上下限仍由弹性令牌提供：nowrap 只改变内容测量方式，不改几何契约
+    expect(cssRule('.model-picker')).toContain('--dd-menu-max-w: var(--dim-xl)');
+    expect(readFileSync(join(HERE, '..', 'styles', 'dropdown.ts'), 'utf8')).toContain(
+      'max-width: min(var(--dd-menu-max-w, 240px), calc(100vw - var(--sp-6)))',
+    );
+  });
+
   it('视觉分层（COMPOSER-PLUS-VISUAL-1）：加宽走局部取值、动作项图标走组件字段', () => {
     const menu = cssRule('.composer-plus.treedd--capsule .treedd__menu');
     // 宽度只在加号门覆写：公共 capsule 令牌仍服务 model-picker，禁止改全局取值

@@ -647,6 +647,31 @@ describe('settingsView 全局通知 toast（settingsPanel→notice 断链补全�
     expect(panelHtml).not.toContain('id="toast"');
     expect(tokens).not.toContain('--toast-ok-bg');
   });
+
+  it('CONFIG-MODAL-FIT-1：添加 API 弹窗限高 + 滚动 + 动作栏吸底（限高与滚动必须成对）', () => {
+    const config = readFileSync(join(__dirname, '..', 'styles', 'configStyles.ts'), 'utf8');
+    const rule = (selector: string): string => {
+      const at = config.indexOf(`${selector} {`);
+      if (at < 0) return '';
+      const end = config.indexOf('}', at);
+      return config.slice(at, end < 0 ? at + 180 : end + 1);
+    };
+    const modal = rule('#config-root .modal');
+    // 限高只用既有刻度：遮罩顶部留白 --dim-sm + 常规安全边距 --sp-6，零新裸值
+    expect(modal).toMatch(/max-height:\s*calc\(100vh - var\(--dim-sm\) - var\(--sp-6\)\)/);
+    expect(modal).toContain('overflow-y: auto'); // 只限高不给滚动＝尾部字段永久不可达
+    expect(modal).toContain('overscroll-behavior: contain');
+    const actions = rule('#config-root .modal-actions');
+    expect(actions).toContain('position: sticky');
+    expect(actions).toContain('bottom: 0');
+    expect(actions).toMatch(/background:\s*var\(--surface-page,/); // 防滚动内容从按钮背后透出
+    expect(actions).toMatch(/padding:\s*var\(--sp-2\) 0 var\(--sp-6\)/);
+    // 公式上边距必须与遮罩真实 padding 同源：改遮罩不改公式会重新留裁切
+    expect(rule('#config-root .modal-mask')).toMatch(/padding-top:\s*var\(--dim-sm\)/);
+    // 动作栏仍在 form 内（sticky 相对弹窗滚动视口生效的骨架前提）
+    const html = readFileSync(join(__dirname, '..', 'panels', 'settingsConfigHtml.ts'), 'utf8');
+    expect(html).toMatch(/<form id="cfgForm">[\s\S]*<div class="modal-actions">/);
+  });
 });
 
 /**

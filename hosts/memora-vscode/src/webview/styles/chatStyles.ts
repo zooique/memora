@@ -2712,6 +2712,14 @@ export const chatStyles = `
     --dd-menu-min-w: var(--dd-trigger-max-w-narrow);
     --dd-menu-max-w: var(--dim-xl);
   }
+  /* MODEL-PICKER-NOWRAP-1：模型名整名单行，菜单由内容自然撑宽（上限仍 --dim-xl）。
+   * 只覆写本菜单项——公共 .treedd__item 仍服务会话历史/技能等可换行场景；
+   * ellipsis 兜底超长名，防 nowrap 把文字挤出浮层（与触发器 dd-trigger-name 同构）。 */
+  .model-picker .treedd__item {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .model-picker .treedd__item.is-active {
     color: var(--accent, #0e639c);
     font-weight: 600;

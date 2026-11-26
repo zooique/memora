@@ -729,7 +729,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //             .session-history .treedd__menu 的 max-width/max-height 由共享 --dim-xl
     //             改引专属 --history-menu-max-w/h（该共享令牌另有设置面板等 5+ 消费者，
     //             不动它）。机械实测 count-token-refs.mjs = 26，沿革保留非放宽。
-    'dim-': 26,
+    //             2026-11-26 CONFIG-MODAL-FIT-1：配置弹窗限高公式引用 --dim-sm（与遮罩
+    //             padding-top 同源）+1 ⇒ 27；机械实测 count-token-refs.mjs 同步，不造新令牌。
+    'dim-': 27,
   } as const;
 
   for (const family of Object.keys(EXPECTED) as (keyof typeof EXPECTED)[]) {

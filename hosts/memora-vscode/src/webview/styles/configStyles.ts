@@ -60,7 +60,10 @@ export const configStyles = `
   /* ============ Components：表单弹窗 ============ */
   #config-root .modal-mask { display: none; position: fixed; inset: 0; background: var(--overlay-mask); z-index: var(--z-float); align-items: flex-start; justify-content: center; padding-top: var(--dim-sm); }
   #config-root .modal-mask.visible { display: flex; }
-  #config-root .modal { width: 90%; max-width: var(--dim-3xl); background: var(--surface-page, #1e1e1e); border-radius: var(--radius-lg, 8px); padding: var(--sp-6, 16px); box-shadow: var(--shadow-modal, 0 4px 16px rgba(0,0,0,.3)); overscroll-behavior: contain; }
+  /* CONFIG-MODAL-FIT-1：表单帮助文案较多，弹窗占满整屏会把「测试连接 / 保存」顶出视野。
+   * 限高沿用遮罩自身的顶部留白令牌（--dim-sm）与常规安全边距（--sp-6），不造裸值；
+   * 与 overflow-y:auto 成对出现——只限高不给滚动＝永久裁掉尾部字段。 */
+  #config-root .modal { width: 90%; max-width: var(--dim-3xl); max-height: calc(100vh - var(--dim-sm) - var(--sp-6)); overflow-y: auto; background: var(--surface-page, #1e1e1e); border-radius: var(--radius-lg, 8px); padding: var(--sp-6, 16px); box-shadow: var(--shadow-modal, 0 4px 16px rgba(0,0,0,.3)); overscroll-behavior: contain; }
   #config-root .modal h3 { margin: 0 0 var(--sp-5, 12px); font-size: var(--font-lg, 14px); }
   #config-root .field { margin-bottom: var(--sp-4, 10px); }
   #config-root .field label { display: block; font-size: var(--font-md, 12px); margin-bottom: var(--sp-1, 4px); color: var(--text-secondary, #9aa0a6); }
@@ -83,5 +86,7 @@ export const configStyles = `
    * 结果块是纯文本容器，图标以 inline-flex 内联，vertical-align 微调与文字基线对齐 */
   #config-root .test-result__icon { display: inline-flex; align-items: center; vertical-align: -2px; margin-right: var(--sp-1, 4px); }
   #config-root .test-result__icon svg { display: block; }
-  #config-root .modal-actions { display: flex; gap: var(--sp-3, 8px); justify-content: flex-end; margin-top: var(--sp-5, 12px); }
+  /* 动作栏吸底：滚长表单时按钮恒定可达；底色与弹窗同面，防滚动内容从按钮背后透出。
+   * 下内边距复用 --sp-6，抵消 sticky bottom:0 贴到滚动视口底缘后丢失的弹窗留白。 */
+  #config-root .modal-actions { position: sticky; bottom: 0; display: flex; gap: var(--sp-3, 8px); justify-content: flex-end; margin-top: var(--sp-5, 12px); padding: var(--sp-2) 0 var(--sp-6); background: var(--surface-page, #1e1e1e); }
 `;
