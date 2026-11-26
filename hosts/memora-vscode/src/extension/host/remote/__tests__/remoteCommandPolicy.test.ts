@@ -91,17 +91,19 @@ const EXPECTED: Record<RemoteCommand, Record<RemotePhase, ExpectedCell>> = {
   },
 };
 
-/** 固定错误码集合（方案 §6.1 的 cmd 侧五码）——写死期望值，防悄悄增删 */
+/** 固定错误码集合（方案 §6.1 的 cmd 侧六码）——写死期望值，防悄悄增删 */
 const EXPECTED_CODES: readonly string[] = [
   'no_session',
   'stale_phase',
   'already_resumed',
   'busy',
   'in_flight',
+  // 2026-11-26：权限档不足（§5.9 三档档位拒绝），方案 §6.1 已登记为 ch:'cmd' 的错误码
+  'forbidden',
 ];
 
 describe('remoteCommandPolicy — 错误码固定集合', () => {
-  it('常量对象的值与方案文档 §6.1 的 cmd 侧五码逐字一致（不多不少）', () => {
+  it('常量对象的值与方案文档 §6.1 的 cmd 侧六码逐字一致（不多不少）', () => {
     expect(Object.values(REMOTE_COMMAND_CODES).sort()).toEqual([...EXPECTED_CODES].sort());
   });
 });

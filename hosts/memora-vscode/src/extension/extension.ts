@@ -49,6 +49,9 @@ import { createImageReadPort } from './host/imageReadPort.js';
 import { readChatTextScale } from './host/chatTextScaleConfig.js';
 import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
+// 远程桥（profile 2 回环 · 仅开发验证）：默认不监听，见 host/remote/remoteBridgeHost.ts
+import { startRemoteBridgeForDev } from './host/remote/remoteBridgeHost.js';
+import type { RemoteBridge } from './host/remote/remoteBridge.js';
 import { formatDiagnosticsSnapshot } from '../webview/panels/hostDiagnostics.js';
 import { MemoraSettingsPanel } from '../webview/panels/settingsPanel.js';
 // 工作台面板（编辑器区只读；第三切片/第四切片：座位身份 + 在管会话清单）
@@ -160,6 +163,14 @@ let gcScheduler: MemoryGcScheduler | null = null;
  * `sessionStore`，锁只能等进程退出才由 OS 回收。
  */
 let hostSessionStore: WorkspaceSessionStore | null = null;
+
+/**
+ * 远程桥实例（profile 2 `loopback` · **仅开发验证不交付**）
+ *
+ * 默认不监听：只有显式设置 `MEMORA_REMOTE_BRIDGE=1` 才会创建。
+ * 停用路径必须 stop（网络监听与连接不能留到进程退出）。
+ */
+let hostRemoteBridge: RemoteBridge | undefined;
 
 /**
  * 激活期记忆存储单例的模块级引用（所有权归宿主，停用时由宿主关闭）
@@ -764,6 +775,17 @@ export function activate(context: vscode.ExtensionContext): void {
   // 注入过程事件落盘目标（v1.5）：与 viewLoader 同一 WorkspaceRoundStore 单例，生命周期原子一致
   chatProvider.setRoundStore(roundStore);
 
+  // 远程桥（profile 2 回环 · 仅开发验证）：默认不监听，显式设置 MEMORA_REMOTE_BRIDGE=1 才启动。
+  // 监听失败由该函数显式弹警告并保持未监听态（禁止「失败但 UI 显示已连接」）。
+  // 刻意不 await：开端口不该阻塞激活链路；实例落到模块级引用供 deactivate stop。
+  void startRemoteBridgeForDev({
+    panel: chatProvider,
+    store: sessionStore,
+    log: (message) => memoraOutput.appendLine(message),
+  }).then((bridge) => {
+    hostRemoteBridge = bridge;
+  });
+
   // ─── 文件改动可视化（host-only，零内核改动；见 docs/方案-文件改动diff可视化-20260926.md）───
   // 记录归属 extension 激活期单例（工作区级），独立于聊天会话存在；旧内容走内存虚拟文档（零落盘）。
   // 「回退本文件改动」经 agent.security.assertPathAllowed 校验 + 宿主原子写（判据与内核守门同源）。
@@ -1262,6 +1284,11 @@ export function activate(context: vscode.ExtensionContext): void {
  * `close()` 失败也要清：半关闭的实例比「表里没有」更危险（表里没有会触发重新装配）。
  */
 export async function deactivate(): Promise<void> {
+  // 远程桥最先停：它持有网络监听与连接，必须早于存储 / Agent 释放（stop 幂等，未启动即空转）
+  const bridge = hostRemoteBridge;
+  hostRemoteBridge = undefined;
+  if (bridge) await bridge.stop().catch(() => undefined);
+
   // 会话存储先摘引用，锁在**末尾**统一归还（E4 批 3）：先 close 再放锁——放锁前本窗口仍是
   // 该会话的写归属；而「锁全放」必须无条件执行（进程级 OS 句柄，漏放 = 该会话对其他窗口
   // 永久不可用），故用 try/finally 兜住，早退分支也照放。

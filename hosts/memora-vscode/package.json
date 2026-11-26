@@ -513,6 +513,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/vscode": "~1.90.0",
+    "@types/ws": "^8.18.2",
     "@vscode/vsce": "^3.9.2",
     "@zooique/memora": "file:../..",
     "esbuild": "^0.28.2",
@@ -524,6 +525,7 @@
     "@vscode/l10n": "^0.0.18",
     "dompurify": "^3.4.13",
     "marked": "^18.0.9",
+    "ws": "^8.23.0",
     "yauzl": "3.4.0"
   }
 }

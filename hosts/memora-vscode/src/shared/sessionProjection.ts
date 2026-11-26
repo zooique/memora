@@ -51,6 +51,17 @@ export interface SessionProjection {
 }
 
 /**
+ * 宿主出口的投影形状（投影 + 待发送队列）
+ *
+ * 与 `SessionProjection` 的差别只有 `pendingQueue`：它是宿主从内核 interject 队列取的快照，
+ * 不属于「纯投影」的判据，但视图投递与远程桥快照都要带着它，故在此收成同一个出口形状。
+ */
+export interface SessionViewProjection extends SessionProjection {
+  /** 待发送（插话）队列快照；渲染真源在内核，宿主只透传 */
+  pendingQueue: readonly string[];
+}
+
+/**
  * 投影任意会话：合并 live 轮 + 折叠 TurnState
  *
  * @param input 单会话素材（见 `SessionProjectionInput`）

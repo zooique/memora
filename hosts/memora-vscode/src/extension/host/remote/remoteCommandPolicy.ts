@@ -28,6 +28,9 @@ import type { TurnState } from '../../../shared/protocol.js';
  *   - `already_resumed`：重复解暂停 / 会话本就不在暂停 —— 手机侧当成功处理（幂等）
  *   - `busy`：会话正在跑，不接受新 turn（**相位层面**拒绝）
  *   - `in_flight`：同一会话发送窗口被占（**仲裁层面**拒绝，含 PC 占用）
+ *   - `forbidden`：当前设备权限档不允许该命令（**档位层面**拒绝，见方案 §5.9 / §6.1）
+ *     ——它不属于「相位表」的任何一格，但同属 `ch:'cmd'` 的固定错误码，故在此登记，
+ *     避免桥自造字符串
  *
  * ⚠️ 另外两个码不属于命令面，故**不在此登记**：`bad_passcode`（ctl 握手）、
  * `reset_required` 属传输/控制面，见方案 §5.3 与 §6.2。
@@ -38,6 +41,7 @@ export const REMOTE_COMMAND_CODES = {
   ALREADY_RESUMED: 'already_resumed',
   BUSY: 'busy',
   IN_FLIGHT: 'in_flight',
+  FORBIDDEN: 'forbidden',
 } as const;
 
 /** 远程命令错误码类型（由常量对象派生，禁止调用点自写字面量） */

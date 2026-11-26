@@ -86,7 +86,10 @@ import type {
 // 错误文案映射单一真理源（与 webview 重放渲染共用，防文案双源漂移）
 import { type PendingLiveRound } from '../../shared/turnProjection.js';
 // 会话投影（合并 live 轮 + 折叠 TurnState）单一入口：本面板与远程/桥共用同一判据，防两套投影
-import { deriveSessionProjection } from '../../shared/sessionProjection.js';
+import {
+  deriveSessionProjection,
+  type SessionViewProjection,
+} from '../../shared/sessionProjection.js';
 import { dedupeRefs } from '../../shared/refKey.js'; // 引用去重判据单点（与 webview 的 addRefs 共用，勿各自实现）
 // 未发送草稿（按会话落 workspaceState）：只搬文本，不参与 composer_state 的翻转判据
 import { createComposerDrafts, persistDraftPageMark } from '../helpers/composerDrafts.js';
@@ -451,7 +454,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 带会话 id ⇒ 按该会话路由（助手窗停止 / 暂停的反馈进助手窗）；缺省 = 侧栏当前会话
     post: (msg, sessionId) => (sessionId ? this.postToSession(sessionId, msg) : this.post(msg)),
     postTurnUpdate: (sessionId) =>
-      sessionId ? this.postTurnUpdateFor(sessionId) : this.postTurnUpdate(),
+      sessionId
+        ? this.postTurnUpdateFor(sessionId)
+        : this.postTurnUpdateFor(this._currentSessionId),
     runtimeFor: (sessionId) => this.runtimeFor(sessionId),
     askFor: (sessionId) => this.askFor(sessionId),
     getAgent: (sessionId) => this.agentFor(sessionId),
@@ -686,7 +691,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private readonly _notice: ChatNoticeOps = createChatNoticeOps({
     post: (msg) => this.post(msg),
-    postTurnUpdate: () => this.postTurnUpdate(),
+    postTurnUpdate: () => this.postTurnUpdateFor(this._currentSessionId),
     postActiveRolePack: (name) => this.postActiveRolePack(name),
     postCapabilityBadge: () => this.postCapabilityBadge(),
     pushSkillList: () => this.pushSkillList(),
@@ -2710,21 +2715,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 推送 turn 投影（状态/轮次单通道，不再有独立状态消息）。
-   *
-   * `rounds` = 落盘历史 + 运行时当前轮（`live: true`）。当前轮按 id **原位替换**历史同名轮
-   * （live 版本更完整：含尚未落盘的流式正文与增量过程事件），不产生重复条目；收场落盘后由历史版本接管。
-   * 合并规则见 `mergeLiveRound`——取不到 `userMessage` 的轮**整轮不并入**（半残数据不投）。
-   * `state` 由 `deriveTurnState` 单点折叠，不多条状态消息各自驱动一角。
-   *
-   * @param live 运行时当前轮快照（由 `consumeFlow` 流内局部数据构造、显式传入；
-   *        不传 = rounds 只含落盘历史。刻意不做实例字段，避免跨轮残留）
-   * @param replay true = 会话重放快照（webview 整批重建 rounds）；缺省 = 运行时每步投影
-   *        （rounds 仅作骨架/重建备用，webview 不整批渲染——杜绝 settle 时对已运行时渲染的轮重绘重复）
-   */
-  private postTurnUpdate(live?: PendingLiveRound, replay = false): void {
-    this.postTurnUpdateFor(this._currentSessionId, live, replay);
-  }
 
   /**
    * 指定会话的 turn 投影（投递目标 = 该会话）
@@ -2735,12 +2725,40 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private postTurnUpdateFor(sessionId: string, live?: PendingLiveRound, replay = false): void {
     // 没有视图在看这条会话 ⇒ 不投影（后台代理会话的 IO 不白做；助手窗绑定它时照常投）
     if (!this.viewsMayShow(sessionId)) return;
+    const { state, rounds, pendingQueue } = this.projectSession(sessionId, live);
+    // 派生结果写回该会话的状态——handleInput 的 ask 相位路由读它；
+    // ask 域超时的提问原文**不读这里**（去相位化，ADR-044 决策 4：域内 `_pending` 才是真源）。
+    this._turnStates.set(sessionId, state);
+    // pendingQueue 承接待发送区渲染载荷（渲染真源 = 内核 interject 队列快照，宿主不持镜像）
+    this.postToSession(sessionId, {
+      type: 'turn_update',
+      // 附件预览 URL 盖在**合并之后**：live 轮的 userMessage 来自上行 seed（只有 ref，没有 URL）
+      rounds: stampRoundAttachmentUris(rounds, this.workspacePath, this.toWebviewUri),
+      state,
+      replay,
+      pendingQueue,
+    });
+  }
+
+  /**
+   * 任意会话的投影（**投影的唯一宿主入口**：视图投递与远程桥只读口共用）
+   *
+   * 与 `postTurnUpdateFor` 的分工：本方法只算不投——不写 `_turnStates`、不盖章附件 URL
+   * （`attachmentUris` 是 webview 专属产物，远端 origin 必 404，§6.4）、不受 `viewsMayShow`
+   * 限制（后台会话也要能投影，这正是 §7.1 B1 的缺口）。
+   *
+   * ⚠️ 下面两条 `this._agent?.` 严格写法**不得改成局部变量**：`chatPanelFlowIntegrity`
+   * 按该形态机械提取依赖面，改了会让「替身缺方法」失去机械锁（静默变绿）。
+   *
+   * @param sessionId 目标会话
+   * @param live 运行时当前轮（流内局部数据；缺省 = 只投影落盘历史）
+   */
+  public projectSession(sessionId: string, live?: PendingLiveRound): SessionViewProjection {
     // 本会话实例：非显示会话没有 `_agent` 投影，按本地投影表取（生产由 agentForSession 保证命中）
     const agent = this.agentFor(sessionId);
     const history = this._viewLoader
       ? loadRoundBasedHistory(this._viewLoader, this.sessionStore, sessionId)
       : [];
-    const questions = this.askFor(sessionId).pendingQuestions();
     // 当前会话保留 `this._agent?.` 严格写法：强制依赖面守卫按该形态机械提取（见
     // chatPanelFlowIntegrity）——改成局部变量会让「替身缺方法」失去机械锁，静默变绿
     const pausePending =
@@ -2751,36 +2769,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       sessionId === this._currentSessionId
         ? (this._agent?.getPendingInterjections?.() ?? [])
         : (agent?.getPendingInterjections?.() ?? []);
-    // 投影两步（合并 live 轮 + 折叠 TurnState）收口到 shared 纯函数，与远程/桥共用同一判据
+    // 投影两步（合并 live 轮 + 折叠 TurnState）收口到 shared 纯函数，与视图/桥共用同一判据
     const projection = deriveSessionProjection({
       history,
       live,
       streaming: this.runtimeFor(sessionId).streaming,
       paused: agent?.sessionManager?.status === 'paused',
       pausePending,
-      pendingQuestions: questions,
+      pendingQuestions: this.askFor(sessionId).pendingQuestions(),
     });
-    // 附件预览 URL 盖在**合并之后**：live 轮的 userMessage 来自上行 seed（只有 ref，没有 URL）
-    const rounds = stampRoundAttachmentUris(
-      projection.rounds,
-      this.workspacePath,
-      this.toWebviewUri,
-    );
-    // 派生结果写回该会话的状态——handleInput 的 ask 相位路由读它；
-    // ask 域超时的提问原文**不读这里**（去相位化，ADR-044 决策 4：域内 `_pending` 才是真源，
-    // 本投影由它派生）。
-    this._turnStates.set(sessionId, projection.state);
-    this.postToSession(sessionId, {
-      type: 'turn_update',
-      rounds,
-      state: projection.state,
-      // replay 标记——true = 会话重放快照（webview 整批重建 rounds），缺省 = 运行时投影
-      replay,
-      // pendingQueue 承接待发送区渲染载荷（渲染真源）。
-      // 直接读内核 interject 队列快照（SSOT 源头 loop.pendingInterjections，宿主不持镜像）；
-      // 仅当队列长度变化时由 syncPendingQueue 守卫触发本方法，避免无谓重投影。
-      pendingQueue,
-    });
+    return { state: projection.state, rounds: projection.rounds, pendingQueue };
   }
 
   /**
@@ -2820,7 +2818,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   // ⚠️ 入参类型**必须**从协议联合里 Extract，不得内联复述字段（HOST-CTX-4 落地时发现）：
   // 内联副本 = 第二真理源，协议新增字段时此处**静默不转发**（无编译错、无测试红，
   // 表现就是「webview 发了、宿主没收到」）——与 CTX-12「未知消息静默丢弃」同族。
-  private async handleInput(
+  public async handleInput(
     msg: Extract<WebviewToExtensionMessage, { type: 'input' }>,
     sessionId: string = this._currentSessionId,
   ): Promise<void> {
