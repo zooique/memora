@@ -127,6 +127,7 @@ const HTML = `
       <div id="inputFooter">
         <div class="composer-row composer-row--actions">
           <div class="composer-actions">
+            <div class="treedd composer-plus treedd--capsule" data-treedd data-on-select="__composerPlusOnSelect"><button class="treedd__trigger" title="添加到消息" aria-label="添加到消息" aria-haspopup="menu"></button><div class="treedd__menu" role="menu"></div></div>
             <div class="model-picker treedd--capsule"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
             <div class="treedd skill-picker treedd--capsule" data-treedd data-on-select="__skillPickerOnSelect"><button class="treedd__trigger" title="选择 Skill" aria-label="选择 Skill" aria-haspopup="menu"><span class="dd-trigger-name">选择技能</span></button><div class="treedd__menu" role="menu"></div></div>
             <!-- 润色按钮：消费侧 getElementById('polishBtn') 带 null 守卫，缺它不会崩但整条

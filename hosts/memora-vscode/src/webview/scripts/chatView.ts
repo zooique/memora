@@ -3986,6 +3986,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // Skill 下拉：选择真实技能名后设为当前 skill（SSOT 收紧，与设置面板同一清单；发送时传技能名走内核）
     // 选中/清除判别、pinned 预开、斜杠 token 撤除全部收口在域内 `select`，此处只转发 id。
     __skillPickerOnSelect: (id) => skillPickerView.select(id),
+    // `+` 挂载门（COMPOSER-PLUS-1）：三项全部复用既有入口，零新协议、零新状态。
+    // skill → 域内 openMenu（与斜杠共用 openSlashHint 单点，不重建搜索 UI / 不插 / 字符）；
+    // image → 触发既有的常驻按钮（能力判定与置灰跳设置仍归 imageCapture 独占，不在此复制）；
+    // file  → mention_open（走宿主 QuickPick；菜单路径无 @ 落点，removeMentionAt 落点校验自动 no-op）。
+    __composerPlusOnSelect: (id) => {
+      if (id === 'skill') skillPickerView.openMenu();
+      else if (id === 'image') imageAttachBtn?.click();
+      else if (id === 'file') vscode.postMessage({ type: 'mention_open' });
+    },
   });
 
   /**

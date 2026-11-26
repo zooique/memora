@@ -79,6 +79,9 @@ export interface SkillPickerView {
   clear(): void;
   /** 按当前宽度重算 chip 行边缘渐隐（窗口尺寸变化时由调用方驱动） */
   refreshEdges(): void;
+  /** 程序化展开技能菜单（`+` 门「技能」项专用）：与斜杠提示共用 openSlashHint 单点，
+   * 不复制第二份 closeOtherDropdowns / setDropdownOpen 组合（两入口同一开菜单语义）。 */
+  openMenu(): void;
 }
 
 export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerView {
@@ -523,6 +526,9 @@ export function createSkillPickerView(deps: SkillPickerViewDeps): SkillPickerVie
     },
     refreshEdges(): void {
       syncRowEdges(chipRow);
+    },
+    openMenu(): void {
+      openSlashHint();
     },
   };
 }

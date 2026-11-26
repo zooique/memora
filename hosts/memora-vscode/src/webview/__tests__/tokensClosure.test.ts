@@ -697,8 +697,10 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //             作品页提示行 + 清单行（worksStyles）各引 var(--line-solid) +2（2026-11-09）；
     //             同日 UI 反馈订正再补页头 / 页尾两处 +2 ⇒ 84；
     //             同日第三批存量收口补 skillsStyles 页尾脚注一处 +1 ⇒ 85
-    'sq-': 51, // 输入区控件去边框（2026-11-02）：.ctl 基类的 min-width/min-height 各引
+    'sq-': 52, // 输入区控件去边框（2026-11-02）：.ctl 基类的 min-width/min-height 各引
     //           var(--sq-xl)/var(--sq-lg) +2 ⇒ 49→51（机械实测同步）。
+    //           COMPOSER-PLUS-1（2026-11-26）：`+` 门触发器方形化 width 引 var(--sq-xl) +1
+    //           ⇒ 51→52（实数经 scripts/count-token-refs.mjs 实锤同步）。
     //           IMG-2 Q3：上传按钮 .image-attach-btn 尺寸 var(--sq-xl)/var(--sq-lg) +2
     //           （2026-10-28，实数经 scripts/count-token-refs.mjs 实锤同步）
     // 27→26：IMG-11 把 `.image-chip-tip__img` 的 max-width 由 var(--dim-2xl) 改为 100%

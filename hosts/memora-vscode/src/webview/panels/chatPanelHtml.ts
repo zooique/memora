@@ -8,6 +8,7 @@
  */
 import * as vscode from 'vscode';
 import { buildDropdownHtml, dropdownStyles } from '../components/dropdown.js';
+import { getIconSvg } from '../scripts/icons.js';
 import { contextMenuStyles } from '../styles/contextMenu.js';
 import { chatStyles } from '../styles/chatStyles.js';
 import { buildHtmlHead, resolveHtmlLang } from '../helpers/htmlShell.js';
@@ -264,13 +265,33 @@ export function buildHtml(
       <div id="inputFooter">
         <!-- Row 1 · 一级直面：左侧功能群 + 右侧唯一发送按钮（发送突出化） -->
         <div class="composer-row composer-row--main">
-          <!-- 左侧功能群：Skill + 模型选择 + 润色（次级功能，弱化展示） -->
+          <!-- 左侧功能群：加号挂载门（最左） + 模型选择 + 润色（次级功能，弱化展示） -->
           <div class="composer-left">
-            <!-- Skill 选择器：显名胶囊触发器，与模型选择器共用 capsule 变体；选择后作为 system prompt 传给 LLM。
-                 入口文案用 Select skill，与模型的 Select model 对称（两个选择器同类可读，图标只留菜单内项与 chip）；
+            <!-- 加号挂载门（COMPOSER-PLUS-1）：把三个既有键盘入口做成鼠标等价物，零新协议。
+                 ① 技能 → skillPickerView.openMenu()（复用斜杠开菜单单点，不重建搜索 UI）；
+                 ② 图片 → 既有 #imageAttachBtn.click()（置灰跳设置的语义由 imageCapture 独占）；
+                 ③ 引用文件 → mention_open（既有 @ QuickPick；菜单路径不留 @ 字符，removeMentionAt 落点校验自动 no-op）。
+                 技能 + 图片的原常驻触发器**保留 DOM 但 CSS 隐藏**（菜单宿主 / chip 回显 / 能力态绑定仍在），
+                 不删节点——删了 skillPickerView 的搜索框与菜单宿主就没了，违反 SSOT。 -->
+            ${buildDropdownHtml(
+              [
+                { id: 'skill', label: vscode.l10n.t('Select skill') },
+                { id: 'image', label: vscode.l10n.t('Add image') },
+                { id: 'file', label: vscode.l10n.t('Reference files') },
+              ],
+              {
+                extraClass: 'composer-plus treedd--capsule',
+                triggerClass: 'ctl',
+                onSelect: '__composerPlusOnSelect',
+                triggerLabel: getIconSvg('plus', 16, 16),
+                triggerTitle: vscode.l10n.t('Add to message'),
+                triggerAriaLabel: vscode.l10n.t('Add to message'),
+              },
+            )}
+            <!-- Skill 选择器：触发器由 COMPOSER-PLUS-1 隐藏，菜单与 chip 宿主保留。
+                 菜单经加号门「技能」项 / 斜杠两条入口打开，同一 openSlashHint 单点；
                  当前项由触发器 .ctl--on（accent 文字染色）、菜单内 is-active 高亮、输入盒内 skill chip 与 title 兜底。
-                 名称不进触发器：chip 已承载名称 + pin + 移除，两处写同一状态必漂移。
-                 触发器带 .ctl（输入区无边框基类），边框由 --dd-trigger-border 变量取值清零（见 chatStyles .composer-left），禁止在此另写 border 规则 -->
+                 名称不进触发器：chip 已承载名称 + pin + 移除，两处写同一状态必漂移。 -->
             ${buildDropdownHtml([], {
               extraClass: 'skill-picker treedd--capsule',
               triggerClass: 'ctl',

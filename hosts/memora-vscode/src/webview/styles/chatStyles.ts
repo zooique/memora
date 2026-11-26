@@ -2168,11 +2168,35 @@ export const chatStyles = `
     gap: var(--sp-2, 6px);
     flex-shrink: 1;
     min-width: 0;
+    /* 折叠的技能菜单锚点（COMPOSER-PLUS-1）：技能触发器脱离 flex 流后以此为定位基准，
+     * 菜单仍以 .skill-picker 根向上弹出；加 position 不改几何（无偏移），只建 containing block。 */
+    position: relative;
     /* 输入区胶囊触发器去边框的唯一落点（UI-CTL-BORDER-1）：
      * dropdown.ts 的公共规则按 var(--dd-trigger-border) 取值，这里只改取值，
      * 不再另写一条 border 覆盖规则（第二落点会随特异性/注入顺序漂移）。 */
     --dd-trigger-border: none;
   }
+  /* `+` 挂载门（COMPOSER-PLUS-1）：Row1 最左唯一聚合入口。capsule 变体复用 dropdown.ts，
+   * 仅方形化（28×28 与 .ctl 同高）与去箭头（+ 本身即「添加」语义，再挂 ▾ 是双重承诺）。 */
+  .composer-plus.treedd--capsule .treedd__trigger {
+    width: var(--sq-xl, 28px);
+    min-width: 0;
+    padding: 0;
+  }
+  .composer-plus.treedd--capsule .treedd__trigger::after { content: none; }
+  .composer-plus.treedd--capsule .treedd__menu { left: 0; right: auto; }
+  /* 折叠的原常驻触发器：节点保留（菜单宿主 / 能力态绑定 / chip 回显都挂在节点上，删节点=断链），
+   * 仅从 Row1 视觉与命中面移除。
+   * 技能用 visibility:hidden 而非 display:none —— 后者令 getBoundingClientRect() 归零，
+   * applyDropDirection 会把菜单误判成向下弹（输入卡片贴面板底缘 ⇒ 必被裁切）；
+   * 改 position:absolute 脱离 flex 流不留空槽，触发器可见盒仍在原位供弹出方向判定。
+   * 图片无菜单锚定问题，display:none 直接移出流；点击由 `+` 门委托 .click() 复用
+   * imageCapture 二分行为（有能力→选图，无→跳设置），不复制第二份判据。 */
+  /* 提 specificity 到 (0,2,0)：dropdownStyles 注入在本文件之后，其 .treedd{position:relative}
+   * 同为 (0,1,0) 会按源序压过单类选择器；不提 specificity 则锚点仍是 relative、触发器照占槽。 */
+  .composer-left .skill-picker { position: absolute; left: 0; bottom: 0; }
+  .composer-left .skill-picker > .treedd__trigger { visibility: hidden; pointer-events: none; }
+  #imageAttachBtn { display: none; }
   /* 右侧发送按钮容器：唯一主操作，绝不收缩（视觉焦点恒定）。
    * 生成中并列「暂停」按钮（.pause-btn），容器为 flex 横向排列两钮 */
   .composer-right {
