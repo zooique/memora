@@ -2776,7 +2776,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       streaming: this.runtimeFor(sessionId).streaming,
       paused: agent?.sessionManager?.status === 'paused',
       pausePending,
-      pendingQuestions: this.askFor(sessionId).pendingQuestions(),
+      // ⚠️ 走 `_asks` 直读而不是 `askFor()`：`askFor` 是**懒建**（会给任意 sid 造协调器并挂回调），
+      // 而本方法是只读路径（桥按任意 sid 反复取投影），用它就是往只读面塞写副作用
+      pendingQuestions: this._asks.get(sessionId)?.pendingQuestions() ?? [],
     });
     return { state: projection.state, rounds: projection.rounds, pendingQueue };
   }
