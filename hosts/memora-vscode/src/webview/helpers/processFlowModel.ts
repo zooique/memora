@@ -265,6 +265,18 @@ export function isToolFailureResult(payload: ToolResultPayload): boolean {
   return !payload.ok;
 }
 
+/**
+ * 工具行「确实执行成功」判据（TOOL-FILE-LINK-1）：与失败判据同一载荷、反向收口。
+ *
+ * 工具行的 path 只是模型提交的入参；只有配对回执判成功时才是「宿主真的读写过」的指针，
+ * 才允许升级成可点链接。blocked / delegate 一律不算（前者没执行，后者不是文件读写），
+ * 失败与进行中（无回执）都保持纯文本——点了打不开的 affordance 比没有更坏。
+ */
+export function isToolSuccessResult(payload: ToolResultPayload): boolean {
+  if (payload.blocked === true || payload.delegate) return false;
+  return payload.ok === true;
+}
+
 /** 轮指标：工具失败数（与行级展示同一口径，避免两处各判一遍） */
 export function countToolFailures(events: readonly ProcessEvent[]): number {
   return events.filter((e) => e.type === 'tool_result' && isToolFailureResult(e.payload)).length;

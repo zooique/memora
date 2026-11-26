@@ -10,6 +10,8 @@ import { readFileSync } from 'node:fs';
 import {
   argStr,
   dispatchedSidTextsFromEvents,
+  isLinkableWorkspacePath,
+  toolFileLinkPath,
   dispatchedSidsFromEvents,
   fmtDuration,
   isAcceptedDispatchResult,
@@ -347,5 +349,39 @@ describe('dispatchedSidTextsFromEvents（跨会话定位锚 DISPATCH-CARD-LOCATE
     ];
     expect(dispatchedSidTextsFromEvents(events)).toEqual([]);
     expect([...dispatchedSidsFromEvents(events)]).toEqual([]);
+  });
+});
+
+describe('工具行文件路径链接（TOOL-FILE-LINK-1）', () => {
+  it('只认白名单读写工具的规范首根相对路径（其余工具/缺参/非 JSON 一律纯文本）', () => {
+    expect(toolFileLinkPath('read_file', '{"path":"docs/a.md"}')).toBe('docs/a.md');
+    expect(toolFileLinkPath('write_file', '{"path":"src/x.ts"}')).toBe('src/x.ts');
+    expect(toolFileLinkPath('delete_file', '{"path":"tmp.mjs"}')).toBeUndefined();
+    expect(toolFileLinkPath('read_image', '{"path":"assets/a.png"}')).toBeUndefined();
+    expect(toolFileLinkPath('run_code', '{"script_path":"a.mjs"}')).toBeUndefined();
+    expect(toolFileLinkPath('read_file', '{}')).toBeUndefined();
+    expect(toolFileLinkPath('write_file', 'not-json{')).toBeUndefined();
+  });
+
+  it('过不了宿主守卫的形态保持纯文本：不给出点了必报错的假链接', () => {
+    for (const p of [
+      '/abs/a.md',
+      'C:/a.md',
+      'docs\\a.md',
+      './a.md',
+      'docs/../a.md',
+      'docs//a.md',
+      'docs/',
+    ]) {
+      expect(isLinkableWorkspacePath(p)).toBe(false);
+      expect(toolFileLinkPath('read_file', JSON.stringify({ path: p }))).toBeUndefined();
+    }
+    expect(isLinkableWorkspacePath('docs/a.md')).toBe(true);
+    expect(isLinkableWorkspacePath('中文/文件.ts')).toBe(true);
+  });
+
+  it('链接解析与叙述共用参数表：非规范形仍照常显示原文，只是不给链接', () => {
+    expect(toolActionLabel('read_file', '{"path":"./a.md"}')).toBe('Read file: ./a.md');
+    expect(toolFileLinkPath('read_file', '{"path":"./a.md"}')).toBeUndefined();
   });
 });

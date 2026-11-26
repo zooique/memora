@@ -22,6 +22,7 @@ import {
   groupThoughtBuckets,
   groupToolBatches,
   isToolFailureResult,
+  isToolSuccessResult,
   planItemStatesFromEvents,
   stopReasonLabel,
   thoughtLabel,
@@ -369,5 +370,24 @@ describe('groupToolBatches（工具批切段判据真源）', () => {
 
   it('空流返回空数组', () => {
     expect(groupToolBatches([], [])).toEqual([]);
+  });
+});
+
+describe('isToolSuccessResult（工具行文件链接的判据，与失败判据同一载荷）', () => {
+  it('只有成功且未拦的普通回执才算「宿主真的执行过」', () => {
+    expect(isToolSuccessResult(toolResult(1, 't1', true).payload)).toBe(true);
+    expect(isToolSuccessResult(toolResult(2, 't2', false).payload)).toBe(false);
+    expect(isToolSuccessResult(toolResult(3, 't3', true, true).payload)).toBe(false);
+  });
+
+  it('派发回执不算文件读写成功（即便 ok=true）', () => {
+    const delegateResult = event('tool_result', 4, {
+      toolCallId: 'd1',
+      name: 'delegate_task',
+      ok: true,
+      summary: 'done',
+      delegate: { terminal: 'completed', excerpt: 'ok', durationMs: 10 },
+    });
+    expect(isToolSuccessResult(delegateResult.payload)).toBe(false);
   });
 });

@@ -3425,6 +3425,10 @@ export const chatStyles = `
     .dispatch-session-card.is-running .dispatch-session-card__icon::before { animation: none; }
   }
   .round-block__tool-summary { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); padding: 0 0 var(--sp-1, 4px); }
+  /* 工具行文件路径（TOOL-FILE-LINK-1）：只在配对回执判成功时才挂链接，视觉语言与正文链接同档；
+   * 色板复用 --text-link / --text-link-hover，不新增令牌（令牌闭包 321 不漂移）。 */
+  .round-block__tool-filelink { color: var(--text-link); text-decoration: underline; cursor: pointer; }
+  .round-block__tool-filelink:hover { color: var(--text-link-hover); }
   /* web_search 裁决证据块：工具行展开体内的归因三件套（端点/条数/命中标题），与结果摘要同层。
      仅重放路径渲染（证据轮末才落盘，实时无此字段）；逐行紧凑、弱化色，展开行体时随行可见 */
   .round-block__search-evidence {

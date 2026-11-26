@@ -425,7 +425,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const planBar = createPlanBarView({ document });
   // 过程流单元格与记忆命中块（CHATVIEW-SLIM-2 第 5 刀）：零状态 DOM 构造，deps 注入
   const memoryHitsBlock = createMemoryHitsBlock({ document, vscode });
-  const cells = createProcessFlowCells({ document, memoryHits: memoryHitsBlock });
+  // 工具行成功态文件链接（TOOL-FILE-LINK-1）：只上报既有 open_ref 意图，路径守卫归宿主 refPath
+  const openToolFile = (path: string): void =>
+    vscode.postMessage({ type: 'open_ref', ref: { path, kind: 'file' } });
+  const cells = createProcessFlowCells({
+    document,
+    memoryHits: memoryHitsBlock,
+    onOpenFile: openToolFile,
+  });
   // 助手页内嵌工作台抽屉：点击出口复用既有 switch_session（与派活会话卡同款，零新 type）
   const workbenchDrawer = createAssistantWorkbenchDrawer({
     document,
@@ -1306,7 +1313,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 3) tool_result 到达更新工具行状态（详情/展开态/等待时长）
     for (const e of events) {
       if (e.type === 'tool_result') {
-        updateToolRowState(flow, e as Extract<ProcessEvent, { type: 'tool_result' }>);
+        updateToolRowState(flow, e as Extract<ProcessEvent, { type: 'tool_result' }>, openToolFile);
       }
     }
     // 3.5) 任务项组建组 + 状态投影（真机反馈 2026-10-01：运行中无 active 靶心）：

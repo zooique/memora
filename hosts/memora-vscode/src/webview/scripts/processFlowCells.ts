@@ -22,6 +22,7 @@ import {
   fmtDuration,
   isPlanItemBoundaryEvent,
   parseToolArgs,
+  toolFileLinkPath,
   toolActionLabel,
   toolSummaryText,
 } from '../helpers/processEventText.js';
@@ -35,6 +36,7 @@ import {
   decideTerminus,
   delegateRowUi,
   isToolFailureResult,
+  isToolSuccessResult,
   toolRowStatus,
 } from '../helpers/processFlowModel.js';
 import { setTerminus } from '../helpers/statusAttrs.js';
@@ -48,6 +50,11 @@ export interface ProcessFlowCellsDeps {
   document: Document;
   /** 记忆命中块构造器（`renderToolRow` 内命中明细复用同一实现） */
   memoryHits: MemoryHitsBlock;
+  /**
+   * 工具行文件链接点击出口（TOOL-FILE-LINK-1）：只上报工作区相对路径，由调用方走既有
+   * `open_ref` 协议；本域不解析路径、不持有宿主能力（与 refChips 的 onOpen 同构）。
+   */
+  onOpenFile: (path: string) => void;
 }
 
 /** 单元格工厂窄接口：chatView 仅经此驱动，域内辅助函数零暴露 */
@@ -322,6 +329,67 @@ function buildDelegateReceipt(
 }
 
 /**
+ * 工具行文件路径链接元素（TOOL-FILE-LINK-1）
+ *
+ * 视觉语言与正文 markdown 链接同档（--text-link + hover 下划线）；键盘可达沿用 refChips 的
+ * role/tabIndex/Enter-Space 模式。link 位于 `<summary>` 内，点击默认会折叠整行 ⇒ 两路都
+ * preventDefault + stopPropagation：点链接只打开文件，不改变用户手动控制的展开态。
+ */
+function toolFileLinkEl(
+  doc: Document,
+  path: string,
+  onOpenFile: (path: string) => void,
+): HTMLElement {
+  const link = doc.createElement('span');
+  link.className = 'round-block__tool-filelink';
+  link.textContent = path;
+  link.title = l10n.t('Click to open this file in the editor');
+  link.setAttribute('role', 'button');
+  link.tabIndex = 0;
+  const open = (e: Event): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    onOpenFile(path);
+  };
+  link.addEventListener('click', open);
+  link.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      e.stopPropagation();
+      onOpenFile(path);
+    }
+  });
+  return link;
+}
+
+/**
+ * 成功回执到达后，把主行里的路径片段切成链接（幂等；文案仍由 toolActionLabel 单点产出）
+ *
+ * 路径既不在本处生成、也不在本处解析：渲染时由 toolFileLinkPath 从白名单参数取出并挂在
+ * label 的 data 上；这里只在「配对回执判成功」时按原文位置切开，未命中位置则保持纯文本。
+ */
+export function applyToolFileLink(
+  doc: Document,
+  labelEl: HTMLElement | null,
+  result: Extract<ProcessEvent, { type: 'tool_result' }> | undefined,
+  onOpenFile: (path: string) => void,
+): void {
+  if (!labelEl || !result || !isToolSuccessResult(result.payload)) return;
+  if (labelEl.querySelector('.round-block__tool-filelink')) return;
+  const path = labelEl.dataset.toolFilePath;
+  if (!path) return;
+  const full = labelEl.textContent ?? '';
+  const at = full.indexOf(path);
+  if (at < 0) return;
+  const suffixAt = at + path.length;
+  labelEl.replaceChildren(
+    doc.createTextNode(full.slice(0, at)),
+    toolFileLinkEl(doc, path, onOpenFile),
+    doc.createTextNode(full.slice(suffixAt)),
+  );
+}
+
+/**
  * 工具行状态局部更新：tool_result 到达时，定位已渲染的工具行更新 状态/展开/结果摘要。
  * （进行中工具行已由增量追加创建，result 后到只需原地更新，不重建 DOM）
  *
@@ -331,6 +399,7 @@ function buildDelegateReceipt(
 export function updateToolRowState(
   container: HTMLElement,
   result: Extract<ProcessEvent, { type: 'tool_result' }>,
+  onOpenFile: (path: string) => void,
 ): void {
   container
     .querySelectorAll<HTMLDetailsElement>(
@@ -356,6 +425,13 @@ export function updateToolRowState(
       // result 已到达 → 移除进行中态（恢复普通行样式）
       row.classList.toggle('is-tool-running', running);
       applyDelegateRowTone(row, delegateUi);
+      // 实时链：pending 行在 tool_start 时只挂路径，成功回执到齐才升级为链接（失败恒纯文本）
+      applyToolFileLink(
+        document,
+        row.querySelector('.round-block__tool-label'),
+        result,
+        onOpenFile,
+      );
       // 工具已出结果 → 移除该行等待时长标签（瞬态退场，不再刷新）
       row.querySelector(':scope .round-block__elapsed')?.remove();
       // delegate 回执：结论摘录/状态说明补进展开体（首次到达补 DOM，重复投递不重入）。
@@ -613,7 +689,12 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
     row.dataset.ts = start.ts;
     const labelEl = row.querySelector<HTMLElement>('.round-block__tool-label');
     // 参数此刻已完整，按既有多参数叙述生成器复原（renderToolRow 同路）
-    if (labelEl) labelEl.textContent = toolActionLabel(start.payload.name, start.payload.args);
+    if (labelEl) {
+      labelEl.textContent = toolActionLabel(start.payload.name, start.payload.args);
+      // 路径锚点先挂（无结果 = 进行中，不给链接）；成功回执由 updateToolRowState 升级
+      const filePath = toolFileLinkPath(start.payload.name, start.payload.args);
+      if (filePath) labelEl.dataset.toolFilePath = filePath;
+    }
     const statusEl = row.querySelector<HTMLElement>('.round-block__tool-status');
     // 状态文案与 renderToolRow 同源（toolRowStatus 的 'Running' 键），不另造一条同义键
     if (statusEl) statusEl.textContent = ` (${l10n.t('Running')})`;
@@ -817,6 +898,10 @@ export function createProcessFlowCells(deps: ProcessFlowCellsDeps): ProcessFlowC
     const labelSpan = document.createElement('span');
     labelSpan.className = 'round-block__tool-label';
     labelSpan.textContent = toolActionLabel(start.payload.name, start.payload.args);
+    // 可点路径的唯一锚点：只有白名单工具的规范相对路径才挂；结果成功才切成链接
+    const filePath = toolFileLinkPath(start.payload.name, start.payload.args);
+    if (filePath) labelSpan.dataset.toolFilePath = filePath;
+    applyToolFileLink(document, labelSpan, result, deps.onOpenFile);
     const statusSpan = document.createElement('span');
     statusSpan.className = 'round-block__tool-status';
     // 前导空格：span 间空白不折叠，显式补「叙述 (状态)」间距；delegate 用定稿的角括号徽标

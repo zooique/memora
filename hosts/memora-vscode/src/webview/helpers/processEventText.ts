@@ -70,10 +70,48 @@ export function phaseLabel(phase: ProcessThinkingPhase): string {
  */
 type ToolActionFn = (args: Readonly<Record<string, unknown>>) => string | undefined;
 
+/**
+ * 工具 → 工作区文件路径参数名（工具行「可点文件链接」的唯一白名单）
+ *
+ * 只收内置工具描述明写「路径必须相对项目根目录」的**读写文件**工具。delete_file 成功即
+ * 文件已删、read_image 可接受目录——两者点了打不开，不给假 affordance。参数名在此单点
+ * 登记，叙述生成器与链接解析器共用（禁两处各写一份 'path'）。
+ */
+export const TOOL_FILE_PATH_ARGS: Readonly<Record<string, string>> = {
+  read_file: 'path',
+  write_file: 'path',
+};
+
+/** 从白名单取工具的文件路径参数（叙述与链接同源，非白名单工具恒 undefined） */
+function toolRawPath(name: string, args: Readonly<Record<string, unknown>>): string | undefined {
+  const key = TOOL_FILE_PATH_ARGS[name];
+  return key ? argStr(args, key) : undefined;
+}
+
+/**
+ * 可挂链接的首根相对形态（**只是 UI 过滤，不是第二套路径解析器**）
+ *
+ * 宿主 `refPath.resolveUnderPrimaryRoot` 才是路径真源；这里只挡「一眼就过不了守卫」的形态
+ * （绝对路径 / 盘符 / 反斜杠 / `.`、`..` 段 / 空段），让它们保持纯文本——而不是给出点了
+ * 必报错的链接。合法形态仍由宿主守卫复核，webview 不解析工作区。
+ */
+export function isLinkableWorkspacePath(path: string): boolean {
+  if (!path || path.includes('\\') || path.startsWith('/') || /^[A-Za-z]:/.test(path)) {
+    return false;
+  }
+  return path.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..');
+}
+
+/** 工具行可点文件路径（无路径 / 非规范形 / 非白名单工具 → undefined，主行保持纯文本） */
+export function toolFileLinkPath(name: string, argsRaw: string | undefined): string | undefined {
+  const p = toolRawPath(name, parseToolArgs(argsRaw));
+  return p && isLinkableWorkspacePath(p) ? p : undefined;
+}
+
 /** 工具 → 行动叙述映射（未收录键 → 回退原生工具名） */
 const TOOL_ACTION_LABELS: Record<string, ToolActionFn> = {
   read_file: (a) => {
-    const p = argStr(a, 'path');
+    const p = toolRawPath('read_file', a);
     return p ? l10n.t('Read file: {0}', p) : undefined;
   },
   // read_image：与 read_file 同参数面（path），叙述里露出图片路径才有可追溯性
@@ -82,7 +120,7 @@ const TOOL_ACTION_LABELS: Record<string, ToolActionFn> = {
     return p ? l10n.t('Read image: {0}', p) : undefined;
   },
   write_file: (a) => {
-    const p = argStr(a, 'path');
+    const p = toolRawPath('write_file', a);
     return p ? l10n.t('Write file: {0}', p) : undefined;
   },
   delete_file: (a) => {
