@@ -284,6 +284,20 @@ const ALL_STEPS = [
     required: true,
     presets: ['fast', 'full'],
   },
+  // 远程契约 fixture 新鲜度（`REMOTE-APP-1` 跨仓契约闸）：
+  //   真源在宿主 `remoteBridgeProtocol`；手机仓 `memora-mobile` 只有镜像样本，**离开宿主无法
+  //   自证样本是否过期** ⇒ 这条判据只能在主仓判，且必须进 fast：改了快照形状却不重生成样本时，
+  //   宿主单测仍绿（它按当前代码重算）、手机端会拿旧样本"通过"——静默假阴性。
+  //   只读校验（不写盘），产物与当前桥一致时 exit 0。实测 <1s（esbuild 现打包 + 4 文件比对）。
+  {
+    id: 'remote:fixtures',
+    name: '远程契约 fixture 新鲜度（已提交样本 == 当前桥）',
+    holdsTestLock: false,
+    cmd: 'npm run fixtures:check',
+    cwd: HOST,
+    required: true,
+    presets: ['fast', 'full'],
+  },
   // package / bundle / webview 面本地化（HOST-I18N-1/2/3）：`%key%` 拼错 / 两侧键面不等 /
   // 默认文件混中文 / 源码 t() 键缺译文 / 已迁移 webview 面板残留中文——VS Code 都不报错而是
   // 把 `%key%` 或中文原样显示给用户。纯静态、秒级 ⇒ **进 fast 档**：改键面时在提交就红，

@@ -3,6 +3,8 @@
 由宿主生成器**产出**，不是手写样本。规则只在这里说一次：
 
 - 生成（唯一写入口）：`cd hosts/memora-vscode` → `npm run fixtures:gen`
+- 新鲜度校验（只读，门禁用）：`npm run fixtures:check` —— 样本与当前桥不一致即非零退出；
+  已挂在 `gate-fast`（步骤 `remote:fixtures`），改桥不重生成必红
 - 宿主断言（桥构造 == fixture）：`hosts/memora-vscode/src/extension/host/remote/__tests__/remoteFixtures.test.ts`
 - 手机镜像与断言（fixture → DTO 字段级）：`../memora-mobile/test/fixtures/remote/` + `dart run tool/fixture_smoke.dart`
 - 覆盖范围：`snapshot` 两用例（未裁剪 / 超限裁剪）。`err` / `delta` / `session_list_ok` 尚未生成样本。
