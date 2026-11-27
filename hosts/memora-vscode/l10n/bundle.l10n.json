@@ -1575,6 +1575,11 @@
   "No active pairing code.": "",
   "Development loopback listening on 127.0.0.1:{0} (no pairing).": "",
   "Bridge is not running.": "",
+  "Pairing link": "",
+  "Copy pairing link": "",
+  "Send this link to your phone to pair. It carries the PC certificate and a one-time code, and expires together with the code.": "",
+  "Pairing link copied.": "",
+  "No active pairing link yet.": "",
   "That device is no longer paired.": "",
   "Unknown permission level.": "",
   "The remote bridge is not running. Set MEMORA_REMOTE_BRIDGE=lan and reload the window.": ""

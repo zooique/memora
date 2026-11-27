@@ -66,6 +66,8 @@ export function createRemoteView({
   const addressText = root.querySelector<HTMLElement>('#remoteAddressText');
   const fingerprintText = root.querySelector<HTMLElement>('#remoteFingerprintText');
   const pairingText = root.querySelector<HTMLElement>('#remotePairingText');
+  const pairingLinkBox = root.querySelector<HTMLElement>('#remotePairingLinkBox');
+  const pairingLinkText = root.querySelector<HTMLElement>('#remotePairingLinkText');
   const regenerateBtn = root.querySelector<HTMLButtonElement>('#remoteRegenerateBtn');
   const deviceList = root.querySelector<HTMLUListElement>('#remoteDeviceList');
   const deviceEmpty = root.querySelector<HTMLElement>('#remoteDeviceEmpty');
@@ -219,6 +221,12 @@ export function createRemoteView({
   function render(next: RemoteSettingsStatus): void {
     status = next;
     renderMode(next);
+    // 连接串只在宿主给出时展示（过期 / 地址未识别 ⇒ 隐藏，绝不显示必然失败的串）
+    if (pairingLinkBox && pairingLinkText) {
+      const link = next.pairingLink;
+      pairingLinkBox.hidden = !link;
+      pairingLinkText.textContent = link ?? '';
+    }
     // 只有局域网档能生成配对口令：回环档没有配对概念，按钮禁用而不是点了必失败
     if (regenerateBtn) regenerateBtn.disabled = status.mode !== 'lan';
     renderDevices(next.devices);
@@ -244,6 +252,12 @@ export function createRemoteView({
     if (action === 'regenerate') {
       if (status?.mode !== 'lan') return;
       vscode.postMessage({ type: 'remote_settings', action: 'regenerate' });
+      return;
+    }
+    if (action === 'copy_pairing') {
+      // 无连接串时按钮不该可见；这里再守一次，避免「点了没反应」被当成复制成功
+      if (!status?.pairingLink) return;
+      vscode.postMessage({ type: 'remote_settings', action: 'copy_pairing' });
       return;
     }
     const fingerprint = btn.dataset.fingerprint;

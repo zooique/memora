@@ -33,6 +33,14 @@ export function buildRemoteBodyHtml(l10n: {
         <p id="remoteAddressText" class="remote-value"></p>
         <p id="remoteFingerprintText" class="remote-value"></p>
         <p id="remotePairingText" class="remote-value"></p>
+        <div id="remotePairingLinkBox" hidden>
+          <div class="remote-item-header">
+            <span class="remote-label">${l10n.t('Pairing link')}</span>
+            <button id="remoteCopyLinkBtn" class="btn btn-secondary" type="button" data-remote-act="copy_pairing">${l10n.t('Copy pairing link')}</button>
+          </div>
+          <code id="remotePairingLinkText" class="remote-link-text"></code>
+          <p class="hint">${l10n.t('Send this link to your phone to pair. It carries the PC certificate and a one-time code, and expires together with the code.')}</p>
+        </div>
         <p class="hint">${l10n.t('The bridge only starts when the MEMORA_REMOTE_BRIDGE environment variable is set to lan (or loopback for development) before the window starts. Changing it requires a window reload.')}</p>
       </div>
     </div>

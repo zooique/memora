@@ -50,6 +50,23 @@ export const remoteStyles = `
     color: var(--text-primary, #cccccc);
     word-break: break-all;
   }
+  /* 连接串：长单行 + 可整段选中（用户点一下即全选，省掉拖选 1KB 字符串） */
+  #remote-root #remotePairingLinkBox {
+    margin: var(--sp-2, 6px) 0;
+    padding: var(--sp-2, 6px);
+    border-radius: var(--radius-sm, 2px);
+    background: var(--surface-hover, rgba(128, 128, 128, 0.2));
+  }
+  #remote-root .remote-link-text {
+    display: block;
+    /* 长单行折叠阈值：复用 --dim-lg（同「长输入折叠」语义），不新造裸值 */
+    max-height: var(--dim-lg, 160px);
+    overflow: auto;
+    word-break: break-all;
+    user-select: all;
+    font-size: var(--font-xs, 10px);
+    color: var(--text-primary, #cccccc);
+  }
   #remote-root .remote-list { list-style: none; margin: 0; padding: 0; }
   #remote-root .remote-device {
     display: flex;

@@ -30,6 +30,7 @@ import {
   regenerateLanPairingCode,
 } from './remoteBridgeHost.js';
 import { isRemoteDeviceTier } from './remoteDevices.js';
+import { pairingLinkOfHandle, pairingMaterialOfHandle } from './remotePairingLink.js';
 
 /** 审计文件名（与 `remoteBridgeHost.ts` 的写入侧同名；此处只读） */
 const AUDIT_FILE_NAME = 'remote-audit.log';
@@ -117,14 +118,20 @@ export async function readRemoteSettingsStatus(
     ...(error ? { auditError: error } : {}),
   };
   if (!handle) return base;
-  // 口令只在「存在且未过期」时展示：过期口令上屏等于让用户照着输入必然失败的码
-  const challenge = handle.pairing.current();
-  const active = challenge && challenge.expiresAt > Date.now() ? challenge : undefined;
+  // 口令与连接串必须同源：一次读取取得两者，避免「页面上是旧码、串里是新码」的错配。
+  // 不可用（过期 / 地址未识别）时缺省，页面据此隐藏，而不是显示一条必然失败的串。
+  const material = pairingMaterialOfHandle(handle);
   return {
     ...base,
     address: handle.address,
     pcShortFp: handle.identity.shortFp,
-    ...(active ? { pairingCode: active.code, pairingExpiresAt: active.expiresAt } : {}),
+    ...(material
+      ? {
+          pairingCode: material.challenge.code,
+          pairingExpiresAt: material.challenge.expiresAt,
+          pairingLink: material.link,
+        }
+      : {}),
   };
 }
 
@@ -153,6 +160,13 @@ export async function applyRemoteSettingsAction(
   if (payload.action === 'regenerate') {
     regenerateLanPairingCode(handle);
     return { ok: true };
+  }
+  if (payload.action === 'copy_pairing') {
+    const link = pairingLinkOfHandle(handle);
+    if (!link) return { ok: false, message: vscode.l10n.t('No active pairing link yet.') };
+    // 只写剪贴板：不回显到通知 / 日志（连接串含一次性口令）
+    await vscode.env.clipboard.writeText(link);
+    return { ok: true, message: vscode.l10n.t('Pairing link copied.') };
   }
   // 边界校验：webview 消息属不可信输入，档位不合法就不许落到设备表
   //（`setTier` 是类型信任的写入面，没有第二道运行时校验）

@@ -31,6 +31,13 @@ export interface RemoteIdentity {
   keyPem: string;
   /** 自签证书 PEM（公开材料，可随配对流程展示） */
   certPem: string;
+  /**
+   * 证书 DER 的标准 base64（公开材料；手机 `PinnedTlsClient` 的等值固定输入）
+   *
+   * 为什么落成字段而不是让消费方从 PEM 现场剥：剥离规则（头尾标签 / 换行）只该有一份，
+   * 散在配对串构造、测试、未来二维码里必然漂移。
+   */
+  certDerBase64: string;
   /** 证书 DER 的 SHA-256（全大写 hex，64 字符）——设备指纹的长形态 */
   fingerprint: string;
   /** 指纹短码（前 8 hex，`AB12-CD34`）——UI / 日志展示用 */
@@ -103,8 +110,15 @@ function parseStoredIdentity(
     if (typeof certPem !== 'string' || certPem.length === 0) throw new Error('certPem 缺失');
     // 证书必须能解析：解析失败即视为损坏（不能把坏证书继续喂给 tls.createServer）
     const cert = new X509Certificate(certPem);
-    const fingerprint = fingerprintOfCertDer(new Uint8Array(cert.rawData));
-    return { keyPem, certPem, fingerprint, shortFp: shortFingerprint(fingerprint) };
+    const der = new Uint8Array(cert.rawData);
+    const fingerprint = fingerprintOfCertDer(der);
+    return {
+      keyPem,
+      certPem,
+      certDerBase64: Buffer.from(der).toString('base64'),
+      fingerprint,
+      shortFp: shortFingerprint(fingerprint),
+    };
   } catch (err) {
     log(`[REMOTE-IDENTITY] 已存身份损坏，将重建：${String(err)}`);
     return undefined;
@@ -131,8 +145,15 @@ async function createIdentity(): Promise<RemoteIdentity> {
   const pkcs8 = await webcrypto.subtle.exportKey('pkcs8', keys.privateKey);
   const keyPem = toPem(Buffer.from(pkcs8).toString('base64'), 'PRIVATE KEY');
   const certPem = cert.toString();
-  const fingerprint = fingerprintOfCertDer(new Uint8Array(cert.rawData));
-  return { keyPem, certPem, fingerprint, shortFp: shortFingerprint(fingerprint) };
+  const der = new Uint8Array(cert.rawData);
+  const fingerprint = fingerprintOfCertDer(der);
+  return {
+    keyPem,
+    certPem,
+    certDerBase64: Buffer.from(der).toString('base64'),
+    fingerprint,
+    shortFp: shortFingerprint(fingerprint),
+  };
 }
 
 /**

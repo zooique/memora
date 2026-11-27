@@ -1,0 +1,11 @@
+{
+  "input": {
+    "address": "192.168.1.9",
+    "port": 41234,
+    "certDerBase64": "+/++7wECAwQ=",
+    "code": "123456",
+    "shortFp": "ABCD-1234",
+    "expiresAt": 4102444800000
+  },
+  "link": "memora-pair://v1?h=192.168.1.9&p=41234&pin=-_--7wECAwQ&c=123456&fp=ABCD-1234&e=4102444800000"
+}

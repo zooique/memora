@@ -737,7 +737,9 @@ describe('各令牌族消费引用数反向守卫（根治批量统计失真）'
     //             不动它）。机械实测 count-token-refs.mjs = 26，沿革保留非放宽。
     //             2026-11-26 CONFIG-MODAL-FIT-1：配置弹窗限高公式引用 --dim-sm（与遮罩
     //             padding-top 同源）+1 ⇒ 27；机械实测 count-token-refs.mjs 同步，不造新令牌。
-    'dim-': 27,
+    //             2026-11-27 远程控制页连接串块 max-height 引 var(--dim-lg)（同「长输入折叠」
+    //             既有语义位）+1 ⇒ 28；不新造尺寸令牌，机械实测同步。
+    'dim-': 28,
   } as const;
 
   for (const family of Object.keys(EXPECTED) as (keyof typeof EXPECTED)[]) {

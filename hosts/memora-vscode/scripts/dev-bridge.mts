@@ -168,6 +168,9 @@ async function main(): Promise<void> {
     identity: {
       keyPem: serverKeyPem,
       certPem: serverCertPem,
+      // 夹具直接用 PEM 正文（= DER 的 base64）：与宿主 `loadOrCreateRemoteIdentity`
+      // 的派生口径一致，供配对连接串使用
+      certDerBase64: serverCertPem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''),
       fingerprint: serverFp,
       shortFp: shortFingerprint(serverFp),
     },

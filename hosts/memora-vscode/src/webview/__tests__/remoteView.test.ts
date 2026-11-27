@@ -57,6 +57,7 @@ describe('remoteView', () => {
     expect(el('remoteModeText').textContent).toBe('Bridge is not running.');
     expect((el('remoteRegenerateBtn') as HTMLButtonElement).disabled).toBe(true);
     expect(el('remotePairingText').hidden).toBe(true);
+    expect(el('remotePairingLinkBox').hidden).toBe(true);
     expect(el('remoteDeviceEmpty').hidden).toBe(false);
     expect(el('remoteAuditEmpty').hidden).toBe(false);
   });
@@ -80,6 +81,7 @@ describe('remoteView', () => {
         pcShortFp: 'ABCD1234',
         pairingCode: '123456',
         pairingExpiresAt: Date.now() + 60_000,
+        pairingLink: 'memora-pair://v1?h=192.168.1.9&p=4123&pin=-_--7wECAwQ&c=123456',
         devices: [
           {
             fingerprint: 'FP-1',
@@ -96,6 +98,12 @@ describe('remoteView', () => {
     expect(el('remoteFingerprintText').textContent).toBe('PC fingerprint: ABCD1234');
     expect(el('remotePairingText').textContent).toContain('123456');
     expect((el('remoteRegenerateBtn') as HTMLButtonElement).disabled).toBe(false);
+    expect(el('remotePairingLinkBox').hidden).toBe(false);
+    expect(el('remotePairingLinkText').textContent).toBe(
+      'memora-pair://v1?h=192.168.1.9&p=4123&pin=-_--7wECAwQ&c=123456',
+    );
+    (el('remoteCopyLinkBtn') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'remote_settings', action: 'copy_pairing' });
 
     const row = root.querySelector<HTMLElement>('.remote-device');
     expect(row).not.toBeNull();

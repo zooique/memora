@@ -1575,6 +1575,11 @@
   "No active pairing code.": "当前没有有效配对口令。",
   "Development loopback listening on 127.0.0.1:{0} (no pairing).": "开发回环正在监听 127.0.0.1:{0}（不涉及配对）。",
   "Bridge is not running.": "远程桥未启动。",
+  "Pairing link": "配对连接串",
+  "Copy pairing link": "复制配对连接串",
+  "Send this link to your phone to pair. It carries the PC certificate and a one-time code, and expires together with the code.": "把这条连接串发到手机上完成配对。它包含 PC 证书和一次性口令，两者同时过期。",
+  "Pairing link copied.": "配对连接串已复制。",
+  "No active pairing link yet.": "当前还没有可用的配对连接串。",
   "That device is no longer paired.": "该设备已不在配对列表中。",
   "Unknown permission level.": "未知的权限档位。",
   "The remote bridge is not running. Set MEMORA_REMOTE_BRIDGE=lan and reload the window.": "远程桥未启动。请设置 MEMORA_REMOTE_BRIDGE=lan 后重载窗口。"

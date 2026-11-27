@@ -358,6 +358,12 @@ export interface RemoteSettingsStatus {
   pairingCode?: string;
   /** 配对口令过期时刻（epoch ms） */
   pairingExpiresAt?: number;
+  /**
+   * 配对连接串（v1；含地址 + 证书 DER + 一次性口令 + 过期时刻）
+   *
+   * 只在「监听中 + 地址可用 + 口令未过期」时下发；含口令 ⇒ **禁止**写入日志 / 审计。
+   */
+  pairingLink?: string;
   /** 已配对设备（LAN 未启动时为空数组） */
   devices: RemoteDeviceDto[];
   /** 审计尾（最新在后；文件不存在 = 空数组） */
@@ -377,6 +383,8 @@ export interface RemoteSettingsStatus {
 export type RemoteActionPayload =
   | { action: 'refresh' }
   | { action: 'regenerate' }
+  /** 复制配对连接串到系统剪贴板（口令敏感，只走用户主动复制，不回显到通知） */
+  | { action: 'copy_pairing' }
   | { action: 'set_tier'; fingerprint: string; tier: RemoteDeviceTier }
   | { action: 'revoke'; fingerprint: string };
 

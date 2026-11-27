@@ -435,8 +435,13 @@ export class MemoraSettingsPanel {
     if (msg.type === 'remote_settings') {
       try {
         const result = await this._remoteOps?.applyAction(msg);
-        if (result && !result.ok && result.message) {
-          this.post({ type: 'notice', level: 'error', message: result.message });
+        // 成功也可能带一句话（如「连接串已复制」）；失败带错误原因
+        if (result?.message) {
+          this.post({
+            type: 'notice',
+            level: result.ok ? 'info' : 'error',
+            message: result.message,
+          });
         }
       } catch (err) {
         // 动作面抛错（极少见）：不吞掉，也不让页面停在旧状态——finally 仍回推真值
