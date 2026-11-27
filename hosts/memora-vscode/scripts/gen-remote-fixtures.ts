@@ -105,8 +105,16 @@ interface FixtureTarget {
  *
  * `generate` 与 `check` 都从这里取目标：若各写一份，检查就会漏掉新增用例——
  * 「检查通过」变成「只检查了旧用例」。
+ *
+ * `mobileExists` 一并回传：`generate` 时手机仓缺失可跳过镜像（新建仓前的正常态），
+ * 但 `check` 是**跨仓契约**判据——手机仓不在场却报 OK 等于声称「两端一致」而实际只验了一端，
+ * 属静默降级（2026-11-27 审查补）。存在性真源只此一处，调用方不得另行硬编码路径。
  */
-function collectTargets(options: GenerateOptions): { targets: FixtureTarget[]; mobileDir: string } {
+function collectTargets(options: GenerateOptions): {
+  targets: FixtureTarget[];
+  mobileDir: string;
+  mobileExists: boolean;
+} {
   const root = path.resolve(options.hostDir, '../..');
   const fixtureDir = path.join(root, 'docs', 'contract-fixtures', 'remote');
   const mobileDir = options.mobileDir ?? path.resolve(root, '../memora-mobile');
@@ -134,20 +142,20 @@ function collectTargets(options: GenerateOptions): { targets: FixtureTarget[]; m
       );
     }
   }
-  return { targets, mobileDir };
+  return { targets, mobileDir, mobileExists };
 }
 
 /**
  * 生成 fixture；返回实际写出的文件列表（供调用方打印）。
  */
 export function generate(options: GenerateOptions): string[] {
-  const { targets, mobileDir } = collectTargets(options);
+  const { targets, mobileDir, mobileExists } = collectTargets(options);
   // 目录按目标逐个创建（不假设「主仓在前、镜像在后」的下标顺序）
   for (const target of targets) {
     mkdirSync(path.dirname(target.filePath), { recursive: true });
     writeJson(target.filePath, target.value);
   }
-  if (!existsSync(mobileDir)) {
+  if (!mobileExists) {
     console.log(`SKIP_MIRROR ${mobileDir}`);
   }
   return targets.map((target) => target.filePath);
@@ -178,8 +186,13 @@ function stable(value: unknown): string {
  * @returns 不一致的文件路径列表；空数组 = 全部最新
  */
 export function check(options: GenerateOptions): string[] {
-  const { targets } = collectTargets(options);
+  const { targets, mobileDir, mobileExists } = collectTargets(options);
   const mismatched: string[] = [];
+  // 手机仓不在场 = 跨仓契约只验了一端，fail-closed（门禁红）。
+  // generate 仍可跳过镜像，但 check 不得把「只验主仓」报成 FIXTURES_OK。
+  if (!mobileExists) {
+    mismatched.push(`${mobileDir}（手机仓缺失 ⇒ 跨仓契约未闭合）`);
+  }
   for (const target of targets) {
     if (!existsSync(target.filePath)) {
       mismatched.push(`${target.filePath}（缺失）`);
