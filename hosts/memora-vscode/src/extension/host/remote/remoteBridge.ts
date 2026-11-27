@@ -25,6 +25,8 @@
  *     **本轮已接入** `answer` / `send` / `resume`（落 `handleInput`）与 `confirm_answer`
  *     （落 `ConfirmCoordinator.answerFor`，M3 审批裁决）；其余五条虽在档位表内，
  *     但宿主尚无按 sid 的落点 ⇒ 一律回 `forbidden`（**未接入**，不是相位/档位拒绝）；
+ *   - 会话生命周期：ctl 帧 `session_create`（跨会话，不属 `cmd.kind`）已接入，与 `send` 同档，
+ *     落宿主 `chatPanel.createSession(..., { background: true })`，回 `session_created{rid,sid,title}`；
  *   - 旁路：失败限流（`security.rateLimit`）与追加式审计（`security.audit`）。
  *   桥**不自己**判指纹 / 档位 / 口令——那会在真理源之外造第二份判据。
  */
@@ -42,6 +44,7 @@ import {
 import {
   REMOTE_COMMAND_CODES,
   REMOTE_CTL_CODES,
+  evaluateSessionCreateGate,
   evaluateTierGate,
   type RemoteCommand,
   type RemotePhase,
@@ -56,6 +59,7 @@ import {
   buildProcessEventDeltaFrame,
   buildResetRequiredFrame,
   buildResumeOkFrame,
+  buildSessionCreatedFrame,
   buildSnapshotFrame,
   buildStatusDeltaFrame,
   DEFAULT_REMOTE_CAPS,
@@ -99,6 +103,23 @@ export interface RemoteBridgePorts {
    * 与 `deliverInput` 分开：审批裁决走确认协调器，不是 `handleInput` 的输入消息。
    */
   answerConfirm: (sessionId: string, requestId: string, approved: boolean) => boolean;
+  /**
+   * 该会话在途审批快照（`count` 角标用；`requestId`/`label` 订阅补发用）
+   *
+   * 与 `answerConfirm` 成对：一个读在途、一个裁决。真源都在 `ConfirmCoordinator`，
+   * 桥只转交、不缓存——缓存会让「PC 已裁决、手机还看到旧卡」变成静默假事实。
+   */
+  pendingConfirm: (sessionId: string) => { count: number; requestId?: string; label?: string };
+  /**
+   * 新建一个**用户自助**会话，返回宿主生成的身份（ctl 帧 `session_create` 的落点）
+   *
+   * 生日口径：出生来源恒为 `user`（手机是用户的手，不冒充宝）；后台建（不切 PC 显示源）。
+   * `sid` 必须由实现方（宿主）生成并立即返回——桥不生成身份，手机也不得自己造或差分反推。
+   * 失败返回 `{ ok:false }`（宿主已提示用户），桥只回 `forbidden`，不伪造 sid。
+   */
+  createSession: (options: {
+    title?: string;
+  }) => Promise<{ ok: true; sid: string; title: string } | { ok: false }>;
 }
 
 /**
@@ -446,7 +467,7 @@ export class RemoteBridge {
    * 与 `notifyTurnUpdate` 同构的"宿主通知 → 桥扇出"生长点：只发给订阅了该会话的连接，
    * 不切换 PC 焦点（§16.4）。帧构造走唯一入口 `buildConfirmAttentionFrame`。
    *
-   * ⚠️ 提醒与相位分工：`pendingCount>0` 已让 `phaseOf` 折算为 `confirm-pending`（挡 send/answer），
+   * ⚠️ 提醒与相位分工：`pendingConfirm(sid).count>0` 已让 `phaseOf` 折算为 `confirm-pending`（挡 send/answer），
    * 本方法只负责"把 requestId 送到手机"——手机没有 requestId 就构造不出合法回执，
    * 那才是上轮"只加字段"留下的假闭环。无 requestId（如非 confirm 类提醒）时不发。
    *
@@ -561,6 +582,18 @@ export class RemoteBridge {
         return;
       case 'session_list':
         this.handleSessionList(conn);
+        return;
+      case 'session_create':
+        // 建会话要等宿主落盘（异步），失败必须收回本连接之外的错误帧，不能漏成未处理拒绝
+        void this.handleSessionCreate(conn, frame).catch((err: unknown) => {
+          this.options.log?.(`[REMOTE-BRIDGE] session_create failed: ${String(err)}`);
+          this.send(conn, {
+            t: 'err',
+            ch: 'ctl',
+            rid: frame.rid,
+            code: REMOTE_COMMAND_CODES.FORBIDDEN,
+          });
+        });
         return;
       case 'cmd':
         this.handleCommand(conn, frame);
@@ -698,12 +731,79 @@ export class RemoteBridge {
     // 订阅即快照归零重建（§6.7）：profile 3 同步重置该设备该会话的发送水位与回放窗
     if (this.options.security) this.resetStream(this.deviceOf(conn), sid);
     this.pushSnapshot(conn, sid);
+    // 审批卡补发：手机可能在「PC 已弹卡之后」才订阅。不补发就拿不到 requestId，
+    // 只能显示待审批却批不了——审批真源在 ConfirmCoordinator，这里只取一份只读快照。
+    const pending = this.ports.pendingConfirm(sid);
+    if (pending.requestId) {
+      this.send(conn, buildConfirmAttentionFrame(sid, pending.requestId, pending.label));
+    }
   }
 
   /** 会话列表（跨会话帧，不带 sid；助手会话由宿主投影决定是否排除） */
   private handleSessionList(conn: ClientConnection): void {
     const { sessions, archivedIds, assistantSid } = this.ports.listSessions();
     this.send(conn, { t: 'session_list_ok', ch: 'ctl', sessions, archivedIds, assistantSid });
+  }
+
+  /**
+   * 新建会话（ctl 帧 `session_create`；手机「＋」的唯一落点）
+   *
+   * 判据顺序：
+   *   ① 回环档（无 `security`）拒绝——与 profile 2「只放行 answer」的能力边界一致；
+   *   ② 已配对设备的档位门（`evaluateSessionCreateGate`，与 `send` 同档；`observe` 只读拒绝）；
+   *   ③ 交宿主执行面（`ports.createSession`，后台建、出生 `user`、id 由宿主生成）；
+   *   ④ 成功后回 `session_created{rid,sid,title}` 并记一条审计。
+   *
+   * 失败一律回 `forbidden`（固定码集合里没有「创建失败」格，不新增码）——宿主侧已提示过用户，
+   * 桥不重复造文案，也不伪造 sid（伪造 = 让自 `session_created` 这条唯一身份通道变成假话）。
+   */
+  private async handleSessionCreate(
+    conn: ClientConnection,
+    frame: Extract<BridgeClientFrame, { t: 'session_create' }>,
+  ): Promise<void> {
+    const security = this.options.security;
+    if (!security) {
+      this.send(conn, {
+        t: 'err',
+        ch: 'ctl',
+        rid: frame.rid,
+        code: REMOTE_COMMAND_CODES.FORBIDDEN,
+      });
+      return;
+    }
+    const tier = conn.deviceFp ? security.tierOf(conn.deviceFp) : undefined;
+    if (!tier) {
+      this.send(conn, {
+        t: 'err',
+        ch: 'ctl',
+        rid: frame.rid,
+        code: REMOTE_COMMAND_CODES.FORBIDDEN,
+      });
+      return;
+    }
+    const gate = evaluateSessionCreateGate(tier);
+    if (!gate.allow) {
+      this.send(conn, { t: 'err', ch: 'ctl', rid: frame.rid, code: gate.code });
+      return;
+    }
+    const created = await this.ports.createSession({ title: frame.title });
+    // await 期间连接可能已断开：先写审计（写操作已发生），再尝试回帧（send 会静默丢弃）
+    if (created.ok) {
+      this.audit(security, {
+        event: 'session_created',
+        deviceFp: conn.deviceFp,
+        ip: conn.peerIp,
+        detail: created.sid,
+      });
+      this.send(conn, buildSessionCreatedFrame(frame.rid, created.sid, created.title));
+      return;
+    }
+    this.send(conn, {
+      t: 'err',
+      ch: 'ctl',
+      rid: frame.rid,
+      code: REMOTE_COMMAND_CODES.FORBIDDEN,
+    });
   }
 
   /**

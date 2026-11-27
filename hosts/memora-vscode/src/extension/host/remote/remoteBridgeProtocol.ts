@@ -1,8 +1,9 @@
 /**
- * 远程桥协议（L2 封套）—— 19 条 `t` 的唯一类型与解析点（纯函数，零 IO / 零 vscode）
+ * 远程桥协议（L2 封套）—— 21 条 `t` 的唯一类型与解析点（纯函数，零 IO / 零 vscode）
  *
  * 设计源：docs/方案-手机远程控制-20261110.md
- *   - §6.5：封套类型 19 条 = 控制帧 6 + 通道/生命周期 6 + 业务载荷 7
+ *   - §6.5：封套类型 21 条 = 控制帧 6 + 通道/生命周期 6 + 业务载荷 9
+ *     （`session_create` / `session_created` 为手机直接新建会话，2026-11-28 拍板补登）
  *   - §6.1：帧封套字段（`t` / `ch` / `sid` / `rid` / `seq` / `kind` / `p`）与固定错误码
  *   - §6.2：`hello` / `hello_ok` 的字段（`hello_ok.assistantSid?` 为字段扩展）
  *
@@ -27,7 +28,7 @@ import type { RoundView, TurnState } from '../../../shared/protocol.js';
 import type { ProcessEvent } from '@zooique/memora';
 
 /**
- * 封套类型全集（19 条 · 唯一枚举来源）
+ * 封套类型全集（21 条 · 唯一枚举来源）
  *
  * 分组与方案 §6.5 表格逐条对应；`snapshot` / `delta` **不在**此表——它们是 `t:'evt'` 的 `kind`，
  * 属封套内的第二层分派（§6.3 层级约定）。
@@ -47,7 +48,7 @@ export const BRIDGE_ENVELOPE_TYPES = [
   'err',
   'sub',
   'unsub',
-  // 业务载荷（7）
+  // 业务载荷（9）
   'evt',
   'cmd',
   'attention',
@@ -55,6 +56,10 @@ export const BRIDGE_ENVELOPE_TYPES = [
   'blob_data',
   'session_list',
   'session_list_ok',
+  // 手机直接新建会话：跨会话帧（**不带 sid**）——新建的那一刻 sid 还不存在，
+  // 所以不能复用 `cmd`（`cmd` 的定址前提就是 sid）。与 `session_list` 同属「跨会话例外」。
+  'session_create',
+  'session_created',
 ] as const;
 
 /** 封套类型名（由常量数组派生，禁止调用点自写字面量联合） */
@@ -78,6 +83,13 @@ export interface BridgeSessionSummary {
   messageCount?: number;
   origin?: 'user' | 'hosted';
   lastOutcome?: 'completed' | 'interrupted' | 'unsettled';
+  /**
+   * 该会话当前待裁决的审批数（可选；0 时省略）
+   *
+   * 为什么放进列表：手机主页要在**不订阅每个会话**的前提下显示「待审批」角标。
+   * 真源 = 宿主的 `ConfirmCoordinator.pendingSnapshot().count`，列表只转述，不缓存。
+   */
+  pendingConfirmCount?: number;
 }
 
 // ─── 上行帧（手机 → PC） ───────────────────────────────────────────────
@@ -151,6 +163,23 @@ export interface SessionListFrame {
   rid?: string;
 }
 
+/**
+ * 手机直接新建会话（跨会话帧，**不带 `sid`**）
+ *
+ * 为什么不复用 `cmd.kind` 九条：`cmd` 的定址前提就是 `sid`，而新建会话正是「sid 尚不存在」
+ * 的那件事——放进 `cmd` 会让定址判据与业务语义互相矛盾。这跟 `session_list` 同族
+ * （跨会话例外），故用 ctl 帧。
+ *
+ * 权限口径：与 `send` 同档（`observe` 只读档不给写入口）；新建出的会话出生来源是
+ * `user`（用户自助开的），不是 `hosted`——手机不能冒充宝。
+ */
+export interface SessionCreateFrame {
+  t: 'session_create';
+  ch?: 'ctl';
+  rid: string;
+  title?: string;
+}
+
 /** 桥可解析的上行帧联合 */
 export type BridgeClientFrame =
   | HelloFrame
@@ -160,7 +189,8 @@ export type BridgeClientFrame =
   | AckFrame
   | ResumeFrame
   | CmdFrame
-  | SessionListFrame;
+  | SessionListFrame
+  | SessionCreateFrame;
 
 // ─── 下行帧（PC → 手机） ───────────────────────────────────────────────
 
@@ -254,6 +284,21 @@ export interface SessionListOkFrame {
 }
 
 /**
+ * 新建会话回执（`session_create` 的唯一下行）
+ *
+ * `sid` 由宿主在创建那一刻生成并立即下发——**不得**由手机生成或从会话列表差分反推：
+ * 身份必须由创建方（上游）生产，派生型身份会让「创建」与「首个事件」之间出现无身份窗口。
+ * `rid` 与上行同值，手机据此配对（错误帧 `err` 也带同一 `rid`）。
+ */
+export interface SessionCreatedFrame {
+  t: 'session_created';
+  ch: 'ctl';
+  rid: string;
+  sid: string;
+  title: string;
+}
+
+/**
  * 提醒帧（§6.5 `attention`）—— 事件通知，手机据此知道"有审批要处理"
  *
  * `requestId` 只在 `kind:'confirm'` 时必带（手机回执 `confirm_answer` 的定址凭据）；
@@ -288,6 +333,7 @@ export type BridgeServerFrame =
   | EvtFrame
   | ErrFrame
   | SessionListOkFrame
+  | SessionCreatedFrame
   | AttentionFrame;
 
 /** 解析成功 */
@@ -374,8 +420,25 @@ export function parseBridgeFrame(raw: string): ParseResult {
     }
     case 'session_list':
       return { ok: true, frame: { t: 'session_list', rid: frame.rid as string | undefined } };
+    case 'session_create': {
+      // rid 必填：错误帧 / 回执都按它定址，缺了手机就不知道「这条结果对应哪次点击」
+      if (!isNonEmptyString(frame.rid)) return { ok: false, reason: 'session_create.rid missing' };
+      if (frame.title !== undefined && typeof frame.title !== 'string') {
+        return { ok: false, reason: 'session_create.title must be string' };
+      }
+      // 空串 / 纯空白标题按「未给标题」处理：宿主会回落到默认标题，不把空串当用户意图
+      const rawTitle = typeof frame.title === 'string' ? frame.title.trim() : '';
+      return {
+        ok: true,
+        frame: {
+          t: 'session_create',
+          rid: frame.rid,
+          ...(rawTitle.length > 0 ? { title: rawTitle } : {}),
+        },
+      };
+    }
     default:
-      // 其余 11 条都是下行帧（hello_ok / evt / err / pong …）：手机不应上行
+      // 其余 12 条都是下行帧（hello_ok / evt / err / pong …）：手机不应上行
       return { ok: false, reason: `downlink-only type from client: ${t}` };
   }
 }
@@ -547,6 +610,26 @@ export function buildConfirmAttentionFrame(
   if (sid.length === 0) throw new Error('attention.sid must be non-empty');
   if (requestId.length === 0) throw new Error('attention.requestId must be non-empty');
   return { t: 'attention', ch: 'events', sid, kind: 'confirm', requestId, label };
+}
+
+/**
+ * 构造新建会话回执（`session_created`）
+ *
+ * **唯一构造点**：桥的 `handleSessionCreate` 调用它。`sid` 必须由创建方（宿主）给出，
+ * 构造点只校验非空——它不生产身份，只把身份送上网。
+ *
+ * @param rid 与上行 `session_create.rid` 同值（手机据此配对）
+ * @param sid 宿主创建出的会话 id
+ * @param title 会话标题（宿主实际写入的展示名，非手机传入值）
+ */
+export function buildSessionCreatedFrame(
+  rid: string,
+  sid: string,
+  title: string,
+): SessionCreatedFrame {
+  if (rid.length === 0) throw new Error('session_created.rid must be non-empty');
+  if (sid.length === 0) throw new Error('session_created.sid must be non-empty');
+  return { t: 'session_created', ch: 'ctl', rid, sid, title };
 }
 
 /**

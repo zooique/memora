@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 开发用桥夹具（**仅开发联调，不参与扩展激活路径**）
  *
  * 目的：给手机仓一条可端到端跑通的真链路——真 `RemoteBridge` + 真 mTLS
@@ -113,6 +113,13 @@ function makePorts(): RemoteBridgePorts {
       log(`deliverInput sid=${sessionId} kind=${input.kind}`);
     },
     answerConfirm: () => true,
+    // 联调夹具没有审批队列：订阅时无卡可补发（与真宿主同语义的「无在途」）
+    pendingConfirm: () => ({ count: 0 }),
+    // 联调夹具不落盘：新建会话只留痕并报失败（真宿主才真正建）
+    createSession: async ({ title }) => {
+      log(`createSession title=${title ?? ''}`);
+      return { ok: false as const };
+    },
   };
 }
 

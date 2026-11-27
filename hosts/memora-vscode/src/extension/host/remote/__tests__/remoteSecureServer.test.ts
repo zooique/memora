@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 安全传输层单测 —— 真 TLS 握手 / 证书指纹映射 / 无证书与握手失败的限流审计
  *
  * 判据来源：docs/方案-手机远程控制-20261110.md §19.9（双向自签证书 + DER 指纹固定）、
@@ -282,6 +282,8 @@ describe('RemoteSecureServer + RemoteBridge — LAN 组合（真 TLS）', () => 
       snapshot: () => ({ state: { phase: 'idle' } as TurnState, rounds: [], pendingQueue: [] }),
       deliverInput: () => undefined,
       answerConfirm: () => true,
+      pendingConfirm: () => ({ count: 0 }),
+      createSession: async () => ({ ok: false as const }),
     };
     const security: RemoteBridgeSecurity = {
       fingerprintOf: (socket) => secure.fingerprintOf(socket),

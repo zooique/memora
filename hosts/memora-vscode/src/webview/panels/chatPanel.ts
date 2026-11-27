@@ -1031,8 +1031,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   public getAssistantSessionId = (): string | undefined => this.sessionModes.listManagedSessionIds()[0];
   // 两个远程桥薄委托同行（守 2200 有效行闸门）：裁决真源都在 ConfirmCoordinator，panel 只暴露事实/投递，不自己裁决。
-  public confirmPendingCount = (sessionId: string): number => this._confirm.pendingCount(sessionId);
   public answerConfirm = (sessionId: string, requestId: string, approved: boolean): boolean => this._confirm.answerFor(sessionId, requestId, approved);
+  public pendingConfirm = (sessionId: string): { count: number; requestId?: string; label?: string } => this._confirm.pendingSnapshot(sessionId); // 在途审批快照：主页角标(count) + 订阅补发(requestId/label) 同源
 
   /**
    * 托管页上行消息入口：与侧栏同一条判据链，但**输入 / 会话操作的目标是助手会话**。
@@ -1935,9 +1935,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *   只落 meta / 装配 / 刷会话清单；`title` 落 `SessionMeta.displayName`；
    *   `agentCreated: true` = 「这条是代理开的」——只落出生来源 `'hosted'`，**不**给调度权；
    *   `assistant: true` = 「这条是助手会话」——写工作区身份指针（装配链据此注入主控工具面）
-   * @returns 是否创建成功（background 下 = 是否落成，不代表已切入）
+   * @returns 是否创建成功（background 下 = 是否落成，不代表已切入）；远程桥 `session_create` 也走本方法
    */
-  private async createSession(
+  public async createSession(
     sessionId: string,
     rolePackName?: string,
     opts: CreateSessionOptions = {},

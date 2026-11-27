@@ -309,12 +309,28 @@ export class ConfirmCoordinator {
   /**
    * 某会话未处理确认数（列表标识 / 入口角标的判据）
    *
+   * 与 {@link pendingSnapshot} 同源：待裁决数的算法只留一份，两处各算一次必然漂移。
+   *
    * @param sessionId 会话标识
    */
   pendingCount(sessionId: string): number {
+    return this.pendingSnapshot(sessionId).count;
+  }
+
+  /**
+   * 该会话在途审批的只读快照（待裁决总数 + 当前卡 id / 标签）
+   *
+   * 为什么一个方法同时给「数」和「当前卡」：手机主页角标要数、会话内要 requestId，
+   * 两件事同源于这里的 `current`/`queue`；拆成两个读口就会多出一行「两边各读一次」
+   * 的漂移面（且 chatPanel 已顶到 2200 代码行闸）。
+   */
+  pendingSnapshot(sessionId: string): { count: number; requestId?: string; label?: string } {
     const state = this._sessions.get(sessionId);
-    if (!state) return 0;
-    return state.queue.length + (state.current ? 1 : 0);
+    if (!state) return { count: 0 };
+    const count = state.queue.length + (state.current ? 1 : 0);
+    return state.current
+      ? { count, requestId: state.current.requestId, label: state.current.logLabel }
+      : { count };
   }
 
   /**

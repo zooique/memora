@@ -789,6 +789,13 @@ export function activate(context: vscode.ExtensionContext): void {
       panel: chatProvider,
       store: sessionStore,
       log: (message) => memoraOutput.appendLine(message),
+      // 手机「＋」建会话：后台建（不顶走 PC 当前页），出生来源缺省 user；
+      // 远程桥只拿这个窄口，不把整个面板暴露进桥
+      createSession: (sessionId, title) =>
+        chatProvider.createSession(sessionId, undefined, {
+          background: true,
+          ...(title ? { title } : {}),
+        }),
     },
     { context },
   ).then((bridge) => {

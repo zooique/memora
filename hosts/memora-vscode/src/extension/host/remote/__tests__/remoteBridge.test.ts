@@ -135,6 +135,10 @@ function makePorts(overrides: Partial<RemoteBridgePorts> = {}): {
     snapshot: () => ({ state, rounds: ROUNDS, pendingQueue: [] }),
     deliverInput: (sid, input) => delivered.push({ sid, input }),
     answerConfirm: () => true,
+    // 默认无在途审批；需要「订阅补发」的用例在 overrides 里给
+    pendingConfirm: () => ({ count: 0 }),
+    // 默认新建失败（本文件用例不建会话；建会话用例在 overrides 里给成功桩）
+    createSession: async () => ({ ok: false as const }),
     ...overrides,
   };
   return { ports, delivered };
@@ -231,6 +235,35 @@ describe('RemoteBridge — 订阅与快照', () => {
     expect(evt.kind).toBe('snapshot');
     expect(evt.p.state).toEqual(WAITING_ASK);
     expect(evt.p.rounds[0]).not.toHaveProperty('attachmentUris');
+  });
+
+  it('sub 时该会话有在途审批 → 快照后补发一张 attention（手机后开也能批）', async () => {
+    const { ports } = makePorts({
+      phaseOf: () => 'confirm-pending',
+      pendingConfirm: (sid) =>
+        sid === 's1' ? { count: 1, requestId: 'req-9', label: 'run_command：rm' } : { count: 0 },
+    });
+    const { port } = await startBridge(ports);
+    const client = await TestClient.connect(port);
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: 'AB12' });
+    await client.next();
+
+    client.send({ t: 'sub', sid: 's1' });
+    // 第一帧仍是快照（顺序不能反：attention 先到会让手机在没有轮次的情况下先弹卡）
+    const snapshot = await client.next<{ kind: string }>();
+    expect(snapshot.kind).toBe('snapshot');
+    const attention = await client.next<{
+      t: string;
+      kind: string;
+      sid: string;
+      requestId: string;
+      label?: string;
+    }>();
+    expect(attention.t).toBe('attention');
+    expect(attention.kind).toBe('confirm');
+    expect(attention.sid).toBe('s1');
+    expect(attention.requestId).toBe('req-9');
+    expect(attention.label).toBe('run_command：rm');
   });
 
   it('sub 快照的 rounds 走 TrimmedRound：过程事件与前序回答只留最近 N 条', async () => {
@@ -1094,7 +1127,9 @@ describe('RemoteBridge — profile 3 delta 与水位补洞（§6.7 订正口径�
     const state: TurnState = { phase: 'running', roundId: 'r1' };
     let current = liveRound('你好', [ev(2)]);
     const { security } = makeSecurity({ tier: 'observe' });
-    const { ports } = makePorts({ snapshot: () => ({ state, rounds: [current], pendingQueue: [] }) });
+    const { ports } = makePorts({
+      snapshot: () => ({ state, rounds: [current], pendingQueue: [] }),
+    });
     const { bridge, client } = await openLanSub(ports, security, []);
 
     current = liveRound('你好世界', [ev(2), ev(5)]);
@@ -1410,5 +1445,85 @@ describe('RemoteBridge — profile 3 delta 与水位补洞（§6.7 订正口径�
     };
     expect(loopInternals.connections.size).toBe(1);
     expect([...loopInternals.connections][0]!.timers?.size ?? 0).toBe(0);
+  });
+});
+
+describe('RemoteBridge — 手机直接新建会话（ctl 帧 session_create）', () => {
+  /** LAN 档 hello（已配对指纹 ⇒ 直接 hello_ok，不弹批准） */
+  async function openLan(
+    ports: RemoteBridgePorts,
+    tier: RemoteDeviceTier,
+  ): Promise<{ client: TestClient; audits: Array<{ event: string }> }> {
+    const { security, state } = makeSecurity({ tier });
+    const { bridge, port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+    const entry = opened.find((item) => item.bridge === bridge);
+    if (entry) entry.client = client;
+    else opened.push({ bridge, client });
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
+    await client.next();
+    return { client, audits: state.audits };
+  }
+
+  it('回环档拒绝：回 forbidden 且**不调**宿主建会话（profile 2 只放行 answer）', async () => {
+    let called = false;
+    const { ports } = makePorts({
+      createSession: async () => {
+        called = true;
+        return { ok: true, sid: 'should-not-exist', title: 'x' };
+      },
+    });
+    const { bridge, port } = await startBridge(ports);
+    const client = await TestClient.connect(port);
+    const entry = opened.find((item) => item.bridge === bridge);
+    if (entry) entry.client = client;
+    else opened.push({ bridge, client });
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: 'AB12' });
+    await client.next();
+    client.send({ t: 'session_create', rid: 'c-loop' });
+    const err = await client.next<{ t: string; code: string; rid?: string }>();
+    expect(err.t).toBe('err');
+    expect(err.code).toBe('forbidden');
+    expect(err.rid).toBe('c-loop');
+    expect(called).toBe(false);
+  });
+
+  it('observe 档拒绝（只读不给写入口）；send 档放行并回 session_created + 审计', async () => {
+    const { ports } = makePorts({
+      createSession: async ({ title }) => ({
+        ok: true,
+        sid: '2026-11-28-snew',
+        title: title ?? '新会话',
+      }),
+    });
+
+    const observe = await openLan(ports, 'observe');
+    observe.client.send({ t: 'session_create', rid: 'c-observe' });
+    const denied = await observe.client.next<{ t: string; code: string }>();
+    expect(denied.t).toBe('err');
+    expect(denied.code).toBe('forbidden');
+
+    const send = await openLan(ports, 'send');
+    send.client.send({ t: 'session_create', rid: 'c-send', title: '整理周报' });
+    const created = await send.client.next<Record<string, unknown>>();
+    // 独立手写期望：身份（sid）必须由宿主显式下发，字段漂移必须红
+    expect(created).toEqual({
+      t: 'session_created',
+      ch: 'ctl',
+      rid: 'c-send',
+      sid: '2026-11-28-snew',
+      title: '整理周报',
+    });
+    await waitAudit(send.audits, 'session_created');
+  });
+
+  it('宿主建会话失败 → forbidden（不伪造 sid）', async () => {
+    const { ports } = makePorts({ createSession: async () => ({ ok: false }) });
+    const { client } = await openLan(ports, 'send');
+    client.send({ t: 'session_create', rid: 'c-fail' });
+    const err = await client.next<{ t: string; code: string; rid?: string }>();
+    expect(err.t).toBe('err');
+    expect(err.code).toBe('forbidden');
+    expect(err.rid).toBe('c-fail');
   });
 });

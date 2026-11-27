@@ -295,6 +295,19 @@ export function evaluateTierGate(
 }
 
 /**
+ * 「新建会话」的档位门（ctl 帧 `session_create`，不属 `cmd.kind` 九条）
+ *
+ * 判据 = **与 `send` 同档**：能发消息的档位才有理由开新会话，`observe` 只读档不给写入口。
+ * 刻意复用 `evaluateTierGate(tier, 'send')` 而不是另写一份档位判定——否则「send 档有哪些能力」
+ * 会出现两份真源，新增一条 send 档命令时必然漏配。
+ *
+ * @param tier 该设备的权限档（设备表给出）
+ */
+export function evaluateSessionCreateGate(tier: RemoteDeviceTier): RemoteCommandDecision {
+  return evaluateTierGate(tier, 'send');
+}
+
+/**
  * `TurnState` → 远程相位名的适配器（相位素材的唯一折算点）
  *
  * 为什么 `settled` 折算为 `idle`：本表只回答「能不能发新 turn」，收场态与空闲态在这一点上

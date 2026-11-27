@@ -4,7 +4,7 @@
  * 背景：台账 REMOTE-LAN-1 明确未做⑤——`phaseOf` 第二参长期硬传 `false`，
  * 使得 `remotePhaseOf` 的 `confirm-pending` 分支在生产永不触发（判据表在、喂表的事实是假）。
  * 本文件只钉住这一根线：`createRemoteBridgePorts().phaseOf` 必须把
- * `panel.confirmPendingCount(sid) > 0` 作为第二参接进唯一折算点。
+ * `panel.pendingConfirm(sid).count > 0` 作为第二参接进唯一折算点。
  *
  * 判据独立：期望相位**手写**，不 import `remotePhaseOf` 的返回值当期望
  * （那会让「折算点改坏」与「调用点改坏」互相遮蔽，两处全绿即假绿）。
@@ -41,8 +41,8 @@ function makePanel(state: TurnState, pending: number): RemotePanelPort {
     buildLiveTurnFromBuffer: () => undefined,
     handleInput: async () => undefined,
     getAssistantSessionId: () => undefined,
-    confirmPendingCount: () => pending,
     answerConfirm: () => true,
+    pendingConfirm: () => ({ count: pending }),
   };
 }
 
@@ -51,6 +51,8 @@ function makePorts(state: TurnState, pending: number) {
     panel: makePanel(state, pending),
     store: { listSessions: () => ['s1'] } as never,
     log: () => undefined,
+    // 本文件用例不建会话（远程建会话用例在 remoteBridge.test.ts 的桥层）
+    createSession: async () => false,
   });
 }
 
@@ -71,12 +73,13 @@ describe('remoteBridgeHost · phaseOf 的 confirmPending 接真（REMOTE-LAN-1�
   it('接真按 sid 取数：只有被问的会话有待裁决才收紧', () => {
     const panel: RemotePanelPort = {
       ...makePanel(RUNNING, 0),
-      confirmPendingCount: (sid: string) => (sid === 'busy' ? 1 : 0),
+      pendingConfirm: (sid: string) => ({ count: sid === 'busy' ? 1 : 0 }),
     };
     const ports = createRemoteBridgePorts({
       panel,
       store: { listSessions: () => ['busy', 'free'] } as never,
       log: () => undefined,
+      createSession: async () => false,
     });
     expect(ports.phaseOf('busy')).toBe('confirm-pending');
     expect(ports.phaseOf('free')).toBe('running');
@@ -104,6 +107,7 @@ describe('remoteBridgeHost · snapshot 带 live 投影（REMOTE-RICH-DELTA-1①�
       panel,
       store: { listSessions: () => ['s1'] } as never,
       log: () => undefined,
+      createSession: async () => false,
     });
     ports.snapshot('s1');
     ports.phaseOf('s1');
@@ -123,6 +127,7 @@ describe('remoteBridgeHost · snapshot 带 live 投影（REMOTE-RICH-DELTA-1①�
       panel,
       store: { listSessions: () => ['s1'] } as never,
       log: () => undefined,
+      createSession: async () => false,
     });
     ports.snapshot('s1');
     expect(seen).toEqual([undefined]);

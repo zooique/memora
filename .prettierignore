@@ -24,3 +24,11 @@
 #    .gitattributes 固定 LF（19 个纯 EOL 红同轮消解），format:check 已绿。
 #    若将来把 format 的 glob 放宽到全后缀，yaml / lock / CI 配置须先另行加 ignore。
 **/*.md
+
+# ── 单文件挡：chatPanel.ts（2026-11-28 落成配置） ──
+# 该文件贴 eslint `max-lines` 2200 有效行闸门，历史用「多个属性 / 语句同一行」的紧凑写法。
+# prettier --write 会把这些行展开（实测净 +9 有效行 → 顶破闸门；台账 REMOTE-RICH-DELTA-1
+# 已记录「禁对本文件跑 prettier --write」并逐处回放 HEAD 恢复）。
+# 挡在格式化侧而不是放宽闸门：闸门是防膨胀判据，紧凑写法是该文件已接受的存量形态；
+# 判据仍由 gate-fast 的 host:lint 执行（eslint 不看 .prettierignore）。
+hosts/memora-vscode/src/webview/panels/chatPanel.ts

@@ -35,6 +35,10 @@ import type { SessionViewProjection } from '../../../shared/sessionProjection.js
 import type { PendingLiveRound } from '../../../shared/turnProjection.js';
 import { remotePhaseOf } from './remoteCommandPolicy.js';
 import { RemoteBridge, type RemoteBridgePorts } from './remoteBridge.js';
+// 会话 id 形态单点（草稿首发送 / 启动建空会话 / 主控建会话 / 远程新建共用，禁本文件另拼）
+import { newSessionId } from '../../../webview/helpers/draftSession.js';
+// 会话展示标题读口（与列表 / 标题条同一口径：标题不在这里另造第二份取法）
+import { sessionTitleFor } from '../sessionTitle.js';
 // 只引类型：运行期的证书 / TLS 模块必须在 LAN 分支内动态 import（见文件头「惰性加载」）
 import type { RemoteIdentity } from './remoteIdentity.js';
 import {
@@ -78,19 +82,19 @@ export interface RemotePanelPort {
   /** 助手会话 id（工作区指针；宿主的唯一身份来源，桥不推断） */
   getAssistantSessionId: () => string | undefined;
   /**
-   * 该会话未裁决的执行类审批数（`ConfirmCoordinator.pendingCount` 的薄委托）
-   *
-   * 为什么必须经面板窄接口而不是桥直接 import 协调器：裁决真源在 `ConfirmCoordinator`，
-   * 桥只问「有没有待裁决项」这一事实，不持有队列、不碰 `answer`（那是 M3 落点）。
-   */
-  confirmPendingCount: (sessionId: string) => number;
-  /**
    * 按 sid + requestId 裁决执行类审批（薄委托 `ConfirmCoordinator.answerFor`）
    *
    * 桥拿它做 `confirm_answer` 的落点：裁决真源仍在协调器（复用 `_logDecision`/`_settle`），
    * 本端口只转交事实，不自己 resolve Promise。
    */
   answerConfirm: (sessionId: string, requestId: string, approved: boolean) => boolean;
+  /**
+   * 该会话在途审批的只读快照（`count` + 当前卡 id/label）
+   *
+   * 一份快照同时喂两处：主页角标（count）与订阅补发（requestId/label）。
+   * 真源 = `ConfirmCoordinator.pendingSnapshot`，桥与面板都不缓存。
+   */
+  pendingConfirm: (sessionId: string) => { count: number; requestId?: string; label?: string };
 }
 
 /** 适配所需的宿主依赖 */
@@ -101,6 +105,15 @@ export interface RemoteBridgeHostDeps {
   store: HostSessionStore;
   /** 日志口（扩展输出通道） */
   log: (message: string) => void;
+  /**
+   * 远程建会话执行面（桥的 `session_create` 落点；由调用方绑定面板的 `createSession`）
+   *
+   * 为什么单独注入而不放进 {@link RemotePanelPort}：端口按**结构类型**匹配整个面板实例，
+   * 成员名一旦与面板同名 `createSession` 而签名不同（这里是窄口 `(sessionId, title)`），
+   * 面板就整体不可赋值给端口（TS2322）。拆出来也让「远程建会话」这一件事显式可见。
+   * 实现方负责：`background: true`（不把 PC 正在看的页面顶走）+ 出生来源缺省 `user`。
+   */
+  createSession: (sessionId: string, title?: string) => Promise<boolean>;
 }
 
 /** 适配所需的 VS Code 环境（密钥 / 设备表 / 审计目录都从这里取） */
@@ -195,14 +208,19 @@ export function getRemoteBridgeRuntime(): { mode: 'loopback' | 'lan'; port: numb
  * @param deps 面板 + 会话存储 + 日志口
  */
 export function createRemoteBridgePorts(deps: RemoteBridgeHostDeps): RemoteBridgePorts {
-  const { panel, store } = deps;
+  const { panel, store, createSession: createSessionOnHost } = deps;
   return {
     // 列表：currentSessionId 传空串 = 不排除任何会话（手机端有自己的「当前」概念）；
     // 助手会话仍排除（它不是工作会话，助手身份经 hello_ok.assistantSid 单独下发）
     listSessions: () => {
       const assistantSid = panel.getAssistantSessionId();
       const message = buildSessionListMessage(store, '', vscode.l10n, undefined, assistantSid);
-      return { sessions: message.sessions, archivedIds: message.archivedIds, assistantSid };
+      // 待审批数：主页角标的唯一来源（真源在确认协调器，此处只做逐条转述）
+      const sessions = message.sessions.map((session) => {
+        const pending = panel.pendingConfirm(session.sessionId).count;
+        return pending > 0 ? { ...session, pendingConfirmCount: pending } : session;
+      });
+      return { sessions, archivedIds: message.archivedIds, assistantSid };
     },
     // 定址：只认存储里的会话 id（草稿态无 id，天然落空 ⇒ no_session，§6.6 断路器）
     hasSession: (sessionId) => store.listSessions().includes(sessionId),
@@ -213,7 +231,7 @@ export function createRemoteBridgePorts(deps: RemoteBridgeHostDeps): RemoteBridg
       remotePhaseOf(
         // live 并入投影：流中首帧前 state 就该是 running，不能等落盘（§6.4.1）
         panel.projectSession(sessionId, panel.buildLiveTurnFromBuffer(sessionId)).state,
-        panel.confirmPendingCount(sessionId) > 0,
+        panel.pendingConfirm(sessionId).count > 0,
       ),
     // 快照带 live：流中正文 / 过程事件在手机上可见（§6.4.1 唯一取数口）
     snapshot: (sessionId) =>
@@ -227,6 +245,18 @@ export function createRemoteBridgePorts(deps: RemoteBridgeHostDeps): RemoteBridg
     // 审批裁决：转交确认协调器的既有 answerFor（不自己 resolve、不另建裁决链）
     answerConfirm: (sessionId, requestId, approved) =>
       panel.answerConfirm(sessionId, requestId, approved),
+    // 在途审批快照：订阅时补发审批卡（审批真源仍在 ConfirmCoordinator）
+    pendingConfirm: (sessionId) => panel.pendingConfirm(sessionId),
+    // 手机「＋」建会话：id 由宿主生成（身份归上游，手机不得自造 / 差分反推），
+    // 执行面复用面板 createSession（background：不把 PC 正在看的页面顶走）；
+    // 出生来源缺省即 user——手机是用户的手，不传 agentCreated（冒充宝 = 第二真源）
+    createSession: async ({ title }) => {
+      const sessionId = newSessionId();
+      const ok = await createSessionOnHost(sessionId, title);
+      if (!ok) return { ok: false };
+      // 标题读会话元数据（与列表 / 标题条同一读口），不拿手机传入值冒充实际展示名
+      return { ok: true, sid: sessionId, title: sessionTitleFor(store, sessionId, vscode.l10n) };
+    },
   };
 }
 

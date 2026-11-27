@@ -1,7 +1,7 @@
 /**
  * 远程桥协议单测 —— 封套白名单 / 上行帧解析 / 下行序列化
  *
- * 判据来源：docs/方案-手机远程控制-20261110.md §6.1（字段）、§6.5（19 条封套）、§6.6（命令九条）
+ * 判据来源：docs/方案-手机远程控制-20261110.md §6.1（字段）、§6.5（21 条封套）、§6.6（命令九条）
  */
 import { describe, expect, it } from 'vitest';
 import { REMOTE_COMMANDS } from '../remoteCommandPolicy.js';
@@ -12,6 +12,7 @@ import {
   buildProcessEventDeltaFrame,
   buildResetRequiredFrame,
   buildResumeOkFrame,
+  buildSessionCreatedFrame,
   buildStatusDeltaFrame,
   buildSnapshotFrame,
   DEFAULT_REMOTE_CAPS,
@@ -22,7 +23,7 @@ import {
   type SnapshotPayload,
 } from '../remoteBridgeProtocol.js';
 
-describe('remoteBridgeProtocol — 封套类型（19 条）', () => {
+describe('remoteBridgeProtocol — 封套类型（21 条）', () => {
   it('清单与方案 §6.5 逐条一致（不多不少、顺序稳定）', () => {
     expect([...BRIDGE_ENVELOPE_TYPES]).toEqual([
       'hello',
@@ -44,8 +45,10 @@ describe('remoteBridgeProtocol — 封套类型（19 条）', () => {
       'blob_data',
       'session_list',
       'session_list_ok',
+      'session_create',
+      'session_created',
     ]);
-    expect(BRIDGE_ENVELOPE_TYPES).toHaveLength(19);
+    expect(BRIDGE_ENVELOPE_TYPES).toHaveLength(21);
   });
 });
 
@@ -112,6 +115,28 @@ describe('remoteBridgeProtocol — 上行帧解析', () => {
     expect(parseBridgeFrame('{"t":"session_list"}').ok).toBe(true);
   });
 
+  it('session_create：rid 必填（回执定址凭据）；title 可省，空串/纯空白按未给', () => {
+    const ok = parseBridgeFrame(JSON.stringify({ t: 'session_create', rid: 'c-1' }));
+    expect(ok.ok).toBe(true);
+    if (ok.ok && ok.frame.t === 'session_create') {
+      expect(ok.frame.rid).toBe('c-1');
+      // 空串不落进合法帧（宿主按「未给标题」回落到默认标题）
+      expect(ok.frame.title).toBeUndefined();
+    }
+    const trimmed = parseBridgeFrame(
+      JSON.stringify({ t: 'session_create', rid: 'c-2', title: '  整理周报  ' }),
+    );
+    if (trimmed.ok && trimmed.frame.t === 'session_create') {
+      expect(trimmed.frame.title).toBe('整理周报');
+    }
+    // rid 缺失 = 拒绝（不然手机不知道回执对应哪次点击）
+    expect(parseBridgeFrame(JSON.stringify({ t: 'session_create' })).ok).toBe(false);
+    // title 非字符串 = 拒绝
+    expect(parseBridgeFrame(JSON.stringify({ t: 'session_create', rid: 'c-3', title: 1 })).ok).toBe(
+      false,
+    );
+  });
+
   it('未知 t / 下行专用 t / 非 JSON 一律拒绝', () => {
     expect(parseBridgeFrame('{"t":"whatever"}').ok).toBe(false);
     expect(parseBridgeFrame('{"t":"evt","sid":"s"}').ok).toBe(false);
@@ -152,6 +177,22 @@ describe('remoteBridgeProtocol — 下行序列化', () => {
     expect(noLabel).not.toHaveProperty('label');
     expect(() => buildConfirmAttentionFrame('', 'req-7')).toThrow();
     expect(() => buildConfirmAttentionFrame('s-1', '')).toThrow();
+  });
+
+  it('session_created：rid / sid / title 逐字下发；空 rid / sid 构造即抛', () => {
+    const frame = JSON.parse(
+      serializeBridgeFrame(buildSessionCreatedFrame('c-1', '2026-11-28-sabc', '新会话')),
+    ) as Record<string, unknown>;
+    // 独立手写期望：身份（sid）必须由宿主在回执里显式给出，不许手机反推
+    expect(frame).toEqual({
+      t: 'session_created',
+      ch: 'ctl',
+      rid: 'c-1',
+      sid: '2026-11-28-sabc',
+      title: '新会话',
+    });
+    expect(() => buildSessionCreatedFrame('', 's', 't')).toThrow();
+    expect(() => buildSessionCreatedFrame('c', '', 't')).toThrow();
   });
 
   it('status delta 从 seq=1 起，载荷只带 status 与原始 state 对象', () => {
