@@ -25,9 +25,12 @@
  *     （手机侧无需自带 SHA-256 实现；真值仍以 TLS 证书为准，宿主会逐字比对）。
  *
  * 🔴 安全纪律：连接串含**一次性口令**（短时有效）+ **客户端私钥**。
+ *   - **一次配对码 = 一把客户端身份 = 一台手机**（最多登记 3 台，见 `remoteDevices`）：
+ *     给第二台手机配对时必须重新生成配对码，不能把同一条串导入多台（那样三台共用一个指纹，
+ *     设备表只有一行、撤销一台等于全断）。
  *   - 禁止写入日志 / 审计 / 错误信息（口令与私钥会随日志长期留存）；
  *   - 只允许用户主动复制（剪贴板）；视为一次性秘密——配对完成后手机本地留存，
- *     PC 端不持久化该身份（重启即丢，手机已保存的那份不受影响）。
+ *     PC 端不持久化该身份（换代即丢，手机已保存的那份不受影响）。
  */
 import type { RemoteLanHandle } from './remoteBridgeHost.js';
 import type { PairingChallenge } from './remotePairing.js';
@@ -113,8 +116,9 @@ export interface PairingMaterial {
  * 判定口径与 UI 展示一致：只在「监听已起 + 地址可用 + 口令未过期」时产出；
  * 任一不成立返回 `undefined`（页面据此隐藏，而不是显示一条必然失败的串）。
  *
- * 客户端身份取自句柄（LAN 启动时铸造一次）：重新生成口令**不换**客户端身份——
- * 换码只换「这一轮配对凭据」，手机已经保存的身份继续有效（永久重连语义）。
+ * 客户端身份取自句柄（与当前口令同代，一次配对码一把）：生成新口令**同时换**客户端身份——
+ * 每台手机必须拿到独立证书，才能在设备表里各占一行、各自撤销。换代窗口内（异步铸证未完成）
+ * 不产出连接串，宁可页面短暂隐藏，也不给「新口令 + 旧身份」的错配组合。
  *
  * @param handle LAN 运行时句柄
  * @param now    当前时刻（测试可注入；缺省取系统时间）
@@ -127,6 +131,9 @@ export function pairingMaterialOfHandle(
   if (!challenge || challenge.expiresAt <= now) return undefined;
   // `0.0.0.0` 是「监听全部网卡」的绑定值，不是手机能拨的地址
   if (!handle.address || handle.address === '0.0.0.0') return undefined;
+  // 口令与身份必须同代：换代期间（challengeCode 已变、铸证未回）不产出
+  const pairingIdentity = handle.pairingIdentity;
+  if (pairingIdentity.challengeCode !== challenge.code) return undefined;
   return {
     challenge,
     link: buildPairingLink({
@@ -136,9 +143,9 @@ export function pairingMaterialOfHandle(
       code: challenge.code,
       shortFp: handle.identity.shortFp,
       expiresAt: challenge.expiresAt,
-      clientKeyPem: handle.clientIdentity.keyPem,
-      clientCertPem: handle.clientIdentity.certPem,
-      clientFingerprint: handle.clientIdentity.fingerprint,
+      clientKeyPem: pairingIdentity.identity.keyPem,
+      clientCertPem: pairingIdentity.identity.certPem,
+      clientFingerprint: pairingIdentity.identity.fingerprint,
     }),
   };
 }

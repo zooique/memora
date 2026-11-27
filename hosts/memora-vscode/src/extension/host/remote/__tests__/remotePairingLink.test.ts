@@ -3,8 +3,9 @@
  *
  * 锁定四件事：
  *   ① base64url 转换（`pin` 的 `+` `/` `=` 与 PEM 的换行都必须无损往返）；
- *   ② 客户端身份三字段（`ck` / `cc` / `cfp`）来自句柄，且不因「重新生成口令」而变；
- *   ③ 过期 / 地址不可用时**不产出**连接串（页面据此隐藏，而不是给一条必然失败的串）；
+ *   ② 客户端身份三字段（`ck` / `cc` / `cfp`）取自**与当前口令同代**的身份，
+ *      换代后连接串里的身份随之更换（一次配对码 = 一把身份 = 一台设备）；
+ *   ③ 口令 / 身份不同代、过期、地址不可用时**不产出**连接串（页面据此隐藏）；
  *   ④ 字段名与版本前缀稳定（手机解析器按前缀 fail-closed）。
  */
 import { describe, expect, it } from 'vitest';
@@ -23,6 +24,8 @@ const CLIENT_KEY_PEM = '-----BEGIN PRIVATE KEY-----\nAAECAwQ=\n-----END PRIVATE 
 const CLIENT_CERT_PEM = '-----BEGIN CERTIFICATE-----\nBQYHCAk=\n-----END CERTIFICATE-----\n';
 /** 客户端证书指纹（全大写 hex） */
 const CLIENT_FP = 'A'.repeat(64);
+/** 另一代客户端指纹（换代断言用） */
+const CLIENT_FP_NEXT = 'B'.repeat(64);
 
 /**
  * 构造最小句柄桩（只填配对串用到的字段，其余以 unknown 收口）
@@ -33,7 +36,12 @@ function makeHandle(options: {
   address?: string;
   code?: string;
   expiresAt?: number;
+  /** 身份绑定的口令代号（缺省与 `code` 相同）；传不同值模拟「换代窗口」 */
+  identityCode?: string;
+  /** 客户端身份指纹（换代断言用） */
+  clientFingerprint?: string;
 }): RemoteLanHandle {
+  const code = options.code ?? '123456';
   return {
     address: options.address ?? '192.168.1.9',
     port: 41234,
@@ -44,18 +52,18 @@ function makeHandle(options: {
       fingerprint: 'F'.repeat(64),
       shortFp: 'ABCD-1234',
     },
-    clientIdentity: {
-      keyPem: CLIENT_KEY_PEM,
-      certPem: CLIENT_CERT_PEM,
-      certDerBase64: '',
-      fingerprint: CLIENT_FP,
-      shortFp: 'AAAA-AAAA',
+    pairingIdentity: {
+      challengeCode: options.identityCode ?? code,
+      identity: {
+        keyPem: CLIENT_KEY_PEM,
+        certPem: CLIENT_CERT_PEM,
+        certDerBase64: '',
+        fingerprint: options.clientFingerprint ?? CLIENT_FP,
+        shortFp: 'AAAA-AAAA',
+      },
     },
     pairing: {
-      current: () => ({
-        code: options.code ?? '123456',
-        expiresAt: options.expiresAt ?? 4102444800000,
-      }),
+      current: () => ({ code, expiresAt: options.expiresAt ?? 4102444800000 }),
     },
   } as unknown as RemoteLanHandle;
 }
@@ -103,21 +111,21 @@ describe('pairingMaterialOfHandle', () => {
     expect(new URL(material!.link).searchParams.get('c')).toBe('654321');
   });
 
-  it('客户端身份取自句柄（重新生成口令不换身份）', () => {
-    const handle = makeHandle({});
-    const first = pairingMaterialOfHandle(handle, 1);
+  it('一次配对码一把身份：换代后连接串里的客户端身份随之更换', () => {
+    const first = pairingMaterialOfHandle(makeHandle({}), 1);
+    // 模拟「重新生成配对码」：新口令 + 新身份（代号与新口令一致）
     const second = pairingMaterialOfHandle(
-      {
-        ...handle,
-        pairing: { current: () => ({ code: '222222', expiresAt: 4102444800000 }) },
-      } as unknown as RemoteLanHandle,
+      makeHandle({ code: '222222', clientFingerprint: CLIENT_FP_NEXT }),
       1,
     );
     expect(new URL(first!.link).searchParams.get('cfp')).toBe(CLIENT_FP);
-    expect(new URL(second!.link).searchParams.get('cfp')).toBe(CLIENT_FP);
-    expect(new URL(second!.link).searchParams.get('ck')).toBe(
-      new URL(first!.link).searchParams.get('ck'),
-    );
+    expect(new URL(second!.link).searchParams.get('cfp')).toBe(CLIENT_FP_NEXT);
+    expect(new URL(second!.link).searchParams.get('c')).toBe('222222');
+  });
+
+  it('换代窗口（身份代号 ≠ 当前口令）：不产出，避免新码配旧身份', () => {
+    const handle = makeHandle({ code: '333333', identityCode: '222222' });
+    expect(pairingMaterialOfHandle(handle, 1)).toBeUndefined();
   });
 });
 

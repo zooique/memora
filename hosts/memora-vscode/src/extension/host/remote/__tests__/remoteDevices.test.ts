@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  pairingAdmission,
   RemoteDeviceStore,
   REMOTE_DEVICES_KEY,
   type RemoteDeviceMemento,
@@ -125,31 +126,24 @@ describe('RemoteDeviceStore — 改档与撤销', () => {
   });
 });
 
-describe('RemoteDeviceStore — 单设备策略（replaceWith）', () => {
-  it('换绑：表只剩新设备，并返回被替换掉的旧设备', async () => {
-    const memento = new MemoryMemento();
-    const store = new RemoteDeviceStore(memento);
-    await store.upsert(record('AAAA1111', '旧手机'));
-    await store.upsert(record('BBBB2222', '更旧手机'));
+describe('pairingAdmission — 登记上限（最多 3 台）', () => {
+  /** 构造 n 台已登记设备（指纹用序号区分） */
+  function records(n: number): RemoteDeviceRecord[] {
+    return Array.from({ length: n }, (_, index) => record(`AAAA${index}`, `手机${index}`));
+  }
 
-    const removed = await store.replaceWith(record('cccc3333', '新手机'));
-
-    expect(store.list()).toHaveLength(1);
-    expect(store.get('CCCC3333')?.name).toBe('新手机');
-    expect(removed.map((r) => r.name).sort()).toEqual(['旧手机', '更旧手机']);
-    // 一次写收敛：中间态（表里同时存在两台）从未落库
-    expect(memento.get<RemoteDeviceRecord[]>(REMOTE_DEVICES_KEY)).toHaveLength(1);
+  it('未满额的新设备：new', () => {
+    expect(pairingAdmission(records(0), 'BBBB1111')).toBe('new');
+    expect(pairingAdmission(records(2), 'BBBB1111')).toBe('new');
   });
 
-  it('换绑同一台设备：不产生「被替换」列表', async () => {
-    const store = new RemoteDeviceStore(new MemoryMemento());
-    await store.upsert(record('AAAA1111', '手机'));
+  it('满额（3 台）后的新设备：full（必须先撤销一台）', () => {
+    expect(pairingAdmission(records(3), 'BBBB1111')).toBe('full');
+    expect(pairingAdmission(records(4), 'BBBB1111')).toBe('full');
+  });
 
-    const removed = await store.replaceWith({ ...record('aaaa1111', '手机改名'), tier: 'send' });
-
-    expect(removed).toEqual([]);
-    expect(store.list()).toHaveLength(1);
-    expect(store.get('AAAA1111')?.name).toBe('手机改名');
-    expect(store.get('AAAA1111')?.tier).toBe('send');
+  it('已登记的指纹（大小写不敏感）：repair，不占新名额', () => {
+    expect(pairingAdmission(records(3), 'aaaa0')).toBe('repair');
+    expect(pairingAdmission(records(3), 'AAAA0')).toBe('repair');
   });
 });

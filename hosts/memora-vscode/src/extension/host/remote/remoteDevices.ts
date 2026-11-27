@@ -12,7 +12,8 @@
  * 边界：
  *   - 只存**非密钥**事实（指纹 / 展示名 / 档位 / 时间）；
  *   - 读时逐条校验，坏条目丢弃并留痕（一条坏数据不能拖死整张表）；
- *   - **单设备策略**：`replaceWith` 是「换绑」的唯一写入面，一次写收敛为一条；
+ *   - **登记上限**：{@link REMOTE_MAX_PAIRED_DEVICES} 台，准入判定收在 {@link pairingAdmission}
+ *     （批准弹窗与写入面共用同一份判据，禁止各写一套）；
  *   - 不 import vscode：`globalState` 经 `RemoteDeviceMemento` 窄接口注入。
  */
 
@@ -174,29 +175,40 @@ export class RemoteDeviceStore {
   }
 
   /**
-   * 用一台设备**整体替换**设备表（单设备策略的唯一写入面）
-   *
-   * 语义 =「同一时间只允许一台设备」：把表写成只含该条记录的数组。
-   * 为什么不复用 `upsert` + 逐条 `remove`：两次写入之间有一段时间表里同时存在两台，
-   * 期间桥的 `tierOf` 仍会放行旧设备（静默竞态）；这里一次 `write` 收敛。
-   *
-   * @param record 新设备记录（指纹会被归一为大写）
-   * @returns 被替换掉的旧设备（调用方据此断开旧连接并写审计）
-   */
-  async replaceWith(record: RemoteDeviceRecord): Promise<RemoteDeviceRecord[]> {
-    const normalized: RemoteDeviceRecord = {
-      ...record,
-      fingerprint: normalizeFingerprint(record.fingerprint),
-    };
-    const removed = this.list().filter((item) => item.fingerprint !== normalized.fingerprint);
-    await this.write([normalized]);
-    return removed;
-  }
-
-  /**
    * 整数组覆盖写（设备表体量小，整写比增量合并简单且无并发写窗口）
    */
   private async write(records: readonly RemoteDeviceRecord[]): Promise<void> {
     await this.memento.update(REMOTE_DEVICES_KEY, records);
   }
+}
+
+/** 可登记的设备上限（2026-11-28 用户拍板：最多 3 台） */
+export const REMOTE_MAX_PAIRED_DEVICES = 3;
+
+/** 配对准入判定（批准弹窗与写入面共用的唯一判据） */
+export type PairingAdmission =
+  /** 新设备且未满额：可批准 */
+  | 'new'
+  /** 该指纹已在表里：视为重新配对，不占新名额 */
+  | 'repair'
+  /** 已满额且是新设备：必须先撤销一台 */
+  | 'full';
+
+/**
+ * 判断一台待配对设备能否写入设备表
+ *
+ * 为什么收成纯函数：批准弹窗（给用户看后果）与 `registerDevice`（真正写表）必须同一份判据，
+ * 否则会出现「弹窗说可以、写入却拒绝」或反之的双头语义，且没有任何测试会红。
+ *
+ * @param existing    当前设备表快照
+ * @param fingerprint 待配对设备指纹（大小写不敏感）
+ * @returns 准入结论（见 {@link PairingAdmission}）
+ */
+export function pairingAdmission(
+  existing: readonly RemoteDeviceRecord[],
+  fingerprint: string,
+): PairingAdmission {
+  const target = normalizeFingerprint(fingerprint);
+  if (existing.some((record) => record.fingerprint === target)) return 'repair';
+  return existing.length >= REMOTE_MAX_PAIRED_DEVICES ? 'full' : 'new';
 }

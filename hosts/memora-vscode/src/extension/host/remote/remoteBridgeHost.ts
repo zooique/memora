@@ -37,7 +37,12 @@ import { remotePhaseOf } from './remoteCommandPolicy.js';
 import { RemoteBridge, type RemoteBridgePorts } from './remoteBridge.js';
 // 只引类型：运行期的证书 / TLS 模块必须在 LAN 分支内动态 import（见文件头「惰性加载」）
 import type { RemoteIdentity } from './remoteIdentity.js';
-import { RemoteDeviceStore, type RemoteDeviceRecord } from './remoteDevices.js';
+import {
+  pairingAdmission,
+  REMOTE_MAX_PAIRED_DEVICES,
+  RemoteDeviceStore,
+  type RemoteDeviceRecord,
+} from './remoteDevices.js';
 import { RemotePairing, type PairingChallenge } from './remotePairing.js';
 import { RemoteFailureLimiter } from './remoteRateLimiter.js';
 import { RemoteAuditLog, type RemoteAuditEvent, type RemoteAuditSink } from './remoteAudit.js';
@@ -118,20 +123,24 @@ export interface RemoteLanHandle {
   /** PC 身份（配对口令提示里的指纹短码） */
   identity: RemoteIdentity;
   /**
-   * 一次性客户端身份（LAN 启动时铸造；随配对连接串交给手机，PC 端不持久化）
+   * 与当前口令**同一代**的客户端身份（一次配对码 = 一把身份）
    *
-   * 为什么放在句柄而不是每次构造连接串时现铸：连接串会被页面反复读取（刷新 / 重推），
-   * 现铸会让同一次配对窗口内出现多份「客户端身份」，手机存到哪份全凭抓到哪一次读取。
+   * 为什么要绑定口令代号：每台手机必须拿到**独立**的客户端证书，否则三台手机共用
+   * 一个指纹，设备表只有一行、撤销一台等于全断。生成新口令时同时铸新身份，
+   * 用户「给哪台手机复制哪条串」即决定哪台设备占哪个名额。
+   *
+   * 读取方（`remotePairingLink`）必须校验 `challengeCode` 与当前口令一致：
+   * 换代瞬间（异步铸证尚未完成）宁可暂时不产出连接串，也不能给出「新口令 + 旧身份」的错配组合。
    */
-  clientIdentity: RemoteIdentity;
+  pairingIdentity: RemotePairingIdentity;
   /** 一次性口令状态机（重新生成口令时复用同一实例） */
   pairing: RemotePairing;
   /** 主局域网地址（展示用；取不到时为 `0.0.0.0`） */
   address: string;
   /** 实际监听端口 */
   port: number;
-  /** 重新生成配对口令（覆盖旧口令并重置尝试计数，TTL 从头算；不换客户端身份） */
-  regeneratePairingCode: () => PairingChallenge;
+  /** 重新生成配对口令 + 同批铸造该代的客户端身份（覆盖旧口令、重置尝试计数、TTL 从头算） */
+  regeneratePairingCode: () => Promise<PairingChallenge>;
   /** 断开该设备的全部在线连接（撤销配对时用；返回断开数） */
   disconnectDevice: (fingerprint: string) => number;
   /** 当前已连接设备的指纹（设置页「在线」真源；回环档不适用） */
@@ -140,6 +149,14 @@ export interface RemoteLanHandle {
   audit: (event: Omit<RemoteAuditEvent, 'at'>) => void;
   /** 输出通道日志（与桥共用同一个日志口） */
   log: (message: string) => void;
+}
+
+/** 一代配对材料：口令代号 ↔ 客户端身份（同代才可组合成连接串） */
+export interface RemotePairingIdentity {
+  /** 该身份绑定的口令（与 `RemotePairing.current().code` 相等才有效） */
+  challengeCode: string;
+  /** 该代客户端身份（随配对连接串交给手机，PC 端不持久化） */
+  identity: RemoteIdentity;
 }
 
 /** 当前 LAN 句柄（仅 LAN 启动成功后赋值；deactivate 时由订阅清理） */
@@ -349,7 +366,7 @@ async function startLanBridge(
       },
       log,
     );
-    // ①b 一次性客户端身份：同一铸造面，交给手机后永久复用（PC 端不落盘）
+    // ①b 第一代客户端身份：与启动时生成的口令配对（同代才可组合成连接串）
     const clientIdentity: RemoteIdentity = await createRemoteIdentity();
     // ② 设备表：globalState（只存指纹 / 档位 / 时间，不含密钥）
     const devices = new RemoteDeviceStore(context.globalState, log);
@@ -378,15 +395,6 @@ async function startLanBridge(
     });
     // 供 catch 分支关闭半启动的 server（正常路径由 bridge.stop() 关闭）
     secure = secureServer;
-    /**
-     * 桥实例前向引用（可变持有对象，构造后回填）
-     *
-     * `registerDevice` 在「换绑」时需要断开旧设备连接，而连接面在桥实例上；
-     * 桥本身的构造又要先拿到 ports/security（其中含 registerDevice）。
-     * 用前向引用解开这个环，比把断开动作搬进设备表（越层）干净。
-     * 用持有对象而非 `let`：赋值只发生一次，但必须早于构造存在（`let` 会被 prefer-const 判红）。
-     */
-    const bridgeHolder: { current?: RemoteBridge } = {};
     const bridge = new RemoteBridge(createRemoteBridgePorts(deps), {
       pcId: `memora-lan-${identity.shortFp}`,
       port: resolvePort(),
@@ -396,32 +404,21 @@ async function startLanBridge(
         fingerprintOf: (socket) => secureServer.fingerprintOf(socket),
         tierOf: (fingerprint) => devices.get(fingerprint)?.tier,
         verifyPasscode: (code) => pairing.verify(code),
-        // 批准弹窗必须明写「会撤销现有设备」：单设备策略是用户可见的后果，不能静默替换
+        // 批准弹窗要如实说出「这是第几台 / 是否已满额」——上限是用户可见的后果，不能静默拒绝
         requestApproval: (info) => requestDeviceApproval(info, devices.list()),
         registerDevice: (info) => {
-          // 单设备策略：换绑走一次写收敛的 `replaceWith`（表里不会出现两台同时有效）
+          // 写入面与批准弹窗共用同一份准入判据（`pairingAdmission`）；走到这里已通过批准，
+          // 因此这里只做「新设备默认 send / 重新配对保留原档位」的落地，不重复弹窗。
+          const existing = devices.get(info.fingerprint);
           void devices
-            .replaceWith({
+            .upsert({
               fingerprint: info.fingerprint,
               shortFp: info.shortFp,
               name: info.name,
-              // 配对默认最小权限（§5.9：observe），提档需 PC 端另行勾选（不在本切片）
-              tier: 'observe',
-              pairedAt: Date.now(),
-            })
-            .then((removed) => {
-              // 被换下的旧设备必须连读通道一起终止（与撤销语义同源，§5.9）
-              for (const old of removed) {
-                const closed = bridgeHolder.current?.disconnectDevice(old.fingerprint) ?? 0;
-                void auditLog.record({
-                  event: 'device_replaced',
-                  deviceFp: old.fingerprint,
-                  detail: `${old.shortFp}→${info.shortFp}（断开 ${closed} 条连接）`,
-                });
-                log(
-                  `[REMOTE-BRIDGE] 单设备策略：已换下 ${old.name}（${old.shortFp}），断开 ${closed} 条连接`,
-                );
-              }
+              // 2026-11-28 拍板：配对默认「可发送」（手机端要能输入提示词）；提档 approve 仍需 PC 勾选
+              tier: existing?.tier ?? 'send',
+              // 重新配对保留首次配对时刻（它是「何时登记的」事实，不该被重连改写）
+              pairedAt: existing?.pairedAt ?? Date.now(),
             })
             .catch((err: unknown) => log(`[REMOTE-BRIDGE] 写设备表失败: ${String(err)}`));
         },
@@ -435,14 +432,18 @@ async function startLanBridge(
       },
       log,
     });
-    // 构造完成即回填前向引用：registerDevice 的换绑断开依赖它（首次 hello 前必然已就绪）
-    bridgeHolder.current = bridge;
     const started = await bridge.start();
     // 运行时登记（两种档位共用一份）：设置页据此显示「局域网 · 端口」
     const runtime = { mode: 'lan' as const, port: started.port };
     remoteBridgeRuntime = runtime;
     // ⑥ 监听成功后才生成口令并展示：TTL 从「用户看到」开始算
     const challenge = pairing.start();
+    // 口令与身份必须同代：把启动时铸好的第一把身份绑定到刚生成的口令上。
+    // 之后每次「新配对码」都走 regeneratePairingCode（换口令 + 换身份，一台手机一把）。
+    const pairingIdentity: RemotePairingIdentity = {
+      challengeCode: challenge.code,
+      identity: clientIdentity,
+    };
     const addresses = listLanAddresses();
     const where = addresses.length > 0 ? addresses.join(' / ') : '（未找到局域网地址）';
     // 监听成功 / 停止都是安全事实（§16.2 G5）：地址 + 端口与用户看到的提示同源
@@ -451,11 +452,18 @@ async function startLanBridge(
     remoteLanHandle = {
       devices,
       identity,
-      clientIdentity,
+      pairingIdentity,
       pairing,
       address: addresses[0] ?? '0.0.0.0',
       port: started.port,
-      regeneratePairingCode: () => pairing.start(),
+      // 换代：换口令 + 铸新身份（顺序上先换口令；铸证完成前 pairingMaterialOfHandle 会因
+      // challengeCode 不匹配而不产出连接串，宁可短暂隐藏也不给错配组合）
+      regeneratePairingCode: async () => {
+        const nextChallenge = pairing.start();
+        pairingIdentity.identity = await createRemoteIdentity();
+        pairingIdentity.challengeCode = nextChallenge.code;
+        return nextChallenge;
+      },
       disconnectDevice: (fingerprint) => bridge.disconnectDevice(fingerprint),
       listConnectedFingerprints: () => bridge.connectedFingerprints(),
       audit: (event) => {
@@ -493,11 +501,11 @@ async function startLanBridge(
  *
  * 拒绝 / 关闭一律视为拒绝（fail-closed）；不阻塞 VS Code 其他窗口。
  *
- * 单设备策略必须在弹窗里**明写后果**：批准新设备会撤销现有设备（并断开其在线连接）。
- * 把「换绑」藏在批准之后 = 用户以为只是新增一台，实际另一台被踢下线。
+ * 上限必须在弹窗里如实说出：已登记 {@link REMOTE_MAX_PAIRED_DEVICES} 台时**直接拒绝**
+ * （先撤销一台再来），不自动挤掉任何设备——静默替换会让用户以为只是新增一台。
  *
  * @param info     待批准设备（指纹短码 + 展示名 + 来源 IP）
- * @param existing 当前设备表快照（用于如实列出将被撤销的设备）
+ * @param existing 当前设备表快照（用于判定名额与如实展示「这是第几台」）
  */
 async function requestDeviceApproval(
   info: {
@@ -508,19 +516,25 @@ async function requestDeviceApproval(
   },
   existing: readonly RemoteDeviceRecord[],
 ): Promise<boolean> {
+  const verdict = pairingAdmission(existing, info.fingerprint);
+  if (verdict === 'full') {
+    // 满额不是错误操作，是资源约束：用信息提示说清「先撤销哪一步」，不弹确认框
+    void vscode.window.showWarningMessage(
+      `这台手机无法配对：已登记 ${REMOTE_MAX_PAIRED_DEVICES} 台设备（上限）。` +
+        '请先在「设置 → 远程控制」或「Memora 远程设备」里撤销一台，再重新生成配对码。',
+    );
+    return false;
+  }
   const from = info.ip ? `，来自 ${info.ip}` : '';
-  // 同一设备重复配对（例如重装 App 后导入新连接串但指纹恰好相同）不算换绑，不必吓用户
-  const replaced = existing.filter((device) => device.fingerprint !== info.fingerprint);
-  const replaceNote =
-    replaced.length === 0
-      ? ''
-      : `\n同一时间只允许一台设备：批准后将撤销现有设备 ${replaced
-          .map((device) => `「${device.name}」(${device.shortFp})`)
-          .join('、')}，并断开它的连接。`;
+  // 名额口径：已登记 + 1（repair 不占新名额，如实写「重新配对」）
+  const quota =
+    verdict === 'repair'
+      ? '这台设备此前已登记（重新配对，不占新名额）。'
+      : `这将是第 ${existing.length + 1} 台设备（上限 ${REMOTE_MAX_PAIRED_DEVICES} 台）。`;
   // 模态确认必须走唯一入口（系统自带 Cancel 解析为 undefined ⇒ fail-closed）
   return confirmModal({
     message: `手机「${info.name}」请求配对（指纹 ${info.shortFp}${from}）`,
-    detail: `允许后该设备获得只读权限（observe），之后可免口令重连。${replaceNote}取消或关闭窗口视为拒绝。`,
+    detail: `允许后该设备可发送提示词（send 档），之后免口令重连。${quota}取消或关闭窗口视为拒绝。`,
     confirmLabel: '允许',
   });
 }
@@ -582,7 +596,7 @@ export async function remoteDevicesCommand(): Promise<void> {
   });
   if (!picked) return;
   if (picked.selection.kind === 'regenerate') {
-    regenerateLanPairingCode(handle);
+    await regenerateLanPairingCode(handle);
     return;
   }
   // 设备可能在菜单弹出期间被撤销：以设备表实时读取为准
@@ -603,12 +617,23 @@ export async function remoteDevicesCommand(): Promise<void> {
  * 重新生成配对口令并展示（口令 + PC 指纹短码 + 监听地址:端口）
  *
  * TTL 从「用户看到」开始算（`pairing.start()` 覆盖旧口令并重置尝试计数）；
- * 同时写输出通道日志与 `pairing_code_regenerated` 审计，便于事后回查谁在何时重发过口令。
+ * **同时铸造这一代的客户端身份**（一次配对码 = 一把身份 ⇒ 每台手机独立指纹、独立撤销）。
+ * 写 `pairing_code_regenerated` 审计，便于事后回查谁在何时重发过口令。
+ *
+ * 异步原因：身份铸造需要生成 ECDSA 证书；调用方（命令 / 设置页动作）均为异步上下文。
+ * 铸证失败必须如实报错，不能只换口令而沿用旧身份——那会让「新码配旧机」再次共用指纹。
  *
  * @param handle LAN 运行时句柄
  */
-export function regenerateLanPairingCode(handle: RemoteLanHandle): void {
-  const challenge = handle.regeneratePairingCode();
+export async function regenerateLanPairingCode(handle: RemoteLanHandle): Promise<void> {
+  let challenge: PairingChallenge;
+  try {
+    challenge = await handle.regeneratePairingCode();
+  } catch (err) {
+    handle.log(`[REMOTE-BRIDGE] 重新生成配对码失败: ${String(err)}`);
+    void vscode.window.showWarningMessage(`生成新的配对码失败：${String(err)}`);
+    return;
+  }
   const where = `${handle.address}:${handle.port}`;
   handle.audit({ event: 'pairing_code_regenerated' });
   handle.log(

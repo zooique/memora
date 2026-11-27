@@ -162,7 +162,7 @@ export async function applyRemoteSettingsAction(
     };
   }
   if (payload.action === 'regenerate') {
-    regenerateLanPairingCode(handle);
+    await regenerateLanPairingCode(handle);
     return { ok: true };
   }
   if (payload.action === 'copy_pairing') {
