@@ -32,6 +32,7 @@ import type { HostSessionStore } from '../sessionStore.js';
 import { buildSessionListMessage } from '../../../webview/helpers/sessionList.js';
 import type { WebviewToExtensionMessage } from '../../../shared/protocol.js';
 import type { SessionViewProjection } from '../../../shared/sessionProjection.js';
+import type { PendingLiveRound } from '../../../shared/turnProjection.js';
 import { remotePhaseOf } from './remoteCommandPolicy.js';
 import { RemoteBridge, type RemoteBridgePorts } from './remoteBridge.js';
 // 只引类型：运行期的证书 / TLS 模块必须在 LAN 分支内动态 import（见文件头「惰性加载」）
@@ -55,7 +56,15 @@ import { confirmModal } from '../ui/confirmModal.js';
 /** 桥需要的面板窄接口（只列本适配用到的三个方法，防止顺手把整个面板传进桥） */
 export interface RemotePanelPort {
   /** 任意 sid 的投影（无副作用：不写 `_turnStates`、不投递、不盖章附件 URL） */
-  projectSession: (sessionId: string) => SessionViewProjection;
+  projectSession: (sessionId: string, live?: PendingLiveRound | undefined) => SessionViewProjection;
+  /**
+   * 流中未落盘的 live 轮（只读；`buildLiveTurnFromBuffer` 的薄委托，§6.4.1）
+   *
+   * 桥的 snapshot 必须把本口结果传给 `projectSession(sid, live)`：缺了它快照只有落盘
+   * history，流中正文 / 过程事件在手机上整段消失。取数真源在 chatPanel 的纯函数，
+   * 本口只转交，不复制缓冲拼装逻辑（禁第二真源）。
+   */
+  buildLiveTurnFromBuffer: (sessionId: string) => PendingLiveRound | undefined;
   /** 远程命令投递（与 webview 落到同一个 `handleInput`；**参数顺序照抄面板**，不重排） */
   handleInput: (
     msg: Extract<WebviewToExtensionMessage, { type: 'input' }>,
@@ -158,10 +167,13 @@ export function createRemoteBridgePorts(deps: RemoteBridgeHostDeps): RemoteBridg
     // 远程除 confirm_answer 外一律拒绝（confirm_answer 本体仍是 M3 落点，本切片未接入）。
     phaseOf: (sessionId) =>
       remotePhaseOf(
-        panel.projectSession(sessionId).state,
+        // live 并入投影：流中首帧前 state 就该是 running，不能等落盘（§6.4.1）
+        panel.projectSession(sessionId, panel.buildLiveTurnFromBuffer(sessionId)).state,
         panel.confirmPendingCount(sessionId) > 0,
       ),
-    snapshot: (sessionId) => panel.projectSession(sessionId),
+    // 快照带 live：流中正文 / 过程事件在手机上可见（§6.4.1 唯一取数口）
+    snapshot: (sessionId) =>
+      panel.projectSession(sessionId, panel.buildLiveTurnFromBuffer(sessionId)),
     // 投递：与 webview 同一个入口；失败只记日志（投递可靠性不靠桥重试，靠手机重拉快照）
     deliverInput: (sessionId, input) => {
       void panel.handleInput(input, sessionId).catch((err: unknown) => {

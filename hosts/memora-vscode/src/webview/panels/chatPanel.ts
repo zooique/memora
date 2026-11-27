@@ -2802,7 +2802,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * userMessage 取 seed（chat 开新轮）；resume 续跑轮缺省，由 mergeLiveRound 从落盘历史补，
    * 两边都拿不到则整轮不并入（半残数据不投，与 postTurnUpdate 同一取舍）。
    */
-  private buildLiveTurnFromBuffer(
+  /** 只读口：远程桥据此把流中未落盘内容并入快照投影（§6.4.1 live 取数） */
+  public buildLiveTurnFromBuffer(
     sessionId: string = this._currentSessionId,
   ): PendingLiveRound | undefined {
     return buildLiveTurn(this.runtimeFor(sessionId), this._eventLogRoundStore, sessionId);

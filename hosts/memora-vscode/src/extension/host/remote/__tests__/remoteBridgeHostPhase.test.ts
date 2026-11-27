@@ -31,12 +31,14 @@ const IDLE: TurnState = { phase: 'idle' };
 
 function makePanel(state: TurnState, pending: number): RemotePanelPort {
   return {
-    projectSession: () => ({
-      state,
-      rounds: [],
-      pendingQueue: [],
-      // 只取 phaseOf 所需的三键；其余字段本用例不消费
-    }) as ReturnType<RemotePanelPort['projectSession']>,
+    projectSession: () =>
+      ({
+        state,
+        rounds: [],
+        pendingQueue: [],
+        // 只取 phaseOf 所需的三键；其余字段本用例不消费
+      }) as ReturnType<RemotePanelPort['projectSession']>,
+    buildLiveTurnFromBuffer: () => undefined,
     handleInput: async () => undefined,
     getAssistantSessionId: () => undefined,
     confirmPendingCount: () => pending,
@@ -78,5 +80,51 @@ describe('remoteBridgeHost · phaseOf 的 confirmPending 接真（REMOTE-LAN-1�
     });
     expect(ports.phaseOf('busy')).toBe('confirm-pending');
     expect(ports.phaseOf('free')).toBe('running');
+  });
+});
+
+describe('remoteBridgeHost · snapshot 带 live 投影（REMOTE-RICH-DELTA-1①）', () => {
+  const LIVE = {
+    roundId: 'r-live',
+    streamingText: '流中正文',
+    processEvents: [{ type: 'thinking', seq: 1, ts: 't', payload: { phase: 'thought' } }],
+  } as never;
+
+  it('snapshot / phaseOf 都把 buildLiveTurnFromBuffer 的 live 轮传给 projectSession', () => {
+    const seen: Array<unknown> = [];
+    const panel: RemotePanelPort = {
+      ...makePanel(RUNNING, 0),
+      projectSession: (_sid, live) => {
+        seen.push(live);
+        return { state: RUNNING, rounds: [], pendingQueue: [] } as never;
+      },
+      buildLiveTurnFromBuffer: (sid: string) => (sid === 's1' ? LIVE : undefined),
+    };
+    const ports = createRemoteBridgePorts({
+      panel,
+      store: { listSessions: () => ['s1'] } as never,
+      log: () => undefined,
+    });
+    ports.snapshot('s1');
+    ports.phaseOf('s1');
+    expect(seen).toEqual([LIVE, LIVE]);
+  });
+
+  it('无 live（未开流 / 缓冲归属别的会话）时传 undefined，投影零变化', () => {
+    const seen: Array<unknown> = [];
+    const panel: RemotePanelPort = {
+      ...makePanel(IDLE, 0),
+      projectSession: (_sid, live) => {
+        seen.push(live);
+        return { state: IDLE, rounds: [], pendingQueue: [] } as never;
+      },
+    };
+    const ports = createRemoteBridgePorts({
+      panel,
+      store: { listSessions: () => ['s1'] } as never,
+      log: () => undefined,
+    });
+    ports.snapshot('s1');
+    expect(seen).toEqual([undefined]);
   });
 });
