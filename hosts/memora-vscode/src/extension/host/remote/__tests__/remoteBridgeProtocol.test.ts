@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { REMOTE_COMMANDS } from '../remoteCommandPolicy.js';
 import {
   BRIDGE_ENVELOPE_TYPES,
+  buildConfirmAttentionFrame,
   parseBridgeFrame,
   serializeBridgeFrame,
 } from '../remoteBridgeProtocol.js';
@@ -120,5 +121,26 @@ describe('remoteBridgeProtocol — 下行序列化', () => {
       limits: { maxFrame: 1024, credit: 0 },
     });
     expect(JSON.parse(raw)).not.toHaveProperty('assistantSid');
+  });
+
+  it('attention confirm 带 requestId 定址、label 可选；空 sid / requestId 构造即抛', () => {
+    const frame = JSON.parse(
+      serializeBridgeFrame(buildConfirmAttentionFrame('s-1', 'req-7', 'write_file：a.txt')),
+    ) as Record<string, unknown>;
+    // 独立手写期望（不复用实现的字段名常量）
+    expect(frame).toEqual({
+      t: 'attention',
+      ch: 'events',
+      sid: 's-1',
+      kind: 'confirm',
+      requestId: 'req-7',
+      label: 'write_file：a.txt',
+    });
+    const noLabel = JSON.parse(
+      serializeBridgeFrame(buildConfirmAttentionFrame('s-1', 'req-7')),
+    ) as Record<string, unknown>;
+    expect(noLabel).not.toHaveProperty('label');
+    expect(() => buildConfirmAttentionFrame('', 'req-7')).toThrow();
+    expect(() => buildConfirmAttentionFrame('s-1', '')).toThrow();
   });
 });

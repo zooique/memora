@@ -34,9 +34,12 @@ const codeOf = (src: string) =>
 describe('chatPanel.ts：三个触发点接线', () => {
   const src = read('src', 'webview', 'panels', 'chatPanel.ts');
 
-  it('confirm：onConfirmShown 注入确认协调器（只取 requestId，label 留在协调器）', () => {
+  it('confirm：onConfirmShown 注入确认协调器（本地提醒 + M3 远程转发两件事都在）', () => {
+    // 本地提醒只取 requestId（label 留在协调器）；远程桥转发带 sid + requestId（M3）。
+    // 两个契约串缺一即红：漏本地 = 提醒不响，漏远程 = 手机拿不到 requestId（假闭环）。
+    expect(src).toContain('this._attention.onConfirmShown({ requestId: info.requestId })');
     expect(src).toContain(
-      'onConfirmShown: (info) => this._attention.onConfirmShown({ requestId: info.requestId })',
+      'this.onConfirmAttention?.(info.sessionId, info.requestId, info.label)',
     );
   });
 

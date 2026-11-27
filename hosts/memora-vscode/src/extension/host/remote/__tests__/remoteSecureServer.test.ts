@@ -281,6 +281,7 @@ describe('RemoteSecureServer + RemoteBridge — LAN 组合（真 TLS）', () => 
       phaseOf: () => 'idle',
       snapshot: () => ({ state: { phase: 'idle' } as TurnState, rounds: [], pendingQueue: [] }),
       deliverInput: () => undefined,
+      answerConfirm: () => true,
     };
     const security: RemoteBridgeSecurity = {
       fingerprintOf: (socket) => secure.fingerprintOf(socket),

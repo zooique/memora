@@ -733,8 +733,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * （见 docs/方案-文件改动diff可视化-20260926.md §3.2）。未注入时功能静默关闭。
    */
   private _fileChangeSink: FileChangeSink | undefined;
-  /** 会话投影变化的外部通知口（远程桥订阅用；未接线时为 undefined ⇒ 零开销，见 remoteBridge.notifyTurnUpdate） */
-  public onTurnProjected?: (sessionId: string) => void;
+  /** 外部通知口（远程桥订阅；未接线 = 零开销）：会话投影变化 / 审批提醒（sid + requestId → attention） */
+  public onTurnProjected?: (sessionId: string) => void; public onConfirmAttention?: (sessionId: string, requestId: string, label: string) => void;
   /** 脚本类工具（opaque 写）执行前 workspace 文本快照：键 = toolCallId → 路径→内容 */
   private readonly scriptSnapshots = new Map<string, Map<string, string> | null>();
   /** 未确认改动路径清单的取值函数（由 extension 注入；真源 = 宿主 FileChangeView） */
@@ -790,7 +790,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     getAgent: () => this._agent,
     // 带会话 id ⇒ 按该会话路由（助手窗绑定的会话也能上屏审批卡）
     post: (msg, sessionId) => (sessionId ? this.postToSession(sessionId, msg) : this.post(msg)),
-    onConfirmShown: (info) => this._attention.onConfirmShown({ requestId: info.requestId }),
+    onConfirmShown: (info) => { this.onConfirmAttention?.(info.sessionId, info.requestId, info.label); this._attention.onConfirmShown({ requestId: info.requestId }); },
     // 待处理确认数变化（含后台会话入队）⇒ 重算列表标识与入口角标
     onPendingChanged: () => this.refreshSessionActivity(),
     // 确认代批判据按轮读 `Round.origin`（HOSTED-CONFIRM-SOFT-1）：只从轮存储提供按 id 读口，
@@ -1028,9 +1028,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * 只回答「指针指向谁」；是否仍存在由消费方用 sessionStore 现读校验（模块头边界）。
    */
-  public getAssistantSessionId(): string | undefined {
-    return this.sessionModes.listManagedSessionIds()[0];
-  }
+  public getAssistantSessionId = (): string | undefined => this.sessionModes.listManagedSessionIds()[0];
+  // 两个远程桥薄委托同行（守 2200 有效行闸门）：裁决真源都在 ConfirmCoordinator，panel 只暴露事实/投递，不自己裁决。
+  public confirmPendingCount = (sessionId: string): number => this._confirm.pendingCount(sessionId);
+  public answerConfirm = (sessionId: string, requestId: string, approved: boolean): boolean => this._confirm.answerFor(sessionId, requestId, approved);
 
   /**
    * 托管页上行消息入口：与侧栏同一条判据链，但**输入 / 会话操作的目标是助手会话**。

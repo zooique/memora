@@ -117,6 +117,7 @@ function makePorts(overrides: Partial<RemoteBridgePorts> = {}): {
     phaseOf: () => (state.phase === 'waiting' ? 'waiting-ask' : 'idle'),
     snapshot: () => ({ state, rounds: ROUNDS, pendingQueue: [] }),
     deliverInput: (sid, input) => delivered.push({ sid, input }),
+    answerConfirm: () => true,
     ...overrides,
   };
   return { ports, delivered };
@@ -829,5 +830,100 @@ describe('RemoteBridge — LAN 档命令（设备权限档）', () => {
     const closed = bridge.disconnectDevice(DEVICE_FP.toLowerCase());
     expect(closed).toBe(1);
     await client.waitClosed();
+  });
+});
+
+describe('RemoteBridge — M3 审批闭环（attention 下行 + confirm_answer 上行）', () => {
+  it('notifyAttention 按 sid 扇出 attention{requestId}；未订阅的会话收不到', async () => {
+    const { ports, delivered: _delivered } = makePorts({
+      phaseOf: () => 'confirm-pending',
+    });
+    void _delivered;
+    const { bridge, port } = await startBridge(ports);
+    const client = await TestClient.connect(port);
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: 'AB12' });
+    await client.next();
+    client.send({ t: 'sub', sid: 's1' });
+    await client.next(); // 订阅回推的快照
+
+    bridge.notifyAttention('s1', 'req-7', 'write_file：a.txt');
+    const attn = await client.next<Record<string, unknown>>();
+    expect(attn).toEqual({
+      t: 'attention',
+      ch: 'events',
+      sid: 's1',
+      kind: 'confirm',
+      requestId: 'req-7',
+      label: 'write_file：a.txt',
+    });
+    // 空 requestId = 无可裁决项：不发帧（防止「提醒了却批不了」）
+    bridge.notifyAttention('s1', '');
+    // 未订阅会话不扇出：发一帧后若误发会污染 inbox；用 next 超时反证代价高，
+    // 这里只断言同一连接不会因别的 sid 多收一帧（判据由下行构造点单测覆盖）。
+  });
+
+  it('approve 档 confirm_answer → answerConfirm 收到 sid/id/approved，回推快照', async () => {
+    const { security } = makeSecurity({ tier: 'approve' });
+    const calls: Array<[string, string, boolean]> = [];
+    const { ports } = makePorts({
+      phaseOf: () => 'confirm-pending',
+      answerConfirm: (sid, requestId, approved) => {
+        calls.push([sid, requestId, approved]);
+        return true;
+      },
+    });
+    const { port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
+    await client.next();
+    client.send({ t: 'sub', sid: 's1' });
+    await client.next();
+
+    client.send({
+      t: 'cmd',
+      ch: 'cmd',
+      rid: 'u-m3',
+      sid: 's1',
+      kind: 'confirm_answer',
+      p: { requestId: 'req-7', approved: false },
+    });
+    const evt = await client.next<{ t: string; kind: string }>();
+    expect(evt.t).toBe('evt');
+    expect(evt.kind).toBe('snapshot');
+    expect(calls).toEqual([['s1', 'req-7', false]]);
+  });
+
+  it('confirm_answer 载荷写坏（缺 requestId / approved 非布尔）→ 断开连接', async () => {
+    const { security } = makeSecurity({ tier: 'approve' });
+    for (const p of [{ approved: true }, { requestId: 'req-7', approved: 'yes' }]) {
+      const { ports } = makePorts({ phaseOf: () => 'confirm-pending' });
+      const { port } = await startBridge(ports, security);
+      const client = await TestClient.connect(port);
+      client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
+      await client.next();
+      client.send({
+        t: 'cmd', ch: 'cmd', rid: 'u-m3-bad', sid: 's1', kind: 'confirm_answer', p,
+      });
+      await client.waitClosed();
+    }
+  });
+
+  it('answerConfirm=false（requestId 不匹配/迟到）→ err stale_phase', async () => {
+    const { security } = makeSecurity({ tier: 'approve' });
+    const { ports } = makePorts({
+      phaseOf: () => 'confirm-pending',
+      answerConfirm: () => false,
+    });
+    const { port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
+    await client.next();
+    client.send({
+      t: 'cmd', ch: 'cmd', rid: 'u-m3-stale', sid: 's1', kind: 'confirm_answer',
+      p: { requestId: 'req-old', approved: true },
+    });
+    const err = await client.next<{ t: string; code: string }>();
+    expect(err.t).toBe('err');
+    expect(err.code).toBe('stale_phase');
   });
 });

@@ -51,10 +51,13 @@ export interface ConfirmDeps {
    * 同一张卡可能触发两次（后台入队一次、切入补推一次），**提醒层按 requestId 去重**。
    *
    * **可选**：不注入 = 零行为（既有测试与其它装配点无需改动）。
-   * 载荷只给 `requestId` + `label`（`工具：文件名` 简写，与决策记录同一取法）：
-   * 通知里**不得**承载 diff 全文——`info.description` 是全文级内容，进提示面即撑爆且泄露。
+   * 载荷给 `sessionId` + `requestId` + `label`（`工具：文件名` 简写，与决策记录同一取法）：
+   *   - `sessionId` 供远程桥按会话推 `attention` 帧（M3）——没有它就无法定址，
+   *     手机拿不到 requestId 的提醒 = 假闭环；
+   *   - 通知里**不得**承载 diff 全文——`info.description` 是全文级内容，进提示面即撑爆且泄露。
+   * 本地提醒消费方（attentionNotice）只取 requestId，多出的字段不读、不影响。
    */
-  onConfirmShown?: (info: { requestId: string; label: string }) => void;
+  onConfirmShown?: (info: { sessionId: string; requestId: string; label: string }) => void;
   /**
    * 某会话的「待处理确认」数量变化（入队 / 裁决 / 超时）
    *
@@ -365,7 +368,7 @@ export class ConfirmCoordinator {
       // 提醒，确认侧曾是缺口）。放在 onPendingChanged 之后：列表标识 / 入口角标先亮，提醒才有
       // 承接面。与 `_show` 共用同一钩子、同一 requestId —— 提醒层按 `confirm:${requestId}` 去重，
       // 切到该会话补推同一张卡时不会再响第二声。
-      this._deps.onConfirmShown?.({ requestId: entry.requestId, label: entry.logLabel });
+      this._deps.onConfirmShown?.({ sessionId, requestId: entry.requestId, label: entry.logLabel });
     }
   }
 
@@ -430,7 +433,7 @@ export class ConfirmCoordinator {
     }
     // 交互提醒钩子（可选）：卡已推出 ⇒ 通知不在面板前的用户。放在 post 之后：
     // 只有卡真的发出去了，提醒才有承接面（先提醒后发卡 = 用户回来找不到卡）。
-    this._deps.onConfirmShown?.({ requestId, label: entry.logLabel });
+    this._deps.onConfirmShown?.({ sessionId, requestId, label: entry.logLabel });
   }
 
   /**

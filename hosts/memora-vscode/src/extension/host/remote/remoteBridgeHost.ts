@@ -63,6 +63,20 @@ export interface RemotePanelPort {
   ) => Promise<void>;
   /** 助手会话 id（工作区指针；宿主的唯一身份来源，桥不推断） */
   getAssistantSessionId: () => string | undefined;
+  /**
+   * 该会话未裁决的执行类审批数（`ConfirmCoordinator.pendingCount` 的薄委托）
+   *
+   * 为什么必须经面板窄接口而不是桥直接 import 协调器：裁决真源在 `ConfirmCoordinator`，
+   * 桥只问「有没有待裁决项」这一事实，不持有队列、不碰 `answer`（那是 M3 落点）。
+   */
+  confirmPendingCount: (sessionId: string) => number;
+  /**
+   * 按 sid + requestId 裁决执行类审批（薄委托 `ConfirmCoordinator.answerFor`）
+   *
+   * 桥拿它做 `confirm_answer` 的落点：裁决真源仍在协调器（复用 `_logDecision`/`_settle`），
+   * 本端口只转交事实，不自己 resolve Promise。
+   */
+  answerConfirm: (sessionId: string, requestId: string, approved: boolean) => boolean;
 }
 
 /** 适配所需的宿主依赖 */
@@ -139,8 +153,14 @@ export function createRemoteBridgePorts(deps: RemoteBridgeHostDeps): RemoteBridg
     },
     // 定址：只认存储里的会话 id（草稿态无 id，天然落空 ⇒ no_session，§6.6 断路器）
     hasSession: (sessionId) => store.listSessions().includes(sessionId),
-    // 相位：素材来自实时投影（不是 `_turnStates` —— 那份只在有视图时更新）
-    phaseOf: (sessionId) => remotePhaseOf(panel.projectSession(sessionId).state, false),
+    // 相位：素材来自实时投影（不是 `_turnStates` —— 那份只在有视图时更新）；
+    // confirmPending 接真源：待裁决期间即使 TurnState=running 也折算为 confirm-pending，
+    // 远程除 confirm_answer 外一律拒绝（confirm_answer 本体仍是 M3 落点，本切片未接入）。
+    phaseOf: (sessionId) =>
+      remotePhaseOf(
+        panel.projectSession(sessionId).state,
+        panel.confirmPendingCount(sessionId) > 0,
+      ),
     snapshot: (sessionId) => panel.projectSession(sessionId),
     // 投递：与 webview 同一个入口；失败只记日志（投递可靠性不靠桥重试，靠手机重拉快照）
     deliverInput: (sessionId, input) => {
@@ -148,6 +168,9 @@ export function createRemoteBridgePorts(deps: RemoteBridgeHostDeps): RemoteBridg
         deps.log(`[REMOTE-BRIDGE] 输入投递失败 sid=${sessionId}: ${String(err)}`);
       });
     },
+    // 审批裁决：转交确认协调器的既有 answerFor（不自己 resolve、不另建裁决链）
+    answerConfirm: (sessionId, requestId, approved) =>
+      panel.answerConfirm(sessionId, requestId, approved),
   };
 }
 

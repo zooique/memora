@@ -65,6 +65,10 @@ export type BridgeChannel = 'ctl' | 'events' | 'cmd' | 'blob';
 /** 业务下行事件的 `kind`（§6.4：先快照、后增量） */
 export type BridgeEventKind = 'snapshot' | 'delta';
 
+// `attention` 的 kind 取值（§6.5 四种）直接写在下方判别联合里，不另建导出类型：
+// 宿主另有 `attentionNotice.AttentionKind`（confirm|ask|settled，本地提醒域），
+// 两份同名类型取值不同，导出第二份会诱导调用点混用——判别联合字面量即唯一契约。
+
 /** 会话摘要（§6.3「会话列表 = `session_list_data` 的子集」；桥只透传宿主投影，不另造 DTO） */
 export interface BridgeSessionSummary {
   sessionId: string;
@@ -212,9 +216,34 @@ export interface SessionListOkFrame {
   assistantSid?: string;
 }
 
+/**
+ * 提醒帧（§6.5 `attention`）—— 事件通知，手机据此知道"有审批要处理"
+ *
+ * `requestId` 只在 `kind:'confirm'` 时必带（手机回执 `confirm_answer` 的定址凭据）；
+ * 其余 kind 省略。用**判别联合**表达"confirm 必带、其余不带"，而非一个可选字段——
+ * 可选字段会让编译器放过 `buildAttentionFrame('s','confirm',{})` 这种缺凭据的构造，
+ * 正是上轮"只加可选 requestId"会造出的僵尸字段伤。
+ */
+export type AttentionFrame =
+  | { t: 'attention'; ch: 'events'; sid: string; kind: 'confirm'; requestId: string; label?: string }
+  | {
+      t: 'attention';
+      ch: 'events';
+      sid: string;
+      kind: 'ask' | 'settled' | 'error';
+      requestId?: never;
+      label?: string;
+    };
+
 /** 桥会主动下发的帧联合（其余封套由 profile 3 补，profile 2 不构造） */
 export type BridgeServerFrame =
-  HelloOkFrame | PongFrame | ResetRequiredFrame | EvtFrame | ErrFrame | SessionListOkFrame;
+  | HelloOkFrame
+  | PongFrame
+  | ResetRequiredFrame
+  | EvtFrame
+  | ErrFrame
+  | SessionListOkFrame
+  | AttentionFrame;
 
 /** 解析成功 */
 export interface ParseOk {
@@ -345,6 +374,29 @@ export function buildSnapshotFrame(sid: string, snapshot: SnapshotPayload): EvtF
       pendingQueue: snapshot.pendingQueue,
     },
   };
+}
+
+/**
+ * 构造下行审批提醒帧（`attention` + `kind:'confirm'`）
+ *
+ * **唯一构造点**：桥的 `notifyAttention` 与 golden fixture 生成器都调用它（后者随 profile 3
+ * 补）。`requestId` 必填且非空——它是手机回执的定址凭据，缺了就是"提醒了却批不了"的假闭环。
+ *
+ * 为什么只构造 `confirm`：`ask` / `settled` / `error` 三种是 §6.5 的完整 kind 集合，
+ * 但 M3 里程碑只落执行类审批提醒；未落地的 kind 不造构造点（僵尸容器拒入库）。
+ *
+ * @param sid       会话定址
+ * @param requestId 待裁决请求的 id（与 `ConfirmCoordinator` 的 `current.requestId` 同源）
+ * @param label     `工具：文件名` 简写（与决策记录同一取法；禁传 diff 全文）
+ */
+export function buildConfirmAttentionFrame(
+  sid: string,
+  requestId: string,
+  label?: string,
+): AttentionFrame {
+  if (sid.length === 0) throw new Error('attention.sid must be non-empty');
+  if (requestId.length === 0) throw new Error('attention.requestId must be non-empty');
+  return { t: 'attention', ch: 'events', sid, kind: 'confirm', requestId, label };
 }
 
 /**

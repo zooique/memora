@@ -44,6 +44,20 @@ export type RemoteInputCommand =
   | { readonly kind: 'resume' };
 
 /**
+ * 审批裁决命令（M3）—— 与三条 input 命令**分开的投递面**
+ *
+ * `send`/`answer`/`resume` 落 `handleInput`（输入消息）；`confirm_answer` 落
+ * `ConfirmCoordinator.answerFor`（裁决入口），两者不是同一条链。若把裁决塞进
+ * `RemoteInputCommand`，`toInputMessage` 就得为它造一条假 input 消息——那是把裁决
+ * 伪装成输入，绕过 `_logDecision` / `_settle` 的唯一发点。故单列一个联合成员。
+ */
+export interface ConfirmAnswerCommand {
+  readonly kind: 'confirm_answer';
+  readonly requestId: string;
+  readonly approved: boolean;
+}
+
+/**
  * 桥层依赖（由宿主注入；`deliverInput` 的实现必须就是 `panel.handleInput(input, sid)`
  * 那一条路，不得另建投递链）
  */
@@ -58,6 +72,43 @@ export interface RemoteCommandPorts {
 
 /** 路由结果：受理，或带固定错误码的拒绝 */
 export type RemoteCommandDecision = { ok: true } | { ok: false; code: RemoteCommandCode };
+
+/** 审批裁决的宿主端口（由宿主注入；实现必须就是 `ConfirmCoordinator.answerFor`） */
+export interface RemoteConfirmPorts {
+  /** 会话是否存在且已装配（定址判据的唯一来源，与 input 路由同一份） */
+  hasSession: (sessionId: string) => boolean;
+  /** 该会话当前相位（同一份 `remotePhaseOf`） */
+  phaseOf: (sessionId: string) => RemotePhase;
+  /**
+   * 裁决在途审批（实现 = `answerFor(sid, requestId, approved)`）
+   *
+   * `false` = 无在途 / id 不匹配 / 迟到回执 ⇒ 桥映射为 `stale_phase`（相位已变，本次输入失效）。
+   */
+  answerConfirm: (sessionId: string, requestId: string, approved: boolean) => boolean;
+}
+
+/**
+ * 路由一条审批裁决命令
+ *
+ * 三段与 `routeRemoteCommand` 同构，但投递面不同：这里调 `answerConfirm`（裁决入口），
+ * 不碰 `handleInput`。相位表仍复用 `evaluateRemoteCommand` 同一份（`confirm_answer` 列），
+ * 不改判据、不另抄一张表。
+ */
+export function routeConfirmAnswer(
+  command: ConfirmAnswerCommand,
+  sessionId: string,
+  ports: RemoteConfirmPorts,
+): RemoteCommandDecision {
+  if (!ports.hasSession(sessionId)) {
+    return { ok: false, code: REMOTE_COMMAND_CODES.NO_SESSION };
+  }
+  const verdict = evaluateRemoteCommand(command.kind, ports.phaseOf(sessionId));
+  if (!verdict.allow) return { ok: false, code: verdict.code };
+  // 裁决是否被受理由确认协调器按 sessionId + requestId 判（排队中/迟到 → false）
+  return ports.answerConfirm(sessionId, command.requestId, command.approved)
+    ? { ok: true }
+    : { ok: false, code: REMOTE_COMMAND_CODES.STALE_PHASE };
+}
 
 /**
  * 把远程命令映射成宿主既有的 input 消息（§6.6 的「落到宿主」一列）

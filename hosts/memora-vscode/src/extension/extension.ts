@@ -791,6 +791,9 @@ export function activate(context: vscode.ExtensionContext): void {
     // 只在实际监听时才接线推送触发口（未监听 / 启动失败 ⇒ 不接线，宿主每次 turn 变更零开销）
     if (bridge && bridge.listeningPort !== undefined) {
       chatProvider.onTurnProjected = (sessionId) => bridge.notifyTurnUpdate(sessionId);
+      // M3 审批提醒：sid + requestId 经桥按会话推 attention 帧（手机据此构造 confirm_answer）
+      chatProvider.onConfirmAttention = (sessionId, requestId, label) =>
+        bridge.notifyAttention(sessionId, requestId, label);
     }
   });
 

@@ -22,7 +22,8 @@
  *   - 连接层：设备指纹来自 TLS 客户端证书（`security.fingerprintOf`）；
  *   - 握手层：`phoneFp` 必须与 TLS 指纹一致；未配对需一次性口令 + PC 人工批准；
  *   - 命令层：设备权限档由 `security.tierOf` 决定，档位门查 `evaluateTierGate`；
- *     **本轮已接入** `answer` / `send` / `resume`（全部落 `handleInput`），其余六条虽在档位表内，
+ *     **本轮已接入** `answer` / `send` / `resume`（落 `handleInput`）与 `confirm_answer`
+ *     （落 `ConfirmCoordinator.answerFor`，M3 审批裁决）；其余五条虽在档位表内，
  *     但宿主尚无按 sid 的落点 ⇒ 一律回 `forbidden`（**未接入**，不是相位/档位拒绝）；
  *   - 旁路：失败限流（`security.rateLimit`）与追加式审计（`security.audit`）。
  *   桥**不自己**判指纹 / 档位 / 口令——那会在真理源之外造第二份判据。
@@ -32,7 +33,9 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import type { Server as HttpsServer } from 'node:https';
 import type { IncomingMessage } from 'node:http';
 import {
+  routeConfirmAnswer,
   routeRemoteCommand,
+  type ConfirmAnswerCommand,
   type RemoteInputCommand,
   type RemoteInputMessage,
 } from './remoteCommandRouter.js';
@@ -48,6 +51,7 @@ import type { RemoteDeviceTier } from './remoteDevices.js';
 import type { RemoteRateLimitState } from './remoteRateLimiter.js';
 import type { PairingVerdict } from './remotePairing.js';
 import {
+  buildConfirmAttentionFrame,
   buildSnapshotFrame,
   parseBridgeFrame,
   serializeBridgeFrame,
@@ -78,6 +82,14 @@ export interface RemoteBridgePorts {
   snapshot: (sessionId: string) => SnapshotPayload;
   /** 投递输入（实现必须就是 `panel.handleInput(input, sid)` 那条路，不另建投递链） */
   deliverInput: (sessionId: string, input: RemoteInputMessage) => void;
+  /**
+   * 按 sid + requestId 裁决执行类审批（实现必须就是 `ConfirmCoordinator.answerFor`，不自己 resolve）
+   *
+   * 返回值语义：`true` = 该会话在途请求的 id 匹配且已裁决；`false` = 无在途 / id 不匹配 /
+   * 迟到回执（桥映射为 `stale_phase`）。**不返回业务成功与否**——内核执行结果是另一条流。
+   * 与 `deliverInput` 分开：审批裁决走确认协调器，不是 `handleInput` 的输入消息。
+   */
+  answerConfirm: (sessionId: string, requestId: string, approved: boolean) => boolean;
 }
 
 /**
@@ -325,6 +337,28 @@ export class RemoteBridge {
     if (!this.server) return;
     for (const conn of this.connections) {
       if (conn.subs.has(sessionId)) this.pushSnapshot(conn, sessionId);
+    }
+  }
+
+  /**
+   * 按 sid 广播审批提醒（`attention` + `kind:'confirm'`，§6.5 / M3）
+   *
+   * 与 `notifyTurnUpdate` 同构的"宿主通知 → 桥扇出"生长点：只发给订阅了该会话的连接，
+   * 不切换 PC 焦点（§16.4）。帧构造走唯一入口 `buildConfirmAttentionFrame`。
+   *
+   * ⚠️ 提醒与相位分工：`pendingCount>0` 已让 `phaseOf` 折算为 `confirm-pending`（挡 send/answer），
+   * 本方法只负责"把 requestId 送到手机"——手机没有 requestId 就构造不出合法回执，
+   * 那才是上轮"只加字段"留下的假闭环。无 requestId（如非 confirm 类提醒）时不发。
+   *
+   * @param sessionId 会话定址
+   * @param requestId 待裁决请求 id（来自 `ConfirmCoordinator` 的 in-flight 项）
+   * @param label     `工具：文件名` 简写，禁传全文
+   */
+  notifyAttention(sessionId: string, requestId: string, label?: string): void {
+    if (!this.server || !requestId) return;
+    const frame = buildConfirmAttentionFrame(sessionId, requestId, label);
+    for (const conn of this.connections) {
+      if (conn.subs.has(sessionId)) this.send(conn, frame);
     }
   }
 
@@ -579,9 +613,10 @@ export class RemoteBridge {
    *   - 定址 + 相位 + 投递：全在 `routeRemoteCommand`，桥不自己再查一遍相位表，
    *     避免「桥一套、路由一套」的两份判据。
    *
-   * ⚠️ 未接入 ≠ 相位/档位拒绝：`interject / pause / stop / confirm_answer /
+   * ⚠️ 未接入 ≠ 相位/档位拒绝：`interject / pause / stop /
    * remove_pending_item / clear_pending_queue` 在档位表内是允许的，但宿主尚无按 sid 的落点，
    * 这里统一回 `forbidden`（固定错误码集合里没有「未实现」格，不新增码）。
+   * `confirm_answer` 已接入（M3）：走 `routeConfirmAnswer` → `answerFor`。
    */
   private handleCommand(
     conn: ClientConnection,
@@ -607,23 +642,32 @@ export class RemoteBridge {
       this.send(conn, { t: 'err', ch: 'cmd', rid, sid, code: REMOTE_COMMAND_CODES.FORBIDDEN });
       return;
     }
-    const command = parseInputCommand(kind, frame.p);
-    if (command === 'malformed') {
+    const parsed = parseCommand(kind, frame.p);
+    if (parsed === 'malformed') {
       // 载荷写坏了 → 协议错误（不是相位问题，也不是权限问题）
       conn.ws.close(1008, 'cmd payload malformed');
       return;
     }
-    if (!command) {
+    if (!parsed) {
       // 本切片未接入的命令：如实拒绝，不伪造执行
       this.send(conn, { t: 'err', ch: 'cmd', rid, sid, code: REMOTE_COMMAND_CODES.FORBIDDEN });
       return;
     }
-    const decision = routeRemoteCommand(command, sid, {
-      hasSession: (id) => this.ports.hasSession(id),
-      // 相位素材来自宿主投影（`remotePhaseOf` 是唯一折算点，桥不再从 TurnState 推第二遍）
-      phaseOf: (id) => this.ports.phaseOf(id),
-      deliverInput: (id, input) => this.ports.deliverInput(id, input),
-    });
+    // 两条投递面在此分流，判据仍各归其源（相位表只读一份、裁决只走 answerFor）
+    const decision =
+      parsed.kind === 'confirm_answer'
+        ? routeConfirmAnswer(parsed, sid, {
+            hasSession: (id) => this.ports.hasSession(id),
+            phaseOf: (id) => this.ports.phaseOf(id),
+            answerConfirm: (id, requestId, approved) =>
+              this.ports.answerConfirm(id, requestId, approved),
+          })
+        : routeRemoteCommand(parsed, sid, {
+            hasSession: (id) => this.ports.hasSession(id),
+            // 相位素材来自宿主投影（`remotePhaseOf` 是唯一折算点，桥不再从 TurnState 推第二遍）
+            phaseOf: (id) => this.ports.phaseOf(id),
+            deliverInput: (id, input) => this.ports.deliverInput(id, input),
+          });
     if (!decision.ok) {
       this.send(conn, { t: 'err', ch: 'cmd', rid, sid, code: decision.code });
       return;
@@ -672,7 +716,16 @@ function readText(payload: unknown): string | undefined {
  * 三种结果对应三条不同的处置：正常路由 / 回固定码 `forbidden` / 断开连接，
  * 所以不用 `undefined` 同时表达两种失败——那会把「协议错误」与「未实现」混成一句话。
  */
-type ParsedInputCommand = RemoteInputCommand | 'malformed' | undefined;
+type ParsedCommand = RemoteInputCommand | ConfirmAnswerCommand | 'malformed' | undefined;
+
+/** 从载荷取审批回执的 `{ requestId, approved }`（§6.6；两者缺一 / 类型错即写坏） */
+function readConfirmAnswer(payload: unknown): { requestId: string; approved: boolean } | undefined {
+  if (typeof payload !== 'object' || payload === null) return undefined;
+  const fields = payload as { requestId?: unknown; approved?: unknown };
+  if (typeof fields.requestId !== 'string' || fields.requestId.length === 0) return undefined;
+  if (typeof fields.approved !== 'boolean') return undefined;
+  return { requestId: fields.requestId, approved: fields.approved };
+}
 
 /**
  * 把上行命令解析成本切片执行面的命令（§6.6 的载荷形状）
@@ -680,7 +733,7 @@ type ParsedInputCommand = RemoteInputCommand | 'malformed' | undefined;
  * @param kind    命令名（已过档位门）
  * @param payload 原始载荷（`frame.p`，未信任）
  */
-function parseInputCommand(kind: RemoteCommand, payload: unknown): ParsedInputCommand {
+function parseCommand(kind: RemoteCommand, payload: unknown): ParsedCommand {
   switch (kind) {
     case 'send': {
       const text = readText(payload);
@@ -693,8 +746,14 @@ function parseInputCommand(kind: RemoteCommand, payload: unknown): ParsedInputCo
     case 'resume':
       // 业务命令 resume（解暂停）≠ ctl 帧 `t:'resume'`（重连水位），此处无载荷
       return { kind: 'resume' };
+    case 'confirm_answer': {
+      const answer = readConfirmAnswer(payload);
+      return answer === undefined
+        ? 'malformed'
+        : { kind: 'confirm_answer', requestId: answer.requestId, approved: answer.approved };
+    }
     default:
-      // 其余六条本切片没有按 sid 的宿主落点（interject 还需新的回执载荷），故未接入
+      // 其余五条本切片没有按 sid 的宿主落点（interject 还需新的回执载荷），故未接入
       return undefined;
   }
 }
