@@ -515,6 +515,7 @@
     "test": "node ../../scripts/test-run.mjs host",
     "fixtures:gen": "node scripts/gen-remote-fixtures.mjs",
     "fixtures:check": "node scripts/gen-remote-fixtures.mjs --check",
+    "dev:bridge": "node scripts/dev-bridge.mjs",
     "lint": "eslint . --max-warnings 0"
   },
   "devDependencies": {
