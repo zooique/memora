@@ -20,6 +20,7 @@ import type { CustomSearchEngineConfig, MemoryItemDto } from '../../shared/proto
 import { buildMcpBodyHtml } from '../panels/settingsMcpHtml.js';
 import { buildWorksBodyHtml } from '../panels/settingsWorksHtml.js';
 import { buildGeneralBodyHtml } from '../panels/settingsGeneralHtml.js';
+import { buildRemoteBodyHtml } from '../panels/settingsRemoteHtml.js';
 import { buildSecurityBodyHtml } from '../panels/settingsSecurityHtml.js';
 import { DEFAULT_SETTINGS_TAB, SETTINGS_TABS, settingsRootId } from '../../shared/settingsTabs.js';
 
@@ -34,6 +35,9 @@ const rootHidden = (tab: string): string => (tab === DEFAULT_SETTINGS_TAB ? '' :
 
 const GENERAL_FIXTURE = `<div id="${settingsRootId('general')}"${rootHidden('general')}>${buildGeneralBodyHtml({ t: (s) => s })}</div>`;
 
+/** 远程控制面板容器：同取产线骨架，避免加 tab 时夹具漏一块导致 switchTab 撞 null */
+const REMOTE_FIXTURE = `<div id="${settingsRootId('remote')}"${rootHidden('remote')}>${buildRemoteBodyHtml({ t: (s) => s })}</div>`;
+
 /** 覆盖 createSettingsView 全部查询引用 + 子视图骨架的最小 HTML（默认选项卡由 DEFAULT_SETTINGS_TAB 派生） */
 const HTML = `
   <div class="tabs">
@@ -44,6 +48,7 @@ const HTML = `
     <button class="${tabClass('security')}" data-tab="security">安全</button>
     <button class="${tabClass('works')}" data-tab="works">作品和规则</button>
     <button class="${tabClass('general')}" data-tab="general">常规</button>
+    <button class="${tabClass('remote')}" data-tab="remote">远程控制</button>
   </div>
   <div id="memory-root"${rootHidden('memory')}>
     <div class="header"><h2>记忆</h2><span id="statBar" class="stat-bar" hidden></span></div>
@@ -102,6 +107,7 @@ const HTML = `
   ${MCP_FIXTURE}
   ${WORKS_FIXTURE}
   ${GENERAL_FIXTURE}
+  ${REMOTE_FIXTURE}
 `;
 
 /** 挂载 createSettingsView 并返回 postMessage mock */

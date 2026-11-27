@@ -304,6 +304,82 @@ export type InjectionSummary = {
  */
 export type UiForm = 'self' | 'assistant';
 
+// ─── 远程控制（设置面板 remote 页）──────────────────────────────────────
+// 权限档的唯一类型定义：宿主设备表（`extension/host/remote/remoteDevices.ts`）直接复用
+// 本类型，不另写一份字面量联合——档位一旦有两份定义，改一处就会与桥的 `tierOf` 漂移。
+
+/** 远程设备权限档（§5.9：只读 / 可发 / 可答；配对默认只读） */
+export type RemoteDeviceTier = 'observe' | 'send' | 'approve';
+
+/** 已配对设备（设备表一行的 wire 形态；不含任何密钥材料） */
+export interface RemoteDeviceDto {
+  /** 设备证书 DER 的 SHA-256（全大写 hex；授权判据的唯一身份） */
+  fingerprint: string;
+  /** 指纹短码（仅展示，不参与判据；可能为空串） */
+  shortFp: string;
+  /** 手机在 hello 里声明的展示名 */
+  name: string;
+  /** 当前权限档 */
+  tier: RemoteDeviceTier;
+  /** 首次配对时刻（epoch ms） */
+  pairedAt: number;
+}
+
+/** 审计尾的一行（只取展示所需字段；`at` 由审计日志统一盖戳） */
+export interface RemoteAuditTailDto {
+  /** 事件时刻（epoch ms） */
+  at: number;
+  /** 事件名（如 `device_paired` / `pairing_rejected`） */
+  event: string;
+  /** 补充说明（拒绝原因、档位变更等） */
+  detail?: string;
+}
+
+/** 远程桥当前运行时模式（`off` = 未监听；`loopback` = 开发回环；`lan` = 局域网） */
+export type RemoteBridgeModeDto = 'off' | 'loopback' | 'lan';
+
+/**
+ * 远程控制页的状态快照（E→W 唯一推送形态）
+ *
+ * 真源分工：`mode/port` 来自桥启动登记（loopback 也有），
+ * `address/pcShortFp/pairing/devices` 只在 LAN 句柄存在时才有值。
+ * 未启动时字段缺省 = 如实表达「没有」，不填占位值。
+ */
+export interface RemoteSettingsStatus {
+  /** 当前桥模式 */
+  mode: RemoteBridgeModeDto;
+  /** 监听端口（`mode !== 'off'` 时有值） */
+  port?: number;
+  /** 主局域网地址（仅 LAN；回环档固定 127.0.0.1 不入本字段） */
+  address?: string;
+  /** PC 身份短指纹（仅 LAN；配对时与手机核对） */
+  pcShortFp?: string;
+  /** 当前有效配对口令（仅 LAN；没有有效口令时缺省） */
+  pairingCode?: string;
+  /** 配对口令过期时刻（epoch ms） */
+  pairingExpiresAt?: number;
+  /** 已配对设备（LAN 未启动时为空数组） */
+  devices: RemoteDeviceDto[];
+  /** 审计尾（最新在后；文件不存在 = 空数组） */
+  audit: RemoteAuditTailDto[];
+  /** 审计读取失败原因（显式降级：不把「读不到」伪装成「没有记录」） */
+  auditError?: string;
+}
+
+/**
+ * 远程控制页可执行的动作（W→E）
+ *
+ * 与 `RemoteSettingsStatus` 共用 `remote_settings` 这一个 type 字面量
+ * （同 `general_setting` 的上下行同名先例）：方向由「谁发」隐含，
+ * 载荷形状不同、不会混淆。高风险动作（改「可答」/ 撤销）的确认与审计在宿主侧复用
+ * 命令层同一函数（`applyDeviceAction`），webview 不做二次确认。
+ */
+export type RemoteActionPayload =
+  | { action: 'refresh' }
+  | { action: 'regenerate' }
+  | { action: 'set_tier'; fingerprint: string; tier: RemoteDeviceTier }
+  | { action: 'revoke'; fingerprint: string };
+
 export type WebviewToExtensionMessage =
   /** Webview 脚本已就绪（监听器已注册），extension 可安全回放会话/推送数据 */
   | { type: 'ready' }
@@ -873,6 +949,14 @@ export type WebviewToExtensionMessage =
   | { type: 'general_setting'; kind: 'showMetrics'; value: boolean }
   | { type: 'general_setting'; kind: 'chatTextScale'; value: string }
   | { type: 'general_setting'; kind: 'copyDiagnostics' }
+  /**
+   * 远程控制页动作（设置 → 远程控制）
+   *
+   * 与下行 `remote_settings`（状态回推）共用同一 type 字面量：上行是动作意图，
+   * 下行是状态快照。动作执行面全部落在宿主 `remoteSettingsOps`（复用桥句柄与
+   * 命令层同一函数），webview 只上报意图、不碰设备表。
+   */
+  | ({ type: 'remote_settings' } & RemoteActionPayload)
   /**
    * MCP 域写操作（**唯一**写通道，按 `op` 分流；2026-10-24 协议治理）
    *
@@ -2033,6 +2117,13 @@ export type ExtensionToWebviewMessage =
   | { type: 'general_setting'; kind: 'attentionSound'; value: boolean }
   | { type: 'general_setting'; kind: 'showMetrics'; value: boolean }
   | { type: 'general_setting'; kind: 'chatTextScale'; value: string }
+  /**
+   * 远程控制页状态回推（ready / 转可见 / 动作执行后各推一次）
+   *
+   * 与上行 `remote_settings`（动作意图）共用 type 字面量；本侧只承载状态快照，
+   * 字段缺省即如实表达「当前没有」（如未启动时无端口 / 无口令）。
+   */
+  | { type: 'remote_settings'; status: RemoteSettingsStatus }
   /**
    * 白名单额外允许路径状态推送（设置面板加载时推送当前列表）
    *

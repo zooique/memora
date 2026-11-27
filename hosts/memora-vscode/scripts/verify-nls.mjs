@@ -847,6 +847,21 @@ const WEBVIEW_PANELS = {
       'webview/styles/generalStyles.ts',
     ],
   },
+  // 远程控制页（2026-11-27）：骨架 / 运行时 / 样式 + 宿主执行面（读状态 / 动作转发）。
+  // 执行面本身只做组装与转发，新增可见文案全走 `vscode.l10n.t`；`remoteBridgeHost.ts`
+  // 仍含命令层的既有中文提示（间接传参形态，判据⑬ 不在网内），故本轮不登记它，
+  // 避免把「未迁移」误报成本页残留。
+  remote: {
+    state: 'migrated',
+    files: [
+      'shared/settingsTabs.ts',
+      'webview/panels/settingsRemoteHtml.ts',
+      'webview/scripts/remoteView.ts',
+      'webview/helpers/remoteStatusPush.ts',
+      'webview/styles/remoteStyles.ts',
+      'extension/host/remote/remoteSettingsOps.ts',
+    ],
+  },
 };
 
 /**

@@ -16,9 +16,11 @@
  */
 
 import { normalizeFingerprint } from './remoteFingerprint.js';
-
-/** 权限档位（§5.9；`approve` 才能答执行类审批 / ask 提问） */
-export type RemoteDeviceTier = 'observe' | 'send' | 'approve';
+// 档位类型的**唯一定义**在 `shared/protocol.ts`（wire 与设备表共用一份，§5.9；
+// `approve` 才能答执行类审批 / ask 提问）。此处只再导出，让既有
+// `import { RemoteDeviceTier } from './remoteDevices.js'` 的调用面不必改。
+import type { RemoteDeviceTier } from '../../../shared/protocol.js';
+export type { RemoteDeviceTier };
 
 /** 一条已配对设备（设备表的一行） */
 export interface RemoteDeviceRecord {
@@ -48,8 +50,13 @@ export const REMOTE_DEVICES_KEY = 'memora.remote.devices.v1';
 /** 合法档位集合（读时校验的唯一来源，避免散落 if 判断） */
 const DEVICE_TIERS: readonly RemoteDeviceTier[] = ['observe', 'send', 'approve'];
 
-/** 是否为合法档位 */
-function isDeviceTier(value: unknown): value is RemoteDeviceTier {
+/**
+ * 是否为合法档位
+ *
+ * 导出供跨边界校验复用（设置页动作来自 webview 消息，属不可信输入）：
+ * 档位集合只此一份，别处不得再写第二套字面量判定。
+ */
+export function isRemoteDeviceTier(value: unknown): value is RemoteDeviceTier {
   return typeof value === 'string' && (DEVICE_TIERS as readonly string[]).includes(value);
 }
 
@@ -66,7 +73,7 @@ function parseRecord(value: unknown): RemoteDeviceRecord | undefined {
   const raw = value as Record<string, unknown>;
   if (typeof raw.fingerprint !== 'string' || raw.fingerprint.trim().length === 0) return undefined;
   if (typeof raw.name !== 'string') return undefined;
-  if (!isDeviceTier(raw.tier)) return undefined;
+  if (!isRemoteDeviceTier(raw.tier)) return undefined;
   if (typeof raw.pairedAt !== 'number' || !Number.isFinite(raw.pairedAt)) return undefined;
   const fingerprint = normalizeFingerprint(raw.fingerprint);
   const record: RemoteDeviceRecord = {

@@ -1,5 +1,5 @@
 /**
- * 设置面板 — editor tab Webview 面板（选项卡式七页合一，单例管理）
+ * 设置面板 — editor tab Webview 面板（选项卡式多页合一，单例管理）
  *
  * 各子视图（角色 / 大模型 / 记忆 / 技能 / MCP / 安全 / 作品和规则，清单 SSOT = `shared/settingsTabs.ts`）
  * 共存于单一「设置」面板，内部通过选项卡切换。
@@ -98,6 +98,8 @@ import {
   pushSearchEngineStatus,
   pushSecurityStatus,
 } from '../helpers/settingsStatusPush.js';
+// 远程控制页「读状态 → 推送」与执行窄口（外置理由同 settingsStatusPush：max-lines 预算）
+import { pushRemoteSettingsStatus, type RemoteOpsPort } from '../helpers/remoteStatusPush.js';
 // 作品投影桥接（数据推送 / 动作执行面 / 打开原文件；侧边栏 TreeView 退役后的唯一消费面）
 import {
   WorkProjectionBridge,
@@ -128,7 +130,7 @@ const MEMORY_LIST_LIMIT = 20;
 /** 搜索结果条数 */
 const MEMORY_SEARCH_LIMIT = 20;
 
-/** 设置面板（editor tab 单例；七页合一：角色 / 大模型 / 记忆 / 技能 / MCP / 安全 / 作品和规则） */
+/** 设置面板（editor tab 单例；页签清单唯一真源 = `shared/settingsTabs.ts`，勿在此列名单） */
 export class MemoraSettingsPanel {
   /** 面板类型标识（createWebviewPanel 首参；沿用原侧栏 view id 作面板类型键，不另造） */
   public static readonly viewType = 'memora.settings';
@@ -209,6 +211,12 @@ export class MemoraSettingsPanel {
    *  返回 cancelled=true 表示用户在确认弹窗主动取消（非失败，webview 中性提示）。 */
   private _resetHandler:
     (() => Promise<{ ok: boolean; cancelled?: boolean; message?: string }>) | undefined;
+  /**
+   * 远程控制页执行窄口（extension 注入；未注入 = 页面只显示静态说明）
+   *
+   * 设备表 / 口令 / 审计的真源在 `extension/host/remote/`，面板只投递意图、只渲染回推状态。
+   */
+  private _remoteOps: RemoteOpsPort | undefined;
 
   /**
    * @param extensionUri 插件扩展根 URI（用于 webview 本地资源加载 localResourceRoots）
@@ -316,6 +324,16 @@ export class MemoraSettingsPanel {
   }
 
   /**
+   * 注入远程控制页执行面（extension 装配时注入）
+   *
+   * 注入实现 = `remoteSettingsOps` 的两个函数（读状态 / 执行动作），与命令面板
+   * `memora.remoteDevices` 共用同一设备表与确认链；未注入时 remote 页只显示静态说明。
+   */
+  public setRemoteOps(ops: RemoteOpsPort): void {
+    this._remoteOps = ops;
+  }
+
+  /**
    * 打开设置面板（单例：已开则 reveal，未开则创建——editor tab 形态）
    *
    * 原侧栏 view 的 resolveWebviewView 懒初始化逻辑随 L3 分家迁至此处：
@@ -410,6 +428,22 @@ export class MemoraSettingsPanel {
     // 作品页：一条通道四个动作，执行面与文件右键 / QuickPick / 命令面板共用
     if (msg.type === 'work_projection') {
       await this.works.handle(msg.action, msg.source);
+      return;
+    }
+    // 远程控制页：动作执行面在 `remoteSettingsOps`（与命令面板同一函数）；
+    // 不论成败都回推真值——失败时 UI 复位到宿主事实，不做乐观翻转。
+    if (msg.type === 'remote_settings') {
+      try {
+        const result = await this._remoteOps?.applyAction(msg);
+        if (result && !result.ok && result.message) {
+          this.post({ type: 'notice', level: 'error', message: result.message });
+        }
+      } catch (err) {
+        // 动作面抛错（极少见）：不吞掉，也不让页面停在旧状态——finally 仍回推真值
+        console.warn('[memora] remote action failed', err);
+      } finally {
+        pushRemoteSettingsStatus(this._remoteOps, (m) => this.post(m));
+      }
       return;
     }
     // .zip 导入：三入口共用同一命令处理器（面板只做路由）
@@ -1705,6 +1739,8 @@ export class MemoraSettingsPanel {
     // 未装配时是合法空态，装配完成后由 extension 的热更回推覆盖）
     this.pushMcpStatus();
     void this.works.load();
+    // 远程控制页：状态快照（桥运行时 + 设备表 + 审计尾）；未注入执行面时为空操作
+    pushRemoteSettingsStatus(this._remoteOps, (m) => this.post(m));
   }
 
   /**

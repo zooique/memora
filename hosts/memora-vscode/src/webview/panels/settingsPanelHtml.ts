@@ -26,6 +26,7 @@ import { buildSkillsBodyHtml } from './settingsSkillsHtml.js';
 import { buildMcpBodyHtml } from './settingsMcpHtml.js';
 import { buildWorksBodyHtml } from './settingsWorksHtml.js';
 import { buildGeneralBodyHtml } from './settingsGeneralHtml.js';
+import { buildRemoteBodyHtml } from './settingsRemoteHtml.js';
 import {
   DEFAULT_SETTINGS_TAB,
   SETTINGS_TABS,
@@ -59,6 +60,9 @@ const SECURITY_BODY_HTML = buildSecurityBodyHtml(vscode.l10n);
 /** General body built at import time with the host localizer (same reason as the works body). */
 const GENERAL_BODY_HTML = buildGeneralBodyHtml(vscode.l10n);
 
+/** Remote body built at import time with the host localizer (same reason as the works body). */
+const REMOTE_BODY_HTML = buildRemoteBodyHtml(vscode.l10n);
+
 /**
  * 各选项卡主体骨架（**不含外层 root 容器**——root 与 tab 按钮均由 {@link buildHtml} 统一生成）
  *
@@ -73,6 +77,7 @@ const TAB_BODY_HTML: Record<SettingsTab, string> = {
   security: SECURITY_BODY_HTML,
   works: WORKS_BODY_HTML,
   general: GENERAL_BODY_HTML,
+  remote: REMOTE_BODY_HTML,
 };
 
 /** 选项卡按钮栏（顺序、默认高亮、`aria-selected` 全部由 tab 表派生） */

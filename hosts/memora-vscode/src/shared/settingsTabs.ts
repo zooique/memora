@@ -48,6 +48,9 @@ export const SETTINGS_TABS = [
   'mcp',
   'security',
   'works',
+  // 远程控制（2026-11-27）：手机配对状态 / 设备表 / 审计尾 + 复用命令层动作。
+  // 追加在末位而非插入前列：默认首页（下标 0）与既有页签位置不变。
+  'remote',
 ] as const;
 
 /** 单个选项卡标识（其余各处一律 `import type`，不得再手写联合） */
@@ -86,6 +89,7 @@ export const SETTINGS_TAB_LABELS: Record<SettingsTab, string> = {
   // 仍不单叫「规则」：该页同时列未设为项目规则的作品，单叫会把一半条目说成不该在这儿。
   works: 'Works and rules',
   general: 'General',
+  remote: 'Remote control',
 };
 
 /**
@@ -106,6 +110,7 @@ export const SETTINGS_TAB_ARIA_LABELS: Record<SettingsTab, string> = {
   security: 'Security',
   works: 'Works and rules: list and project-rule evaluation',
   general: 'General settings: answer language and interaction preferences',
+  remote: 'Remote control: phone pairing, paired devices and recent activity',
 };
 
 /** 子视图根容器 id（此前每个 tab 的根容器 id 都在 HTML / webview 脚本 / CSS 三处各自硬写，单一来源即本文件 `SETTINGS_TABS`） */

@@ -108,8 +108,13 @@ import { join } from 'node:path';
  *  实测 149，阈值同口径重算 150。
  *  2026-11-25 常规页再加活动指标开关与复制诊断动作：沿用 `general_setting` 的
  *  kind 分流（动作 kind 在宿主写入前拦下），零新 type ⇒ 实测仍 149，阈值不动。
+ *  2026-11-27 远程控制页 +1（`remote_settings`）：动作意图（refresh/regenerate/
+ *  set_tier/revoke）与状态快照**共用同一 type 字面量**（同 `general_setting` 先例，
+ *  方向由发送方隐含），没有为每个动作各开一条通道；既有通道里没有能承载「设备表 +
+ *  配对状态 + 审计尾」的语义面（硬塞 = second consumer 语义扭曲），故必须新增一条。
+ *  实测 150，阈值同口径重算 151。
  */
-const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 150;
+const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 151;
 
 /** 从 protocol.ts 源码提取去重消息类型集合（过滤注释，仅统计 `type: '...'` 字面量） */
 function extractMessageTypes(source: string): Set<string> {

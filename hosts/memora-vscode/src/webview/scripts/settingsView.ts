@@ -38,6 +38,8 @@ import { createSkillsView } from './skillsView.js';
 import { createSecurityView } from './securityView.js';
 // 常规子视图（回答语言自动/手动 + 界面语言说明 + 提示音开关）
 import { createGeneralView } from './generalView.js';
+// 远程控制子视图（桥状态 / 配对与设备表 / 审计尾；动作复用宿主命令层）
+import { createRemoteView } from './remoteView.js';
 import { populateIcons } from './icons.js';
 // 全局通知 toast 单一实现（UI-TOAST-1 三面收口：settings notice 与 config 操作反馈合一）
 import { showToast } from '../helpers/toast.js';
@@ -90,6 +92,7 @@ export const SETTINGS_VIEW_MOUNTS: ReadonlyArray<{ name: SettingsTab; make: Moun
   { name: 'security', make: createSecurityView },
   { name: 'works', make: createWorksView },
   { name: 'general', make: createGeneralView },
+  { name: 'remote', make: createRemoteView },
 ];
 
 /**

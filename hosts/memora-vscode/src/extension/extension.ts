@@ -51,6 +51,11 @@ import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 // 远程桥（profile 2 回环 / profile 3 局域网）：默认不监听，见 host/remote/remoteBridgeHost.ts
 import { remoteDevicesCommand, startRemoteBridge } from './host/remote/remoteBridgeHost.js';
+// 设置面板「远程控制」页的执行面（读状态 / 执行动作；与命令面板共用同一桥句柄）
+import {
+  applyRemoteSettingsAction,
+  readRemoteSettingsStatus,
+} from './host/remote/remoteSettingsOps.js';
 import type { RemoteBridge } from './host/remote/remoteBridge.js';
 import { formatDiagnosticsSnapshot } from '../webview/panels/hostDiagnostics.js';
 import { MemoraSettingsPanel } from '../webview/panels/settingsPanel.js';
@@ -1226,6 +1231,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // 设置面板「安全」tab 的初始化按钮：委托同一处理器（单一路径）
   settingsProvider.setResetHandler(performUserDataReset);
+
+  // 设置面板「远程控制」tab：只读控制台的数据面 + 动作面。
+  // 两者都落在 `remoteSettingsOps`（设备表 / 口令 / 审计的真源在 remoteBridgeHost），
+  // 面板不 import 桥句柄——注入窄口是唯一接线方式。
+  settingsProvider.setRemoteOps({
+    readStatus: () => readRemoteSettingsStatus(context),
+    applyAction: (payload) => applyRemoteSettingsAction(payload),
+  });
 
   // 命令：恢复初始状态（命令面板入口，与设置面板按钮同一处理函数）
   context.subscriptions.push(

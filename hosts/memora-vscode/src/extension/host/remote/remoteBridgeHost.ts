@@ -137,12 +137,30 @@ export interface RemoteLanHandle {
 let remoteLanHandle: RemoteLanHandle | undefined;
 
 /**
+ * 桥的运行时登记（**两种档位都有**，用于设置页如实区分「未启动 / 开发回环 / 局域网」）
+ *
+ * 为什么不能只靠 {@link remoteLanHandle}：回环档没有设备表 / 口令句柄，但它在监听是事实；
+ * 只按句柄判断会让 UI 把运行中的回环档显示成「未启动」——那是谎报。
+ * 成功监听后赋值，deactivate 时由订阅清理（与句柄同一退出路径）。
+ */
+let remoteBridgeRuntime: { mode: 'loopback' | 'lan'; port: number } | undefined;
+
+/**
  * 取 LAN 运行时句柄
  *
  * @returns 句柄；LAN 未启动 / 启动失败 / 回环档 = `undefined`
  */
 export function getRemoteLanHandle(): RemoteLanHandle | undefined {
   return remoteLanHandle;
+}
+
+/**
+ * 取桥的运行时登记（含回环档）
+ *
+ * @returns `{ mode, port }`；未监听 / 启动失败 = `undefined`
+ */
+export function getRemoteBridgeRuntime(): { mode: 'loopback' | 'lan'; port: number } | undefined {
+  return remoteBridgeRuntime;
 }
 
 /**
@@ -239,16 +257,20 @@ export async function startRemoteBridge(
     if (raw) deps.log(`[REMOTE-BRIDGE] 未知开关值 ${raw}，不启动（可用：loopback / lan）`);
     return undefined;
   }
-  if (mode === 'loopback') return startLoopbackBridge(deps);
+  if (mode === 'loopback') return startLoopbackBridge(deps, hostEnv.context);
   return startLanBridge(deps, hostEnv.context);
 }
 
 /**
  * 回环档（profile 2 · 仅开发验证）
  *
- * @param deps 宿主能力
+ * @param deps    宿主能力
+ * @param context 扩展上下文（仅用于 deactivate 时清理运行时登记）
  */
-async function startLoopbackBridge(deps: RemoteBridgeHostDeps): Promise<RemoteBridge> {
+async function startLoopbackBridge(
+  deps: RemoteBridgeHostDeps,
+  context: vscode.ExtensionContext,
+): Promise<RemoteBridge> {
   const bridge = new RemoteBridge(createRemoteBridgePorts(deps), {
     pcId: 'memora-loopback',
     port: resolvePort(),
@@ -256,6 +278,15 @@ async function startLoopbackBridge(deps: RemoteBridgeHostDeps): Promise<RemoteBr
   });
   try {
     const started = await bridge.start();
+    // 运行时登记：回环档没有设备句柄，但「在监听」是设置页必须如实显示的事实
+    const runtime = { mode: 'loopback' as const, port: started.port };
+    remoteBridgeRuntime = runtime;
+    context.subscriptions.push({
+      dispose: () => {
+        // 身份守卫：只清自己写进去的那份，避免误清后启动的新实例
+        if (remoteBridgeRuntime === runtime) remoteBridgeRuntime = undefined;
+      },
+    });
     deps.log(`[REMOTE-BRIDGE] listening on 127.0.0.1:${started.port}（profile 2 · 仅开发验证）`);
     void vscode.window.showInformationMessage(
       `Memora 远程桥（开发验证）已监听 127.0.0.1:${started.port}`,
@@ -368,6 +399,9 @@ async function startLanBridge(
       log,
     });
     const started = await bridge.start();
+    // 运行时登记（两种档位共用一份）：设置页据此显示「局域网 · 端口」
+    const runtime = { mode: 'lan' as const, port: started.port };
+    remoteBridgeRuntime = runtime;
     // ⑥ 监听成功后才生成口令并展示：TTL 从「用户看到」开始算
     const challenge = pairing.start();
     const addresses = listLanAddresses();
@@ -392,6 +426,8 @@ async function startLanBridge(
     context.subscriptions.push({
       dispose: () => {
         remoteLanHandle = undefined;
+        // 身份守卫同回环档：只清本实例写进去的那份登记
+        if (remoteBridgeRuntime === runtime) remoteBridgeRuntime = undefined;
       },
     });
     log(
@@ -515,7 +551,7 @@ export async function remoteDevicesCommand(): Promise<void> {
  *
  * @param handle LAN 运行时句柄
  */
-function regenerateLanPairingCode(handle: RemoteLanHandle): void {
+export function regenerateLanPairingCode(handle: RemoteLanHandle): void {
   const challenge = handle.regeneratePairingCode();
   const where = `${handle.address}:${handle.port}`;
   handle.audit({ event: 'pairing_code_regenerated' });
@@ -539,7 +575,7 @@ function regenerateLanPairingCode(handle: RemoteLanHandle): void {
  * @param device    目标设备（菜单选中时的快照；写前以设备表为准判存在）
  * @param selection 第二层菜单的选中结果
  */
-async function applyDeviceAction(
+export async function applyDeviceAction(
   handle: RemoteLanHandle,
   device: RemoteDeviceRecord,
   selection: RemoteDeviceMenuSelection,

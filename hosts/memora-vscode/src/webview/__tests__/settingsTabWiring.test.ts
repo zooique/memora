@@ -41,6 +41,7 @@ const LOADER_SNIPPETS = {
   security: 'pushSecurityStatus(',
   works: 'this.works.load()',
   general: 'pushGeneralStatus(',
+  remote: 'pushRemoteSettingsStatus(this._remoteOps',
 } satisfies Record<SettingsTab, string>;
 
 /** 从 settingsPanel.ts 切出 refreshAll 方法体（结构漂移时显式抛错，不静默返回空串） */
@@ -117,6 +118,7 @@ describe('加一页接线守卫（静默半残 → 可红）', () => {
     SECURITY_BODY_HTML: 'settingsSecurityHtml.ts',
     WORKS_BODY_HTML: 'settingsWorksHtml.ts',
     GENERAL_BODY_HTML: 'settingsGeneralHtml.ts',
+    REMOTE_BODY_HTML: 'settingsRemoteHtml.ts',
   };
   const panelsDir = join(SRC, 'webview/panels');
   const htmlLines = htmlSrc.split('\n');
