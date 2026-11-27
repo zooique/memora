@@ -120,6 +120,7 @@ import { DraftSessionController, newSessionId } from '../helpers/draftSession.js
 // 过程事件 / 指标段级合并（纯函数，HOST-SPLIT-1 切片自本类外置；三条调用面共用同一语义）
 // live 轮组装（缓冲 + 落盘 checkpoint ⊕）：纯函数外置，面板只注入运行态与日志读口
 import { buildLiveTurn } from '../helpers/liveTurn.js';
+import { withdrawLiveText } from '../helpers/liveTextWithdraw.js';
 // 工具失败数的展示口径（delegate 四态只把 failed 当失败）：与行级徽标共用同一判据
 import { countToolFailures } from '../helpers/processFlowModel.js';
 // 启动会话归属裁决（首选被另一窗口占用时让位）+ 初始会话选择（排除助手会话）——判据单点
@@ -3547,10 +3548,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 同一份正文按 turn 分桶累积（live 轮投影用）。归属判据与 emitEvent 完全同源
           // （同一 currentRoundKey），不另立判据；自审查输出已在上方 continue 分流，不会误入正文。
           if (liveBuffer.currentRoundKey) {
-            textByRound.set(
-              liveBuffer.currentRoundKey,
-              (textByRound.get(liveBuffer.currentRoundKey) ?? '') + chunk.content,
-            );
+            const key = liveBuffer.currentRoundKey;
+            textByRound.set(key, (textByRound.get(key) ?? '') + chunk.content);
           }
           this.postToSession(sessionId, {
             type: 'chunk',
@@ -3670,8 +3669,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 叙述回抽：首轮工具步的叙述会逐字流式进正文区 → 先发瞬态撤回消息让
           // webview 去掉正文该段，再落 narrate 事件渲染进过程叙述行（顺序：撤正文 → 补过程，
           // 与 protocol narrate_withdraw 同款处理）。
-          // withdrawn 为运行时瞬态（不落盘）；持久化正文由内核 consumeExecutionStream 扣除。
+          // withdrawn 为运行时瞬态（不落盘）；持久化正文由内核 observeExecutionChunk 扣除。
+          // live 投影与远程富增量共用该正文口径（第二真源漂移修复）；桥侧遇前缀断裂补快照重建。
           if (chunk.withdrawn) {
+            withdrawLiveText(textByRound, liveBuffer.currentRoundKey, chunk.withdrawn);
             this.postToSession(sessionId, { type: 'narrate_withdraw', text: chunk.withdrawn });
           }
           emitEvent('narrate', { content: chunk.content });

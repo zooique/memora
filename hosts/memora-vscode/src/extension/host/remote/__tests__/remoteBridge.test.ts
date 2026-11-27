@@ -1212,6 +1212,63 @@ describe('RemoteBridge — profile 3 delta 与水位补洞（§6.7 订正口径�
     expect((await client.next<{ t: string }>()).t).toBe('pong');
   });
 
+  it('流中撤回触发前缀断裂 → tick 补快照全量重建 + 水位归零（消流中错帧）', async () => {
+    const running: TurnState = { phase: 'running', roundId: 'r1' };
+    let current = makeLiveRound('');
+    const { security } = makeSecurity({ tier: 'observe' });
+    const { ports } = makePorts({
+      snapshot: () => ({ state: running, rounds: [current], pendingQueue: [] }),
+    });
+    const { bridge, client } = await openLanSub(ports, security);
+    const internals = bridge as unknown as {
+      connections: Set<{ timers?: Map<string, unknown> }>;
+      onStreamTick: (conn: unknown, sid: string) => void;
+    };
+    const conn = [...internals.connections][0]!;
+
+    // ① 过渡叙述逐字流式发出（真机 15 字错帧的形成路径）
+    current = makeLiveRound('先');
+    bridge.notifyTurnUpdate('s1');
+    expect((await client.next<{ p: { kind: string } }>()).p.kind).toBe('status');
+    expect((await client.next<{ p: unknown }>()).p).toEqual({
+      kind: 'append_text',
+      roundId: 'r1',
+      text: '先',
+    });
+    expect(conn.timers?.has('s1')).toBe(true);
+    current = makeLiveRound('先找一下项目里有没有这个文件。');
+    internals.onStreamTick(conn, 's1');
+    expect((await client.next<{ p: unknown }>()).p).toEqual({
+      kind: 'append_text',
+      roundId: 'r1',
+      text: '找一下项目里有没有这个文件。',
+    });
+
+    // ② 宿主按内核 withdrawn 扣回 live 正文 → 前缀断裂 → 下一拍 tick 补快照全量重建
+    current = makeLiveRound('');
+    internals.onStreamTick(conn, 's1');
+    const resync = await client.next<{
+      seq: number;
+      kind: string;
+      p: { rounds: Array<{ assistantMessage?: { content: string } }> };
+    }>();
+    expect(resync).toMatchObject({ seq: 0, kind: 'snapshot' });
+    expect(resync.p.rounds[0]?.assistantMessage?.content ?? '').toBe('');
+    // ping 探底：resync 只补快照，不再夹带错位 append_text
+    client.send({ t: 'ping' });
+    expect((await client.next<{ t: string }>()).t).toBe('pong');
+
+    // ③ 水位归零实证：快照后第一帧增量从 seq=1 起；真实正文照常增量续推
+    current = makeLiveRound('真实正文');
+    bridge.notifyTurnUpdate('s1');
+    expect((await client.next<{ seq: number }>()).seq).toBe(1);
+    expect((await client.next<{ p: unknown }>()).p).toEqual({
+      kind: 'append_text',
+      roundId: 'r1',
+      text: '真实正文',
+    });
+  });
+
   it('会话离开 running 后一拍 tick 自动停表（waiting 不推富增量）', async () => {
     let phase: TurnState = { phase: 'running', roundId: 'r1' };
     const { security } = makeSecurity({ tier: 'observe' });

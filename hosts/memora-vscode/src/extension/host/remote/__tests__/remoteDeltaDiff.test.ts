@@ -148,11 +148,51 @@ describe('remoteDeltaDiff — 富增量不重不漏', () => {
         },
       }),
     ]);
-    // 宁可漏一次也不发错位正文
-    expect(diffRichDelta(reverted, cursor).specs).toEqual([]);
+    // 宁可漏一次也不发错位正文；但须标 resync 让桥补快照全量重建（否则错字永久留手机）
+    const broken = diffRichDelta(reverted, cursor);
+    expect(broken.specs).toEqual([]);
+    expect(broken.resync).toBe(true);
 
-    // 收场后无 live 轮：落盘内容由下一次快照覆盖，不发富增量
+    // 收场后无 live 轮：落盘内容由下一次快照覆盖，不发富增量、也不触发 resync
     const settled = snapshot([{ id: 'r1', status: 'complete' } as unknown as RoundView]);
     expect(diffRichDelta(settled, cursor).specs).toEqual([]);
+    expect(diffRichDelta(settled, cursor).resync).toBe(false);
+  });
+
+  it('正常单调追加不误报 resync；空游标不算断裂', () => {
+    const cursor = initRichCursor(
+      snapshot([
+        liveRound({
+          assistantMessage: {
+            id: 'm1',
+            role: 'assistant',
+            content: '先',
+            timestamp: '2026-11-27T00:00:00.000Z',
+          },
+        }),
+      ]),
+    );
+    const grown = snapshot([
+      liveRound({
+        assistantMessage: {
+          id: 'm1',
+          role: 'assistant',
+          content: '先找一下项目里有没有这个文件。',
+          timestamp: '2026-11-27T00:00:00.000Z',
+        },
+      }),
+    ]);
+    const normal = diffRichDelta(grown, cursor);
+    expect(normal.resync).toBe(false);
+    expect(normal.specs).toEqual([
+      { kind: 'append_text', roundId: 'r1', text: '找一下项目里有没有这个文件。' },
+    ]);
+
+    const emptyCursor = { roundId: 'r1', text: '', eventSeq: 0 };
+    const fromEmpty = diffRichDelta(grown, emptyCursor);
+    expect(fromEmpty.resync).toBe(false);
+    expect(fromEmpty.specs).toEqual([
+      { kind: 'append_text', roundId: 'r1', text: '先找一下项目里有没有这个文件。' },
+    ]);
   });
 });

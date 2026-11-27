@@ -439,4 +439,12 @@ describe('chatPanel · 远程桥收场信号守卫（REMOTE-RICH-DELTA-1）', ()
     expect(call, 'onTurnProjected 调用必须存在').toBeDefined();
     expect(call).toBe('onTurnProjected?.(sessionId, !!live && !replay);');
   });
+
+  it('narrate.withdrawn 必须从 live 正文扣除，桥才不会把过渡叙述当增量发手机', () => {
+    const source = readFileSync(CHAT_PANEL_PATH, 'utf8');
+    const call = source.match(/withdrawLiveText\([^\n]*/)?.[0];
+    expect(call, 'live 正文回抽接线必须存在').toBeDefined();
+    expect(call).toContain('textByRound');
+    expect(call).toContain('chunk.withdrawn');
+  });
 });

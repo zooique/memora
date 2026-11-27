@@ -74,15 +74,25 @@ export function initRichCursor(snapshot: SnapshotPayload): RichCursor {
  * 轮切换（`roundId` 变化）视为新轮：把当前正文与事件全量作为增量发出——此时手机侧
  * 上一轮已收场、新一轮未见过，全量即「不漏」，不是把历史重发。
  */
+export interface RichDeltaResult {
+  specs: RichDeltaSpec[];
+  next: RichCursor;
+  /**
+   * 正文前缀断裂（内核 `narrate.withdrawn` 回抽等回退）：append-only 增量无法撤回已发正文，
+   * 桥必须补一帧 `snapshot` 让手机全量重建；单靠游标推进会把错字永久留在手机上。
+   */
+  resync: boolean;
+}
+
 export function diffRichDelta(
   snapshot: SnapshotPayload,
   cursor: RichCursor,
-): { specs: RichDeltaSpec[]; next: RichCursor } {
+): RichDeltaResult {
   const next = initRichCursor(snapshot);
   const live = snapshot.rounds.find((round) => round.live === true);
   const specs: RichDeltaSpec[] = [];
   // 流已收场（无 live 轮）：富增量无可指轮，静默零增量；落盘内容由下一次 snapshot 覆盖。
-  if (!live || !next.roundId) return { specs, next };
+  if (!live || !next.roundId) return { specs, next, resync: false };
   const roundId = next.roundId;
 
   if (cursor.roundId !== roundId) {
@@ -90,16 +100,17 @@ export function diffRichDelta(
     for (const event of live.processEvents ?? []) {
       specs.push({ kind: 'process_event', roundId, event });
     }
-    return { specs, next };
+    return { specs, next, resync: false };
   }
 
-  // 前缀差分：只在正文单调追加时发后缀；异常回退不发正文帧（漏一次 > 发错一次）
-  if (next.text.length > cursor.text.length && next.text.startsWith(cursor.text)) {
+  // 前缀差分：只在正文单调追加时发后缀；回退标 resync 让桥补快照全量重建（手机端全量替换语义）
+  const broken = cursor.text.length > 0 && !next.text.startsWith(cursor.text);
+  if (!broken && next.text.length > cursor.text.length) {
     specs.push({ kind: 'append_text', roundId, text: next.text.slice(cursor.text.length) });
   }
   // 事件按轮内 seq 过滤；序号不回退（内核单调打标），故 `>` 即严格新增
   for (const event of live.processEvents ?? []) {
     if (event.seq > cursor.eventSeq) specs.push({ kind: 'process_event', roundId, event });
   }
-  return { specs, next };
+  return { specs, next, resync: broken };
 }

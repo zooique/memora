@@ -843,7 +843,15 @@ export class RemoteBridge {
     snapshot: SnapshotPayload,
     state: DeviceStreamState,
   ): void {
-    const { specs, next } = diffRichDelta(snapshot, state.rich);
+    const { specs, next, resync } = diffRichDelta(snapshot, state.rich);
+    if (resync) {
+      // 正文前缀断裂 = 已发的 append_text 含被内核撤回的过渡叙述；append-only 无撤回通道，
+      // 只有快照全量替换能消错帧。复用收场同款 pushSnapshot + resetStream（水位/游标归零），
+      // 不新增协议 kind；tick 保持武装，下一拍从重建后的游标续推。
+      this.pushSnapshot(conn, sid);
+      this.resetStream(this.deviceOf(conn), sid);
+      return;
+    }
     state.rich = next;
     for (const spec of specs) {
       const richSeq = state.sentSeq + 1;
