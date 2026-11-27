@@ -1,0 +1,21 @@
+{
+  "t": "evt",
+  "ch": "events",
+  "sid": "fixture-rich",
+  "seq": 12,
+  "kind": "delta",
+  "p": {
+    "kind": "process_event",
+    "roundId": "r-rich",
+    "event": {
+      "type": "tool_start",
+      "seq": 4,
+      "ts": "2026-11-27T00:00:00.000Z",
+      "payload": {
+        "toolCallId": "call-rich",
+        "name": "read_file",
+        "args": "{\"path\":\"a.txt\"}"
+      }
+    }
+  }
+}

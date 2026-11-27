@@ -15,10 +15,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
+  buildAppendTextDeltaFrame,
+  buildProcessEventDeltaFrame,
   buildSnapshotFrame,
   serializeBridgeFrame,
   type SnapshotPayload,
 } from '../src/extension/host/remote/remoteBridgeProtocol.js';
+import type { ProcessEvent } from '@zooique/memora';
 import {
   TRIMMED_RECENT_EVENTS,
   TRIMMED_RECENT_LOG,
@@ -81,6 +84,25 @@ function buildTrimmedInput() {
   };
 }
 
+/** 富增量样本：用协议层唯一构造点生成，禁止在生成器里手写第二份帧形状 */
+const RICH_APPEND_TEXT_INPUT = {
+  sid: 'fixture-rich',
+  seq: 11,
+  roundId: 'r-rich',
+  text: '新增正文后缀',
+};
+const RICH_PROCESS_EVENT_INPUT = {
+  sid: 'fixture-rich',
+  seq: 12,
+  roundId: 'r-rich',
+  event: {
+    type: 'tool_start',
+    seq: 4,
+    ts: '2026-11-27T00:00:00.000Z',
+    payload: { toolCallId: 'call-rich', name: 'read_file', args: '{"path":"a.txt"}' },
+  } satisfies ProcessEvent,
+};
+
 /**
  * 输入刻意是最小投影：`RoundView` 其余字段不参与裁剪（与桥单测同一手法）。
  * 这里只补类型，不让 TS 对未参与裁剪的字段提出必填要求。
@@ -122,27 +144,85 @@ function collectTargets(options: GenerateOptions): {
   const mobileExists = existsSync(mobileDir);
 
   const targets: FixtureTarget[] = [];
-  const cases = [
+  const snapshotCases = [
     { name: 'snapshot.simple', input: SIMPLE_INPUT },
     { name: 'snapshot.trimmed', input: buildTrimmedInput() },
   ];
-  for (const item of cases) {
+  for (const item of snapshotCases) {
     const frame = buildSnapshotFrame(item.input.sid, asSnapshotPayload(item.input.snapshot));
     const frameJson: unknown = JSON.parse(serializeBridgeFrame(frame));
+    writeCaseTargets(
+      targets,
+      fixtureDir,
+      mirrorDir,
+      mobileExists,
+      item.name,
+      item.input,
+      frameJson,
+    );
+  }
+
+  const richCases = [
+    {
+      name: 'delta.append_text',
+      input: RICH_APPEND_TEXT_INPUT,
+      frame: buildAppendTextDeltaFrame(
+        RICH_APPEND_TEXT_INPUT.sid,
+        RICH_APPEND_TEXT_INPUT.seq,
+        RICH_APPEND_TEXT_INPUT.roundId,
+        RICH_APPEND_TEXT_INPUT.text,
+      ),
+    },
+    {
+      name: 'delta.process_event',
+      input: RICH_PROCESS_EVENT_INPUT,
+      frame: buildProcessEventDeltaFrame(
+        RICH_PROCESS_EVENT_INPUT.sid,
+        RICH_PROCESS_EVENT_INPUT.seq,
+        RICH_PROCESS_EVENT_INPUT.roundId,
+        RICH_PROCESS_EVENT_INPUT.event,
+      ),
+    },
+  ];
+  for (const item of richCases) {
+    const frameJson: unknown = JSON.parse(serializeBridgeFrame(item.frame));
+    writeCaseTargets(
+      targets,
+      fixtureDir,
+      mirrorDir,
+      mobileExists,
+      item.name,
+      item.input,
+      frameJson,
+    );
+  }
+  return { targets, mobileDir, mobileExists };
+}
+
+/** 把一份「输入 + 期望帧」写进主仓目标清单，并在手机仓在场时镜像一份 */
+function writeCaseTargets(
+  targets: FixtureTarget[],
+  fixtureDir: string,
+  mirrorDir: string,
+  mobileExists: boolean,
+  name: string,
+  input: unknown,
+  frameJson: unknown,
+): void {
+  {
     // 主仓：输入 + 期望帧都留，主仓单测据此重算（输入是可复查的样本，不是派生结果）
     targets.push(
-      { filePath: path.join(fixtureDir, `${item.name}.input.json`), value: item.input },
-      { filePath: path.join(fixtureDir, `${item.name}.frame.json`), value: frameJson },
+      { filePath: path.join(fixtureDir, `${name}.input.json`), value: input },
+      { filePath: path.join(fixtureDir, `${name}.frame.json`), value: frameJson },
     );
     // 手机仓：镜像输入 + 期望帧（输入让客户端能自证裁剪不变量，不必复刻 50/20 常量）
     if (mobileExists) {
       targets.push(
-        { filePath: path.join(mirrorDir, `${item.name}.input.json`), value: item.input },
-        { filePath: path.join(mirrorDir, `${item.name}.frame.json`), value: frameJson },
+        { filePath: path.join(mirrorDir, `${name}.input.json`), value: input },
+        { filePath: path.join(mirrorDir, `${name}.frame.json`), value: frameJson },
       );
     }
   }
-  return { targets, mobileDir, mobileExists };
 }
 
 /**

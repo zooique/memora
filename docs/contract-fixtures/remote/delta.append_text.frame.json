@@ -1,0 +1,12 @@
+{
+  "t": "evt",
+  "ch": "events",
+  "sid": "fixture-rich",
+  "seq": 11,
+  "kind": "delta",
+  "p": {
+    "kind": "append_text",
+    "roundId": "r-rich",
+    "text": "新增正文后缀"
+  }
+}

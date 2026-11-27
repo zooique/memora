@@ -403,8 +403,8 @@ export function buildSnapshotFrame(sid: string, snapshot: SnapshotPayload): EvtF
 /**
  * 构造下行状态增量帧（`evt` + `kind:'delta'` + `p.kind:'status'`）
  *
- * **唯一构造点**：桥的增量推送与后续 golden fixture 生成器都调用它。本切片只承载
- * `status`（相位变化），文本 / 过程事件等富 `delta.kind` 未落地，不借本构造点偷渡。
+ * **唯一构造点**：桥的增量推送与 golden fixture 生成器都调用它。本函数只承载
+ * `status`（相位变化）；文本 / 过程事件有各自的唯一构造点，不借本构造点偷渡。
  * `seq` 从 1 起（快照恒 0），由每设备每会话的水位分配，构造点只校验不分配。
  */
 export function buildStatusDeltaFrame(sid: string, seq: number, state: TurnState): EvtFrame {

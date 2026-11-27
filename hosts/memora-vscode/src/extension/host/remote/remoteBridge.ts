@@ -362,8 +362,9 @@ export class RemoteBridge {
    * 桥只对**已订阅该 sid** 的连接扇出。未监听 / 无订阅时零开销。
    *
    * ⚠️ 帧形态按档分：profile 2 仍发整帧 `evt snapshot`（seq 恒 0，无水位）；profile 3
-   * 发 `evt delta`（`p.kind:'status'`，seq 按设备独立递增并进回放窗）。本触发口
-   * （谁在什么时刻通知桥）两档共用，富 `delta.kind` 后续在此生长，不改接线。
+   * 发 `evt delta`（先 `p.kind:'status'`，再按需追加 `append_text` / `process_event`；
+   * seq 按设备独立递增并进回放窗）。本触发口（谁在什么时刻通知桥）两档共用，
+   * 富 `delta.kind` 已在此生长，不改接线。
    *
    * @param sessionId 投影发生变化的会话
    */
