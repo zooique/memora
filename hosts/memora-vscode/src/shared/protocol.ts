@@ -323,6 +323,13 @@ export interface RemoteDeviceDto {
   tier: RemoteDeviceTier;
   /** 首次配对时刻（epoch ms） */
   pairedAt: number;
+  /**
+   * 此刻是否有在线连接（真源 = 桥的已认证连接，不是设备表）
+   *
+   * 「已配对」与「已连接」是两个事实：拔网 / 关 App 后设备仍配对但不在线，
+   * 页面必须能区分，不能把设备表的一行读成「正在使用中」。
+   */
+  online: boolean;
 }
 
 /** 审计尾的一行（只取展示所需字段；`at` 由审计日志统一盖戳） */
@@ -359,9 +366,10 @@ export interface RemoteSettingsStatus {
   /** 配对口令过期时刻（epoch ms） */
   pairingExpiresAt?: number;
   /**
-   * 配对连接串（v1；含地址 + 证书 DER + 一次性口令 + 过期时刻）
+   * 配对连接串（v2；含地址 + 服务端证书 DER + 一次性口令 + 一次性客户端身份）
    *
-   * 只在「监听中 + 地址可用 + 口令未过期」时下发；含口令 ⇒ **禁止**写入日志 / 审计。
+   * 只在「监听中 + 地址可用 + 口令未过期」时下发；含口令与客户端私钥 ⇒
+   * **禁止**写入日志 / 审计，只允许用户主动复制。
    */
   pairingLink?: string;
   /** 已配对设备（LAN 未启动时为空数组） */

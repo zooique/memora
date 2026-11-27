@@ -108,8 +108,12 @@ export async function readRemoteSettingsStatus(
   const runtime = getRemoteBridgeRuntime();
   const handle = getRemoteLanHandle();
   const { audit, error } = await readAuditTail(context.globalStorageUri.fsPath);
-  // 设备表只在 LAN 句柄存在时可读：回环档没有配对概念，空数组 = 如实
-  const devices = handle ? handle.devices.list() : [];
+  // 设备表只在 LAN 句柄存在时可读：回环档没有配对概念，空数组 = 如实。
+  // 「已配对」与「已连接」分属两个真源：表给配对事实，桥的已认证连接给在线事实。
+  const online = new Set(handle?.listConnectedFingerprints() ?? []);
+  const devices = handle
+    ? handle.devices.list().map((device) => ({ ...device, online: online.has(device.fingerprint) }))
+    : [];
   const base: RemoteSettingsStatus = {
     mode: runtime?.mode ?? 'off',
     ...(runtime ? { port: runtime.port } : {}),

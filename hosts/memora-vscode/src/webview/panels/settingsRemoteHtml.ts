@@ -39,7 +39,7 @@ export function buildRemoteBodyHtml(l10n: {
             <button id="remoteCopyLinkBtn" class="btn btn-secondary" type="button" data-remote-act="copy_pairing">${l10n.t('Copy pairing link')}</button>
           </div>
           <code id="remotePairingLinkText" class="remote-link-text"></code>
-          <p class="hint">${l10n.t('Send this link to your phone to pair. It carries the PC certificate and a one-time code, and expires together with the code.')}</p>
+          <p class="hint">${l10n.t('Send this link to your phone once. It carries the PC certificate, a one-time client identity for that phone and a one-time code, and expires together with the code. After the phone is approved once, it reconnects with the same identity without asking again.')}</p>
         </div>
         <p class="hint">${l10n.t('The bridge only starts when the MEMORA_REMOTE_BRIDGE environment variable is set to lan (or loopback for development) before the window starts. Changing it requires a window reload.')}</p>
       </div>
@@ -48,6 +48,7 @@ export function buildRemoteBodyHtml(l10n: {
       <div class="remote-item-header">
         <span class="remote-label">${l10n.t('Paired devices')}</span>
       </div>
+      <p class="hint">${l10n.t('Only one device can be paired at a time. Approving a new phone automatically revokes the previous one and disconnects it.')}</p>
       <ul id="remoteDeviceList" class="remote-list"></ul>
       <p id="remoteDeviceEmpty" class="hint">${l10n.t('No device is paired yet. Use "New pairing code" and confirm the phone on this PC.')}</p>
     </div>

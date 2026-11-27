@@ -117,16 +117,25 @@ export interface RemoteLanHandle {
   devices: RemoteDeviceStore;
   /** PC 身份（配对口令提示里的指纹短码） */
   identity: RemoteIdentity;
+  /**
+   * 一次性客户端身份（LAN 启动时铸造；随配对连接串交给手机，PC 端不持久化）
+   *
+   * 为什么放在句柄而不是每次构造连接串时现铸：连接串会被页面反复读取（刷新 / 重推），
+   * 现铸会让同一次配对窗口内出现多份「客户端身份」，手机存到哪份全凭抓到哪一次读取。
+   */
+  clientIdentity: RemoteIdentity;
   /** 一次性口令状态机（重新生成口令时复用同一实例） */
   pairing: RemotePairing;
   /** 主局域网地址（展示用；取不到时为 `0.0.0.0`） */
   address: string;
   /** 实际监听端口 */
   port: number;
-  /** 重新生成配对口令（覆盖旧口令并重置尝试计数，TTL 从头算） */
+  /** 重新生成配对口令（覆盖旧口令并重置尝试计数，TTL 从头算；不换客户端身份） */
   regeneratePairingCode: () => PairingChallenge;
   /** 断开该设备的全部在线连接（撤销配对时用；返回断开数） */
   disconnectDevice: (fingerprint: string) => number;
+  /** 当前已连接设备的指纹（设置页「在线」真源；回环档不适用） */
+  listConnectedFingerprints: () => string[];
   /** 审计写入（与桥共用同一个 `RemoteAuditLog`；失败不抛出） */
   audit: (event: Omit<RemoteAuditEvent, 'at'>) => void;
   /** 输出通道日志（与桥共用同一个日志口） */
@@ -327,7 +336,8 @@ async function startLanBridge(
   try {
     // 证书栈（@peculiar/x509 + reflect-metadata）**只在这一支惰性加载**：
     // 扩展激活路径（extension.ts → 本文件）不 import 它们，远程桥未开时零加载成本。
-    const { loadOrCreateRemoteIdentity } = await import('./remoteIdentity.js');
+    const { loadOrCreateRemoteIdentity, createRemoteIdentity } =
+      await import('./remoteIdentity.js');
     const { createRemoteSecureServer } = await import('./remoteSecureServer.js');
     // ① 身份：SecretStorage 里的长期证书 / 私钥（缺失或损坏自动重建）
     const identity: RemoteIdentity = await loadOrCreateRemoteIdentity(
@@ -339,6 +349,8 @@ async function startLanBridge(
       },
       log,
     );
+    // ①b 一次性客户端身份：同一铸造面，交给手机后永久复用（PC 端不落盘）
+    const clientIdentity: RemoteIdentity = await createRemoteIdentity();
     // ② 设备表：globalState（只存指纹 / 档位 / 时间，不含密钥）
     const devices = new RemoteDeviceStore(context.globalState, log);
     // ③ 审计：globalStorage 下的追加式文件
@@ -366,6 +378,15 @@ async function startLanBridge(
     });
     // 供 catch 分支关闭半启动的 server（正常路径由 bridge.stop() 关闭）
     secure = secureServer;
+    /**
+     * 桥实例前向引用（可变持有对象，构造后回填）
+     *
+     * `registerDevice` 在「换绑」时需要断开旧设备连接，而连接面在桥实例上；
+     * 桥本身的构造又要先拿到 ports/security（其中含 registerDevice）。
+     * 用前向引用解开这个环，比把断开动作搬进设备表（越层）干净。
+     * 用持有对象而非 `let`：赋值只发生一次，但必须早于构造存在（`let` 会被 prefer-const 判红）。
+     */
+    const bridgeHolder: { current?: RemoteBridge } = {};
     const bridge = new RemoteBridge(createRemoteBridgePorts(deps), {
       pcId: `memora-lan-${identity.shortFp}`,
       port: resolvePort(),
@@ -375,16 +396,32 @@ async function startLanBridge(
         fingerprintOf: (socket) => secureServer.fingerprintOf(socket),
         tierOf: (fingerprint) => devices.get(fingerprint)?.tier,
         verifyPasscode: (code) => pairing.verify(code),
-        requestApproval: (info) => requestDeviceApproval(info),
+        // 批准弹窗必须明写「会撤销现有设备」：单设备策略是用户可见的后果，不能静默替换
+        requestApproval: (info) => requestDeviceApproval(info, devices.list()),
         registerDevice: (info) => {
-          // 配对默认最小权限（§5.9：observe），提档需 PC 端另行勾选（不在本切片）
+          // 单设备策略：换绑走一次写收敛的 `replaceWith`（表里不会出现两台同时有效）
           void devices
-            .upsert({
+            .replaceWith({
               fingerprint: info.fingerprint,
               shortFp: info.shortFp,
               name: info.name,
+              // 配对默认最小权限（§5.9：observe），提档需 PC 端另行勾选（不在本切片）
               tier: 'observe',
               pairedAt: Date.now(),
+            })
+            .then((removed) => {
+              // 被换下的旧设备必须连读通道一起终止（与撤销语义同源，§5.9）
+              for (const old of removed) {
+                const closed = bridgeHolder.current?.disconnectDevice(old.fingerprint) ?? 0;
+                void auditLog.record({
+                  event: 'device_replaced',
+                  deviceFp: old.fingerprint,
+                  detail: `${old.shortFp}→${info.shortFp}（断开 ${closed} 条连接）`,
+                });
+                log(
+                  `[REMOTE-BRIDGE] 单设备策略：已换下 ${old.name}（${old.shortFp}），断开 ${closed} 条连接`,
+                );
+              }
             })
             .catch((err: unknown) => log(`[REMOTE-BRIDGE] 写设备表失败: ${String(err)}`));
         },
@@ -398,6 +435,8 @@ async function startLanBridge(
       },
       log,
     });
+    // 构造完成即回填前向引用：registerDevice 的换绑断开依赖它（首次 hello 前必然已就绪）
+    bridgeHolder.current = bridge;
     const started = await bridge.start();
     // 运行时登记（两种档位共用一份）：设置页据此显示「局域网 · 端口」
     const runtime = { mode: 'lan' as const, port: started.port };
@@ -412,11 +451,13 @@ async function startLanBridge(
     remoteLanHandle = {
       devices,
       identity,
+      clientIdentity,
       pairing,
       address: addresses[0] ?? '0.0.0.0',
       port: started.port,
       regeneratePairingCode: () => pairing.start(),
       disconnectDevice: (fingerprint) => bridge.disconnectDevice(fingerprint),
+      listConnectedFingerprints: () => bridge.connectedFingerprints(),
       audit: (event) => {
         void auditLog.record(event);
       },
@@ -452,19 +493,34 @@ async function startLanBridge(
  *
  * 拒绝 / 关闭一律视为拒绝（fail-closed）；不阻塞 VS Code 其他窗口。
  *
- * @param info 待批准设备（指纹短码 + 展示名 + 来源 IP）
+ * 单设备策略必须在弹窗里**明写后果**：批准新设备会撤销现有设备（并断开其在线连接）。
+ * 把「换绑」藏在批准之后 = 用户以为只是新增一台，实际另一台被踢下线。
+ *
+ * @param info     待批准设备（指纹短码 + 展示名 + 来源 IP）
+ * @param existing 当前设备表快照（用于如实列出将被撤销的设备）
  */
-async function requestDeviceApproval(info: {
-  fingerprint: string;
-  shortFp: string;
-  name: string;
-  ip?: string;
-}): Promise<boolean> {
+async function requestDeviceApproval(
+  info: {
+    fingerprint: string;
+    shortFp: string;
+    name: string;
+    ip?: string;
+  },
+  existing: readonly RemoteDeviceRecord[],
+): Promise<boolean> {
   const from = info.ip ? `，来自 ${info.ip}` : '';
+  // 同一设备重复配对（例如重装 App 后导入新连接串但指纹恰好相同）不算换绑，不必吓用户
+  const replaced = existing.filter((device) => device.fingerprint !== info.fingerprint);
+  const replaceNote =
+    replaced.length === 0
+      ? ''
+      : `\n同一时间只允许一台设备：批准后将撤销现有设备 ${replaced
+          .map((device) => `「${device.name}」(${device.shortFp})`)
+          .join('、')}，并断开它的连接。`;
   // 模态确认必须走唯一入口（系统自带 Cancel 解析为 undefined ⇒ fail-closed）
   return confirmModal({
     message: `手机「${info.name}」请求配对（指纹 ${info.shortFp}${from}）`,
-    detail: '允许后该设备获得只读权限（observe）；取消或关闭窗口视为拒绝。',
+    detail: `允许后该设备获得只读权限（observe），之后可免口令重连。${replaceNote}取消或关闭窗口视为拒绝。`,
     confirmLabel: '允许',
   });
 }

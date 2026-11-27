@@ -16,6 +16,11 @@
  *   - 只做身份材料（生成 / 读写 / 指纹），**不做配对、不做连接判定**；
  *   - 不 import vscode：SecretStorage 经 `RemoteIdentitySecretStore` 窄接口注入；
  *   - 损坏数据必须**重建**（不可抛错拖死宿主激活），这是本文件唯一的容错承诺。
+ *
+ * 两类身份（同一铸造面，持久化策略不同）：
+ *   - **PC 长期身份**：落 SecretStorage，重启复用（本文件 `loadOrCreateRemoteIdentity`）；
+ *   - **一次性客户端身份**：LAN 启动时铸造、随配对连接串交给手机、PC 端不持久化
+ *     （{@link createRemoteIdentity} 直接调用；手机侧凭它永久重连，PC 只看设备表指纹）。
  */
 
 // ⚠️ 必须是第一条 import：@peculiar/x509 依赖 tsyringe，tsyringe 需要 reflect-metadata
@@ -25,9 +30,14 @@ import { webcrypto } from 'node:crypto';
 import { X509Certificate, X509CertificateGenerator } from '@peculiar/x509';
 import { fingerprintOfCertDer, shortFingerprint } from './remoteFingerprint.js';
 
-/** PC 身份（落库形态 + 派生指纹） */
+/** 身份（落库形态 + 派生指纹） */
 export interface RemoteIdentity {
-  /** 私钥 PEM（pkcs8；只允许进 SecretStorage，禁止落盘到工作区） */
+  /**
+   * 私钥 PEM（pkcs8）
+   *
+   * 长期身份只允许进 SecretStorage（禁止落盘到工作区 / 日志）；一次性客户端身份
+   * 只允许进配对连接串（用户主动复制交给手机），同样禁止落日志。
+   */
   keyPem: string;
   /** 自签证书 PEM（公开材料，可随配对流程展示） */
   certPem: string;
@@ -82,7 +92,7 @@ export async function loadOrCreateRemoteIdentity(
   const existing = parseStoredIdentity(raw, log);
   if (existing) return existing;
 
-  const identity = await createIdentity();
+  const identity = await createRemoteIdentity();
   await store.store(
     REMOTE_IDENTITY_SECRET_KEY,
     JSON.stringify({ keyPem: identity.keyPem, certPem: identity.certPem }),
@@ -126,12 +136,18 @@ function parseStoredIdentity(
 }
 
 /**
- * 生成新身份（ECDSA P-256 自签证书 + pkcs8 私钥 PEM）
+ * 生成一份新身份（ECDSA P-256 自签证书 + pkcs8 私钥 PEM）
  *
- * 私钥必须是 extractable=true：需要导出 pkcs8 后落 SecretStorage；
+ * 身份铸造的**唯一实现**，两个消费者共用：
+ *   ① PC 长期身份（{@link loadOrCreateRemoteIdentity}：落 SecretStorage，重启复用）；
+ *   ② 一次性客户端身份（LAN 启动时为「即将配对的那台手机」铸造，随配对连接串交付，
+ *      **不落任何持久化**——手机拿到后自行保存，PC 端重启即丢弃）。
+ * 两者只差持久化策略，证书形状必须同源，否则指纹口径会漂移。
+ *
+ * 私钥必须是 extractable=true：需要导出 pkcs8 后落 SecretStorage / 放进连接串；
  * 证书只用于 TLS 与指纹，不声明 CA / 扩展密钥用途（自签 + 指纹固定，不走链校验）。
  */
-async function createIdentity(): Promise<RemoteIdentity> {
+export async function createRemoteIdentity(): Promise<RemoteIdentity> {
   const keys = (await webcrypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
     'sign',
     'verify',

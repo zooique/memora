@@ -124,3 +124,32 @@ describe('RemoteDeviceStore — 改档与撤销', () => {
     expect(await store.remove('AAAA1111')).toBe(false);
   });
 });
+
+describe('RemoteDeviceStore — 单设备策略（replaceWith）', () => {
+  it('换绑：表只剩新设备，并返回被替换掉的旧设备', async () => {
+    const memento = new MemoryMemento();
+    const store = new RemoteDeviceStore(memento);
+    await store.upsert(record('AAAA1111', '旧手机'));
+    await store.upsert(record('BBBB2222', '更旧手机'));
+
+    const removed = await store.replaceWith(record('cccc3333', '新手机'));
+
+    expect(store.list()).toHaveLength(1);
+    expect(store.get('CCCC3333')?.name).toBe('新手机');
+    expect(removed.map((r) => r.name).sort()).toEqual(['旧手机', '更旧手机']);
+    // 一次写收敛：中间态（表里同时存在两台）从未落库
+    expect(memento.get<RemoteDeviceRecord[]>(REMOTE_DEVICES_KEY)).toHaveLength(1);
+  });
+
+  it('换绑同一台设备：不产生「被替换」列表', async () => {
+    const store = new RemoteDeviceStore(new MemoryMemento());
+    await store.upsert(record('AAAA1111', '手机'));
+
+    const removed = await store.replaceWith({ ...record('aaaa1111', '手机改名'), tier: 'send' });
+
+    expect(removed).toEqual([]);
+    expect(store.list()).toHaveLength(1);
+    expect(store.get('AAAA1111')?.name).toBe('手机改名');
+    expect(store.get('AAAA1111')?.tier).toBe('send');
+  });
+});

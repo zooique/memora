@@ -377,6 +377,22 @@ export class RemoteBridge {
   }
 
   /**
+   * 当前**已连接**设备的指纹清单（去重；回环档恒为空数组）
+   *
+   * 供设置页如实展示「设备是否在线」：判据是 TLS 层认证过的 `conn.deviceFp`，
+   * 与 `disconnectDevice` 同源；不读设备表（那是「已配对」，不等于「已连接」）。
+   *
+   * @returns 设备指纹数组（全大写 hex）
+   */
+  connectedFingerprints(): string[] {
+    const fingerprints = new Set<string>();
+    for (const conn of this.connections) {
+      if (conn.deviceFp) fingerprints.add(conn.deviceFp);
+    }
+    return [...fingerprints];
+  }
+
+  /**
    * 会话投影变化通知（**宿主 → 桥的推送触发口**）
    *
    * 由宿主在每次「该 sid 的 turn 投影可能变化」时调用（接线点见 chatPanel 的 onTurnProjected）；

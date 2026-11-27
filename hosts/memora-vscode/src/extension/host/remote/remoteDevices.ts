@@ -12,6 +12,7 @@
  * 边界：
  *   - 只存**非密钥**事实（指纹 / 展示名 / 档位 / 时间）；
  *   - 读时逐条校验，坏条目丢弃并留痕（一条坏数据不能拖死整张表）；
+ *   - **单设备策略**：`replaceWith` 是「换绑」的唯一写入面，一次写收敛为一条；
  *   - 不 import vscode：`globalState` 经 `RemoteDeviceMemento` 窄接口注入。
  */
 
@@ -170,6 +171,26 @@ export class RemoteDeviceStore {
     if (next.length === records.length) return false;
     await this.write(next);
     return true;
+  }
+
+  /**
+   * 用一台设备**整体替换**设备表（单设备策略的唯一写入面）
+   *
+   * 语义 =「同一时间只允许一台设备」：把表写成只含该条记录的数组。
+   * 为什么不复用 `upsert` + 逐条 `remove`：两次写入之间有一段时间表里同时存在两台，
+   * 期间桥的 `tierOf` 仍会放行旧设备（静默竞态）；这里一次 `write` 收敛。
+   *
+   * @param record 新设备记录（指纹会被归一为大写）
+   * @returns 被替换掉的旧设备（调用方据此断开旧连接并写审计）
+   */
+  async replaceWith(record: RemoteDeviceRecord): Promise<RemoteDeviceRecord[]> {
+    const normalized: RemoteDeviceRecord = {
+      ...record,
+      fingerprint: normalizeFingerprint(record.fingerprint),
+    };
+    const removed = this.list().filter((item) => item.fingerprint !== normalized.fingerprint);
+    await this.write([normalized]);
+    return removed;
   }
 
   /**

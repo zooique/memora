@@ -105,6 +105,19 @@ export const remoteStyles = `
     flex-wrap: wrap;
     gap: var(--sp-1, 4px);
   }
+  /* 在线状态：与档位徽标同款胶囊；在线用主色文字，离线保持次级（不靠颜色单独表意，
+     同级还有文字「在线 / 离线」，色盲用户同样可读） */
+  #remote-root .remote-device-status {
+    flex-shrink: 0;
+    padding: var(--sp-hair, 1px) var(--sp-2, 6px);
+    border-radius: var(--radius-pill, 999px);
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+    background: var(--surface-hover, rgba(128, 128, 128, 0.2));
+  }
+  #remote-root .remote-device-online {
+    color: var(--text-primary, #cccccc);
+  }
   /* 撤销是破坏性动作：hover 才染红，静态保持中性（避免整行都在喊危险） */
   #remote-root .remote-revoke:hover { color: var(--text-error, #f14c4c); }
   #remote-root .remote-audit-row {

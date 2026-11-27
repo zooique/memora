@@ -135,7 +135,13 @@ export function createRemoteView({
       const tier = document.createElement('span');
       tier.className = 'remote-device-tier';
       tier.textContent = tierLabel(device.tier);
-      info.append(name, tier);
+      // 在线状态：已配对 ≠ 已连接（拔网 / 关 App 后仍在表里但不在线）
+      const presence = document.createElement('span');
+      presence.className = device.online
+        ? 'remote-device-status remote-device-online'
+        : 'remote-device-status';
+      presence.textContent = device.online ? l10n.t('Online') : l10n.t('Offline');
+      info.append(name, tier, presence);
 
       const actions = document.createElement('div');
       actions.className = 'remote-device-actions';

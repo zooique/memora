@@ -86,10 +86,11 @@ function buildTrimmedInput() {
 }
 
 /**
- * 配对连接串样本（v1）
+ * 配对连接串样本（v2）
  *
  * `certDerBase64` 刻意取含 `+` `/` 的字节，锁死 base64url 转换（手机据此还原标准 base64
- * 喂给 `PinnedTlsClient`）；它只是格式样本，不是真实证书。
+ * 喂给 `PinnedTlsClient`）；客户端 key/cert 取含换行的 PEM 文本，锁死「PEM → base64url →
+ * 原样还原」这条路（手机会把它们写成文件再交给 `SecurityContext`）。都不是真实证书。
  */
 const PAIRING_LINK_INPUT = {
   address: '192.168.1.9',
@@ -99,6 +100,9 @@ const PAIRING_LINK_INPUT = {
   shortFp: 'ABCD-1234',
   // 2100-01-01：样本永不过期，避免测试断言随系统时钟改变
   expiresAt: 4102444800000,
+  clientKeyPem: '-----BEGIN PRIVATE KEY-----\nAAECAwQ=\n-----END PRIVATE KEY-----\n',
+  clientCertPem: '-----BEGIN CERTIFICATE-----\nBQYHCAk=\n-----END CERTIFICATE-----\n',
+  clientFingerprint: 'A'.repeat(64),
 };
 
 /** 富增量样本：用协议层唯一构造点生成，禁止在生成器里手写第二份帧形状 */
@@ -214,7 +218,7 @@ function collectTargets(options: GenerateOptions): {
     );
   }
 
-  // 配对连接串（v1）：非帧样本，但同属跨仓契约——手机解析器按它断言字段与 base64url 还原。
+  // 配对连接串（v2）：非帧样本，但同属跨仓契约——手机解析器按它断言字段与 base64url 还原。
   // 走同一目标清单 ⇒ `fixtures:check` 也覆盖它，手改即红。
   const pairingValue = {
     input: PAIRING_LINK_INPUT,

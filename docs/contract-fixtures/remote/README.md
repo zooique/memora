@@ -8,7 +8,8 @@
 - 宿主断言（桥构造 == fixture）：`hosts/memora-vscode/src/extension/host/remote/__tests__/remoteFixtures.test.ts`
 - 手机镜像与断言（fixture → DTO 字段级）：`../memora-mobile/test/fixtures/remote/` + `dart run tool/fixture_smoke.dart`
 - 覆盖范围：`snapshot` 两用例（未裁剪 / 超限裁剪）、`delta` 两用例（正文后缀 / 过程事件），
-  以及 `pairing.link`（配对连接串 v1：字段形状与 base64url 还原）。
+  以及 `pairing.link`（配对连接串 v2：服务端 DER + 一次性口令 + 一次性客户端 key/cert/指纹，
+  锁死 base64url 与 PEM 往返）。
   `err` / `session_list_ok` 尚未生成样本。
 
 禁止手改任何 `*.json`：手改后宿主单测仍绿（它只认重算结果），手机会基于伪造样本"通过"，
