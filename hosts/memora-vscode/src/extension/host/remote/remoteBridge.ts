@@ -391,14 +391,27 @@ export class RemoteBridge {
    * ⚠️ 流中节奏由谁驱动：宿主只在**生命周期节点**（开流 / 提问 / 插话变长 / 收场）通知，
    * 正文 chunk 与 process_event 逐条**不通知**（chatPanel 行数顶格，无处接线）。因此
    * profile 3 在 running 期间由桥侧 250ms tick 补推富增量（见 `onStreamTick`）；本口每次
-   * 通知仍保证 status 相位不丢——tick **只推富增量、不推 status**，两条职责不重叠。
+   * 通知仍保证 status 相位不丢——tick **只推富增量、不推 status**，两条职责不重叠；
+   * 收场例外走下方 settled 分支（快照自带相位，不再单发 status）。
    *
    * @param sessionId 投影发生变化的会话
+   * @param settled 流收场（宿主带 live 且非回放）：profile 3 补快照收口落盘正文、水位归零
    */
-  notifyTurnUpdate(sessionId: string): void {
+  notifyTurnUpdate(sessionId: string, settled = false): void {
     if (!this.server) return;
     const subscribers = [...this.connections].filter((conn) => conn.subs.has(sessionId));
     if (subscribers.length === 0) return;
+    // 收场收口：富增量在无 live 轮时按设计零增量（diffRichDelta），落盘正文只能靠 snapshot
+    // 到达手机；profile 3 补一帧快照（seq=0）后 resetStream 令 PC sentSeq 归零，与手机端
+    // 「快照 seq 归零重建」对齐（§6.7）。profile 2 本就整帧快照，走下方原路径即可。
+    if (settled && this.options.security) {
+      for (const conn of subscribers) {
+        this.disarmStreamTick(conn, sessionId);
+        this.pushSnapshot(conn, sessionId);
+        this.resetStream(this.deviceOf(conn), sessionId);
+      }
+      return;
+    }
     // 流中 tick 只服务 LAN 档；回环档（无 security）继续整帧快照，不武装定时器。
     // 相位取一次快照（同一 sid 对所有订阅者同值），不让每条连接各读一遍。
     const running = this.options.security
@@ -406,7 +419,7 @@ export class RemoteBridge {
       : false;
     for (const conn of subscribers) {
       this.pushUpdate(conn, sessionId);
-      // running 期间武装 250ms tick 补推流中富增量；离开 running 立刻停表（收场内容由本拍 pushDelta 带走）
+      // running 期间武装 250ms tick 补推流中富增量；离开 running 立刻停表（收场快照由上方 settled 分支收口）
       if (running) this.armStreamTick(conn, sessionId);
       else this.disarmStreamTick(conn, sessionId);
     }

@@ -734,7 +734,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private _fileChangeSink: FileChangeSink | undefined;
   /** 外部通知口（远程桥订阅；未接线 = 零开销）：会话投影变化 / 审批提醒（sid + requestId → attention） */
-  public onTurnProjected?: (sessionId: string) => void; public onConfirmAttention?: (sessionId: string, requestId: string, label: string) => void;
+  public onTurnProjected?: (sessionId: string, settled?: boolean) => void; public onConfirmAttention?: (sessionId: string, requestId: string, label: string) => void;
   /** 脚本类工具（opaque 写）执行前 workspace 文本快照：键 = toolCallId → 路径→内容 */
   private readonly scriptSnapshots = new Map<string, Map<string, string> | null>();
   /** 未确认改动路径清单的取值函数（由 extension 注入；真源 = 宿主 FileChangeView） */
@@ -2726,8 +2726,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private postTurnUpdateFor(sessionId: string, live?: PendingLiveRound, replay = false): void {
     // 远程桥订阅：先通知（**不受视图可见性限制**——桥要看的正是没有视图的后台会话）；
-    // 未接线时 `onTurnProjected` 为 undefined，可选链零开销
-    this.onTurnProjected?.(sessionId);
+    // settled = 带 live 且非回放（流收场）：桥据此补一帧 snapshot 收口落盘正文；未接线零开销
+    this.onTurnProjected?.(sessionId, !!live && !replay);
     // 没有视图在看这条会话 ⇒ 不投影（后台代理会话的 IO 不白做；助手窗绑定它时照常投）
     if (!this.viewsMayShow(sessionId)) return;
     const { state, rounds, pendingQueue } = this.projectSession(sessionId, live);

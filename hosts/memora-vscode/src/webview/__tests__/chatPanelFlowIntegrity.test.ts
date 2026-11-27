@@ -426,3 +426,17 @@ describe('chatPanel · agent 强制依赖面守卫（P1-2）', () => {
     }
   });
 });
+
+/**
+ * REMOTE-RICH-DELTA-1：收场 settled 信号是远程桥补快照收口落盘正文的唯一触发口。
+ * 该接线只有一行、没有可被现有行为用例观测的差异——改回单参会静默失效，
+ * 故沿用本文件既有的「源码提取 + 显式登记」守卫形态钉住。
+ */
+describe('chatPanel · 远程桥收场信号守卫（REMOTE-RICH-DELTA-1）', () => {
+  it('onTurnProjected 必须把收场 live（非回放）作为第二参传给桥', () => {
+    const source = readFileSync(CHAT_PANEL_PATH, 'utf8');
+    const call = source.match(/onTurnProjected\?\.\([^\n]*/)?.[0];
+    expect(call, 'onTurnProjected 调用必须存在').toBeDefined();
+    expect(call).toBe('onTurnProjected?.(sessionId, !!live && !replay);');
+  });
+});

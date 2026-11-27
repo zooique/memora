@@ -1042,6 +1042,55 @@ describe('RemoteBridge — profile 3 delta 与水位补洞（§6.7 订正口径�
     expect((await client.next<{ t: string }>()).t).toBe('pong');
   });
 
+  it('收场补快照：落盘正文全量覆盖 + 水位归零（真机「漏445/错16」的机器判据）', async () => {
+    // 落盘 Round.assistantMessage（无 live 标记）是内核已扣 withdrawn 的正文唯一真源：
+    // 流中曾 append 的 16 字过渡叙述不得留在收口快照，最终正文必须整段到达手机。
+    const settledRound = {
+      id: 'r1',
+      assistantMessage: {
+        id: 'm1',
+        role: 'assistant',
+        content: '最终正文（内核已扣过渡叙述）',
+        timestamp: '2026-11-27T00:00:00.000Z',
+      },
+    } as unknown as RoundView;
+    const running: TurnState = { phase: 'running', roundId: 'r1' };
+    const settled: TurnState = { phase: 'settled', roundId: 'r1', status: 'complete' };
+    let current: TurnState = running;
+    const { security } = makeSecurity({ tier: 'observe' });
+    const { ports } = makePorts({
+      phaseOf: () => (current.phase === 'running' ? 'running' : 'idle'),
+      snapshot: () => ({ state: current, rounds: [settledRound], pendingQueue: [] }),
+    });
+    const { bridge, client } = await openLanSub(ports, security);
+
+    // 流中普通通知：只有 status seq=1（快照里无 live 轮，富差分按设计零增量）
+    bridge.notifyTurnUpdate('s1');
+    expect((await client.next<{ seq: number }>()).seq).toBe(1);
+
+    // 收场：宿主带 settled=true → 补一帧 seq=0 快照，落盘正文全量覆盖
+    current = settled;
+    bridge.notifyTurnUpdate('s1', true);
+    const snap = await client.next<{
+      seq: number;
+      kind: string;
+      p: { rounds: Array<{ assistantMessage?: { content: string } }> };
+    }>();
+    expect(snap).toMatchObject({ seq: 0, kind: 'snapshot' });
+    expect(snap.p.rounds[0]?.assistantMessage?.content).toBe('最终正文（内核已扣过渡叙述）');
+    expect(JSON.stringify(snap)).not.toContain('我先确认该文件是否在项目内可读。');
+    // ping 探底：收场只补快照，不再发 status/富增量（避免 seq 谱系分叉）
+    client.send({ t: 'ping' });
+    expect((await client.next<{ t: string }>()).t).toBe('pong');
+
+    // 水位归零实证：快照后第一帧增量从 seq=1 起（与手机「seq=0 快照归零重建」对齐）
+    bridge.notifyTurnUpdate('s1');
+    expect(await client.next<{ seq: number; kind: string }>()).toMatchObject({
+      seq: 1,
+      kind: 'delta',
+    });
+  });
+
   it('按设备独立递增 status 增量；resume 从 recvSeq+1 回放到 sentSeq', async () => {
     const { security } = makeSecurity({ tier: 'observe' });
     const { ports } = makePorts();
