@@ -11,7 +11,7 @@
  *   - 不 import vscode，因此不能用于真机宿主验证；真机仍走 `remoteBridgeHost`。
  *
  * 用法（宿主包目录）：
- *   npm run dev:bridge -- --certs <证书目录> [--host 127.0.0.1] [--port 0]
+ *   npm run dev:bridge -- [--mode lan|loopback] --certs <证书目录> [--host 127.0.0.1] [--port 0]
  * 允许手机连入的局域网地址请显式传 `--host 0.0.0.0`（绑定地址是安全边界，不替调用方决定）。
  */
 
@@ -116,12 +116,44 @@ function makePorts(): RemoteBridgePorts {
   };
 }
 
-/** 启动夹具桥并打印一行 `BRIDGE_READY {json}` 供编排脚本解析 */
+/** 打印 `BRIDGE_READY {json}` 并挂中断处理（两档共用；`connectHost` 把 0.0.0.0 归一为 127.0.0.1） */
+function announce(payload: Record<string, unknown>, onShutdown: () => Promise<void>): void {
+  const connectHost = payload.host === '0.0.0.0' ? '127.0.0.1' : String(payload.host);
+  console.log(`BRIDGE_READY ${JSON.stringify({ ...payload, connectHost })}`);
+  // 收到中断时先停桥再退，避免端口与 TLS server 留在半开状态
+  let stopping = false;
+  const shutdown = async (): Promise<void> => {
+    if (stopping) return;
+    stopping = true;
+    await onShutdown();
+    process.exit(0);
+  };
+  process.on('SIGINT', () => void shutdown());
+  process.on('SIGTERM', () => void shutdown());
+}
+
+/** 启动夹具桥：`--mode lan`（缺省，真 mTLS）或 `loopback`（明文 ws，仅本机） */
 async function main(): Promise<void> {
-  const certsDir = resolveCertsDir();
   const host = argOf('host') ?? '127.0.0.1';
   const portArg = argOf('port');
   const port = portArg === undefined ? 0 : Number.parseInt(portArg, 10);
+  const mode = argOf('mode') ?? 'lan';
+
+  // 回环档：与宿主 profile 2 同构——无 TLS / 无配对，只绑 127.0.0.1
+  if (mode === 'loopback') {
+    const bridge = new RemoteBridge(makePorts(), { pcId: DEV_PC_ID, port, log });
+    const started = await bridge.start();
+    announce(
+      { mode, host: '127.0.0.1', port: started.port, sessionId: DEV_SESSION_ID, pcId: DEV_PC_ID },
+      async () => {
+        await bridge.stop();
+      },
+    );
+    return;
+  }
+  if (mode !== 'lan') throw new Error(`未知 --mode: ${mode}（可用：lan / loopback）`);
+
+  const certsDir = resolveCertsDir();
 
   // 真证书：服务端（PC）用于 TLS，客户端（手机）证书的指纹用于自检/打印
   const serverCertPem = readFileSync(path.join(certsDir, 'server-cert.pem'), 'utf8');
@@ -180,32 +212,21 @@ async function main(): Promise<void> {
     log,
   });
   const started = await bridge.start();
-
-  // 0.0.0.0 只是绑定地址，回连必须用 127.0.0.1
-  const connectHost = host === '0.0.0.0' ? '127.0.0.1' : host;
-  console.log(
-    `BRIDGE_READY ${JSON.stringify({
+  announce(
+    {
+      mode,
       host,
-      connectHost,
       port: started.port,
       phoneFp,
       passcode: challenge.code,
       sessionId: DEV_SESSION_ID,
       pcId: DEV_PC_ID,
-    })}`,
+    },
+    async () => {
+      await bridge.stop();
+      await secure.close();
+    },
   );
-
-  // 收到中断时先停桥再退，避免端口与 TLS server 留在半开状态
-  let stopping = false;
-  const shutdown = async (): Promise<void> => {
-    if (stopping) return;
-    stopping = true;
-    await bridge.stop();
-    await secure.close();
-    process.exit(0);
-  };
-  process.on('SIGINT', () => void shutdown());
-  process.on('SIGTERM', () => void shutdown());
 }
 
 void main().catch((err: unknown) => {
