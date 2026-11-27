@@ -52,12 +52,15 @@ import type { RemoteRateLimitState } from './remoteRateLimiter.js';
 import type { PairingVerdict } from './remotePairing.js';
 import {
   buildConfirmAttentionFrame,
+  buildResumeOkFrame,
   buildSnapshotFrame,
+  buildStatusDeltaFrame,
   parseBridgeFrame,
   serializeBridgeFrame,
   type BridgeClientFrame,
   type BridgeServerFrame,
   type BridgeSessionSummary,
+  type EvtFrame,
   type SnapshotPayload,
 } from './remoteBridgeProtocol.js';
 
@@ -176,6 +179,24 @@ const DEFAULT_CAPS = ['observe', 'answer'] as const;
 /** 单帧上限（防开发客户端误发巨帧；正式限流随 profile 3） */
 const DEFAULT_MAX_FRAME = 1024 * 1024;
 
+/** 每设备每会话的增量窗口上限（§6.7：500 条 / 2MB，先到为准） */
+const MAX_DELTA_FRAMES = 500;
+const MAX_DELTA_WINDOW_BYTES = 2 * 1024 * 1024;
+
+/** 回放窗内的一帧（`bytes` 用 UTF-8 实测，不拿字符数冒充） */
+interface DeltaWindowEntry {
+  seq: number;
+  frame: EvtFrame;
+  bytes: number;
+}
+
+/** 单设备单会话的发送水位与回放窗（§6.8 的 `subscribers[device][sid]` 拍平实现） */
+interface DeviceStreamState {
+  sentSeq: number;
+  window: DeltaWindowEntry[];
+  windowBytes: number;
+}
+
 /**
  * 远程桥（一个实例 = 一个 profile；回环 / LAN / 隧道只是启动参数的差别，§19.3）
  */
@@ -186,6 +207,8 @@ export class RemoteBridge {
   private externalServer?: HttpsServer;
   /** 活动连接（stop 时统一关闭） */
   private readonly connections = new Set<ClientConnection>();
+  /** 每设备每会话的水位与回放窗（跨断连保留，设备撤销 / stop 才清） */
+  private readonly streams = new Map<string, DeviceStreamState>();
   /** 实际监听端口（未监听时 undefined） */
   private port?: number;
 
@@ -273,6 +296,7 @@ export class RemoteBridge {
       conn.ws.close(1001, 'bridge stopped');
     }
     this.connections.clear();
+    this.streams.clear();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     if (external) {
       await new Promise<void>((resolve) => {
@@ -318,6 +342,10 @@ export class RemoteBridge {
       conn.ws.close(1008, 'device revoked');
       closed += 1;
     }
+    // 撤销 = 读通道与水一起终止：回放窗若留着，重连后仍能补出已撤销设备的会话增量
+    for (const key of [...this.streams.keys()]) {
+      if (key.startsWith(`${target}\\u0000`)) this.streams.delete(key);
+    }
     return closed;
   }
 
@@ -325,18 +353,18 @@ export class RemoteBridge {
    * 会话投影变化通知（**宿主 → 桥的推送触发口**）
    *
    * 由宿主在每次「该 sid 的 turn 投影可能变化」时调用（接线点见 chatPanel 的 onTurnProjected）；
-   * 桥只对**已订阅该 sid** 的连接扇出一帧 `evt snapshot`。未监听 / 无订阅时零开销。
+   * 桥只对**已订阅该 sid** 的连接扇出。未监听 / 无订阅时零开销。
    *
-   * ⚠️ profile 2 只发整帧快照（无 `delta`、无水位）：供本地回环上的开发客户端验证
-   * 「后台会话状态实时可见」。真正的增量在 profile 3 落地时替换**帧形态**，
-   * 本触发口（谁在什么时刻通知桥）不变——故这里是生长点而非一次性实现。
+   * ⚠️ 帧形态按档分：profile 2 仍发整帧 `evt snapshot`（seq 恒 0，无水位）；profile 3
+   * 发 `evt delta`（`p.kind:'status'`，seq 按设备独立递增并进回放窗）。本触发口
+   * （谁在什么时刻通知桥）两档共用，富 `delta.kind` 后续在此生长，不改接线。
    *
    * @param sessionId 投影发生变化的会话
    */
   notifyTurnUpdate(sessionId: string): void {
     if (!this.server) return;
     for (const conn of this.connections) {
-      if (conn.subs.has(sessionId)) this.pushSnapshot(conn, sessionId);
+      if (conn.subs.has(sessionId)) this.pushUpdate(conn, sessionId);
     }
   }
 
@@ -447,10 +475,7 @@ export class RemoteBridge {
         // profile 2 无 credit 背压：确认帧只作解析（不拒，避免开发客户端误以为协议不认）
         return;
       case 'resume':
-        // 无增量水位 ⇒ 只能重拉快照（§6.7 的 reset_required 语义），逐订阅会话如实告知
-        for (const sid of conn.subs) {
-          this.send(conn, { t: 'reset_required', ch: 'ctl', sid });
-        }
+        this.handleResume(conn, frame);
         return;
       case 'sub':
         this.handleSub(conn, frame.sid);
@@ -594,6 +619,8 @@ export class RemoteBridge {
       return;
     }
     conn.subs.add(sid);
+    // 订阅即快照归零重建（§6.7）：profile 3 同步重置该设备该会话的发送水位与回放窗
+    if (this.options.security) this.resetStream(this.deviceOf(conn), sid);
     this.pushSnapshot(conn, sid);
   }
 
@@ -672,13 +699,137 @@ export class RemoteBridge {
       this.send(conn, { t: 'err', ch: 'cmd', rid, sid, code: decision.code });
       return;
     }
-    // 受理后立刻回推该会话快照：开发客户端无需再发一次 sub 就能看到相位变化
-    if (conn.subs.has(sid)) this.pushSnapshot(conn, sid);
+    // 受理后立刻回推该会话变化：开发客户端无需再发一次 sub 就能看到相位变化
+    if (conn.subs.has(sid)) this.pushUpdate(conn, sid);
   }
 
-  /** 回推一次快照（profile 2 唯一的下行事件形态；构造唯一入口 = `buildSnapshotFrame`） */
+  /** 回推一次快照（两档共用的归零重建形态；构造唯一入口 = `buildSnapshotFrame`） */
   private pushSnapshot(conn: ClientConnection, sid: string): void {
     this.send(conn, buildSnapshotFrame(sid, this.ports.snapshot(sid)));
+  }
+
+  /** 设备身份：profile 3 用 TLS 指纹，回环档用握手声明的 deviceId（缺省即 fail-closed） */
+  private deviceOf(conn: ClientConnection): string {
+    const device = conn.deviceFp ?? conn.deviceId;
+    if (!device) throw new Error('remote stream device missing');
+    return device;
+  }
+
+  /** 水位键：(device, sid) 复合，等价 §6.8 的嵌套 map；禁把 tab 当水位维度 */
+  private streamKey(device: string, sid: string): string {
+    return `${device}\u0000${sid}`;
+  }
+
+  /** 订阅 / 重订阅：快照 seq 归零，回放窗同步重建（§6.7） */
+  private resetStream(device: string, sid: string): DeviceStreamState {
+    const state: DeviceStreamState = { sentSeq: 0, window: [], windowBytes: 0 };
+    this.streams.set(this.streamKey(device, sid), state);
+    return state;
+  }
+
+  /** 按档申诉更新形态：回环档仍整帧快照，LAN 档走带水位的 status 增量 */
+  private pushUpdate(conn: ClientConnection, sid: string): void {
+    if (this.options.security) this.pushDelta(conn, sid);
+    else this.pushSnapshot(conn, sid);
+  }
+
+  /**
+   * LAN 档增量推送（本切片只承载 `status`）
+   *
+   * 无水位状态时**不凭空发 seq=1**：先补一次快照让手机与 PC 对齐，下一帧才从 1 起。
+   * 这是防「手机没收到快照却拿到增量」的 fail-closed，不是静默降级。
+   */
+  private pushDelta(conn: ClientConnection, sid: string): void {
+    const device = this.deviceOf(conn);
+    let state = this.streams.get(this.streamKey(device, sid));
+    if (!state) {
+      state = this.resetStream(device, sid);
+      this.pushSnapshot(conn, sid);
+      return;
+    }
+    const seq = state.sentSeq + 1;
+    const frame = buildStatusDeltaFrame(sid, seq, this.ports.snapshot(sid).state);
+    this.recordDelta(state, frame);
+    this.send(conn, frame);
+  }
+
+  /** 入窗并按「500 条或 2MB 先到为准」淘汰（§6.7；UTF-8 字节实测，不用字符数冒充） */
+  private recordDelta(state: DeviceStreamState, frame: EvtFrame): void {
+    const bytes = Buffer.byteLength(serializeBridgeFrame(frame), 'utf8');
+    state.window.push({ seq: frame.seq, frame, bytes });
+    state.sentSeq = frame.seq;
+    state.windowBytes += bytes;
+    while (state.window.length > MAX_DELTA_FRAMES || state.windowBytes > MAX_DELTA_WINDOW_BYTES) {
+      const dropped = state.window.shift();
+      if (!dropped) break;
+      state.windowBytes -= dropped.bytes;
+    }
+  }
+
+  /**
+   * 重连水位恢复（§6.7 订正口径）
+   *
+   * `recvSeq` 是手机声明但**不被信任**的提示：PC 用窗口验证 `(recvSeq, sentSeq]` 每帧都在，
+   * 才回 `resume_ok{fromSeq:recvSeq+1, headSeq:sentSeq}` 并顺序回放；否则重置。
+   * 方案原文 `fromSeq=sentSeq+1` 会跳过已发未收帧，已同批订正。
+   */
+  private handleResume(
+    conn: ClientConnection,
+    frame: Extract<BridgeClientFrame, { t: 'resume' }>,
+  ): void {
+    if (!this.options.security) {
+      for (const sid of conn.subs) this.sendResetRequired(conn, sid);
+      return;
+    }
+    const sids = frame.sid ? [frame.sid] : [...conn.subs];
+    for (const sid of sids) {
+      if (!conn.subs.has(sid)) {
+        this.sendResetRequired(conn, sid);
+        continue;
+      }
+      const state = this.streams.get(this.streamKey(this.deviceOf(conn), sid));
+      // 四类不可补：谱系丢失（上层短路）/ 水位超前 / 差超 500 / 窗口已淘汰（后三类见下）
+      if (!state || !this.ports.hasSession(sid)) {
+        this.sendResetRequired(conn, sid);
+        continue;
+      }
+      const reason = this.resumeFailureReason(state, frame.recvSeq);
+      if (reason) {
+        this.options.log?.(`[REMOTE-BRIDGE] reset_required ${sid}: ${reason}`);
+        this.sendResetRequired(conn, sid);
+        continue;
+      }
+      const fromSeq = frame.recvSeq + 1;
+      const headSeq = state.sentSeq;
+      this.send(conn, buildResumeOkFrame(sid, fromSeq, headSeq));
+      for (let seq = fromSeq; seq <= headSeq; seq += 1) {
+        const entry = state.window.find((item) => item.seq === seq);
+        if (entry) this.send(conn, entry.frame);
+      }
+    }
+  }
+
+  /** 水位失败分类（日志用；判据只有「回不回 reset_required」，不新增错误码） */
+  private resumeFailureReason(
+    state: DeviceStreamState,
+    recvSeq: number,
+  ): 'recv-ahead' | 'gap-too-large' | 'window-evicted' | undefined {
+    if (recvSeq > state.sentSeq) return 'recv-ahead';
+    if (state.sentSeq - recvSeq > MAX_DELTA_FRAMES) return 'gap-too-large';
+    if (!this.replayWindowComplete(state, recvSeq)) return 'window-evicted';
+    return undefined;
+  }
+
+  /** 待补区间每帧都在窗内才算可回放（空区间 = 已对齐，也算成功） */
+  private replayWindowComplete(state: DeviceStreamState, recvSeq: number): boolean {
+    for (let seq = recvSeq + 1; seq <= state.sentSeq; seq += 1) {
+      if (!state.window.some((item) => item.seq === seq)) return false;
+    }
+    return state.windowBytes <= MAX_DELTA_WINDOW_BYTES;
+  }
+
+  private sendResetRequired(conn: ClientConnection, sid: string): void {
+    this.send(conn, { t: 'reset_required', ch: 'ctl', sid });
   }
 
   /** 发送一帧（连接已关闭时静默丢弃——发送失败不改变任何业务裁决） */

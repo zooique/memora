@@ -645,7 +645,7 @@ describe('RemoteBridge — LAN 档命令（设备权限档）', () => {
     const client = await TestClient.connect(port);
     client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
     await client.next();
-    // 先订阅：受理后桥会回推快照，用它作为「命令已处理」的确定性信号（不靠 sleep）
+    // 先订阅：受理后桥会回推更新帧，用它作为「命令已处理」的确定性信号（不靠 sleep）
     client.send({ t: 'sub', sid: 's1' });
     await client.next();
 
@@ -659,13 +659,14 @@ describe('RemoteBridge — LAN 档命令（设备权限档）', () => {
     });
     const evt = await client.next<{ t: string; kind: string }>();
     expect(evt.t).toBe('evt');
-    expect(evt.kind).toBe('snapshot');
+    // profile 3 的形状是 status 增量；回环档测试仍锁 snapshot，两档判据不混
+    expect(evt.kind).toBe('delta');
     expect(delivered).toEqual([
       { sid: 's1', input: { type: 'input', kind: 'answer', answers: ['好'] } },
     ]);
   });
 
-  it('send 档 + idle 发 send → 投递到 handleInput 并回推快照', async () => {
+  it('send 档 + idle 发 send → 投递到 handleInput 并回推 status 增量', async () => {
     const { security } = makeSecurity({ tier: 'send' });
     const { ports, delivered } = makePorts({
       phaseOf: () => 'idle',
@@ -681,7 +682,7 @@ describe('RemoteBridge — LAN 档命令（设备权限档）', () => {
     client.send({ t: 'cmd', ch: 'cmd', rid: 'u-6', sid: 's1', kind: 'send', p: { text: '你好' } });
     const evt = await client.next<{ t: string; kind: string }>();
     expect(evt.t).toBe('evt');
-    expect(evt.kind).toBe('snapshot');
+    expect(evt.kind).toBe('delta');
     expect(delivered).toEqual([
       { sid: 's1', input: { type: 'input', kind: 'send', text: '你好' } },
     ]);
@@ -797,7 +798,7 @@ describe('RemoteBridge — LAN 档命令（设备权限档）', () => {
     // 宿主改档（不重启桥、不断连接）
     currentTier = 'approve';
 
-    // 用订阅快照作为「已处理」的时序锚点，再发同一条连接上的 answer
+    // 用订阅快照作为建连锚点，再用受理后的增量帧作「已处理」信号
     client.send({ t: 'sub', sid: 's1' });
     await client.next();
     client.send({
@@ -810,7 +811,7 @@ describe('RemoteBridge — LAN 档命令（设备权限档）', () => {
     });
     const evt = await client.next<{ t: string; kind: string }>();
     expect(evt.t).toBe('evt');
-    expect(evt.kind).toBe('snapshot');
+    expect(evt.kind).toBe('delta');
     expect(delivered).toEqual([
       { sid: 's1', input: { type: 'input', kind: 'answer', answers: ['改档后'] } },
     ]);
@@ -862,7 +863,7 @@ describe('RemoteBridge — M3 审批闭环（attention 下行 + confirm_answer �
     // 这里只断言同一连接不会因别的 sid 多收一帧（判据由下行构造点单测覆盖）。
   });
 
-  it('approve 档 confirm_answer → answerConfirm 收到 sid/id/approved，回推快照', async () => {
+  it('approve 档 confirm_answer → answerConfirm 收到 sid/id/approved，回推 status 增量', async () => {
     const { security } = makeSecurity({ tier: 'approve' });
     const calls: Array<[string, string, boolean]> = [];
     const { ports } = makePorts({
@@ -887,9 +888,11 @@ describe('RemoteBridge — M3 审批闭环（attention 下行 + confirm_answer �
       kind: 'confirm_answer',
       p: { requestId: 'req-7', approved: false },
     });
-    const evt = await client.next<{ t: string; kind: string }>();
+    const evt = await client.next<{ t: string; kind: string; seq: number }>();
+    // profile 3 已接增量：此处必须是带 seq 的 status delta，不再是 seq=0 快照
     expect(evt.t).toBe('evt');
-    expect(evt.kind).toBe('snapshot');
+    expect(evt.kind).toBe('delta');
+    expect(evt.seq).toBe(1);
     expect(calls).toEqual([['s1', 'req-7', false]]);
   });
 
@@ -902,7 +905,12 @@ describe('RemoteBridge — M3 审批闭环（attention 下行 + confirm_answer �
       client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
       await client.next();
       client.send({
-        t: 'cmd', ch: 'cmd', rid: 'u-m3-bad', sid: 's1', kind: 'confirm_answer', p,
+        t: 'cmd',
+        ch: 'cmd',
+        rid: 'u-m3-bad',
+        sid: 's1',
+        kind: 'confirm_answer',
+        p,
       });
       await client.waitClosed();
     }
@@ -919,11 +927,121 @@ describe('RemoteBridge — M3 审批闭环（attention 下行 + confirm_answer �
     client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
     await client.next();
     client.send({
-      t: 'cmd', ch: 'cmd', rid: 'u-m3-stale', sid: 's1', kind: 'confirm_answer',
+      t: 'cmd',
+      ch: 'cmd',
+      rid: 'u-m3-stale',
+      sid: 's1',
+      kind: 'confirm_answer',
       p: { requestId: 'req-old', approved: true },
     });
     const err = await client.next<{ t: string; code: string }>();
     expect(err.t).toBe('err');
     expect(err.code).toBe('stale_phase');
+  });
+});
+
+describe('RemoteBridge — profile 3 delta 与水位补洞（§6.7 订正口径）', () => {
+  /** 起 LAN 档桥、完成握手并订阅 s1（快照 seq 归零由 helper 自己消费） */
+  async function openLanSub(
+    ports: RemoteBridgePorts,
+    security: RemoteBridgeSecurity,
+  ): Promise<{ bridge: RemoteBridge; client: TestClient }> {
+    const { bridge, port } = await startBridge(ports, security);
+    const client = await TestClient.connect(port);
+    const entry = opened.find((item) => item.bridge === bridge);
+    if (entry) entry.client = client;
+    else opened.push({ bridge, client });
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: DEVICE_FP });
+    await client.next();
+    client.send({ t: 'sub', sid: 's1' });
+    const snap = await client.next<{ t: string; kind: string; seq: number }>();
+    expect(snap.t).toBe('evt');
+    expect(snap.kind).toBe('snapshot');
+    expect(snap.seq).toBe(0);
+    return { bridge, client };
+  }
+
+  it('按设备独立递增 status 增量；resume 从 recvSeq+1 回放到 sentSeq', async () => {
+    const { security } = makeSecurity({ tier: 'observe' });
+    const { ports } = makePorts();
+    const { bridge, client } = await openLanSub(ports, security);
+
+    bridge.notifyTurnUpdate('s1');
+    bridge.notifyTurnUpdate('s1');
+    const d1 = await client.next<{ t: string; kind: string; seq: number; p: unknown }>();
+    expect(d1).toMatchObject({ t: 'evt', kind: 'delta', sid: 's1', seq: 1 });
+    expect(d1.p).toEqual({ kind: 'status', state: WAITING_ASK });
+    const d2 = await client.next<{ seq: number }>();
+    expect(d2.seq).toBe(2);
+
+    client.send({ t: 'resume', upSeq: 1, recvSeq: 0, sid: 's1' });
+    const ok = await client.next<{ t: string; fromSeq: number; headSeq: number }>();
+    // 独立手写期望：若按方案旧稿写 sentSeq+1（=3），这里必须红
+    expect(ok).toEqual({ t: 'resume_ok', ch: 'ctl', sid: 's1', fromSeq: 1, headSeq: 2 });
+    const r1 = await client.next<{ seq: number }>();
+    const r2 = await client.next<{ seq: number }>();
+    expect([r1.seq, r2.seq]).toEqual([1, 2]);
+  });
+
+  it('recvSeq==sentSeq → 空回放 resume_ok，不发多余帧', async () => {
+    const { security } = makeSecurity({ tier: 'observe' });
+    const { bridge, client } = await openLanSub(makePorts().ports, security);
+    bridge.notifyTurnUpdate('s1');
+    const delta = await client.next<{ seq: number }>();
+    expect(delta.seq).toBe(1);
+
+    client.send({ t: 'resume', upSeq: 1, recvSeq: 1 });
+    const ok = await client.next<{ fromSeq: number; headSeq: number }>();
+    expect(ok).toMatchObject({ fromSeq: 2, headSeq: 1 });
+    // 用 ping/pong 探帧：若误发回放帧，下一条不会是 pong
+    client.send({ t: 'ping' });
+    const pong = await client.next<{ t: string }>();
+    expect(pong.t).toBe('pong');
+  });
+
+  it('四类不可补各自 → reset_required（谱系丢失 / 水位超前 / 差超 500 / 窗口淘汰）', async () => {
+    // ① sid 谱系丢失：hasSession 变 false（会话被回收/重建）
+    {
+      let alive = true;
+      const { security } = makeSecurity({ tier: 'observe' });
+      const { ports } = makePorts({ hasSession: () => alive });
+      const { client } = await openLanSub(ports, security);
+      alive = false;
+      client.send({ t: 'resume', upSeq: 1, recvSeq: 0, sid: 's1' });
+      expect((await client.next<{ t: string }>()).t).toBe('reset_required');
+    }
+    // ② 手机水位超前：recvSeq > sentSeq
+    {
+      const { security } = makeSecurity({ tier: 'observe' });
+      const { bridge, client } = await openLanSub(makePorts().ports, security);
+      bridge.notifyTurnUpdate('s1');
+      await client.next();
+      client.send({ t: 'resume', upSeq: 1, recvSeq: 2, sid: 's1' });
+      expect((await client.next<{ t: string }>()).t).toBe('reset_required');
+    }
+    // ③ 缺口超 500：差 > 500 条即使窗口保留最后 500 条也不可补
+    {
+      const { security } = makeSecurity({ tier: 'observe' });
+      const { bridge, client } = await openLanSub(makePorts().ports, security);
+      for (let i = 0; i < 501; i += 1) bridge.notifyTurnUpdate('s1');
+      for (let i = 0; i < 501; i += 1) await client.next();
+      client.send({ t: 'resume', upSeq: 1, recvSeq: 0, sid: 's1' });
+      expect((await client.next<{ t: string }>()).t).toBe('reset_required');
+    }
+    // ④ 2MB 窗口淘汰：单帧超窗后旧 seq 被挤出，差虽小仍不可补
+    {
+      const { security } = makeSecurity({ tier: 'observe' });
+      const huge = { phase: 'idle', giant: 'x'.repeat(2 * 1024 * 1024) } as unknown as TurnState;
+      const { ports } = makePorts({
+        snapshot: () => ({ state: huge, rounds: ROUNDS, pendingQueue: [] }),
+      });
+      const { bridge, client } = await openLanSub(ports, security);
+      bridge.notifyTurnUpdate('s1');
+      bridge.notifyTurnUpdate('s1');
+      await client.next();
+      await client.next();
+      client.send({ t: 'resume', upSeq: 1, recvSeq: 1, sid: 's1' });
+      expect((await client.next<{ t: string }>()).t).toBe('reset_required');
+    }
   });
 });

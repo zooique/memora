@@ -8,6 +8,8 @@ import { REMOTE_COMMANDS } from '../remoteCommandPolicy.js';
 import {
   BRIDGE_ENVELOPE_TYPES,
   buildConfirmAttentionFrame,
+  buildResumeOkFrame,
+  buildStatusDeltaFrame,
   parseBridgeFrame,
   serializeBridgeFrame,
 } from '../remoteBridgeProtocol.js';
@@ -142,5 +144,39 @@ describe('remoteBridgeProtocol — 下行序列化', () => {
     expect(noLabel).not.toHaveProperty('label');
     expect(() => buildConfirmAttentionFrame('', 'req-7')).toThrow();
     expect(() => buildConfirmAttentionFrame('s-1', '')).toThrow();
+  });
+
+  it('status delta 从 seq=1 起，载荷只带 status 与原始 state 对象', () => {
+    const state = { phase: 'waiting', reason: 'ask' } as const;
+    const frame = JSON.parse(
+      serializeBridgeFrame(buildStatusDeltaFrame('s-1', 3, state)),
+    ) as Record<string, unknown>;
+    // 独立手写期望：字段漂移（尤其把 state 拍平成字符串）必须红
+    expect(frame).toEqual({
+      t: 'evt',
+      ch: 'events',
+      sid: 's-1',
+      seq: 3,
+      kind: 'delta',
+      p: { kind: 'status', state },
+    });
+    expect(() => buildStatusDeltaFrame('s-1', 0, state)).toThrow();
+    expect(() => buildStatusDeltaFrame('', 1, state)).toThrow();
+  });
+
+  it('resume_ok 按 recvSeq+1 → sentSeq 回放；空回放合法，倒挂与零起点构造即抛', () => {
+    const replay = JSON.parse(serializeBridgeFrame(buildResumeOkFrame('s-1', 3, 7))) as Record<
+      string,
+      unknown
+    >;
+    expect(replay).toEqual({ t: 'resume_ok', ch: 'ctl', sid: 's-1', fromSeq: 3, headSeq: 7 });
+    const aligned = JSON.parse(serializeBridgeFrame(buildResumeOkFrame('s-1', 8, 7))) as Record<
+      string,
+      unknown
+    >;
+    expect(aligned).toMatchObject({ fromSeq: 8, headSeq: 7 });
+    expect(() => buildResumeOkFrame('s-1', 0, 7)).toThrow();
+    expect(() => buildResumeOkFrame('s-1', 9, 7)).toThrow();
+    expect(() => buildResumeOkFrame('', 1, 7)).toThrow();
   });
 });

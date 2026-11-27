@@ -197,6 +197,21 @@ export interface ResetRequiredFrame {
   sid: string;
 }
 
+/**
+ * 水位可补（§6.7 第 1 分支 · profile 3）
+ *
+ * `fromSeq = recvSeq + 1`、`headSeq = PC 已发最后一帧`；回放区间 `[fromSeq, headSeq]`。
+ * 方案原文曾写 `fromSeq = sentSeq + 1`（会跳过已发未收帧），已按 SSOT 排雷订正。
+ * 带 `sid` 是因为 `resume` 可不带 sid（一次恢复全部订阅会话），必须逐会话回执。
+ */
+export interface ResumeOkFrame {
+  t: 'resume_ok';
+  ch: 'ctl';
+  sid: string;
+  fromSeq: number;
+  headSeq: number;
+}
+
 /** 错误帧（`code` 只从固定集合取：命令面 `REMOTE_COMMAND_CODES` + 控制面 `REMOTE_CTL_CODES`，禁自造字符串） */
 export interface ErrFrame {
   t: 'err';
@@ -225,7 +240,14 @@ export interface SessionListOkFrame {
  * 正是上轮"只加可选 requestId"会造出的僵尸字段伤。
  */
 export type AttentionFrame =
-  | { t: 'attention'; ch: 'events'; sid: string; kind: 'confirm'; requestId: string; label?: string }
+  | {
+      t: 'attention';
+      ch: 'events';
+      sid: string;
+      kind: 'confirm';
+      requestId: string;
+      label?: string;
+    }
   | {
       t: 'attention';
       ch: 'events';
@@ -240,6 +262,7 @@ export type BridgeServerFrame =
   | HelloOkFrame
   | PongFrame
   | ResetRequiredFrame
+  | ResumeOkFrame
   | EvtFrame
   | ErrFrame
   | SessionListOkFrame
@@ -374,6 +397,33 @@ export function buildSnapshotFrame(sid: string, snapshot: SnapshotPayload): EvtF
       pendingQueue: snapshot.pendingQueue,
     },
   };
+}
+
+/**
+ * 构造下行状态增量帧（`evt` + `kind:'delta'` + `p.kind:'status'`）
+ *
+ * **唯一构造点**：桥的增量推送与后续 golden fixture 生成器都调用它。本切片只承载
+ * `status`（相位变化），文本 / 过程事件等富 `delta.kind` 未落地，不借本构造点偷渡。
+ * `seq` 从 1 起（快照恒 0），由每设备每会话的水位分配，构造点只校验不分配。
+ */
+export function buildStatusDeltaFrame(sid: string, seq: number, state: TurnState): EvtFrame {
+  if (sid.length === 0) throw new Error('delta.sid must be non-empty');
+  if (!isSeqNumber(seq) || seq < 1) throw new Error('delta.seq must be >= 1');
+  return { t: 'evt', ch: 'events', sid, seq, kind: 'delta', p: { kind: 'status', state } };
+}
+
+/**
+ * 构造水位可补回执（`resume_ok`；§6.7 订正口径）
+ *
+ * **唯一构造点**：桥的 `resume` 分派调用它，后续 golden fixture 生成器复用同一形状。
+ * `headSeq + 1 === fromSeq` 表示空回放（手机已对齐），合法；其余倒挂即拒绝。
+ */
+export function buildResumeOkFrame(sid: string, fromSeq: number, headSeq: number): ResumeOkFrame {
+  if (sid.length === 0) throw new Error('resume_ok.sid must be non-empty');
+  if (!isSeqNumber(fromSeq) || fromSeq < 1 || !isSeqNumber(headSeq) || headSeq + 1 < fromSeq) {
+    throw new Error('resume_ok range invalid');
+  }
+  return { t: 'resume_ok', ch: 'ctl', sid, fromSeq, headSeq };
 }
 
 /**
