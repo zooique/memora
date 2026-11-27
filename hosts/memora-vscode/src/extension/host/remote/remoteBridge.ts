@@ -52,6 +52,7 @@ import type { RemoteRateLimitState } from './remoteRateLimiter.js';
 import type { PairingVerdict } from './remotePairing.js';
 import {
   buildConfirmAttentionFrame,
+  buildResetRequiredFrame,
   buildResumeOkFrame,
   buildSnapshotFrame,
   buildStatusDeltaFrame,
@@ -829,7 +830,7 @@ export class RemoteBridge {
   }
 
   private sendResetRequired(conn: ClientConnection, sid: string): void {
-    this.send(conn, { t: 'reset_required', ch: 'ctl', sid });
+    this.send(conn, buildResetRequiredFrame(sid));
   }
 
   /** 发送一帧（连接已关闭时静默丢弃——发送失败不改变任何业务裁决） */

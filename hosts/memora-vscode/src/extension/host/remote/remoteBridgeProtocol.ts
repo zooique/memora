@@ -413,6 +413,18 @@ export function buildStatusDeltaFrame(sid: string, seq: number, state: TurnState
 }
 
 /**
+ * 构造水位不可补回执（`reset_required`；§6.7 第 2 分支）
+ *
+ * **唯一构造点**：桥的 `sendResetRequired` 调用它，手机侧 DTO 以本函数为形状真源
+ * （`sid` 必带，逐会话回执）。此前桥内联拼字面量，手机复刻即第二真源——
+ * 加字段时两端各自漂移且无测试会红，故收口到此处。
+ */
+export function buildResetRequiredFrame(sid: string): ResetRequiredFrame {
+  if (sid.length === 0) throw new Error('reset_required.sid must be non-empty');
+  return { t: 'reset_required', ch: 'ctl', sid };
+}
+
+/**
  * 构造水位可补回执（`resume_ok`；§6.7 订正口径）
  *
  * **唯一构造点**：桥的 `resume` 分派调用它，后续 golden fixture 生成器复用同一形状。

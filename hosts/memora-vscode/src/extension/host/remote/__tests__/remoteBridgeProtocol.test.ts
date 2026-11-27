@@ -8,6 +8,7 @@ import { REMOTE_COMMANDS } from '../remoteCommandPolicy.js';
 import {
   BRIDGE_ENVELOPE_TYPES,
   buildConfirmAttentionFrame,
+  buildResetRequiredFrame,
   buildResumeOkFrame,
   buildStatusDeltaFrame,
   parseBridgeFrame,
@@ -162,6 +163,15 @@ describe('remoteBridgeProtocol — 下行序列化', () => {
     });
     expect(() => buildStatusDeltaFrame('s-1', 0, state)).toThrow();
     expect(() => buildStatusDeltaFrame('', 1, state)).toThrow();
+  });
+
+  it('reset_required 唯一构造点：sid 必带，空 sid 即抛', () => {
+    const frame = JSON.parse(serializeBridgeFrame(buildResetRequiredFrame('s-1'))) as Record<
+      string,
+      unknown
+    >;
+    expect(frame).toEqual({ t: 'reset_required', ch: 'ctl', sid: 's-1' });
+    expect(() => buildResetRequiredFrame('')).toThrow();
   });
 
   it('resume_ok 按 recvSeq+1 → sentSeq 回放；空回放合法，倒挂与零起点构造即抛', () => {
