@@ -961,6 +961,55 @@ describe('RemoteBridge — profile 3 delta 与水位补洞（§6.7 订正口径�
     return { bridge, client };
   }
 
+  it('富增量端到端：订阅初始化游标 → 正文后缀与事件 seq 增量按水位顺序入窗', async () => {
+    const ev = (seq: number, name: string) => ({
+      type: 'tool_start',
+      seq,
+      ts: '2026-11-27T00:00:00.000Z',
+      payload: { toolCallId: `c${seq}`, name },
+    });
+    const liveRound = (text: string, events: readonly unknown[]): RoundView =>
+      ({
+        id: 'r1',
+        live: true,
+        userMessage: { role: 'user', content: '问', timestamp: '2026-11-27T00:00:00.000Z' },
+        assistantMessage: {
+          id: 'm1',
+          role: 'assistant',
+          content: text,
+          timestamp: '2026-11-27T00:00:00.000Z',
+        },
+        processEvents: events,
+      }) as unknown as RoundView;
+    const state: TurnState = { phase: 'running', roundId: 'r1' };
+
+    let current = liveRound('你好', [ev(2, 'read_file')]);
+    const { security } = makeSecurity({ tier: 'observe' });
+    const { ports } = makePorts({
+      snapshot: () => ({ state, rounds: [current], pendingQueue: [] }),
+    });
+    const { bridge, client } = await openLanSub(ports, security);
+    // 订阅那刻的正文/事件已被 snapshot 覆盖，不得当增量重发
+
+    current = liveRound('你好世界', [ev(2, 'read_file'), ev(5, 'write_file')]);
+    bridge.notifyTurnUpdate('s1');
+    const status = await client.next<{ t: string; kind: string; seq: number; p: unknown }>();
+    expect(status).toMatchObject({ t: 'evt', kind: 'delta', sid: 's1', seq: 1 });
+    expect(status.p).toEqual({ kind: 'status', state });
+    const text = await client.next<{ seq: number; p: unknown }>();
+    expect(text.seq).toBe(2);
+    expect(text.p).toEqual({ kind: 'append_text', roundId: 'r1', text: '世界' });
+    const process = await client.next<{ seq: number; p: unknown }>();
+    expect(process.seq).toBe(3);
+    expect(process.p).toEqual({ kind: 'process_event', roundId: 'r1', event: ev(5, 'write_file') });
+
+    // 同一快照再触发：只有 status（seq=4），无富帧；用 ping 探底证明没有第 5 帧
+    bridge.notifyTurnUpdate('s1');
+    expect((await client.next<{ seq: number }>()).seq).toBe(4);
+    client.send({ t: 'ping' });
+    expect((await client.next<{ t: string }>()).t).toBe('pong');
+  });
+
   it('按设备独立递增 status 增量；resume 从 recvSeq+1 回放到 sentSeq', async () => {
     const { security } = makeSecurity({ tier: 'observe' });
     const { ports } = makePorts();

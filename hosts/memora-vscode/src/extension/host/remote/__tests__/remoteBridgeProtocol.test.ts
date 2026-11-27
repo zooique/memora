@@ -7,7 +7,9 @@ import { describe, expect, it } from 'vitest';
 import { REMOTE_COMMANDS } from '../remoteCommandPolicy.js';
 import {
   BRIDGE_ENVELOPE_TYPES,
+  buildAppendTextDeltaFrame,
   buildConfirmAttentionFrame,
+  buildProcessEventDeltaFrame,
   buildResetRequiredFrame,
   buildResumeOkFrame,
   buildStatusDeltaFrame,
@@ -163,6 +165,48 @@ describe('remoteBridgeProtocol — 下行序列化', () => {
     });
     expect(() => buildStatusDeltaFrame('s-1', 0, state)).toThrow();
     expect(() => buildStatusDeltaFrame('', 1, state)).toThrow();
+  });
+
+  it('append_text delta 逐字段对齐 §6.4.1；空 roundId / text / 非法 seq 即抛', () => {
+    const frame = JSON.parse(
+      serializeBridgeFrame(buildAppendTextDeltaFrame('s-1', 4, 'r-9', '新增正文')),
+    ) as Record<string, unknown>;
+    // 独立手写期望：字段漂移（尤其把后缀换成整段、roundId 拍平）必须红
+    expect(frame).toEqual({
+      t: 'evt',
+      ch: 'events',
+      sid: 's-1',
+      seq: 4,
+      kind: 'delta',
+      p: { kind: 'append_text', roundId: 'r-9', text: '新增正文' },
+    });
+    expect(() => buildAppendTextDeltaFrame('s-1', 4, '', 'x')).toThrow();
+    expect(() => buildAppendTextDeltaFrame('s-1', 4, 'r-9', '')).toThrow();
+    expect(() => buildAppendTextDeltaFrame('s-1', 0, 'r-9', 'x')).toThrow();
+    expect(() => buildAppendTextDeltaFrame('', 4, 'r-9', 'x')).toThrow();
+  });
+
+  it('process_event delta 逐字透传内核 ProcessEvent 判别联合，不猜字段', () => {
+    const event = {
+      type: 'tool_start',
+      seq: 12,
+      ts: '2026-11-27T00:00:00.000Z',
+      payload: { toolCallId: 'call-1', name: 'write_file' },
+    } as const;
+    const frame = JSON.parse(
+      serializeBridgeFrame(buildProcessEventDeltaFrame('s-1', 5, 'r-9', event)),
+    ) as Record<string, unknown>;
+    // 全等断言：任何字段裁剪 / 重命名 / 拍平都要红
+    expect(frame).toEqual({
+      t: 'evt',
+      ch: 'events',
+      sid: 's-1',
+      seq: 5,
+      kind: 'delta',
+      p: { kind: 'process_event', roundId: 'r-9', event },
+    });
+    expect(() => buildProcessEventDeltaFrame('s-1', 5, '', event)).toThrow();
+    expect(() => buildProcessEventDeltaFrame('s-1', 5, 'r-9', event)).not.toThrow();
   });
 
   it('reset_required 唯一构造点：sid 必带，空 sid 即抛', () => {

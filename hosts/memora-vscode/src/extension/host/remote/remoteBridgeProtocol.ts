@@ -24,6 +24,7 @@ import {
 } from './remoteCommandPolicy.js';
 import { trimRound } from './remoteSnapshotTrim.js';
 import type { RoundView, TurnState } from '../../../shared/protocol.js';
+import type { ProcessEvent } from '@zooique/memora';
 
 /**
  * 封套类型全集（19 条 · 唯一枚举来源）
@@ -410,6 +411,64 @@ export function buildStatusDeltaFrame(sid: string, seq: number, state: TurnState
   if (sid.length === 0) throw new Error('delta.sid must be non-empty');
   if (!isSeqNumber(seq) || seq < 1) throw new Error('delta.seq must be >= 1');
   return { t: 'evt', ch: 'events', sid, seq, kind: 'delta', p: { kind: 'status', state } };
+}
+
+function assertDeltaHead(sid: string, seq: number, roundId: string): void {
+  if (sid.length === 0) throw new Error('delta.sid must be non-empty');
+  if (!isSeqNumber(seq) || seq < 1) throw new Error('delta.seq must be >= 1');
+  if (roundId.length === 0) throw new Error('delta.roundId must be non-empty');
+}
+
+/**
+ * 构造流内正文增量帧（`evt` + `delta` + `p.kind:'append_text'`；§6.4.1）
+ *
+ * **唯一构造点**：桥的差分推送调用它。`roundId` 与 `RoundView.id` 同源（live 轮 `id` 即
+ * `PendingLiveRound.roundId`，`toRoundView` 单点赋值）；`text` 是本次新增的**后缀**，不是
+ * 整段正文——整段重发等于每 token 重传历史，正是 §6.4 要消除的伤。
+ */
+export function buildAppendTextDeltaFrame(
+  sid: string,
+  seq: number,
+  roundId: string,
+  text: string,
+): EvtFrame {
+  assertDeltaHead(sid, seq, roundId);
+  if (text.length === 0) throw new Error('delta.append_text.text must be non-empty');
+  return {
+    t: 'evt',
+    ch: 'events',
+    sid,
+    seq,
+    kind: 'delta',
+    p: { kind: 'append_text', roundId, text },
+  };
+}
+
+/**
+ * 构造过程事件增量帧（`evt` + `delta` + `p.kind:'process_event'`；§6.4.1）
+ *
+ * **唯一构造点**：桥的差分推送调用它。`event` 逐字透传内核 `ProcessEvent` 判别联合
+ * （含其 `type` / `seq` / `ts` / `payload`），桥与协议层都不猜字段、不重造 DTO——
+ * 手机端复用同一形状，字段漂移由契约冒烟全等断言拦。
+ *
+ * 注意：`ProcessEvent` 自带 `seq` 是**事件在轮内的序号**，与封套 `EvtFrame.seq`（水位）是
+ * 两个不同维度，不可互相代替；幂等差分按事件 `seq` 过滤，水位 `seq` 只按发帧递增。
+ */
+export function buildProcessEventDeltaFrame(
+  sid: string,
+  seq: number,
+  roundId: string,
+  event: ProcessEvent,
+): EvtFrame {
+  assertDeltaHead(sid, seq, roundId);
+  return {
+    t: 'evt',
+    ch: 'events',
+    sid,
+    seq,
+    kind: 'delta',
+    p: { kind: 'process_event', roundId, event },
+  };
 }
 
 /**

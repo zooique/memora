@@ -51,7 +51,9 @@ import type { RemoteDeviceTier } from './remoteDevices.js';
 import type { RemoteRateLimitState } from './remoteRateLimiter.js';
 import type { PairingVerdict } from './remotePairing.js';
 import {
+  buildAppendTextDeltaFrame,
   buildConfirmAttentionFrame,
+  buildProcessEventDeltaFrame,
   buildResetRequiredFrame,
   buildResumeOkFrame,
   buildSnapshotFrame,
@@ -64,6 +66,7 @@ import {
   type EvtFrame,
   type SnapshotPayload,
 } from './remoteBridgeProtocol.js';
+import { diffRichDelta, initRichCursor, type RichCursor } from './remoteDeltaDiff.js';
 
 /**
  * 桥需要的宿主能力（**只读 + 投递**，全部由调用方注入）
@@ -196,6 +199,8 @@ interface DeviceStreamState {
   sentSeq: number;
   window: DeltaWindowEntry[];
   windowBytes: number;
+  /** 富增量游标（正文前缀 + 事件 seq）；sub 时按当前快照初始化，防历史当增量重发 */
+  rich: RichCursor;
 }
 
 /**
@@ -723,7 +728,14 @@ export class RemoteBridge {
 
   /** 订阅 / 重订阅：快照 seq 归零，回放窗同步重建（§6.7） */
   private resetStream(device: string, sid: string): DeviceStreamState {
-    const state: DeviceStreamState = { sentSeq: 0, window: [], windowBytes: 0 };
+    // 富游标以「订阅那刻的快照」为基准初始化：手机刚收到整帧 snapshot，之后的富增量
+    // 只能从这之后的长出来算起，否则订阅即重发历史正文/事件（「重」的伤）。
+    const state: DeviceStreamState = {
+      sentSeq: 0,
+      window: [],
+      windowBytes: 0,
+      rich: initRichCursor(this.ports.snapshot(sid)),
+    };
     this.streams.set(this.streamKey(device, sid), state);
     return state;
   }
@@ -735,10 +747,14 @@ export class RemoteBridge {
   }
 
   /**
-   * LAN 档增量推送（本切片只承载 `status`）
+   * LAN 档增量推送（status 相位帧 + 富增量帧；§6.4.1 / §6.7）
    *
    * 无水位状态时**不凭空发 seq=1**：先补一次快照让手机与 PC 对齐，下一帧才从 1 起。
    * 这是防「手机没收到快照却拿到增量」的 fail-closed，不是静默降级。
+   *
+   * 一帧 status 后接 0~N 帧富增量（append_text / process_event），各自占一个水位 seq 并入
+   * 回放窗。富增量取数走差分纯函数（remoteDeltaDiff），帧构造回协议层唯一构造点；桥只
+   * 分配水位与推进游标，不碰正文前缀/事件序号的判据。
    */
   private pushDelta(conn: ClientConnection, sid: string): void {
     const device = this.deviceOf(conn);
@@ -748,10 +764,23 @@ export class RemoteBridge {
       this.pushSnapshot(conn, sid);
       return;
     }
+    const snapshot = this.ports.snapshot(sid);
     const seq = state.sentSeq + 1;
-    const frame = buildStatusDeltaFrame(sid, seq, this.ports.snapshot(sid).state);
+    const frame = buildStatusDeltaFrame(sid, seq, snapshot.state);
     this.recordDelta(state, frame);
     this.send(conn, frame);
+
+    const { specs, next } = diffRichDelta(snapshot, state.rich);
+    state.rich = next;
+    for (const spec of specs) {
+      const richSeq = state.sentSeq + 1;
+      const richFrame =
+        spec.kind === 'append_text'
+          ? buildAppendTextDeltaFrame(sid, richSeq, spec.roundId, spec.text)
+          : buildProcessEventDeltaFrame(sid, richSeq, spec.roundId, spec.event);
+      this.recordDelta(state, richFrame);
+      this.send(conn, richFrame);
+    }
   }
 
   /** 入窗并按「500 条或 2MB 先到为准」淘汰（§6.7；UTF-8 字节实测，不用字符数冒充） */
