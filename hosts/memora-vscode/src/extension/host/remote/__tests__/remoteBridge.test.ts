@@ -95,6 +95,22 @@ const ROUNDS: readonly RoundView[] = [
   { id: 'r1', attachmentUris: ['vscode-webview://x.png'] } as unknown as RoundView,
 ];
 
+/** 构造一个 live 轮（正文可增长，供流中富增量用例消费） */
+function makeLiveRound(text: string, events: readonly unknown[] = []): RoundView {
+  return {
+    id: 'r1',
+    live: true,
+    userMessage: { role: 'user', content: '问', timestamp: '2026-11-27T00:00:00.000Z' },
+    assistantMessage: {
+      id: 'm1',
+      role: 'assistant',
+      content: text,
+      timestamp: '2026-11-27T00:00:00.000Z',
+    },
+    processEvents: events,
+  } as unknown as RoundView;
+}
+
 const IDLE: TurnState = { phase: 'idle' };
 const WAITING_ASK: TurnState = { phase: 'waiting', reason: 'ask' };
 
@@ -486,6 +502,15 @@ async function waitAudit(
   }
 }
 
+/** 轮询等待某条件成立（用于无下行应答帧的副作用，如 unsub 后停表） */
+async function waitUntil(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {
+  const started = Date.now();
+  while (!predicate()) {
+    if (Date.now() - started > timeoutMs) throw new Error('waitUntil timeout');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 describe('RemoteBridge — security 缺省（回环档行为不变）', () => {
   it('没有 security 时不校验 phoneFp（任意值都回 hello_ok）', async () => {
     const { ports } = makePorts();
@@ -827,9 +852,16 @@ describe('RemoteBridge — LAN 档命令（设备权限档）', () => {
     client.send({ t: 'sub', sid: 's1' });
     await client.next();
 
+    // 撤销前：sub 已为该设备建了一条水位/回放窗条目（键 = 设备指纹 + 真 NUL + sid）
+    const streams = (bridge as unknown as { streams: Map<string, unknown> }).streams;
+    expect(streams.size).toBe(1);
+
     // 大小写不敏感：撤销入口传什么形态都应命中同一台设备
     const closed = bridge.disconnectDevice(DEVICE_FP.toLowerCase());
     expect(closed).toBe(1);
+    // 回放窗必须随连接一起清掉（否则重连仍能补出已撤销设备的增量）。
+    // 本条是对 `\\u0000`（字面反斜杠）写错前缀的回归护栏：写错时永不命中 ⇒ size 仍为 1 ⇒ 红。
+    expect(streams.size).toBe(0);
     await client.waitClosed();
   });
 });
@@ -1092,5 +1124,108 @@ describe('RemoteBridge — profile 3 delta 与水位补洞（§6.7 订正口径�
       client.send({ t: 'resume', upSeq: 1, recvSeq: 1, sid: 's1' });
       expect((await client.next<{ t: string }>()).t).toBe('reset_required');
     }
+  });
+
+  // ─── 流中 250ms tick（宿主逐 chunk 不通知，桥侧补推富增量） ──────────────
+
+  it('running 订阅后 notifyTurnUpdate 武装 tick；tick 只补推 append_text（不发 status）', async () => {
+    const running: TurnState = { phase: 'running', roundId: 'r1' };
+    let current = makeLiveRound('你好');
+    const { security } = makeSecurity({ tier: 'observe' });
+    const { ports } = makePorts({
+      snapshot: () => ({ state: running, rounds: [current], pendingQueue: [] }),
+    });
+    const { bridge, client } = await openLanSub(ports, security);
+
+    // 正文增长 → 生命周期通知推 status + append_text，并因 running 武装 tick
+    current = makeLiveRound('你好世界');
+    bridge.notifyTurnUpdate('s1');
+    const status = await client.next<{ seq: number; p: { kind: string } }>();
+    expect(status.p.kind).toBe('status');
+    const text = await client.next<{ seq: number; p: unknown }>();
+    expect(text.p).toEqual({ kind: 'append_text', roundId: 'r1', text: '世界' });
+
+    // 白盒：tick 已武装
+    const internals = bridge as unknown as {
+      connections: Set<{ timers?: Map<string, unknown> }>;
+      onStreamTick: (conn: unknown, sid: string) => void;
+    };
+    const conn = [...internals.connections][0]!;
+    expect(conn.timers?.has('s1')).toBe(true);
+
+    // 再增长后直接驱动一拍 tick：只应收到 append_text，绝不能夹带 status
+    current = makeLiveRound('你好世界！');
+    internals.onStreamTick(conn, 's1');
+    const tickFrame = await client.next<{ seq: number; p: unknown }>();
+    expect(tickFrame.p).toEqual({ kind: 'append_text', roundId: 'r1', text: '！' });
+    // ping/pong 探帧：若 tick 多发一帧 status，下一条就不会是 pong
+    client.send({ t: 'ping' });
+    expect((await client.next<{ t: string }>()).t).toBe('pong');
+  });
+
+  it('会话离开 running 后一拍 tick 自动停表（waiting 不推富增量）', async () => {
+    let phase: TurnState = { phase: 'running', roundId: 'r1' };
+    const { security } = makeSecurity({ tier: 'observe' });
+    const { ports } = makePorts({
+      snapshot: () => ({ state: phase, rounds: [makeLiveRound('流中')], pendingQueue: [] }),
+    });
+    const { bridge, client } = await openLanSub(ports, security);
+    bridge.notifyTurnUpdate('s1');
+    await client.next(); // status（正文无增长，无富帧）
+
+    const internals = bridge as unknown as {
+      connections: Set<{ timers?: Map<string, unknown> }>;
+      onStreamTick: (conn: unknown, sid: string) => void;
+    };
+    const conn = [...internals.connections][0]!;
+    expect(conn.timers?.has('s1')).toBe(true);
+
+    // 转 waiting：tick 该自行停表且不发任何帧
+    phase = WAITING_ASK;
+    internals.onStreamTick(conn, 's1');
+    expect(conn.timers?.has('s1')).toBe(false);
+    client.send({ t: 'ping' });
+    expect((await client.next<{ t: string }>()).t).toBe('pong');
+  });
+
+  it('退订停掉 tick；回环档（无 security）即使在 running 也不武装', async () => {
+    const running: TurnState = { phase: 'running', roundId: 'r1' };
+    const mkPorts = () =>
+      makePorts({
+        snapshot: () => ({ state: running, rounds: [makeLiveRound('流中')], pendingQueue: [] }),
+      });
+
+    // ① LAN 档：武装后退订 → tick 清空
+    const { security } = makeSecurity({ tier: 'observe' });
+    const lan = mkPorts();
+    const { bridge, client } = await openLanSub(lan.ports, security);
+    bridge.notifyTurnUpdate('s1');
+    await client.next(); // status
+    const internals = bridge as unknown as {
+      connections: Set<{ timers?: Map<string, unknown> }>;
+    };
+    const conn = [...internals.connections][0]!;
+    expect(conn.timers?.has('s1')).toBe(true);
+    client.send({ t: 'unsub', sid: 's1' });
+    await waitUntil(() => conn.timers?.has('s1') === false);
+
+    // ② 回环档：running 订阅后仍整帧快照，绝不武装 tick
+    const loop = mkPorts();
+    const { bridge: loopBridge, port: loopPort } = await startBridge(loop.ports);
+    const loopClient = await TestClient.connect(loopPort);
+    const entry = opened.find((item) => item.bridge === loopBridge);
+    if (entry) entry.client = loopClient;
+    else opened.push({ bridge: loopBridge, client: loopClient });
+    loopClient.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: 'AB12' });
+    await loopClient.next();
+    loopClient.send({ t: 'sub', sid: 's1' });
+    await loopClient.next(); // snapshot
+    loopBridge.notifyTurnUpdate('s1');
+    expect((await loopClient.next<{ kind: string }>()).kind).toBe('snapshot');
+    const loopInternals = loopBridge as unknown as {
+      connections: Set<{ timers?: Map<string, unknown> }>;
+    };
+    expect(loopInternals.connections.size).toBe(1);
+    expect([...loopInternals.connections][0]!.timers?.size ?? 0).toBe(0);
   });
 });

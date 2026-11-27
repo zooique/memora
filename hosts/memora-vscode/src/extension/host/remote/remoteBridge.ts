@@ -175,6 +175,14 @@ interface ClientConnection {
   peerIp?: string;
   /** 本连接订阅的会话集合（订阅生命周期与「手机在看哪个 tab」解耦，§19.6.3 第 2 条） */
   subs: Set<string>;
+  /**
+   * 流中推送定时器（按 sid；仅 LAN 档且该会话处于 running 时存在）
+   *
+   * 宿主在流中每次正文 chunk 都调 `notifyTurnUpdate` 会因 chatPanel 行数顶格而无法接线，
+   * 故流中富增量改由桥侧定时器驱动（§6.7 的 200–300ms 文本合并）。一条连接一份，
+   * 键 = sid；`undefined` 表示本连接未武装任何 tick。
+   */
+  timers?: Map<string, NodeJS.Timeout>;
 }
 
 /** 默认能力协商（profile 2：只读 + 可答） */
@@ -186,6 +194,14 @@ const DEFAULT_MAX_FRAME = 1024 * 1024;
 /** 每设备每会话的增量窗口上限（§6.7：500 条 / 2MB，先到为准） */
 const MAX_DELTA_FRAMES = 500;
 const MAX_DELTA_WINDOW_BYTES = 2 * 1024 * 1024;
+
+/**
+ * 流中富增量推送周期（毫秒）
+ *
+ * 取自 §6.7 的「文本流 200–300ms 合并」区间中值：既让手机上的正文按可读节奏增长，
+ * 又不会把每个 token 都变成一帧（那正是富 delta 要消除的伤）。
+ */
+const STREAM_TICK_MS = 250;
 
 /** 回放窗内的一帧（`bytes` 用 UTF-8 实测，不拿字符数冒充） */
 interface DeltaWindowEntry {
@@ -298,6 +314,8 @@ export class RemoteBridge {
     this.externalServer = undefined;
     this.port = undefined;
     for (const conn of this.connections) {
+      // 停桥即停流中 tick：定时器不清会继续对已关闭连接触发（虽 send 会静默丢弃，但句柄泄漏）
+      this.clearAllStreamTicks(conn);
       // 1001 = going away：告诉对端是宿主主动关闭，不是网络故障
       conn.ws.close(1001, 'bridge stopped');
     }
@@ -345,12 +363,16 @@ export class RemoteBridge {
     let closed = 0;
     for (const conn of this.connections) {
       if (conn.deviceFp !== target) continue;
+      // 撤销 = 读通道恒终止：流中 tick 也一并停掉，避免断开前的最后几拍仍推内容
+      this.clearAllStreamTicks(conn);
       conn.ws.close(1008, 'device revoked');
       closed += 1;
     }
     // 撤销 = 读通道与水一起终止：回放窗若留着，重连后仍能补出已撤销设备的会话增量
+    // ⚠️ 前缀必须是**真 NUL**（与 `streamKey()` 的 `\u0000` 同源）。写成 `\\u0000`
+    // 是字面反斜杠+u0000 六字符，startsWith 永不命中 ⇒ 回放窗清不掉。
     for (const key of [...this.streams.keys()]) {
-      if (key.startsWith(`${target}\\u0000`)) this.streams.delete(key);
+      if (key.startsWith(`${target}\u0000`)) this.streams.delete(key);
     }
     return closed;
   }
@@ -366,12 +388,27 @@ export class RemoteBridge {
    * seq 按设备独立递增并进回放窗）。本触发口（谁在什么时刻通知桥）两档共用，
    * 富 `delta.kind` 已在此生长，不改接线。
    *
+   * ⚠️ 流中节奏由谁驱动：宿主只在**生命周期节点**（开流 / 提问 / 插话变长 / 收场）通知，
+   * 正文 chunk 与 process_event 逐条**不通知**（chatPanel 行数顶格，无处接线）。因此
+   * profile 3 在 running 期间由桥侧 250ms tick 补推富增量（见 `onStreamTick`）；本口每次
+   * 通知仍保证 status 相位不丢——tick **只推富增量、不推 status**，两条职责不重叠。
+   *
    * @param sessionId 投影发生变化的会话
    */
   notifyTurnUpdate(sessionId: string): void {
     if (!this.server) return;
-    for (const conn of this.connections) {
-      if (conn.subs.has(sessionId)) this.pushUpdate(conn, sessionId);
+    const subscribers = [...this.connections].filter((conn) => conn.subs.has(sessionId));
+    if (subscribers.length === 0) return;
+    // 流中 tick 只服务 LAN 档；回环档（无 security）继续整帧快照，不武装定时器。
+    // 相位取一次快照（同一 sid 对所有订阅者同值），不让每条连接各读一遍。
+    const running = this.options.security
+      ? this.ports.snapshot(sessionId).state.phase === 'running'
+      : false;
+    for (const conn of subscribers) {
+      this.pushUpdate(conn, sessionId);
+      // running 期间武装 250ms tick 补推流中富增量；离开 running 立刻停表（收场内容由本拍 pushDelta 带走）
+      if (running) this.armStreamTick(conn, sessionId);
+      else this.disarmStreamTick(conn, sessionId);
     }
   }
 
@@ -424,6 +461,8 @@ export class RemoteBridge {
     this.connections.add(conn);
     ws.on('close', () => {
       this.connections.delete(conn);
+      // 连接关闭必须停掉本连接所有流中 tick（否则定时器对着死连接空转，句柄泄漏）
+      this.clearAllStreamTicks(conn);
       // 已握手设备的断开也留痕（只记完成 hello 的连接：握手前的探测断开不制造噪音）
       if (security && conn.deviceFp && conn.deviceId) {
         this.audit(security, {
@@ -489,6 +528,8 @@ export class RemoteBridge {
         return;
       case 'unsub':
         conn.subs.delete(frame.sid);
+        // 退订即停该 sid 的流中 tick（不再为已退订会话轮询快照）
+        this.disarmStreamTick(conn, frame.sid);
         return;
       case 'session_list':
         this.handleSessionList(conn);
@@ -770,7 +811,25 @@ export class RemoteBridge {
     const frame = buildStatusDeltaFrame(sid, seq, snapshot.state);
     this.recordDelta(state, frame);
     this.send(conn, frame);
+    // 相位帧之后的富增量与 tick 共用同一条差分通道，避免「通知时一套、定时器时另一套」两份判据
+    this.pushRich(conn, sid, snapshot, state);
+  }
 
+  /**
+   * 只推富增量（append_text / process_event），**不含 status**
+   *
+   * 抽成独立方法是为了让两条驱动共用一个执行面：
+   *   - 生命周期通知（`pushDelta`）：先 status 再富增量；
+   *   - 流中定时器（`onStreamTick`）：**只**富增量——相位没变就不该再发 status，
+   *     而相位变化必然伴随生命周期通知，故 tick 发 status 属重复。
+   * 水位 seq 与游标推进全在此处单点分配，调用方不碰。
+   */
+  private pushRich(
+    conn: ClientConnection,
+    sid: string,
+    snapshot: SnapshotPayload,
+    state: DeviceStreamState,
+  ): void {
     const { specs, next } = diffRichDelta(snapshot, state.rich);
     state.rich = next;
     for (const spec of specs) {
@@ -781,6 +840,75 @@ export class RemoteBridge {
           : buildProcessEventDeltaFrame(sid, richSeq, spec.roundId, spec.event);
       this.recordDelta(state, richFrame);
       this.send(conn, richFrame);
+    }
+  }
+
+  // ─── 流中 250ms 富增量 tick ────────────────────────────────────────────
+
+  /**
+   * 武装某连接的流中 tick（幂等：已武装则不动）
+   *
+   * 只在 LAN 档 + 会话 running 时由 `notifyTurnUpdate` 调用。`unref()` 让定时器
+   * 不阻止进程退出（测试 / 停桥时不拖尾巴）。
+   */
+  private armStreamTick(conn: ClientConnection, sid: string): void {
+    conn.timers ??= new Map();
+    if (conn.timers.has(sid)) return;
+    const timer = setInterval(() => this.onStreamTick(conn, sid), STREAM_TICK_MS);
+    timer.unref?.();
+    conn.timers.set(sid, timer);
+  }
+
+  /** 停某连接某 sid 的 tick（未武装时无操作） */
+  private disarmStreamTick(conn: ClientConnection, sid: string): void {
+    const timers = conn.timers;
+    const timer = timers?.get(sid);
+    if (!timers || !timer) return;
+    clearInterval(timer);
+    timers.delete(sid);
+  }
+
+  /** 停某连接全部 tick（连接关闭 / 停桥 / 设备撤销时调用） */
+  private clearAllStreamTicks(conn: ClientConnection): void {
+    const timers = conn.timers;
+    if (!timers) return;
+    for (const timer of timers.values()) clearInterval(timer);
+    timers.clear();
+  }
+
+  /**
+   * 一拍流中 tick：只补推富增量，任何一条不满足就自动停表
+   *
+   * 停表条件（任一命中）：桥已停 / 连接已退订该 sid / 回环档 / 无水状态 / 会话已离开 running。
+   * 离开 running（waiting / settled）时收场内容已由当拍生命周期通知的 `pushDelta` 带走，
+   * 故这里无需再推。定时器回调里的异常必须自吞并停表——否则会以未捕获异常冒到宿主进程。
+   */
+  private onStreamTick(conn: ClientConnection, sid: string): void {
+    if (!this.server || !this.options.security || !conn.subs.has(sid)) {
+      this.disarmStreamTick(conn, sid);
+      return;
+    }
+    try {
+      const device = conn.deviceFp ?? conn.deviceId;
+      if (!device) {
+        this.disarmStreamTick(conn, sid);
+        return;
+      }
+      const state = this.streams.get(this.streamKey(device, sid));
+      if (!state) {
+        this.disarmStreamTick(conn, sid);
+        return;
+      }
+      const snapshot = this.ports.snapshot(sid);
+      if (snapshot.state.phase !== 'running') {
+        this.disarmStreamTick(conn, sid);
+        return;
+      }
+      this.pushRich(conn, sid, snapshot, state);
+    } catch (err) {
+      // 定时器里抛错 = 未捕获异常（能拖崩扩展宿主）；自吞 + 停表，留给下一次生命周期通知重建
+      this.options.log?.(`[REMOTE-BRIDGE] stream tick failed (${sid}): ${String(err)}`);
+      this.disarmStreamTick(conn, sid);
     }
   }
 
