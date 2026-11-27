@@ -1,0 +1,32 @@
+{
+  "t": "evt",
+  "ch": "events",
+  "sid": "fixture-simple",
+  "seq": 0,
+  "kind": "snapshot",
+  "p": {
+    "state": {
+      "phase": "running",
+      "roundId": "r1"
+    },
+    "rounds": [
+      {
+        "id": "r1",
+        "status": "running",
+        "processEvents": [
+          {
+            "kind": "text",
+            "text": "hello"
+          }
+        ],
+        "assistantLog": [
+          {
+            "role": "assistant",
+            "content": "earlier"
+          }
+        ]
+      }
+    ],
+    "pendingQueue": ["q-item-1"]
+  }
+}

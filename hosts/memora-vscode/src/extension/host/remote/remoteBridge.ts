@@ -31,13 +31,11 @@
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import type { Server as HttpsServer } from 'node:https';
 import type { IncomingMessage } from 'node:http';
-import type { RoundView, TurnState } from '../../../shared/protocol.js';
 import {
   routeRemoteCommand,
   type RemoteInputCommand,
   type RemoteInputMessage,
 } from './remoteCommandRouter.js';
-import { trimRound } from './remoteSnapshotTrim.js';
 import {
   REMOTE_COMMAND_CODES,
   REMOTE_CTL_CODES,
@@ -50,11 +48,13 @@ import type { RemoteDeviceTier } from './remoteDevices.js';
 import type { RemoteRateLimitState } from './remoteRateLimiter.js';
 import type { PairingVerdict } from './remotePairing.js';
 import {
+  buildSnapshotFrame,
   parseBridgeFrame,
   serializeBridgeFrame,
   type BridgeClientFrame,
   type BridgeServerFrame,
   type BridgeSessionSummary,
+  type SnapshotPayload,
 } from './remoteBridgeProtocol.js';
 
 /**
@@ -75,11 +75,7 @@ export interface RemoteBridgePorts {
   /** 该 sid 当前相位（由宿主按 `deriveSessionProjection` 折算，见 `remotePhaseOf`） */
   phaseOf: (sessionId: string) => RemotePhase;
   /** 该 sid 的只读投影（出桥前的裁剪见 `remoteSnapshotTrim`，端口不自行裁） */
-  snapshot: (sessionId: string) => {
-    state: TurnState;
-    rounds: readonly RoundView[];
-    pendingQueue: readonly string[];
-  };
+  snapshot: (sessionId: string) => SnapshotPayload;
   /** 投递输入（实现必须就是 `panel.handleInput(input, sid)` 那条路，不另建投递链） */
   deliverInput: (sessionId: string, input: RemoteInputMessage) => void;
 }
@@ -636,23 +632,9 @@ export class RemoteBridge {
     if (conn.subs.has(sid)) this.pushSnapshot(conn, sid);
   }
 
-  /** 回推一次快照（profile 2 唯一的下行事件形态） */
+  /** 回推一次快照（profile 2 唯一的下行事件形态；构造唯一入口 = `buildSnapshotFrame`） */
   private pushSnapshot(conn: ClientConnection, sid: string): void {
-    const snapshot = this.ports.snapshot(sid);
-    this.send(conn, {
-      t: 'evt',
-      ch: 'events',
-      sid,
-      seq: 0,
-      kind: 'snapshot',
-      p: {
-        state: snapshot.state,
-        // 出桥前统一裁剪（§6.4）：剥 attachmentUris（远端 origin 必 404）+
-        // processEvents / assistantLog 只留最近 N 条。裁剪口径只在 remoteSnapshotTrim 一处
-        rounds: snapshot.rounds.map(trimRound),
-        pendingQueue: snapshot.pendingQueue,
-      },
-    });
+    this.send(conn, buildSnapshotFrame(sid, this.ports.snapshot(sid)));
   }
 
   /** 发送一帧（连接已关闭时静默丢弃——发送失败不改变任何业务裁决） */

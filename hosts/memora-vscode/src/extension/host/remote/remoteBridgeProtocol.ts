@@ -22,6 +22,8 @@ import {
   type RemoteCommandCode,
   type RemoteCtlCode,
 } from './remoteCommandPolicy.js';
+import { trimRound } from './remoteSnapshotTrim.js';
+import type { RoundView, TurnState } from '../../../shared/protocol.js';
 
 /**
  * 封套类型全集（19 条 · 唯一枚举来源）
@@ -302,6 +304,47 @@ export function parseBridgeFrame(raw: string): ParseResult {
       // 其余 11 条都是下行帧（hello_ok / evt / err / pong …）：手机不应上行
       return { ok: false, reason: `downlink-only type from client: ${t}` };
   }
+}
+
+/**
+ * 快照载荷（宿主只读投影的最小入参）
+ *
+ * 与 `RemoteBridgePorts.snapshot` 的返回结构同源；桥与 golden fixture 生成器
+ * 共用这一份形状，避免「桥一套、生成器一套」的第二真源。
+ */
+export interface SnapshotPayload {
+  /** turn 相位原始对象（`state.phase`） */
+  state: TurnState;
+  /** 未裁剪的宿主投影（裁剪在 [buildSnapshotFrame] 内统一做） */
+  rounds: readonly RoundView[];
+  /** 待处理队列（宿主端口类型是 `readonly string[]`） */
+  pendingQueue: readonly string[];
+}
+
+/**
+ * 构造下行快照帧（`evt` + `kind:'snapshot'`）
+ *
+ * **唯一构造点**：桥的 `pushSnapshot` 与 golden fixture 生成器都调用它。
+ * 若在桥里内联构造、生成器另写一份，两份形状会从落笔那刻开始漂移且无测试会红。
+ *
+ * @param sid 会话定址
+ * @param snapshot 宿主只读投影（内部经 `trimRound` 统一裁剪）
+ */
+export function buildSnapshotFrame(sid: string, snapshot: SnapshotPayload): EvtFrame {
+  return {
+    t: 'evt',
+    ch: 'events',
+    sid,
+    seq: 0,
+    kind: 'snapshot',
+    p: {
+      state: snapshot.state,
+      // 出桥前统一裁剪（§6.4）：剥 attachmentUris（远端 origin 必 404）+
+      // processEvents / assistantLog 只留最近 N 条。裁剪口径只在 remoteSnapshotTrim 一处
+      rounds: snapshot.rounds.map(trimRound),
+      pendingQueue: snapshot.pendingQueue,
+    },
+  };
 }
 
 /**

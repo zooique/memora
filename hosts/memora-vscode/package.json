@@ -513,6 +513,7 @@
     "verify:changelog-fresh": "node scripts/verify-changelog-fresh.mjs",
     "package": "npm run compile && node scripts/gen-changelog.mjs && node scripts/verify-changelog-fresh.mjs && node scripts/verify-nls.mjs && node scripts/verify-package-manifest.mjs && vsce package --no-dependencies --baseContentUrl https://raw.githubusercontent.com/zooique/memora/main/hosts/memora-vscode/ --baseImagesUrl https://raw.githubusercontent.com/zooique/memora/main/hosts/memora-vscode/ --out memora-vscode.vsix && node scripts/verify-vsix-paths.mjs memora-vscode.vsix",
     "test": "node ../../scripts/test-run.mjs host",
+    "fixtures:gen": "node scripts/gen-remote-fixtures.mjs",
     "lint": "eslint . --max-warnings 0"
   },
   "devDependencies": {

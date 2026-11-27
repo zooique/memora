@@ -1,0 +1,308 @@
+{
+  "t": "evt",
+  "ch": "events",
+  "sid": "fixture-trimmed",
+  "seq": 0,
+  "kind": "snapshot",
+  "p": {
+    "state": {
+      "phase": "waiting",
+      "roundId": "r2"
+    },
+    "rounds": [
+      {
+        "id": "r2",
+        "status": "completed",
+        "processEvents": [
+          {
+            "kind": "text",
+            "text": "e3"
+          },
+          {
+            "kind": "text",
+            "text": "e4"
+          },
+          {
+            "kind": "text",
+            "text": "e5"
+          },
+          {
+            "kind": "text",
+            "text": "e6"
+          },
+          {
+            "kind": "text",
+            "text": "e7"
+          },
+          {
+            "kind": "text",
+            "text": "e8"
+          },
+          {
+            "kind": "text",
+            "text": "e9"
+          },
+          {
+            "kind": "text",
+            "text": "e10"
+          },
+          {
+            "kind": "text",
+            "text": "e11"
+          },
+          {
+            "kind": "text",
+            "text": "e12"
+          },
+          {
+            "kind": "text",
+            "text": "e13"
+          },
+          {
+            "kind": "text",
+            "text": "e14"
+          },
+          {
+            "kind": "text",
+            "text": "e15"
+          },
+          {
+            "kind": "text",
+            "text": "e16"
+          },
+          {
+            "kind": "text",
+            "text": "e17"
+          },
+          {
+            "kind": "text",
+            "text": "e18"
+          },
+          {
+            "kind": "text",
+            "text": "e19"
+          },
+          {
+            "kind": "text",
+            "text": "e20"
+          },
+          {
+            "kind": "text",
+            "text": "e21"
+          },
+          {
+            "kind": "text",
+            "text": "e22"
+          },
+          {
+            "kind": "text",
+            "text": "e23"
+          },
+          {
+            "kind": "text",
+            "text": "e24"
+          },
+          {
+            "kind": "text",
+            "text": "e25"
+          },
+          {
+            "kind": "text",
+            "text": "e26"
+          },
+          {
+            "kind": "text",
+            "text": "e27"
+          },
+          {
+            "kind": "text",
+            "text": "e28"
+          },
+          {
+            "kind": "text",
+            "text": "e29"
+          },
+          {
+            "kind": "text",
+            "text": "e30"
+          },
+          {
+            "kind": "text",
+            "text": "e31"
+          },
+          {
+            "kind": "text",
+            "text": "e32"
+          },
+          {
+            "kind": "text",
+            "text": "e33"
+          },
+          {
+            "kind": "text",
+            "text": "e34"
+          },
+          {
+            "kind": "text",
+            "text": "e35"
+          },
+          {
+            "kind": "text",
+            "text": "e36"
+          },
+          {
+            "kind": "text",
+            "text": "e37"
+          },
+          {
+            "kind": "text",
+            "text": "e38"
+          },
+          {
+            "kind": "text",
+            "text": "e39"
+          },
+          {
+            "kind": "text",
+            "text": "e40"
+          },
+          {
+            "kind": "text",
+            "text": "e41"
+          },
+          {
+            "kind": "text",
+            "text": "e42"
+          },
+          {
+            "kind": "text",
+            "text": "e43"
+          },
+          {
+            "kind": "text",
+            "text": "e44"
+          },
+          {
+            "kind": "text",
+            "text": "e45"
+          },
+          {
+            "kind": "text",
+            "text": "e46"
+          },
+          {
+            "kind": "text",
+            "text": "e47"
+          },
+          {
+            "kind": "text",
+            "text": "e48"
+          },
+          {
+            "kind": "text",
+            "text": "e49"
+          },
+          {
+            "kind": "text",
+            "text": "e50"
+          },
+          {
+            "kind": "text",
+            "text": "e51"
+          },
+          {
+            "kind": "text",
+            "text": "e52"
+          }
+        ],
+        "assistantLog": [
+          {
+            "role": "assistant",
+            "content": "log-2"
+          },
+          {
+            "role": "assistant",
+            "content": "log-3"
+          },
+          {
+            "role": "assistant",
+            "content": "log-4"
+          },
+          {
+            "role": "assistant",
+            "content": "log-5"
+          },
+          {
+            "role": "assistant",
+            "content": "log-6"
+          },
+          {
+            "role": "assistant",
+            "content": "log-7"
+          },
+          {
+            "role": "assistant",
+            "content": "log-8"
+          },
+          {
+            "role": "assistant",
+            "content": "log-9"
+          },
+          {
+            "role": "assistant",
+            "content": "log-10"
+          },
+          {
+            "role": "assistant",
+            "content": "log-11"
+          },
+          {
+            "role": "assistant",
+            "content": "log-12"
+          },
+          {
+            "role": "assistant",
+            "content": "log-13"
+          },
+          {
+            "role": "assistant",
+            "content": "log-14"
+          },
+          {
+            "role": "assistant",
+            "content": "log-15"
+          },
+          {
+            "role": "assistant",
+            "content": "log-16"
+          },
+          {
+            "role": "assistant",
+            "content": "log-17"
+          },
+          {
+            "role": "assistant",
+            "content": "log-18"
+          },
+          {
+            "role": "assistant",
+            "content": "log-19"
+          },
+          {
+            "role": "assistant",
+            "content": "log-20"
+          },
+          {
+            "role": "assistant",
+            "content": "log-21"
+          }
+        ],
+        "truncated": {
+          "processEvents": 3,
+          "assistantLog": 2
+        }
+      }
+    ],
+    "pendingQueue": []
+  }
+}
