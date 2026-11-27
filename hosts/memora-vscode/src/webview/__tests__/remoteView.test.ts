@@ -47,6 +47,7 @@ function push(status: RemoteSettingsStatus): void {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   document.body.innerHTML = '';
 });
 
@@ -68,6 +69,8 @@ describe('remoteView', () => {
     const mode = el('remoteModeText');
     expect(mode.textContent).toContain('Development loopback');
     expect(mode.textContent).toContain('127.0.0.1:4010');
+    // 回环地址手机拨不到：文案必须显式说清，避免误以为「配对失败是手机的问题」
+    expect(mode.textContent).toContain('Phones cannot reach');
     expect((el('remoteRegenerateBtn') as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -165,5 +168,31 @@ describe('remoteView', () => {
     expect(postMessage).toHaveBeenCalledWith({ type: 'remote_settings', action: 'refresh' });
     (el('remoteRegenerateBtn') as HTMLButtonElement).click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'remote_settings', action: 'regenerate' });
+  });
+
+  it('局域网但地址未识别：如实说「拨不到」，不把 0.0.0.0 当可用地址', () => {
+    const { el } = mount();
+    push(baseStatus({ mode: 'lan', address: '0.0.0.0', port: 4123 }));
+    expect(el('remoteModeText').textContent).toContain('no LAN address was detected');
+    expect(el('remoteAddressText').hidden).toBe(true);
+    expect(el('remotePairingLinkBox').hidden).toBe(true);
+  });
+
+  it('口令到期：到点自动请求刷新（过期码不在屏上滞留）', () => {
+    vi.useFakeTimers();
+    const { postMessage } = mount();
+    push(
+      baseStatus({
+        mode: 'lan',
+        address: '192.168.1.9',
+        port: 4123,
+        pairingCode: '123456',
+        pairingExpiresAt: Date.now() + 60_000,
+        pairingLink: 'memora-pair://v1?h=192.168.1.9&p=4123&pin=AA&c=123456',
+      }),
+    );
+    expect(postMessage).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(60_000 + 100);
+    expect(postMessage).toHaveBeenCalledWith({ type: 'remote_settings', action: 'refresh' });
   });
 });

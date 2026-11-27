@@ -78,6 +78,32 @@ export function createRemoteView({
   /** 当前状态快照（仅用于渲染，不作为动作判据） */
   let status: RemoteSettingsStatus | undefined;
 
+  /** 口令到期定时器（每次渲染重排；到期只「请求刷新」，不本地伪造新状态） */
+  let expiryTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /**
+   * 按口令过期时刻安排一次刷新请求
+   *
+   * 为什么是「请求刷新」而不是本地清空：页面不持有真值，过期后宿主会重新判定
+   * 并回推（可能已有新口令，也可能不再给出）。本地直接清掉会与宿主状态分叉。
+   *
+   * @param deadline 过期时刻（epoch ms）；undefined = 取消
+   */
+  function scheduleExpiryRefresh(deadline: number | undefined): void {
+    if (expiryTimer !== undefined) {
+      clearTimeout(expiryTimer);
+      expiryTimer = undefined;
+    }
+    if (deadline === undefined) return;
+    // setTimeout 上限约 24.8 天；口令 TTL 远小于它，夹取只为不触发溢出告警
+    const MAX_TIMEOUT = 2 ** 31 - 1;
+    const delay = Math.min(MAX_TIMEOUT, Math.max(0, deadline - Date.now()) + 50);
+    expiryTimer = setTimeout(() => {
+      expiryTimer = undefined;
+      vscode.postMessage({ type: 'remote_settings', action: 'refresh' });
+    }, delay);
+  }
+
   /**
    * 写一行状态文本（空串 = 隐藏该行，避免留下空 `<p>` 的间距）
    *
@@ -169,18 +195,29 @@ export function createRemoteView({
   /** 按模式渲染桥状态行（未启动 / 开发回环 / 局域网三态如实区分） */
   function renderMode(next: RemoteSettingsStatus): void {
     if (next.mode === 'lan') {
+      // 地址不可用（未识别 / 绑定值 0.0.0.0）时如实说「监听在，但拨不到」——
+      // 0.0.0.0 是绑定值，不是手机能连的地址，不能当可用地址展示
+      if (!next.address || next.address === '0.0.0.0') {
+        setLine(
+          modeText,
+          l10n.t(
+            'The LAN bridge is listening on port {0}, but no LAN address was detected.',
+            String(next.port ?? ''),
+          ),
+        );
+        setLine(addressText, '');
+        setLine(
+          fingerprintText,
+          next.pcShortFp ? l10n.t('PC fingerprint: {0}', next.pcShortFp) : '',
+        );
+        setLine(pairingText, '');
+        return;
+      }
       setLine(
         modeText,
-        l10n.t(
-          'LAN bridge listening on {0}:{1}.',
-          next.address ?? '0.0.0.0',
-          String(next.port ?? ''),
-        ),
+        l10n.t('LAN bridge listening on {0}:{1}.', next.address, String(next.port ?? '')),
       );
-      setLine(
-        addressText,
-        l10n.t('Address: {0}', `${next.address ?? '0.0.0.0'}:${next.port ?? ''}`),
-      );
+      setLine(addressText, l10n.t('Address: {0}', `${next.address}:${next.port ?? ''}`));
       setLine(fingerprintText, next.pcShortFp ? l10n.t('PC fingerprint: {0}', next.pcShortFp) : '');
       if (next.pairingCode && next.pairingExpiresAt) {
         setLine(
@@ -200,7 +237,7 @@ export function createRemoteView({
       setLine(
         modeText,
         l10n.t(
-          'Development loopback listening on 127.0.0.1:{0} (no pairing).',
+          'Development loopback is listening on 127.0.0.1:{0}. Phones cannot reach this address, and pairing is unavailable.',
           String(next.port ?? ''),
         ),
       );
@@ -221,6 +258,8 @@ export function createRemoteView({
   function render(next: RemoteSettingsStatus): void {
     status = next;
     renderMode(next);
+    // 口令到期即向宿主请求刷新（真值仍在宿主，页面只负责别把过期码留在屏上）
+    scheduleExpiryRefresh(next.mode === 'lan' ? next.pairingExpiresAt : undefined);
     // 连接串只在宿主给出时展示（过期 / 地址未识别 ⇒ 隐藏，绝不显示必然失败的串）
     if (pairingLinkBox && pairingLinkText) {
       const link = next.pairingLink;
