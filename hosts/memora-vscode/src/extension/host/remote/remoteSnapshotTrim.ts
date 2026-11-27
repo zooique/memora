@@ -53,14 +53,20 @@ export type TrimmedRound = Omit<RoundView, 'attachmentUris' | 'processEvents' | 
  * 未超限的数组**原样引用**（不做无意义的拷贝，顺序与内容逐字不变）。
  *
  * @param round 宿主投影出的单轮（`RoundView`）
+ * @param includeProcessEvents 是否下发过程事件明细；缺省 true。§6.8 能力门控源头之一：
+ *   关闭时**整键删除** `processEvents`（不是留空数组——空数组会诱导消费方当成「本轮无事件」）
  */
-export function trimRound(round: RoundView): TrimmedRound {
+export function trimRound(round: RoundView, includeProcessEvents = true): TrimmedRound {
   // ① 先浅拷贝再**整键删除**附件 URL：保留键（哪怕值为 undefined）会诱导消费方去拼地址
-  const trimmed = { ...round } as TrimmedRound & { attachmentUris?: RoundView['attachmentUris'] };
+  const trimmed = { ...round } as TrimmedRound & {
+    attachmentUris?: RoundView['attachmentUris'];
+    processEvents?: RoundView['processEvents'];
+  };
   delete trimmed.attachmentUris;
+  if (!includeProcessEvents) delete trimmed.processEvents;
   // ② 过程事件：只留尾部（`slice(-0)` 会返回整段，故 0 条时单独处理）
   const { processEvents, assistantLog } = round;
-  if (processEvents !== undefined) {
+  if (includeProcessEvents && processEvents !== undefined) {
     trimmed.processEvents =
       processEvents.length > TRIMMED_RECENT_EVENTS
         ? processEvents.slice(-TRIMMED_RECENT_EVENTS)
@@ -74,7 +80,9 @@ export function trimRound(round: RoundView): TrimmedRound {
         : assistantLog;
   }
   // ④ 裁剪发生时才带计数（未裁剪的快照形状与升级前一致，少一个可选字段）
-  const droppedEvents = (processEvents?.length ?? 0) - (trimmed.processEvents?.length ?? 0);
+  const droppedEvents = includeProcessEvents
+    ? (processEvents?.length ?? 0) - (trimmed.processEvents?.length ?? 0)
+    : 0;
   const droppedLog = (assistantLog?.length ?? 0) - (trimmed.assistantLog?.length ?? 0);
   if (droppedEvents > 0 || droppedLog > 0) {
     trimmed.truncated = { processEvents: droppedEvents, assistantLog: droppedLog };

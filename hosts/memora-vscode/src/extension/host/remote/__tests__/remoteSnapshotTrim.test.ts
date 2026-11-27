@@ -67,6 +67,15 @@ describe('remoteSnapshotTrim — TrimmedRound', () => {
     expect('truncated' in trimmed).toBe(false);
   });
 
+  it('§6.8 能力关闭：processEvents 整键删除，truncated 只记日志裁剪', () => {
+    const round = makeRound(TRIMMED_RECENT_EVENTS + 5, TRIMMED_RECENT_LOG + 2);
+    const trimmed = trimRound(round, false);
+    expect('processEvents' in trimmed).toBe(false);
+    expect(trimmed.assistantLog).toHaveLength(TRIMMED_RECENT_LOG);
+    expect(trimmed.truncated).toEqual({ processEvents: 0, assistantLog: 2 });
+    expect(round.processEvents).toHaveLength(TRIMMED_RECENT_EVENTS + 5);
+  });
+
   it('不修改入参（宿主投影可能仍被 webview 侧使用）', () => {
     const round = makeRound(TRIMMED_RECENT_EVENTS + 1, 1);
     const before = round.processEvents?.length;

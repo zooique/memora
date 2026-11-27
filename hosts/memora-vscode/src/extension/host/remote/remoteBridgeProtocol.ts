@@ -175,6 +175,27 @@ export interface HelloOkFrame {
   assistantSid?: string;
 }
 
+/**
+ * §6.8 唯一能力名：PC 声明下发 `process_event` 明细（**非档位、非命令、非帧版本**）
+ *
+ * `hello` 无上行 caps 字段 ⇒ 这是 PC 单向声明，不是设备协商；取值域只此一项，
+ * 不为「未来可能的能力」预留无消费点的名字（免造判据）。
+ */
+export const REMOTE_CAP_PROCESS_EVENTS = 'process_events' as const;
+
+/** §6.8 默认能力集：维持九轮真机已验的「默认下发」行为；与 hello_ok 声明同源 */
+export const DEFAULT_REMOTE_CAPS: readonly string[] = [REMOTE_CAP_PROCESS_EVENTS];
+
+/**
+ * 该桥是否声明下发过程事件明细（缺省 = 默认下发）
+ *
+ * 唯一判据：`hello_ok.caps` 的同一份取值。门控落点只在两个生产源头
+ * （快照裁剪 / 富增量 spec），回放窗只缓存已发帧，禁止在回放时再过滤。
+ */
+export function hasProcessEventsCap(caps: readonly string[] | undefined): boolean {
+  return (caps ?? DEFAULT_REMOTE_CAPS).includes(REMOTE_CAP_PROCESS_EVENTS);
+}
+
 /** 事件帧（profile 2 只发 `snapshot`，`seq` 恒 0；增量与水位随 profile 3） */
 export interface EvtFrame {
   t: 'evt';
@@ -382,8 +403,13 @@ export interface SnapshotPayload {
  *
  * @param sid 会话定址
  * @param snapshot 宿主只读投影（内部经 `trimRound` 统一裁剪）
+ * @param options 能力门控；缺省 `includeProcessEvents: true`，故 golden fixture 形状不变
  */
-export function buildSnapshotFrame(sid: string, snapshot: SnapshotPayload): EvtFrame {
+export function buildSnapshotFrame(
+  sid: string,
+  snapshot: SnapshotPayload,
+  options: { includeProcessEvents?: boolean } = {},
+): EvtFrame {
   return {
     t: 'evt',
     ch: 'events',
@@ -393,8 +419,11 @@ export function buildSnapshotFrame(sid: string, snapshot: SnapshotPayload): EvtF
     p: {
       state: snapshot.state,
       // 出桥前统一裁剪（§6.4）：剥 attachmentUris（远端 origin 必 404）+
-      // processEvents / assistantLog 只留最近 N 条。裁剪口径只在 remoteSnapshotTrim 一处
-      rounds: snapshot.rounds.map(trimRound),
+      // processEvents / assistantLog 只留最近 N 条。裁剪口径只在 remoteSnapshotTrim 一处；
+      // 能力声明不含 process_events 时整键删明细（§6.8 门控源头之一）
+      rounds: snapshot.rounds.map((round) =>
+        trimRound(round, options.includeProcessEvents !== false),
+      ),
       pendingQueue: snapshot.pendingQueue,
     },
   };

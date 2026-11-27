@@ -13,8 +13,13 @@ import {
   buildResetRequiredFrame,
   buildResumeOkFrame,
   buildStatusDeltaFrame,
+  buildSnapshotFrame,
+  DEFAULT_REMOTE_CAPS,
+  hasProcessEventsCap,
   parseBridgeFrame,
+  REMOTE_CAP_PROCESS_EVENTS,
   serializeBridgeFrame,
+  type SnapshotPayload,
 } from '../remoteBridgeProtocol.js';
 
 describe('remoteBridgeProtocol — 封套类型（19 条）', () => {
@@ -232,5 +237,25 @@ describe('remoteBridgeProtocol — 下行序列化', () => {
     expect(() => buildResumeOkFrame('s-1', 0, 7)).toThrow();
     expect(() => buildResumeOkFrame('s-1', 9, 7)).toThrow();
     expect(() => buildResumeOkFrame('', 1, 7)).toThrow();
+  });
+
+  it('§6.8 caps 词表唯一：默认含 process_events；关闭时快照整键删明细', () => {
+    expect(REMOTE_CAP_PROCESS_EVENTS).toBe('process_events');
+    expect(DEFAULT_REMOTE_CAPS).toEqual(['process_events']);
+    expect(hasProcessEventsCap(undefined)).toBe(true);
+    expect(hasProcessEventsCap([])).toBe(false);
+    const snapshot = {
+      state: { phase: 'idle' },
+      rounds: [{ id: 'r1', processEvents: [{ seq: 1 }] }],
+      pendingQueue: [],
+    } as unknown as SnapshotPayload;
+    const full = JSON.parse(serializeBridgeFrame(buildSnapshotFrame('s', snapshot))) as {
+      p: { rounds: Array<Record<string, unknown>> };
+    };
+    expect(full.p.rounds[0]!.processEvents).toEqual([{ seq: 1 }]);
+    const degraded = JSON.parse(
+      serializeBridgeFrame(buildSnapshotFrame('s', snapshot, { includeProcessEvents: false })),
+    ) as { p: { rounds: Array<Record<string, unknown>> } };
+    expect('processEvents' in degraded.p.rounds[0]!).toBe(false);
   });
 });

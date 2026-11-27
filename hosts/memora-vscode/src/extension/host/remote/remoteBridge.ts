@@ -58,6 +58,8 @@ import {
   buildResumeOkFrame,
   buildSnapshotFrame,
   buildStatusDeltaFrame,
+  DEFAULT_REMOTE_CAPS,
+  hasProcessEventsCap,
   parseBridgeFrame,
   serializeBridgeFrame,
   type BridgeClientFrame,
@@ -141,7 +143,7 @@ export interface RemoteBridgeSecurity {
 export interface RemoteBridgeOptions {
   /** 稳定主机身份（多窗口区分用，§8-P1-8） */
   pcId: string;
-  /** 能力协商（§6.8）：回环档只有 observe + answer */
+  /** §6.8 PC 下行能力声明（全局静态，非每设备协商）；缺省 = 默认下发 process_event 明细 */
   caps?: readonly string[];
   /** 端口；0 = 由系统分配（测试用），缺省 = 0（**不猜固定端口**，避免与真机端口占用混淆） */
   port?: number;
@@ -184,9 +186,6 @@ interface ClientConnection {
    */
   timers?: Map<string, NodeJS.Timeout>;
 }
-
-/** 默认能力协商（profile 2：只读 + 可答） */
-const DEFAULT_CAPS = ['observe', 'answer'] as const;
 
 /** 单帧上限（防开发客户端误发巨帧；正式限流随 profile 3） */
 const DEFAULT_MAX_FRAME = 1024 * 1024;
@@ -649,7 +648,7 @@ export class RemoteBridge {
       ch: 'ctl',
       serverTime: Date.now(),
       pcId: this.options.pcId,
-      caps: this.options.caps ?? DEFAULT_CAPS,
+      caps: this.options.caps ?? DEFAULT_REMOTE_CAPS,
       limits: { maxFrame: DEFAULT_MAX_FRAME, credit: 0 },
       assistantSid,
     };
@@ -766,7 +765,12 @@ export class RemoteBridge {
 
   /** 回推一次快照（两档共用的归零重建形态；构造唯一入口 = `buildSnapshotFrame`） */
   private pushSnapshot(conn: ClientConnection, sid: string): void {
-    this.send(conn, buildSnapshotFrame(sid, this.ports.snapshot(sid)));
+    this.send(
+      conn,
+      buildSnapshotFrame(sid, this.ports.snapshot(sid), {
+        includeProcessEvents: hasProcessEventsCap(this.options.caps),
+      }),
+    );
   }
 
   /** 设备身份：profile 3 用 TLS 指纹，回环档用握手声明的 deviceId（缺省即 fail-closed） */
@@ -854,6 +858,8 @@ export class RemoteBridge {
     }
     state.rich = next;
     for (const spec of specs) {
+      // §6.8 门控源头之二：不发明细，但游标照常推进（回放窗只缓存已发帧，自然无泄漏）
+      if (spec.kind === 'process_event' && !hasProcessEventsCap(this.options.caps)) continue;
       const richSeq = state.sentSeq + 1;
       const richFrame =
         spec.kind === 'append_text'

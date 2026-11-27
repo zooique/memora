@@ -17,6 +17,7 @@ import type { PairingVerdict } from '../remotePairing.js';
 import type { RemoteInputMessage } from '../remoteCommandRouter.js';
 import type { RemotePhase } from '../remoteCommandPolicy.js';
 import { TRIMMED_RECENT_EVENTS, TRIMMED_RECENT_LOG } from '../remoteSnapshotTrim.js';
+import { DEFAULT_REMOTE_CAPS, REMOTE_CAP_PROCESS_EVENTS } from '../remoteBridgeProtocol.js';
 
 /** 单帧等待上限（防用例挂死；正常应远小于它） */
 const FRAME_TIMEOUT = 2000;
@@ -145,8 +146,9 @@ const opened: Array<{ bridge: RemoteBridge; client?: TestClient }> = [];
 async function startBridge(
   ports: RemoteBridgePorts,
   security?: RemoteBridgeSecurity,
+  caps?: readonly string[],
 ): Promise<{ bridge: RemoteBridge; port: number }> {
-  const bridge = new RemoteBridge(ports, { pcId: 'pc-test', security });
+  const bridge = new RemoteBridge(ports, { pcId: 'pc-test', security, caps });
   const { port } = await bridge.start();
   opened.push({ bridge });
   return { bridge, port };
@@ -166,10 +168,20 @@ describe('RemoteBridge — 握手与会话列表', () => {
     const client = await TestClient.connect(port);
 
     client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: 'AB12' });
-    const helloOk = await client.next<{ t: string; pcId: string; assistantSid?: string }>();
+    const helloOk = await client.next<{
+      t: string;
+      pcId: string;
+      assistantSid?: string;
+      caps: string[];
+    }>();
     expect(helloOk.t).toBe('hello_ok');
     expect(helloOk.pcId).toBe('pc-test');
     expect(helloOk.assistantSid).toBe('assist-1');
+    // §6.8 默认下发：旧的错误词表（observe / answer）不得再出现在 caps 里
+    expect(helloOk.caps).toEqual(DEFAULT_REMOTE_CAPS);
+    expect(helloOk.caps).toContain(REMOTE_CAP_PROCESS_EVENTS);
+    expect(helloOk.caps).not.toContain('observe');
+    expect(helloOk.caps).not.toContain('answer');
 
     client.send({ t: 'session_list' });
     const list = await client.next<{ t: string; sessions: Array<{ sessionId: string }> }>();
@@ -254,6 +266,28 @@ describe('RemoteBridge — 订阅与快照', () => {
     expect((round.assistantLog as unknown[]).length).toBe(TRIMMED_RECENT_LOG);
     expect(round.truncated).toEqual({ processEvents: 10, assistantLog: 10 });
     expect('attachmentUris' in round).toBe(false);
+  });
+
+  it('§6.8 降级态：caps 不含 process_events 时快照整键删明细，默认态不受影响', async () => {
+    const round = {
+      id: 'r-degraded',
+      processEvents: [{ seq: 1 }],
+      assistantLog: [{ id: 'a1', role: 'assistant', content: '段1', timestamp: 't1' }],
+    } as unknown as RoundView;
+    const { ports } = makePorts({
+      snapshot: () => ({ state: WAITING_ASK, rounds: [round], pendingQueue: [] }),
+    });
+    const { port } = await startBridge(ports, undefined, []);
+    const client = await TestClient.connect(port);
+    client.send({ t: 'hello', v: 1, deviceId: 'd1', nonce: 'n1', phoneFp: 'AB12' });
+    await client.next();
+    client.send({ t: 'sub', sid: 's1' });
+    const evt = await client.next<{ p: { rounds: Array<Record<string, unknown>> } }>();
+    const out = evt.p.rounds[0]!;
+    expect('processEvents' in out).toBe(false);
+    // 其他裁剪口径不随能力门控漂移：附件仍剥、日志仍下发
+    expect('attachmentUris' in out).toBe(false);
+    expect(out.assistantLog).toBeDefined();
   });
 
   it('sub 不存在的会话 → err no_session；resume 只能回 reset_required', async () => {
@@ -977,8 +1011,9 @@ describe('RemoteBridge — profile 3 delta 与水位补洞（§6.7 订正口径�
   async function openLanSub(
     ports: RemoteBridgePorts,
     security: RemoteBridgeSecurity,
+    caps?: readonly string[],
   ): Promise<{ bridge: RemoteBridge; client: TestClient }> {
-    const { bridge, port } = await startBridge(ports, security);
+    const { bridge, port } = await startBridge(ports, security, caps);
     const client = await TestClient.connect(port);
     const entry = opened.find((item) => item.bridge === bridge);
     if (entry) entry.client = client;
@@ -1038,6 +1073,48 @@ describe('RemoteBridge — profile 3 delta 与水位补洞（§6.7 订正口径�
     // 同一快照再触发：只有 status（seq=4），无富帧；用 ping 探底证明没有第 5 帧
     bridge.notifyTurnUpdate('s1');
     expect((await client.next<{ seq: number }>()).seq).toBe(4);
+    client.send({ t: 'ping' });
+    expect((await client.next<{ t: string }>()).t).toBe('pong');
+  });
+
+  it('§6.8 降级态：流中不发 process_event，resume 回放窗也无事件帧', async () => {
+    const ev = (seq: number) => ({
+      type: 'tool_start',
+      seq,
+      ts: '2026-11-27T00:00:00.000Z',
+      payload: { toolCallId: `c${seq}`, name: 'read_file' },
+    });
+    const liveRound = (text: string, events: readonly unknown[]): RoundView =>
+      ({
+        id: 'r1',
+        live: true,
+        assistantMessage: { id: 'm1', role: 'assistant', content: text, timestamp: 't1' },
+        processEvents: events,
+      }) as unknown as RoundView;
+    const state: TurnState = { phase: 'running', roundId: 'r1' };
+    let current = liveRound('你好', [ev(2)]);
+    const { security } = makeSecurity({ tier: 'observe' });
+    const { ports } = makePorts({ snapshot: () => ({ state, rounds: [current], pendingQueue: [] }) });
+    const { bridge, client } = await openLanSub(ports, security, []);
+
+    current = liveRound('你好世界', [ev(2), ev(5)]);
+    bridge.notifyTurnUpdate('s1');
+    expect(await client.next<{ seq: number }>()).toMatchObject({ seq: 1 });
+    const text = await client.next<{ seq: number; p: unknown }>();
+    expect(text).toMatchObject({ seq: 2 });
+    expect(text.p).toEqual({ kind: 'append_text', roundId: 'r1', text: '世界' });
+    // ping 探底：富增量里没有 process_event 帧
+    client.send({ t: 'ping' });
+    expect((await client.next<{ t: string }>()).t).toBe('pong');
+
+    // 回放窗只缓存已发帧 ⇒ 补洞不会把明细带回来
+    client.send({ t: 'resume', upSeq: 1, recvSeq: 0 });
+    expect((await client.next<{ t: string }>()).t).toBe('resume_ok');
+    const replayed = [await client.next<{ p: unknown }>(), await client.next<{ p: unknown }>()];
+    expect(replayed.map((frame) => (frame.p as { kind: string }).kind)).toEqual([
+      'status',
+      'append_text',
+    ]);
     client.send({ t: 'ping' });
     expect((await client.next<{ t: string }>()).t).toBe('pong');
   });
