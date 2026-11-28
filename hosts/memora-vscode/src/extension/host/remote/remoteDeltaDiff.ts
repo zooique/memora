@@ -9,7 +9,7 @@
  * 回 `remoteBridgeProtocol` 的唯一构造点，避免第二真源。
  */
 
-import type { ProcessEvent } from '@zooique/memora';
+import type { ProcessEvent, RoundMessage } from '@zooique/memora';
 import type { SnapshotPayload } from './remoteBridgeProtocol.js';
 
 /**
@@ -31,7 +31,19 @@ export interface RichCursor {
 /** 差分规格（载荷形状；帧由协议层唯一构造点落） */
 export type RichDeltaSpec =
   | { kind: 'append_text'; roundId: string; text: string }
-  | { kind: 'process_event'; roundId: string; event: ProcessEvent };
+  | { kind: 'process_event'; roundId: string; event: ProcessEvent }
+  /**
+   * 本轮用户气泡（§6.4.2 · 上屏时机挂在轮锚确立这一刻，不挂队列消费）。
+   *
+   * 为什么需要独立 kind：手机只从 `rounds[].userMessage` 画气泡，而 `append_text` /
+   * `process_event` 都不带它 ⇒ 收场快照到达前手机只能画空壳正文，表现为「用户输入后
+   * 要等任务结束才出现气泡」。本规格与 `toRoundView` 同源：`userMessage` 逐字透传、
+   * `createdAt` 取 `userMessage.timestamp`（不另造 ts，对齐 PC 的 `fmtTime` 口径）。
+   *
+   * 时机边界：只在**轮切换**分支产出——订阅那刻的快照已含 userMessage（游标 roundId
+   * 已初始化为该轮），重推等于把历史当用户新输入；首轮无 roundId 时不产（无锚气泡）。
+   */
+  | { kind: 'user_message'; roundId: string; userMessage: RoundMessage; createdAt?: string };
 
 /** 一个 live 轮内的最大事件 seq（无事件返回 0） */
 function maxEventSeq(events: readonly ProcessEvent[] | undefined): number {
@@ -93,6 +105,16 @@ export function diffRichDelta(snapshot: SnapshotPayload, cursor: RichCursor): Ri
   const roundId = next.roundId;
 
   if (cursor.roundId !== roundId) {
+    // 新轮整轮基础事实：用户气泡先于正文/过程事件上屏——轮锚已确立，真实 ts 同源可取。
+    // 只在 userMessage 存在时产（resume 轮无 seed 且落盘未补时整轮本就不并入，见 mergeLiveRound）。
+    if (live.userMessage) {
+      specs.push({
+        kind: 'user_message',
+        roundId,
+        userMessage: live.userMessage,
+        ...(live.createdAt ? { createdAt: live.createdAt } : {}),
+      });
+    }
     if (next.text.length > 0) specs.push({ kind: 'append_text', roundId, text: next.text });
     for (const event of live.processEvents ?? []) {
       specs.push({ kind: 'process_event', roundId, event });

@@ -119,10 +119,50 @@ describe('remoteDeltaDiff — 富增量不重不漏', () => {
         processEvents: [toolEvent(1, 'new')],
       }),
     ]);
+    // 轮锚确立那一刻同时带出本轮用户气泡（上屏时机判据）——先于正文/事件
     expect(diffRichDelta(nextRound, cursor).specs).toEqual([
+      {
+        kind: 'user_message',
+        roundId: 'r2',
+        userMessage: { role: 'user', content: '问', timestamp: '2026-11-27T00:00:00.000Z' },
+      },
       { kind: 'append_text', roundId: 'r2', text: '新轮' },
       { kind: 'process_event', roundId: 'r2', event: toolEvent(1, 'new') },
     ]);
+  });
+
+  it('首轮从无锚到有锚：用户气泡随新轮带出；订阅快照已有的轮不重推', () => {
+    // 开流首拍无 roundId（buildLiveTurnFromBuffer 护栏）⇒ 游标无轮身份
+    const noAnchor = { roundId: undefined, text: '', eventSeq: 0 };
+    const firstRound = snapshot([
+      liveRound({
+        userMessage: {
+          id: 'msg-first',
+          role: 'user',
+          content: '首条',
+          timestamp: '2026-11-28T10:00:00.000Z',
+        },
+        createdAt: '2026-11-28T10:00:00.000Z',
+      }),
+    ]);
+    const first = diffRichDelta(firstRound, noAnchor);
+    expect(first.specs).toEqual([
+      {
+        kind: 'user_message',
+        roundId: 'r1',
+        userMessage: {
+          id: 'msg-first',
+          role: 'user',
+          content: '首条',
+          timestamp: '2026-11-28T10:00:00.000Z',
+        },
+        createdAt: '2026-11-28T10:00:00.000Z',
+      },
+    ]);
+
+    // 订阅那一刻快照已含气泡 ⇒ 游标已指向该轮，下一拍零增量（不把历史当用户新输入）
+    const subscribed = initRichCursor(firstRound);
+    expect(diffRichDelta(firstRound, subscribed).specs).toEqual([]);
   });
 
   it('正文异常回退（非前缀）不发正文帧；无 live 轮静默零增量', () => {

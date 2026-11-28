@@ -15,6 +15,7 @@ import {
   buildRoleListOkFrame,
   buildSessionCreatedFrame,
   buildStatusDeltaFrame,
+  buildUserMessageDeltaFrame,
   buildSnapshotFrame,
   DEFAULT_REMOTE_CAPS,
   hasProcessEventsCap,
@@ -296,6 +297,37 @@ describe('remoteBridgeProtocol — 下行序列化', () => {
     expect(() => buildAppendTextDeltaFrame('s-1', 4, 'r-9', '')).toThrow();
     expect(() => buildAppendTextDeltaFrame('s-1', 0, 'r-9', 'x')).toThrow();
     expect(() => buildAppendTextDeltaFrame('', 4, 'r-9', 'x')).toThrow();
+  });
+
+  it('user_message delta 逐字透传 RoundView.userMessage；createdAt 与 timestamp 同源', () => {
+    const userMessage = {
+      id: 'msg-1',
+      role: 'user',
+      content: '帮我写个开头',
+      timestamp: '2026-11-28T10:00:00.000Z',
+    } as const;
+    const frame = JSON.parse(
+      serializeBridgeFrame(
+        buildUserMessageDeltaFrame('s-1', 7, 'r-9', userMessage, userMessage.timestamp),
+      ),
+    ) as Record<string, unknown>;
+    // 独立手写期望：userMessage 拍平 / 重命名、ts 另造一律红
+    expect(frame).toEqual({
+      t: 'evt',
+      ch: 'events',
+      sid: 's-1',
+      seq: 7,
+      kind: 'delta',
+      p: {
+        kind: 'user_message',
+        roundId: 'r-9',
+        userMessage,
+        createdAt: '2026-11-28T10:00:00.000Z',
+      },
+    });
+    expect(() => buildUserMessageDeltaFrame('s-1', 7, '', userMessage)).toThrow();
+    expect(() => buildUserMessageDeltaFrame('', 7, 'r-9', userMessage)).toThrow();
+    expect(() => buildUserMessageDeltaFrame('s-1', 0, 'r-9', userMessage)).toThrow();
   });
 
   it('process_event delta 逐字透传内核 ProcessEvent 判别联合，不猜字段', () => {

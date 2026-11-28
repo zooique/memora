@@ -64,6 +64,7 @@ import {
   buildRoleListOkFrame,
   buildSnapshotFrame,
   buildStatusDeltaFrame,
+  buildUserMessageDeltaFrame,
   DEFAULT_REMOTE_CAPS,
   hasProcessEventsCap,
   parseBridgeFrame,
@@ -1011,10 +1012,20 @@ export class RemoteBridge {
       // §6.8 门控源头之二：不发明细，但游标照常推进（回放窗只缓存已发帧，自然无泄漏）
       if (spec.kind === 'process_event' && !hasProcessEventsCap(this.options.caps)) continue;
       const richSeq = state.sentSeq + 1;
-      const richFrame =
-        spec.kind === 'append_text'
-          ? buildAppendTextDeltaFrame(sid, richSeq, spec.roundId, spec.text)
-          : buildProcessEventDeltaFrame(sid, richSeq, spec.roundId, spec.event);
+      let richFrame: EvtFrame;
+      if (spec.kind === 'user_message') {
+        richFrame = buildUserMessageDeltaFrame(
+          sid,
+          richSeq,
+          spec.roundId,
+          spec.userMessage,
+          spec.createdAt,
+        );
+      } else if (spec.kind === 'append_text') {
+        richFrame = buildAppendTextDeltaFrame(sid, richSeq, spec.roundId, spec.text);
+      } else {
+        richFrame = buildProcessEventDeltaFrame(sid, richSeq, spec.roundId, spec.event);
+      }
       this.recordDelta(state, richFrame);
       this.send(conn, richFrame);
     }

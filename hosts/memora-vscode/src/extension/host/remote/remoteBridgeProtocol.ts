@@ -623,6 +623,31 @@ export function buildAppendTextDeltaFrame(
 }
 
 /**
+ * 构造本轮用户气泡增量帧（`evt` + `delta` + `p.kind:'user_message'`；§6.4.2）
+ *
+ * **唯一构造点**：桥的差分推送调用它。`userMessage` 逐字透传 `RoundView.userMessage`
+ * （不重塑字段，防第二份 DTO）；`createdAt` 取 `userMessage.timestamp` 同源于
+ * `toRoundView`，手机底栏时钟据此渲染，不用本机当前时间冒充提问时刻。
+ */
+export function buildUserMessageDeltaFrame(
+  sid: string,
+  seq: number,
+  roundId: string,
+  userMessage: RoundView['userMessage'],
+  createdAt?: string,
+): EvtFrame {
+  assertDeltaHead(sid, seq, roundId);
+  return {
+    t: 'evt',
+    ch: 'events',
+    sid,
+    seq,
+    kind: 'delta',
+    p: { kind: 'user_message', roundId, userMessage, ...(createdAt ? { createdAt } : {}) },
+  };
+}
+
+/**
  * 构造过程事件增量帧（`evt` + `delta` + `p.kind:'process_event'`；§6.4.1）
  *
  * **唯一构造点**：桥的差分推送调用它。`event` 逐字透传内核 `ProcessEvent` 判别联合

@@ -1112,6 +1112,50 @@ describe('RemoteBridge — profile 3 delta 与水位补洞（§6.7 订正口径�
     expect((await client.next<{ t: string }>()).t).toBe('pong');
   });
 
+  it('首轮气泡即时上屏：订阅时无 live 轮，轮锚确立后 status 后紧跟 user_message 帧', async () => {
+    const running: TurnState = { phase: 'running', roundId: 'r1' };
+    const userMessage = {
+      id: 'msg-1',
+      role: 'user',
+      content: '帮我写个开头',
+      timestamp: '2026-11-28T10:00:00.000Z',
+    } as const;
+    let rounds: RoundView[] = [];
+    const { security } = makeSecurity({ tier: 'observe' });
+    const { ports } = makePorts({
+      snapshot: () => ({ state: running, rounds, pendingQueue: [] }),
+    });
+    const { bridge, client } = await openLanSub(ports, security);
+    // 订阅快照无 live 轮 ⇒ 游标无轮身份；首轮出现即新轮差分
+
+    rounds = [
+      {
+        id: 'r1',
+        live: true,
+        userMessage,
+        createdAt: userMessage.timestamp,
+      } as unknown as RoundView,
+    ];
+    bridge.notifyTurnUpdate('s1');
+    const status = await client.next<{ seq: number; p: unknown }>();
+    expect(status.seq).toBe(1);
+    expect(status.p).toEqual({ kind: 'status', state: running });
+    const bubble = await client.next<{ seq: number; p: unknown }>();
+    expect(bubble.seq).toBe(2);
+    // 独立手写期望：气泡帧不在水位窗口 ⇒ 收场快照前手机永远看不到用户气泡
+    expect(bubble.p).toEqual({
+      kind: 'user_message',
+      roundId: 'r1',
+      userMessage,
+      createdAt: userMessage.timestamp,
+    });
+    // 同轮再触发：只有 status，气泡不重发（幂等由轮切换判据保证）
+    bridge.notifyTurnUpdate('s1');
+    expect((await client.next<{ seq: number }>()).seq).toBe(3);
+    client.send({ t: 'ping' });
+    expect((await client.next<{ t: string }>()).t).toBe('pong');
+  });
+
   it('§6.8 降级态：流中不发 process_event，resume 回放窗也无事件帧', async () => {
     const ev = (seq: number) => ({
       type: 'tool_start',
