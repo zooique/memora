@@ -2,7 +2,7 @@
  * 失败限流单测 —— 阈值封禁 / 到期解封 / 成功清零 / 键上限淘汰
  *
  * 判据来源：docs/方案-手机远程控制-20261110.md §16.2 G4、§4.5.5
- *   （5 分钟内失败 ≥5 次 ⇒ 封 30 分钟；TLL 到期自动解封）
+ *   （5 分钟内失败 ≥5 次 ⇒ 封 30 分钟；封禁到点后自行解除）
  */
 import { describe, expect, it } from 'vitest';
 import { RemoteFailureLimiter } from '../remoteRateLimiter.js';

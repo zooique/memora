@@ -77,7 +77,7 @@ export interface RemoteSecureServer {
  */
 export function createRemoteSecureServer(opts: RemoteSecureServerOptions): RemoteSecureServer {
   const log = opts.log ?? (() => undefined);
-  // socket → 设备指纹：WeakMap 让连接断开后自动回收，不留引用
+  // socket → 设备指纹：WeakMap 持弱引用，连接对象被 GC 后条目随之消失（不延长其寿命）
   const fingerprints = new WeakMap<object, string>();
   const server = createServer({
     key: opts.identity.keyPem,
