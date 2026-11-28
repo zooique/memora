@@ -277,6 +277,7 @@ describe('RemoteSecureServer + RemoteBridge — LAN 组合（真 TLS）', () => 
     opened.push(secure);
     const ports: RemoteBridgePorts = {
       listSessions: () => ({ sessions: [], archivedIds: [], assistantSid: 'assist-1' }),
+      listRolePacks: () => ({ packs: [] }),
       hasSession: () => true,
       phaseOf: () => 'idle',
       snapshot: () => ({ state: { phase: 'idle' } as TurnState, rounds: [], pendingQueue: [] }),

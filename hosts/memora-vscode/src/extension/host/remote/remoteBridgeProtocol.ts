@@ -1,9 +1,10 @@
 /**
- * 远程桥协议（L2 封套）—— 21 条 `t` 的唯一类型与解析点（纯函数，零 IO / 零 vscode）
+ * 远程桥协议（L2 封套）—— 23 条 `t` 的唯一类型与解析点（纯函数，零 IO / 零 vscode）
  *
  * 设计源：docs/方案-手机远程控制-20261110.md
- *   - §6.5：封套类型 21 条 = 控制帧 6 + 通道/生命周期 6 + 业务载荷 9
- *     （`session_create` / `session_created` 为手机直接新建会话，2026-11-28 拍板补登）
+ *   - §6.5：封套类型 23 条 = 控制帧 6 + 通道/生命周期 6 + 业务载荷 11
+ *     （`session_create` / `session_created` 为手机直接新建会话，2026-11-28 拍板补登；
+ *     `role_list` / `role_list_ok` 为手机新建会话前选角色包，同日补登）
  *   - §6.1：帧封套字段（`t` / `ch` / `sid` / `rid` / `seq` / `kind` / `p`）与固定错误码
  *   - §6.2：`hello` / `hello_ok` 的字段（`hello_ok.assistantSid?` 为字段扩展）
  *
@@ -28,7 +29,7 @@ import type { RoundView, TurnState } from '../../../shared/protocol.js';
 import type { ProcessEvent } from '@zooique/memora';
 
 /**
- * 封套类型全集（21 条 · 唯一枚举来源）
+ * 封套类型全集（23 条 · 唯一枚举来源）
  *
  * 分组与方案 §6.5 表格逐条对应；`snapshot` / `delta` **不在**此表——它们是 `t:'evt'` 的 `kind`，
  * 属封套内的第二层分派（§6.3 层级约定）。
@@ -48,7 +49,7 @@ export const BRIDGE_ENVELOPE_TYPES = [
   'err',
   'sub',
   'unsub',
-  // 业务载荷（9）
+  // 业务载荷（11）
   'evt',
   'cmd',
   'attention',
@@ -60,6 +61,10 @@ export const BRIDGE_ENVELOPE_TYPES = [
   // 所以不能复用 `cmd`（`cmd` 的定址前提就是 sid）。与 `session_list` 同属「跨会话例外」。
   'session_create',
   'session_created',
+  // 角色包列表：与 `session_list` 同族（跨会话、只读），手机「＋」先取列表再建会话。
+  // 不塞进 `hello_ok`：角色包可随时安装/移除，一次性的握手快照会说谎。
+  'role_list',
+  'role_list_ok',
 ] as const;
 
 /** 封套类型名（由常量数组派生，禁止调用点自写字面量联合） */
@@ -90,6 +95,14 @@ export interface BridgeSessionSummary {
    * 真源 = 宿主的 `ConfirmCoordinator.pendingSnapshot().count`，列表只转述，不缓存。
    */
   pendingConfirmCount?: number;
+  /**
+   * 该会话记录的角色包名（可选；从未选过 / 旧档案缺省）
+   *
+   * 真源 = `SessionMeta.activeRolePackName`（与 webview 的 `session_list_data` 同一读口），
+   * 桥只透传。手机据此在会话详情顶部显示「当前角色」——**不用 `processEvents.meta` 反推**：
+   * 快照裁剪只留尾部 N 条，长轮重开时 meta 已被裁掉。
+   */
+  activeRolePackName?: string;
 }
 
 // ─── 上行帧（手机 → PC） ───────────────────────────────────────────────
@@ -178,6 +191,26 @@ export interface SessionCreateFrame {
   ch?: 'ctl';
   rid: string;
   title?: string;
+  /**
+   * 新建会话要用的角色包名（可选；缺省 = 宿主取用户级默认 → 内核兜底包）
+   *
+   * 手机传的是**用户选择**，不是已校验的事实——宿主必须过角色包目录编目再采用
+   * （PC 草稿路径「选择时已校验」的前提在远端不成立）。校验失败按「未指定」处理，
+   * 不拦住建会话。
+   */
+  role?: string;
+}
+
+/**
+ * 角色包列表请求（跨会话帧，**不带 `sid`**）
+ *
+ * 与 `session_list` 同族：手机「＋」在**建会话之前**就要知道有哪些角色包可选，
+ * 此刻没有任何 `sid` 可定址。`rid` 可选（与 `session_list` 同口径：只为对账，不参与定址）。
+ */
+export interface RoleListFrame {
+  t: 'role_list';
+  ch?: 'ctl';
+  rid?: string;
 }
 
 /** 桥可解析的上行帧联合 */
@@ -190,7 +223,8 @@ export type BridgeClientFrame =
   | ResumeFrame
   | CmdFrame
   | SessionListFrame
-  | SessionCreateFrame;
+  | SessionCreateFrame
+  | RoleListFrame;
 
 // ─── 下行帧（PC → 手机） ───────────────────────────────────────────────
 
@@ -208,13 +242,25 @@ export interface HelloOkFrame {
 /**
  * §6.8 唯一能力名：PC 声明下发 `process_event` 明细（**非档位、非命令、非帧版本**）
  *
- * `hello` 无上行 caps 字段 ⇒ 这是 PC 单向声明，不是设备协商；取值域只此一项，
+ * `hello` 无上行 caps 字段 ⇒ 这是 PC 单向声明，不是设备协商；取值域只列**手机真实消费**的两项，
  * 不为「未来可能的能力」预留无消费点的名字（免造判据）。
  */
 export const REMOTE_CAP_PROCESS_EVENTS = 'process_events' as const;
 
-/** §6.8 默认能力集：维持九轮真机已验的「默认下发」行为；与 hello_ok 声明同源 */
-export const DEFAULT_REMOTE_CAPS: readonly string[] = [REMOTE_CAP_PROCESS_EVENTS];
+/**
+ * §6.8 能力名：PC 支持 ctl 帧 `role_list`（手机「＋」建会话前选角色包）
+ *
+ * **为什么必须声明而不是直接发**：旧宿主把未知 `t` 当畸形帧、直接关连接（`onMessage` 的 1008），
+ * 新手机对旧 PC 一发 `role_list` 就会断线。手机据此判：没有该能力就跳过选择器、
+ * 按「不指定角色」建会话（`session_create.role` 是可选字段，旧宿主忽略不影响建会话）。
+ */
+export const REMOTE_CAP_ROLE_LIST = 'role_list' as const;
+
+/** §6.8 默认能力集：与 hello_ok 声明同源 */
+export const DEFAULT_REMOTE_CAPS: readonly string[] = [
+  REMOTE_CAP_PROCESS_EVENTS,
+  REMOTE_CAP_ROLE_LIST,
+];
 
 /**
  * 该桥是否声明下发过程事件明细（缺省 = 默认下发）
@@ -296,6 +342,36 @@ export interface SessionCreatedFrame {
   rid: string;
   sid: string;
   title: string;
+  /**
+   * 宿主实际落进 `SessionMeta.activeRolePackName` 的角色包名（可选；未指定 / 校验失效 = 缺省）
+   *
+   * 为什么回带：手机选了角色后要立刻显示「当前角色」，若手机拿自己选的名字回填，
+   * 一旦宿主因目录校验回落成默认包，界面就是在造假事实。这里给宿主读过的事实。
+   */
+  role?: string;
+}
+
+/** 角色包列表条目的最小读面（与 PC 输入区下拉 `chat_role_packs.packs` 同一投影） */
+export interface BridgeRolePackMeta {
+  /** 角色包名（写进 `SessionMeta.activeRolePackName` 的值；**不是**展示名） */
+  name: string;
+  /** 展示名（缺省时宿主已回落为 name） */
+  displayName: string;
+  description?: string;
+}
+
+/**
+ * 角色包列表应答（`role_list` 的唯一下行）
+ *
+ * `defaultName` = 用户级默认角色包（`memora.defaultRolePack`）；缺省 = 没设过，
+ * 手机按「不指定角色」建会话即可（宿主再走内核兜底包）。手机只用来预选，不据此写 meta。
+ */
+export interface RoleListOkFrame {
+  t: 'role_list_ok';
+  ch: 'ctl';
+  rid?: string;
+  packs: readonly BridgeRolePackMeta[];
+  defaultName?: string;
 }
 
 /**
@@ -334,6 +410,7 @@ export type BridgeServerFrame =
   | ErrFrame
   | SessionListOkFrame
   | SessionCreatedFrame
+  | RoleListOkFrame
   | AttentionFrame;
 
 /** 解析成功 */
@@ -420,25 +497,34 @@ export function parseBridgeFrame(raw: string): ParseResult {
     }
     case 'session_list':
       return { ok: true, frame: { t: 'session_list', rid: frame.rid as string | undefined } };
+    case 'role_list':
+      return { ok: true, frame: { t: 'role_list', rid: frame.rid as string | undefined } };
     case 'session_create': {
       // rid 必填：错误帧 / 回执都按它定址，缺了手机就不知道「这条结果对应哪次点击」
       if (!isNonEmptyString(frame.rid)) return { ok: false, reason: 'session_create.rid missing' };
       if (frame.title !== undefined && typeof frame.title !== 'string') {
         return { ok: false, reason: 'session_create.title must be string' };
       }
+      if (frame.role !== undefined && typeof frame.role !== 'string') {
+        return { ok: false, reason: 'session_create.role must be string' };
+      }
       // 空串 / 纯空白标题按「未给标题」处理：宿主会回落到默认标题，不把空串当用户意图
       const rawTitle = typeof frame.title === 'string' ? frame.title.trim() : '';
+      // 角色包名同样归一：空串 = 未指定（宿主走「默认 → 兜底包」链）。
+      // 这里**只校验类型**、不校验存在性——目录编目在宿主侧，桥不得自造第二份判据
+      const rawRole = typeof frame.role === 'string' ? frame.role.trim() : '';
       return {
         ok: true,
         frame: {
           t: 'session_create',
           rid: frame.rid,
           ...(rawTitle.length > 0 ? { title: rawTitle } : {}),
+          ...(rawRole.length > 0 ? { role: rawRole } : {}),
         },
       };
     }
     default:
-      // 其余 12 条都是下行帧（hello_ok / evt / err / pong …）：手机不应上行
+      // 其余都是下行帧（hello_ok / evt / err / pong …）：手机不应上行
       return { ok: false, reason: `downlink-only type from client: ${t}` };
   }
 }
@@ -626,10 +712,35 @@ export function buildSessionCreatedFrame(
   rid: string,
   sid: string,
   title: string,
+  role?: string,
 ): SessionCreatedFrame {
   if (rid.length === 0) throw new Error('session_created.rid must be non-empty');
   if (sid.length === 0) throw new Error('session_created.sid must be non-empty');
-  return { t: 'session_created', ch: 'ctl', rid, sid, title };
+  return { t: 'session_created', ch: 'ctl', rid, sid, title, ...(role ? { role } : {}) };
+}
+
+/**
+ * 构造角色包列表应答（`role_list_ok`）
+ *
+ * **唯一构造点**：桥的 `handleRoleList` 调用它（不另写一份形状）。
+ * 过滤 / 排序由宿主投影负责（与 PC 输入区下拉同一 `listMeta` 真源），本函数只搬字段。
+ *
+ * @param packs 宿主投影出的角色包最小面
+ * @param defaultName 用户级默认角色包名（未设置 = 缺省）
+ * @param rid 与上行 `role_list.rid` 同值（未带则不回填）
+ */
+export function buildRoleListOkFrame(
+  packs: readonly BridgeRolePackMeta[],
+  defaultName: string | undefined,
+  rid?: string,
+): RoleListOkFrame {
+  return {
+    t: 'role_list_ok',
+    ch: 'ctl',
+    ...(rid !== undefined ? { rid } : {}),
+    packs,
+    ...(defaultName ? { defaultName } : {}),
+  };
 }
 
 /**

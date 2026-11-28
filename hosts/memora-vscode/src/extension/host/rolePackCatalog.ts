@@ -109,10 +109,13 @@ export interface RolePackCatalogTarget {
  *
  * @param target 支持挂载的面板实例（测试可传最小替身）
  * @param dirs 三处目录（与装配期注入同源）
+ * @returns 已挂载的编目读面（装配点可直接复用，避免再建第二个实例扫同一批目录）
  */
 export function attachRolePackCatalog(
   target: RolePackCatalogTarget,
   dirs: RolePackCatalogDirs,
-): void {
-  target.setRolePackCatalog(createRolePackCatalogReader(dirs));
+): RolePackCatalogReader {
+  const reader = createRolePackCatalogReader(dirs);
+  target.setRolePackCatalog(reader);
+  return reader;
 }

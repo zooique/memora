@@ -1,7 +1,7 @@
 /**
  * 远程桥协议单测 —— 封套白名单 / 上行帧解析 / 下行序列化
  *
- * 判据来源：docs/方案-手机远程控制-20261110.md §6.1（字段）、§6.5（21 条封套）、§6.6（命令九条）
+ * 判据来源：docs/方案-手机远程控制-20261110.md §6.1（字段）、§6.5（23 条封套）、§6.6（命令九条）
  */
 import { describe, expect, it } from 'vitest';
 import { REMOTE_COMMANDS } from '../remoteCommandPolicy.js';
@@ -12,6 +12,7 @@ import {
   buildProcessEventDeltaFrame,
   buildResetRequiredFrame,
   buildResumeOkFrame,
+  buildRoleListOkFrame,
   buildSessionCreatedFrame,
   buildStatusDeltaFrame,
   buildSnapshotFrame,
@@ -19,11 +20,12 @@ import {
   hasProcessEventsCap,
   parseBridgeFrame,
   REMOTE_CAP_PROCESS_EVENTS,
+  REMOTE_CAP_ROLE_LIST,
   serializeBridgeFrame,
   type SnapshotPayload,
 } from '../remoteBridgeProtocol.js';
 
-describe('remoteBridgeProtocol — 封套类型（21 条）', () => {
+describe('remoteBridgeProtocol — 封套类型（23 条）', () => {
   it('清单与方案 §6.5 逐条一致（不多不少、顺序稳定）', () => {
     expect([...BRIDGE_ENVELOPE_TYPES]).toEqual([
       'hello',
@@ -47,8 +49,10 @@ describe('remoteBridgeProtocol — 封套类型（21 条）', () => {
       'session_list_ok',
       'session_create',
       'session_created',
+      'role_list',
+      'role_list_ok',
     ]);
-    expect(BRIDGE_ENVELOPE_TYPES).toHaveLength(21);
+    expect(BRIDGE_ENVELOPE_TYPES).toHaveLength(23);
   });
 });
 
@@ -115,26 +119,52 @@ describe('remoteBridgeProtocol — 上行帧解析', () => {
     expect(parseBridgeFrame('{"t":"session_list"}').ok).toBe(true);
   });
 
-  it('session_create：rid 必填（回执定址凭据）；title 可省，空串/纯空白按未给', () => {
+  it('session_create：rid 必填（回执定址凭据）；title / role 可省，空串按未给', () => {
     const ok = parseBridgeFrame(JSON.stringify({ t: 'session_create', rid: 'c-1' }));
     expect(ok.ok).toBe(true);
     if (ok.ok && ok.frame.t === 'session_create') {
       expect(ok.frame.rid).toBe('c-1');
       // 空串不落进合法帧（宿主按「未给标题」回落到默认标题）
       expect(ok.frame.title).toBeUndefined();
+      expect(ok.frame.role).toBeUndefined();
     }
     const trimmed = parseBridgeFrame(
-      JSON.stringify({ t: 'session_create', rid: 'c-2', title: '  整理周报  ' }),
+      JSON.stringify({
+        t: 'session_create',
+        rid: 'c-2',
+        title: '  整理周报  ',
+        role: ' 共鸣小说家 ',
+      }),
     );
     if (trimmed.ok && trimmed.frame.t === 'session_create') {
       expect(trimmed.frame.title).toBe('整理周报');
+      // 角色名只归一不改写；存在性校验归宿主的目录编目（桥不自造第二份判据）
+      expect(trimmed.frame.role).toBe('共鸣小说家');
+    }
+    // 空串角色名 = 未指定（宿主走「默认 → 兜底包」链）
+    const blankRole = parseBridgeFrame(
+      JSON.stringify({ t: 'session_create', rid: 'c-4', role: '   ' }),
+    );
+    if (blankRole.ok && blankRole.frame.t === 'session_create') {
+      expect(blankRole.frame.role).toBeUndefined();
     }
     // rid 缺失 = 拒绝（不然手机不知道回执对应哪次点击）
     expect(parseBridgeFrame(JSON.stringify({ t: 'session_create' })).ok).toBe(false);
-    // title 非字符串 = 拒绝
+    // title / role 非字符串 = 拒绝
     expect(parseBridgeFrame(JSON.stringify({ t: 'session_create', rid: 'c-3', title: 1 })).ok).toBe(
       false,
     );
+    expect(parseBridgeFrame(JSON.stringify({ t: 'session_create', rid: 'c-5', role: 1 })).ok).toBe(
+      false,
+    );
+  });
+
+  it('role_list：跨会话只读帧，rid 可省并原样保留', () => {
+    const bare = parseBridgeFrame(JSON.stringify({ t: 'role_list' }));
+    expect(bare.ok).toBe(true);
+    if (bare.ok && bare.frame.t === 'role_list') expect(bare.frame.rid).toBeUndefined();
+    const withRid = parseBridgeFrame(JSON.stringify({ t: 'role_list', rid: 'rl-1' }));
+    if (withRid.ok && withRid.frame.t === 'role_list') expect(withRid.frame.rid).toBe('rl-1');
   });
 
   it('未知 t / 下行专用 t / 非 JSON 一律拒绝', () => {
@@ -193,6 +223,42 @@ describe('remoteBridgeProtocol — 下行序列化', () => {
     });
     expect(() => buildSessionCreatedFrame('', 's', 't')).toThrow();
     expect(() => buildSessionCreatedFrame('c', '', 't')).toThrow();
+    // 角色名只在宿主真的有值时回带（未指定 / 校验失效不落空串）
+    const withRole = JSON.parse(
+      serializeBridgeFrame(buildSessionCreatedFrame('c-2', 's-2', '新会话', '共鸣小说家')),
+    ) as Record<string, unknown>;
+    expect(withRole.role).toBe('共鸣小说家');
+    const bare = JSON.parse(
+      serializeBridgeFrame(buildSessionCreatedFrame('c-3', 's-3', '新会话')),
+    ) as Record<string, unknown>;
+    expect(bare).not.toHaveProperty('role');
+  });
+
+  it('role_list_ok：packs / defaultName / rid 按需下发（缺省字段不落空串）', () => {
+    const frame = JSON.parse(
+      serializeBridgeFrame(
+        buildRoleListOkFrame(
+          [{ name: '共鸣小说家', displayName: '共鸣小说家', description: '写小说' }],
+          '共鸣小说家',
+          'rl-1',
+        ),
+      ),
+    ) as Record<string, unknown>;
+    expect(frame).toEqual({
+      t: 'role_list_ok',
+      ch: 'ctl',
+      rid: 'rl-1',
+      packs: [{ name: '共鸣小说家', displayName: '共鸣小说家', description: '写小说' }],
+      defaultName: '共鸣小说家',
+    });
+    // 未设默认包 / 未带 rid：两个键都不出现（不拿空串冒充事实）
+    const bare = JSON.parse(serializeBridgeFrame(buildRoleListOkFrame([], undefined))) as Record<
+      string,
+      unknown
+    >;
+    expect(bare).not.toHaveProperty('rid');
+    expect(bare).not.toHaveProperty('defaultName');
+    expect(bare.packs).toEqual([]);
   });
 
   it('status delta 从 seq=1 起，载荷只带 status 与原始 state 对象', () => {
@@ -282,7 +348,9 @@ describe('remoteBridgeProtocol — 下行序列化', () => {
 
   it('§6.8 caps 词表唯一：默认含 process_events；关闭时快照整键删明细', () => {
     expect(REMOTE_CAP_PROCESS_EVENTS).toBe('process_events');
-    expect(DEFAULT_REMOTE_CAPS).toEqual(['process_events']);
+    expect(REMOTE_CAP_ROLE_LIST).toBe('role_list');
+    // 取值域只列手机真实消费的能力：新增条目必须同时有手机侧消费点
+    expect(DEFAULT_REMOTE_CAPS).toEqual(['process_events', 'role_list']);
     expect(hasProcessEventsCap(undefined)).toBe(true);
     expect(hasProcessEventsCap([])).toBe(false);
     const snapshot = {

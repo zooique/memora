@@ -106,6 +106,14 @@ function makePorts(): RemoteBridgePorts {
       assistantSid: DEV_ASSISTANT_SID,
     }),
     hasSession: (sessionId) => sessionId === DEV_SESSION_ID,
+    // 联调夹具给两个假角色包：手机端「＋」选择单在离线联调时也能走通
+    listRolePacks: () => ({
+      packs: [
+        { name: '共鸣小说家', displayName: '共鸣小说家', description: '联调夹具角色' },
+        { name: '严谨工程师', displayName: '严谨工程师' },
+      ],
+      defaultName: '共鸣小说家',
+    }),
     phaseOf: () => 'idle',
     snapshot: () => ({ state, rounds, pendingQueue: [] }),
     deliverInput: (sessionId, input) => {
@@ -116,8 +124,8 @@ function makePorts(): RemoteBridgePorts {
     // 联调夹具没有审批队列：订阅时无卡可补发（与真宿主同语义的「无在途」）
     pendingConfirm: () => ({ count: 0 }),
     // 联调夹具不落盘：新建会话只留痕并报失败（真宿主才真正建）
-    createSession: async ({ title }) => {
-      log(`createSession title=${title ?? ''}`);
+    createSession: async ({ title, role }) => {
+      log(`createSession title=${title ?? ''} role=${role ?? ''}`);
       return { ok: false as const };
     },
   };

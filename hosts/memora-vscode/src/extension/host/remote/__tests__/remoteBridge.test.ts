@@ -131,6 +131,8 @@ function makePorts(overrides: Partial<RemoteBridgePorts> = {}): {
       assistantSid: 'assist-1',
     }),
     hasSession: (sid) => sid === 's1',
+    // 默认无角色包（本文件用例只验透传；角色列表用例在 overrides 里给）
+    listRolePacks: () => ({ packs: [] }),
     phaseOf: () => (state.phase === 'waiting' ? 'waiting-ask' : 'idle'),
     snapshot: () => ({ state, rounds: ROUNDS, pendingQueue: [] }),
     deliverInput: (sid, input) => delivered.push({ sid, input }),
@@ -1525,5 +1527,38 @@ describe('RemoteBridge — 手机直接新建会话（ctl 帧 session_create）'
     expect(err.t).toBe('err');
     expect(err.code).toBe('forbidden');
     expect(err.rid).toBe('c-fail');
+  });
+
+  it('role_list 逐字下发；session_create.role 原样交给宿主（桥不校验存在性）', async () => {
+    const seen: Array<{ title?: string; role?: string }> = [];
+    const { ports } = makePorts({
+      listRolePacks: () => ({
+        packs: [{ name: '共鸣小说家', displayName: '共鸣小说家', description: '写小说' }],
+        defaultName: '共鸣小说家',
+      }),
+      createSession: async (options) => {
+        seen.push(options);
+        return { ok: true as const, sid: 's-new', title: '新会话' };
+      },
+    });
+    const { client } = await openLan(ports, 'send');
+
+    client.send({ t: 'role_list', rid: 'rl-1' });
+    const list = await client.next<Record<string, unknown>>();
+    // 独立手写期望：列表只转述宿主投影，桥不增删字段
+    expect(list).toEqual({
+      t: 'role_list_ok',
+      ch: 'ctl',
+      rid: 'rl-1',
+      packs: [{ name: '共鸣小说家', displayName: '共鸣小说家', description: '写小说' }],
+      defaultName: '共鸣小说家',
+    });
+
+    client.send({ t: 'session_create', rid: 'c-role', role: '共鸣小说家' });
+    await client.next<Record<string, unknown>>();
+    // 存在性校验在宿主的目录编目：桥传什么宿主就收到什么（传错名由宿主回落，不在此判）
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.role).toBe('共鸣小说家');
+    expect(seen[0]!.title).toBeUndefined();
   });
 });

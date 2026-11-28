@@ -51,8 +51,9 @@ function makePorts(state: TurnState, pending: number) {
     panel: makePanel(state, pending),
     store: { listSessions: () => ['s1'] } as never,
     log: () => undefined,
-    // 本文件用例不建会话（远程建会话用例在 remoteBridge.test.ts 的桥层）
+    // 本文件用例不建会话、不取角色包列表（远程建会话用例在 remoteBridge.test.ts 的桥层）
     createSession: async () => false,
+    listRolePacks: () => ({ packs: [] }),
   });
 }
 
@@ -80,6 +81,7 @@ describe('remoteBridgeHost · phaseOf 的 confirmPending 接真（REMOTE-LAN-1�
       store: { listSessions: () => ['busy', 'free'] } as never,
       log: () => undefined,
       createSession: async () => false,
+      listRolePacks: () => ({ packs: [] }),
     });
     expect(ports.phaseOf('busy')).toBe('confirm-pending');
     expect(ports.phaseOf('free')).toBe('running');
@@ -108,6 +110,7 @@ describe('remoteBridgeHost · snapshot 带 live 投影（REMOTE-RICH-DELTA-1①�
       store: { listSessions: () => ['s1'] } as never,
       log: () => undefined,
       createSession: async () => false,
+      listRolePacks: () => ({ packs: [] }),
     });
     ports.snapshot('s1');
     ports.phaseOf('s1');
@@ -128,6 +131,7 @@ describe('remoteBridgeHost · snapshot 带 live 投影（REMOTE-RICH-DELTA-1①�
       store: { listSessions: () => ['s1'] } as never,
       log: () => undefined,
       createSession: async () => false,
+      listRolePacks: () => ({ packs: [] }),
     });
     ports.snapshot('s1');
     expect(seen).toEqual([undefined]);

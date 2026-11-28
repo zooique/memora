@@ -149,7 +149,7 @@ export function postRolePackList(
 export function buildChatRolePacks(
   rpm: Agent['rolePackManager'] | undefined,
   requested: string | undefined,
-): ExtensionToWebviewMessage {
+): Extract<ExtensionToWebviewMessage, { type: 'chat_role_packs' }> {
   if (!rpm) {
     return { type: 'chat_role_packs', packs: [], activeName: '', unavailableName: requested };
   }

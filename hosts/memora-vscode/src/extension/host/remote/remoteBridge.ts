@@ -26,7 +26,8 @@
  *     （落 `ConfirmCoordinator.answerFor`，M3 审批裁决）；其余五条虽在档位表内，
  *     但宿主尚无按 sid 的落点 ⇒ 一律回 `forbidden`（**未接入**，不是相位/档位拒绝）；
  *   - 会话生命周期：ctl 帧 `session_create`（跨会话，不属 `cmd.kind`）已接入，与 `send` 同档，
- *     落宿主 `chatPanel.createSession(..., { background: true })`，回 `session_created{rid,sid,title}`；
+ *     落宿主 `chatPanel.createSession(..., { background: true })`，回 `session_created{rid,sid,title,role?}`；
+ *     建会话前的角色包列表走 ctl 帧 `role_list`（只读，与 `session_list` 同档）；
  *   - 旁路：失败限流（`security.rateLimit`）与追加式审计（`security.audit`）。
  *   桥**不自己**判指纹 / 档位 / 口令——那会在真理源之外造第二份判据。
  */
@@ -60,6 +61,7 @@ import {
   buildResetRequiredFrame,
   buildResumeOkFrame,
   buildSessionCreatedFrame,
+  buildRoleListOkFrame,
   buildSnapshotFrame,
   buildStatusDeltaFrame,
   DEFAULT_REMOTE_CAPS,
@@ -67,6 +69,7 @@ import {
   parseBridgeFrame,
   serializeBridgeFrame,
   type BridgeClientFrame,
+  type BridgeRolePackMeta,
   type BridgeServerFrame,
   type BridgeSessionSummary,
   type EvtFrame,
@@ -86,6 +89,16 @@ export interface RemoteBridgePorts {
     sessions: readonly BridgeSessionSummary[];
     archivedIds: readonly string[];
     assistantSid?: string;
+  };
+  /**
+   * 角色包列表投影（宿主按 PC 输入区下拉同一份 `listMeta` 给出）
+   *
+   * 只读跨会话事实：与 `listSessions` 同档，不做权限门（读不到列表不等于能建会话）。
+   * `defaultName` = 用户级默认包（未设置 = 缺省），手机只用来预选，不据此写 meta。
+   */
+  listRolePacks: () => {
+    packs: readonly BridgeRolePackMeta[];
+    defaultName?: string;
   };
   /** 该 sid 是否存在于会话存储（定址判据的唯一来源） */
   hasSession: (sessionId: string) => boolean;
@@ -119,7 +132,9 @@ export interface RemoteBridgePorts {
    */
   createSession: (options: {
     title?: string;
-  }) => Promise<{ ok: true; sid: string; title: string } | { ok: false }>;
+    /** 角色包名（手机选择；`undefined` = 未指定 → 宿主走默认 / 兜底包） */
+    role?: string;
+  }) => Promise<{ ok: true; sid: string; title: string; role?: string } | { ok: false }>;
 }
 
 /**
@@ -583,6 +598,9 @@ export class RemoteBridge {
       case 'session_list':
         this.handleSessionList(conn);
         return;
+      case 'role_list':
+        this.handleRoleList(conn, frame);
+        return;
       case 'session_create':
         // 建会话要等宿主落盘（异步），失败必须收回本连接之外的错误帧，不能漏成未处理拒绝
         void this.handleSessionCreate(conn, frame).catch((err: unknown) => {
@@ -746,6 +764,19 @@ export class RemoteBridge {
   }
 
   /**
+   * 角色包列表（跨会话帧，只读；手机「＋」建会话前取一次）
+   *
+   * 与 `handleSessionList` 同档：只转述宿主投影，不在桥里过滤 / 排序 / 校验。
+   */
+  private handleRoleList(
+    conn: ClientConnection,
+    frame: Extract<BridgeClientFrame, { t: 'role_list' }>,
+  ): void {
+    const { packs, defaultName } = this.ports.listRolePacks();
+    this.send(conn, buildRoleListOkFrame(packs, defaultName, frame.rid));
+  }
+
+  /**
    * 新建会话（ctl 帧 `session_create`；手机「＋」的唯一落点）
    *
    * 判据顺序：
@@ -786,7 +817,7 @@ export class RemoteBridge {
       this.send(conn, { t: 'err', ch: 'ctl', rid: frame.rid, code: gate.code });
       return;
     }
-    const created = await this.ports.createSession({ title: frame.title });
+    const created = await this.ports.createSession({ title: frame.title, role: frame.role });
     // await 期间连接可能已断开：先写审计（写操作已发生），再尝试回帧（send 会静默丢弃）
     if (created.ok) {
       this.audit(security, {
@@ -795,7 +826,10 @@ export class RemoteBridge {
         ip: conn.peerIp,
         detail: created.sid,
       });
-      this.send(conn, buildSessionCreatedFrame(frame.rid, created.sid, created.title));
+      this.send(
+        conn,
+        buildSessionCreatedFrame(frame.rid, created.sid, created.title, created.role),
+      );
       return;
     }
     this.send(conn, {

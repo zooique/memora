@@ -39,11 +39,14 @@ import type { WebviewToExtensionMessage } from '../../../shared/protocol.js';
 import type { SessionViewProjection } from '../../../shared/sessionProjection.js';
 import type { PendingLiveRound } from '../../../shared/turnProjection.js';
 import { remotePhaseOf } from './remoteCommandPolicy.js';
+import type { BridgeRolePackMeta } from './remoteBridgeProtocol.js';
 import { RemoteBridge, type RemoteBridgePorts } from './remoteBridge.js';
 // 会话 id 形态单点（草稿首发送 / 启动建空会话 / 主控建会话 / 远程新建共用，禁本文件另拼）
 import { newSessionId } from '../../../webview/helpers/draftSession.js';
 // 会话展示标题读口（与列表 / 标题条同一口径：标题不在这里另造第二份取法）
 import { sessionTitleFor } from '../sessionTitle.js';
+// 会话角色包名读口（与列表投影同一判据：`SessionMeta.activeRolePackName`）
+import { readSessionRolePackName } from '../sessionRolePack.js';
 // 只引类型：运行期的证书 / TLS 模块必须在 LAN 分支内动态 import（见文件头「惰性加载」）
 import type { RemoteIdentity } from './remoteIdentity.js';
 import {
@@ -114,11 +117,25 @@ export interface RemoteBridgeHostDeps {
    * 远程建会话执行面（桥的 `session_create` 落点；由调用方绑定面板的 `createSession`）
    *
    * 为什么单独注入而不放进 {@link RemotePanelPort}：端口按**结构类型**匹配整个面板实例，
-   * 成员名一旦与面板同名 `createSession` 而签名不同（这里是窄口 `(sessionId, title)`），
+   * 成员名一旦与面板同名 `createSession` 而签名不同（这里是窄口 `(sessionId, options)`），
    * 面板就整体不可赋值给端口（TS2322）。拆出来也让「远程建会话」这一件事显式可见。
-   * 实现方负责：`background: true`（不把 PC 正在看的页面顶走）+ 出生来源缺省 `user`。
+   * 实现方负责：`background: true`（不把 PC 正在看的页面顶走）+ 出生来源缺省 `user`
+   * + **角色包名校验**（远端传来的名字不是已校验事实，须过目录编目）。
    */
-  createSession: (sessionId: string, title?: string) => Promise<boolean>;
+  createSession: (
+    sessionId: string,
+    options?: { title?: string; role?: string },
+  ) => Promise<boolean>;
+
+  /**
+   * 角色包列表投影（跨会话只读；手机「＋」建会话前取）
+   *
+   * 为什么不放进 {@link RemotePanelPort}：列表是**跨会话**事实（与 `listSessions` 同族），
+   * 而面板端口按结构类型匹配整个面板实例；装配点（extension.ts）手里已经有「当前实例探视」
+   * 的读法，由它注入可直接复用，不必为读一次目录给面板加方法（面板还有行数上限）。
+   * 没有实例（冷启动未装配）时返回空列表——手机按「不指定角色」建会话，不伪造目录。
+   */
+  listRolePacks: () => { packs: readonly BridgeRolePackMeta[]; defaultName?: string };
   /**
    * 轮存储（可选）：注入后会话列表才投影 `lastOutcome`（已完成 / 已中断 / 未收场），
    * 手机主页据此显示状态标签。
@@ -242,6 +259,8 @@ export function createRemoteBridgePorts(deps: RemoteBridgeHostDeps): RemoteBridg
       });
       return { sessions, archivedIds: message.archivedIds, assistantSid };
     },
+    // 角色包列表：投影与默认名都由装配点注入（本文件不判目录、不读配置）
+    listRolePacks: () => deps.listRolePacks(),
     // 定址：只认存储里的会话 id（草稿态无 id，天然落空 ⇒ no_session，§6.6 断路器）
     hasSession: (sessionId) => store.listSessions().includes(sessionId),
     // 相位：素材来自实时投影（不是 `_turnStates` —— 那份只在有视图时更新）；
@@ -270,12 +289,18 @@ export function createRemoteBridgePorts(deps: RemoteBridgeHostDeps): RemoteBridg
     // 手机「＋」建会话：id 由宿主生成（身份归上游，手机不得自造 / 差分反推），
     // 执行面复用面板 createSession（background：不把 PC 正在看的页面顶走）；
     // 出生来源缺省即 user——手机是用户的手，不传 agentCreated（冒充宝 = 第二真源）
-    createSession: async ({ title }) => {
+    createSession: async ({ title, role }) => {
       const sessionId = newSessionId();
-      const ok = await createSessionOnHost(sessionId, title);
+      const ok = await createSessionOnHost(sessionId, { title, role });
       if (!ok) return { ok: false };
-      // 标题读会话元数据（与列表 / 标题条同一读口），不拿手机传入值冒充实际展示名
-      return { ok: true, sid: sessionId, title: sessionTitleFor(store, sessionId, vscode.l10n) };
+      // 标题 / 角色都读会话元数据（与列表 / 标题条同一读口），不拿手机传入值冒充实际落成
+      const landedRole = readSessionRolePackName(store, sessionId);
+      return {
+        ok: true,
+        sid: sessionId,
+        title: sessionTitleFor(store, sessionId, vscode.l10n),
+        ...(landedRole ? { role: landedRole } : {}),
+      };
     },
   };
 }

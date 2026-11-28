@@ -43,6 +43,8 @@ import { DraftConfigSurface } from '../webview/helpers/draftConfigSurface.js';
 import { registerDisposeOnRestore } from '../webview/helpers/panelRestore.js';
 // 「新建会话默认角色包」单点读口（草稿页无显式选择时用它取「即将生效的角色包」）
 import { resolveDraftRolePackName } from './host/rolePackDefault.js';
+// 远程桥的角色包列表投影（单独成文件：装配链守卫禁止本文件引用全局默认角色包）
+import { buildRemoteRolePackList } from './host/remote/remoteRolePacks.js';
 import { MemoryGcScheduler } from './host/memoryGcScheduler.js';
 import { ImageCache } from './host/imageCache.js';
 import { createImageReadPort } from './host/imageReadPort.js';
@@ -793,11 +795,24 @@ export function activate(context: vscode.ExtensionContext): void {
       log: (message) => memoraOutput.appendLine(message),
       // 手机「＋」建会话：后台建（不顶走 PC 当前页），出生来源缺省 user；
       // 远程桥只拿这个窄口，不把整个面板暴露进桥
-      createSession: (sessionId, title) =>
-        chatProvider.createSession(sessionId, undefined, {
+      createSession: async (sessionId, options = {}) => {
+        const requested = options.role;
+        // 角色名不是「已校验事实」：PC 草稿路径跳过校验的前提是「选择时已校验」，
+        // 手机传来的名字没有这个前提 ⇒ 过目录编目。读不到目录 / 名字不存在按
+        // 「未指定」处理（回落默认 → 兜底包），不因为一个失效名拦住建会话。
+        const role = requested
+          ? (await rolePackCatalogReader())?.has(requested)
+            ? requested
+            : undefined
+          : undefined;
+        return chatProvider.createSession(sessionId, role, {
           background: true,
-          ...(title ? { title } : {}),
-        }),
+          ...(options.title ? { title: options.title } : {}),
+        });
+      },
+      // 手机「＋」建会话前的角色包列表：投影收在 remoteRolePacks（装配链守卫禁止
+      // 本文件直接引用全局默认角色包）；没装配实例时给空列表
+      listRolePacks: () => buildRemoteRolePackList(peekAgent()?.rolePackManager),
     },
     { context },
   ).then((bridge) => {
@@ -836,7 +851,7 @@ export function activate(context: vscode.ExtensionContext): void {
     userRolePacksDir,
     projectRolePacksDir: projectDirsAtActivation.rolePacks,
   };
-  attachRolePackCatalog(chatProvider, rolePackCatalogDirs);
+  const rolePackCatalogReader = attachRolePackCatalog(chatProvider, rolePackCatalogDirs);
   // 草稿页配置面（无 Agent）：技能清单按「草稿即将生效的角色包 + 全局池」独立聚合。
   // 面板只持有 push 回调，来源与聚合顺序都在 host 侧（项目目录每次现读 ⇒ 授予信任后自动生效）。
   const draftConfigSurface = new DraftConfigSurface(
