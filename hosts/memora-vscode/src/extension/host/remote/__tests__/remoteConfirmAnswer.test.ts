@@ -27,12 +27,16 @@ function makePorts(overrides: Partial<RemoteConfirmPorts> = {}): RemoteConfirmPo
 describe('routeConfirmAnswer — M3 审批裁决路由', () => {
   it('confirm-pending 且 requestId 匹配 → 受理，answerConfirm 收到 sid/id/approved', () => {
     const calls: Array<[string, string, boolean]> = [];
-    const decision = routeConfirmAnswer(CMD, 's1', makePorts({
-      answerConfirm: (sid, requestId, approved) => {
-        calls.push([sid, requestId, approved]);
-        return true;
-      },
-    }));
+    const decision = routeConfirmAnswer(
+      CMD,
+      's1',
+      makePorts({
+        answerConfirm: (sid, requestId, approved) => {
+          calls.push([sid, requestId, approved]);
+          return true;
+        },
+      }),
+    );
     expect(decision).toEqual({ ok: true });
     expect(calls).toEqual([['s1', 'req-7', true]]);
   });
@@ -55,12 +59,16 @@ describe('routeConfirmAnswer — M3 审批裁决路由', () => {
 
   it('会话不存在 → no_session，且不调 answerConfirm', () => {
     let called = false;
-    const decision = routeConfirmAnswer(CMD, 'unknown', makePorts({
-      answerConfirm: () => {
-        called = true;
-        return true;
-      },
-    }));
+    const decision = routeConfirmAnswer(
+      CMD,
+      'unknown',
+      makePorts({
+        answerConfirm: () => {
+          called = true;
+          return true;
+        },
+      }),
+    );
     expect(decision).toEqual({ ok: false, code: 'no_session' });
     expect(called).toBe(false);
   });
@@ -68,13 +76,17 @@ describe('routeConfirmAnswer — M3 审批裁决路由', () => {
   it('相位不在 confirm-pending → stale_phase（四相逐一），不调 answerConfirm', () => {
     for (const phase of ['idle', 'running', 'waiting-ask', 'waiting-pause'] as const) {
       let called = false;
-      const decision = routeConfirmAnswer(CMD, 's1', makePorts({
-        phaseOf: () => phase,
-        answerConfirm: () => {
-          called = true;
-          return true;
-        },
-      }));
+      const decision = routeConfirmAnswer(
+        CMD,
+        's1',
+        makePorts({
+          phaseOf: () => phase,
+          answerConfirm: () => {
+            called = true;
+            return true;
+          },
+        }),
+      );
       expect(decision, `phase=${phase}`).toEqual({ ok: false, code: 'stale_phase' });
       expect(called, `phase=${phase}`).toBe(false);
     }

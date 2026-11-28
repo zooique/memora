@@ -38,9 +38,7 @@ describe('chatPanel.ts：三个触发点接线', () => {
     // 本地提醒只取 requestId（label 留在协调器）；远程桥转发带 sid + requestId（M3）。
     // 两个契约串缺一即红：漏本地 = 提醒不响，漏远程 = 手机拿不到 requestId（假闭环）。
     expect(src).toContain('this._attention.onConfirmShown({ requestId: info.requestId })');
-    expect(src).toContain(
-      'this.onConfirmAttention?.(info.sessionId, info.requestId, info.label)',
-    );
+    expect(src).toContain('this.onConfirmAttention?.(info.sessionId, info.requestId, info.label)');
   });
 
   it('ask：两个写入源各一处提醒（事件驱动 + 流尾兜底）', () => {

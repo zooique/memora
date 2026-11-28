@@ -84,10 +84,7 @@ export interface RichDeltaResult {
   resync: boolean;
 }
 
-export function diffRichDelta(
-  snapshot: SnapshotPayload,
-  cursor: RichCursor,
-): RichDeltaResult {
+export function diffRichDelta(snapshot: SnapshotPayload, cursor: RichCursor): RichDeltaResult {
   const next = initRichCursor(snapshot);
   const live = snapshot.rounds.find((round) => round.live === true);
   const specs: RichDeltaSpec[] = [];
