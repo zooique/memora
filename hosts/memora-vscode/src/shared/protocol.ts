@@ -390,6 +390,8 @@ export interface RemoteSettingsStatus {
  */
 export type RemoteActionPayload =
   | { action: 'refresh' }
+  /** 启停开关：只上报意图，宿主读运行时真值决定开或关（webview 不持有第二份状态） */
+  | { action: 'toggle' }
   | { action: 'regenerate' }
   /** 复制配对连接串到系统剪贴板（口令敏感，只走用户主动复制，不回显到通知） */
   | { action: 'copy_pairing' }

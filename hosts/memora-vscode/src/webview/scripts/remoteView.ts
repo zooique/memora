@@ -68,6 +68,7 @@ export function createRemoteView({
   const pairingText = root.querySelector<HTMLElement>('#remotePairingText');
   const pairingLinkBox = root.querySelector<HTMLElement>('#remotePairingLinkBox');
   const pairingLinkText = root.querySelector<HTMLElement>('#remotePairingLinkText');
+  const toggleBtn = root.querySelector<HTMLButtonElement>('#remoteToggleBtn');
   const regenerateBtn = root.querySelector<HTMLButtonElement>('#remoteRegenerateBtn');
   const deviceList = root.querySelector<HTMLUListElement>('#remoteDeviceList');
   const deviceEmpty = root.querySelector<HTMLElement>('#remoteDeviceEmpty');
@@ -264,6 +265,17 @@ export function createRemoteView({
   function render(next: RemoteSettingsStatus): void {
     status = next;
     renderMode(next);
+    // 开关文案只从宿主回推的 mode 派生：页面不持有「用户点过什么」的第二份状态，
+    // 也不做乐观翻转；启停结果由宿主回推的真值决定。
+    if (toggleBtn) {
+      const enabled = next.mode !== 'off';
+      toggleBtn.textContent = enabled
+        ? l10n.t('Disable remote control')
+        : l10n.t('Enable remote control');
+      toggleBtn.title = enabled
+        ? l10n.t('Stop the remote bridge for this window')
+        : l10n.t('Start the LAN bridge for this window');
+    }
     // 口令到期即向宿主请求刷新（真值仍在宿主，页面只负责别把过期码留在屏上）
     scheduleExpiryRefresh(next.mode === 'lan' ? next.pairingExpiresAt : undefined);
     // 连接串只在宿主给出时展示（过期 / 地址未识别 ⇒ 隐藏，绝不显示必然失败的串）
@@ -290,6 +302,11 @@ export function createRemoteView({
     const btn = (event.target as Element | null)?.closest<HTMLElement>('[data-remote-act]');
     if (!btn) return;
     const action = btn.dataset.remoteAct;
+    if (action === 'toggle') {
+      // 只报意图：当前是开还是关由宿主运行时真值裁决（页面状态可能过期）
+      vscode.postMessage({ type: 'remote_settings', action: 'toggle' });
+      return;
+    }
     if (action === 'refresh') {
       vscode.postMessage({ type: 'remote_settings', action: 'refresh' });
       return;

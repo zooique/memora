@@ -52,13 +52,19 @@ import { readChatTextScale } from './host/chatTextScaleConfig.js';
 import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 // 远程桥（profile 2 回环 / profile 3 局域网）：默认不监听，见 host/remote/remoteBridgeHost.ts
-import { remoteDevicesCommand, startRemoteBridge } from './host/remote/remoteBridgeHost.js';
+import {
+  getActiveRemoteBridge,
+  getRemoteBridgeRuntime,
+  registerRemoteBridgeLifecycle,
+  remoteDevicesCommand,
+  startRemoteBridge,
+  stopActiveRemoteBridge,
+} from './host/remote/remoteBridgeHost.js';
 // 设置面板「远程控制」页的执行面（读状态 / 执行动作；与命令面板共用同一桥句柄）
 import {
   applyRemoteSettingsAction,
   readRemoteSettingsStatus,
 } from './host/remote/remoteSettingsOps.js';
-import type { RemoteBridge } from './host/remote/remoteBridge.js';
 import { formatDiagnosticsSnapshot } from '../webview/panels/hostDiagnostics.js';
 import { MemoraSettingsPanel } from '../webview/panels/settingsPanel.js';
 // 工作台面板（编辑器区只读；第三切片/第四切片：座位身份 + 在管会话清单）
@@ -170,15 +176,6 @@ let gcScheduler: MemoryGcScheduler | null = null;
  * `sessionStore`，锁只能等进程退出才由 OS 回收。
  */
 let hostSessionStore: WorkspaceSessionStore | null = null;
-
-/**
- * 远程桥实例（`loopback` / `lan` 档）
- *
- * 默认不监听：只有显式设置 `MEMORA_REMOTE_BRIDGE=loopback|lan` 才会创建
- * （旧值 `1` 等同 `loopback`）。
- * 停用路径必须 stop（网络监听与连接不能留到进程退出）。
- */
-let hostRemoteBridge: RemoteBridge | undefined;
 
 /**
  * 激活期记忆存储单例的模块级引用（所有权归宿主，停用时由宿主关闭）
@@ -783,47 +780,64 @@ export function activate(context: vscode.ExtensionContext): void {
   // 注入过程事件落盘目标（v1.5）：与 viewLoader 同一 WorkspaceRoundStore 单例，生命周期原子一致
   chatProvider.setRoundStore(roundStore);
 
-  // 远程桥（回环 / 局域网）：默认不监听，只有显式设置 MEMORA_REMOTE_BRIDGE=loopback|lan 才启动。
-  // 监听失败由该函数显式弹警告并保持未监听态（禁止「失败但 UI 显示已连接」）。
-  // 刻意不 await：开端口不该阻塞激活链路；实例落到模块级引用供 deactivate stop。
-  void startRemoteBridge(
-    {
-      panel: chatProvider,
-      store: sessionStore,
-      // 轮存储：注入后手机会话列表才有 `lastOutcome`（已完成 / 已中断 / 未收场）
-      roundStore,
-      log: (message) => memoraOutput.appendLine(message),
-      // 手机「＋」建会话：后台建（不顶走 PC 当前页），出生来源缺省 user；
-      // 远程桥只拿这个窄口，不把整个面板暴露进桥
-      createSession: async (sessionId, options = {}) => {
-        const requested = options.role;
-        // 角色名不是「已校验事实」：PC 草稿路径跳过校验的前提是「选择时已校验」，
-        // 手机传来的名字没有这个前提 ⇒ 过目录编目。读不到目录 / 名字不存在按
-        // 「未指定」处理（回落默认 → 兜底包），不因为一个失效名拦住建会话。
-        const role = requested
-          ? (await rolePackCatalogReader())?.has(requested)
-            ? requested
-            : undefined
-          : undefined;
-        return chatProvider.createSession(sessionId, role, {
-          background: true,
-          ...(options.title ? { title: options.title } : {}),
-        });
-      },
-      // 手机「＋」建会话前的角色包列表：投影收在 remoteRolePacks（装配链守卫禁止
-      // 本文件直接引用全局默认角色包）；没装配实例时给空列表
-      listRolePacks: () => buildRemoteRolePackList(peekAgent()?.rolePackManager),
+  // 远程桥（回环 / 局域网）：环境变量只做窗口启动预设；设置页开关管当前窗口运行时。
+  // 监听失败由 startRemoteBridge 显式弹警告并保持未监听态（禁止「失败但 UI 显示已连接」）。
+  // 刻意不 await 初始启动：开端口不该阻塞激活链路；启停与 deactivate 共用同一实例登记。
+  const remoteBridgeDeps = {
+    panel: chatProvider,
+    store: sessionStore,
+    // 轮存储：注入后手机会话列表才有 `lastOutcome`（已完成 / 已中断 / 未收场）
+    roundStore,
+    log: (message: string) => memoraOutput.appendLine(message),
+    // 手机「＋」建会话：后台建（不顶走 PC 当前页），出生来源缺省 user；
+    // 远程桥只拿这个窄口，不把整个面板暴露进桥
+    createSession: async (sessionId: string, options: { title?: string; role?: string } = {}) => {
+      const requested = options.role;
+      // 角色名不是「已校验事实」：PC 草稿路径跳过校验的前提是「选择时已校验」，
+      // 手机传来的名字没有这个前提 ⇒ 过目录编目。读不到目录 / 名字不存在按
+      // 「未指定」处理（回落默认 → 兜底包），不因为一个失效名拦住建会话。
+      const role = requested
+        ? (await rolePackCatalogReader())?.has(requested)
+          ? requested
+          : undefined
+        : undefined;
+      return chatProvider.createSession(sessionId, role, {
+        background: true,
+        ...(options.title ? { title: options.title } : {}),
+      });
     },
-    { context },
-  ).then((bridge) => {
-    hostRemoteBridge = bridge;
-    // 只在实际监听时才接线推送触发口（未监听 / 启动失败 ⇒ 不接线，宿主每次 turn 变更零开销）
-    if (bridge && bridge.listeningPort !== undefined) {
-      chatProvider.onTurnProjected = (sid, settled) => bridge.notifyTurnUpdate(sid, settled);
-      // M3 审批提醒：sid + requestId 经桥按会话推 attention 帧（手机据此构造 confirm_answer）
-      chatProvider.onConfirmAttention = (sessionId, requestId, label) =>
-        bridge.notifyAttention(sessionId, requestId, label);
+    // 手机「＋」建会话前的角色包列表：投影收在 remoteRolePacks（装配链守卫禁止
+    // 本文件直接引用全局默认角色包）；没装配实例时给空列表
+    listRolePacks: () => buildRemoteRolePackList(peekAgent()?.rolePackManager),
+  };
+  /** 桥实例变化后统一重接推送口；停桥必须清掉旧闭包，不能让已关闭实例留在回调链上 */
+  const attachRemoteBridgeCallbacks = (): void => {
+    const bridge = getActiveRemoteBridge();
+    if (!bridge || bridge.listeningPort === undefined) {
+      chatProvider.onTurnProjected = undefined;
+      chatProvider.onConfirmAttention = undefined;
+      return;
     }
+    chatProvider.onTurnProjected = (sid, settled) => bridge.notifyTurnUpdate(sid, settled);
+    // M3 审批提醒：sid + requestId 经桥按会话推 attention 帧（手机据此构造 confirm_answer）
+    chatProvider.onConfirmAttention = (sessionId, requestId, label) =>
+      bridge.notifyAttention(sessionId, requestId, label);
+  };
+  void startRemoteBridge(remoteBridgeDeps, { context }).then(attachRemoteBridgeCallbacks);
+  registerRemoteBridgeLifecycle({
+    isRunning: () => getRemoteBridgeRuntime() !== undefined,
+    start: async () => {
+      // 页内点开启 = 显式开启 LAN：loopback 仅开发验证，不作为交付档
+      await startRemoteBridge(remoteBridgeDeps, { context }, 'lan');
+      attachRemoteBridgeCallbacks();
+      return { ok: getRemoteBridgeRuntime() !== undefined };
+    },
+    stop: async () => {
+      chatProvider.onTurnProjected = undefined;
+      chatProvider.onConfirmAttention = undefined;
+      await stopActiveRemoteBridge();
+      return { ok: true };
+    },
   });
 
   // ─── 文件改动可视化（host-only，零内核改动；见 docs/方案-文件改动diff可视化-20260926.md）───
@@ -1337,9 +1351,7 @@ export function activate(context: vscode.ExtensionContext): void {
  */
 export async function deactivate(): Promise<void> {
   // 远程桥最先停：它持有网络监听与连接，必须早于存储 / Agent 释放（stop 幂等，未启动即空转）
-  const bridge = hostRemoteBridge;
-  hostRemoteBridge = undefined;
-  if (bridge) await bridge.stop().catch(() => undefined);
+  await stopActiveRemoteBridge().catch(() => undefined);
 
   // 会话存储先摘引用，锁在**末尾**统一归还（E4 批 3）：先 close 再放锁——放锁前本窗口仍是
   // 该会话的写归属；而「锁全放」必须无条件执行（进程级 OS 句柄，漏放 = 该会话对其他窗口

@@ -172,6 +172,23 @@ describe('remoteView', () => {
     expect(postMessage).toHaveBeenCalledWith({ type: 'remote_settings', action: 'regenerate' });
   });
 
+  it('启停开关：文案只从宿主 mode 派生，点击只上报 toggle 意图', () => {
+    const { el, postMessage } = mount();
+    push(baseStatus());
+    expect(el('remoteToggleBtn').textContent).toBe('Enable remote control');
+    expect(el('remoteToggleBtn').title).toBe('Start the LAN bridge for this window');
+    (el('remoteToggleBtn') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'remote_settings', action: 'toggle' });
+
+    // 回环也在监听：同样显示关闭，不能把开发档谎报成未启动
+    push(baseStatus({ mode: 'loopback', port: 4010 }));
+    expect(el('remoteToggleBtn').textContent).toBe('Disable remote control');
+
+    push(baseStatus({ mode: 'lan', address: '192.168.1.9', port: 4123 }));
+    expect(el('remoteToggleBtn').textContent).toBe('Disable remote control');
+    expect(el('remoteToggleBtn').title).toBe('Stop the remote bridge for this window');
+  });
+
   it('局域网但地址未识别：如实说「拨不到」，不把 0.0.0.0 当可用地址', () => {
     const { el } = mount();
     push(baseStatus({ mode: 'lan', address: '0.0.0.0', port: 4123 }));

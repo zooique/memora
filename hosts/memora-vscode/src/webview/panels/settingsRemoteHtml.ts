@@ -6,8 +6,7 @@
  * `scripts/remoteView.ts` 承担。
  *
  * 文案纪律（判据⑰）：本文件所有用户可见文案一律走 `l10n.t` 英文源键，注释外零 CJK。
- * 「桥的启停仍由环境变量决定」是刻意的本轮边界：页内只说明怎么启动，不放开关
- * （生命周期改动属后续步骤，见 docs/方案-手机远程控制-20261110.md §19.3）。
+ * 环境变量只做「窗口启动预设」；页内开关管当前窗口的运行时，状态真源仍由宿主回推。
  *
  * root 容器不由本片段自带，由 `settingsPanelHtml.ts` 的 `buildHtml` 统一生成
  * （id 由 `settingsRootId('remote')` 派生）。
@@ -20,6 +19,7 @@ export function buildRemoteBodyHtml(l10n: {
     <div class="header">
       <h2>${l10n.t('Remote control')}</h2>
       <div class="header-actions">
+        <button id="remoteToggleBtn" class="btn btn-secondary" type="button" data-remote-act="toggle">${l10n.t('Enable remote control')}</button>
         <button id="remoteRefreshBtn" class="btn btn-secondary" type="button" data-remote-act="refresh">${l10n.t('Refresh')}</button>
       </div>
     </div>
@@ -41,7 +41,7 @@ export function buildRemoteBodyHtml(l10n: {
           <code id="remotePairingLinkText" class="remote-link-text"></code>
           <p class="hint">${l10n.t('Send this link to one phone. It carries the PC certificate, a client identity for that phone and a one-time code, and expires together with the code. Generate a new pairing code for every phone — one link registers one device (up to 3).')}</p>
         </div>
-        <p class="hint">${l10n.t('The bridge only starts when the MEMORA_REMOTE_BRIDGE environment variable is set to lan (or loopback for development) before the window starts. Changing it requires a window reload.')}</p>
+        <p class="hint">${l10n.t('Use the switch above to start or stop the bridge for this window. MEMORA_REMOTE_BRIDGE only presets the state at window startup (lan, or loopback for development); changing it requires a window reload.')}</p>
       </div>
     </div>
     <div class="remote-section">

@@ -1555,10 +1555,14 @@
   "Remote control": "",
   "Remote control: phone pairing, paired devices and recent activity": "",
   "Refresh": "",
+  "Enable remote control": "",
+  "Disable remote control": "",
+  "Start the LAN bridge for this window": "",
+  "Stop the remote bridge for this window": "",
   "Checking bridge status…": "",
   "Bridge": "",
   "New pairing code": "",
-  "The bridge only starts when the MEMORA_REMOTE_BRIDGE environment variable is set to lan (or loopback for development) before the window starts. Changing it requires a window reload.": "",
+  "Use the switch above to start or stop the bridge for this window. MEMORA_REMOTE_BRIDGE only presets the state at window startup (lan, or loopback for development); changing it requires a window reload.": "",
   "Paired devices": "",
   "Up to 3 devices can be paired. Each pairing code registers one phone, so generate a new code for every phone. Revoke a device before pairing a fourth.": "",
   "No device is paired yet. Use \"New pairing code\" and confirm the phone on this PC.": "",
@@ -1586,5 +1590,6 @@
   "No active pairing link yet.": "",
   "That device is no longer paired.": "",
   "Unknown permission level.": "",
-  "The remote bridge is not running. Set MEMORA_REMOTE_BRIDGE=lan and reload the window.": ""
+  "The remote bridge is not running. Use the Remote control switch to start it, or set MEMORA_REMOTE_BRIDGE=lan and reload the window.": "",
+  "Remote control is unavailable in this window.": ""
 }

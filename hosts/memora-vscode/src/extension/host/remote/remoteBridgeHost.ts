@@ -22,6 +22,7 @@
  * 里用 `await import('./remoteIdentity.js')` / `await import('./remoteSecureServer.js')`
  * 动态拉起。因此远程桥未开（缺省态）时，激活过程**不会**加载证书栈——这里是唯一的
  * 加载边界，新增对这两个模块的引用时必须保持 `import type` 或在 LAN 分支内动态 import。
+ * 设置页运行时开关点开启也走同一个 `startRemoteBridge(..., 'lan')`，不另开加载路径。
  */
 
 import * as fs from 'node:fs';
@@ -215,6 +216,96 @@ let remoteLanHandle: RemoteLanHandle | undefined;
 let remoteBridgeRuntime: { mode: 'loopback' | 'lan'; port: number } | undefined;
 
 /**
+ * 当前桥实例登记（**实例唯一**，供停止与启动去重共用）
+ *
+ * 为什么宿主侧也要一份：设置页的运行时开关走 `remoteSettingsOps`，它不能直接碰
+ * extension.ts 里的局部回调接线。把实例与它的运行时清理绑在同一登记上，停止后状态
+ * 回推、回调接线与端口占用才不会分叉。
+ */
+interface ActiveRemoteBridgeRegistration {
+  bridge: RemoteBridge;
+  /** 清运行时登记（按实例身份守卫，误清不了后来启动的新桥） */
+  dispose: () => void;
+}
+let activeRemoteBridge: ActiveRemoteBridgeRegistration | undefined;
+/** 启动在途：重复点击 / 初始启动与开关并发时只开一个监听 */
+let startInFlight: Promise<RemoteBridge | undefined> | undefined;
+
+/**
+ * 设置页开关的宿主执行面（扩展激活期注册）
+ *
+ * 判据由宿主持有：`isRunning` 读运行时登记，`start/stop` 负责真实启停。
+ * webview 只上报 `toggle`，不传「它认为的目标状态」——那是过期 UI 制造的第二真源。
+ */
+export interface RemoteBridgeLifecycle {
+  isRunning: () => boolean;
+  start: () => Promise<{ ok: boolean; message?: string }>;
+  stop: () => Promise<{ ok: boolean; message?: string }>;
+}
+let remoteBridgeLifecycle: RemoteBridgeLifecycle | undefined;
+
+/** 取当前桥实例（未启动 / 启动失败 = undefined；配置页回调接线用） */
+export function getActiveRemoteBridge(): RemoteBridge | undefined {
+  return activeRemoteBridge?.bridge;
+}
+
+/** 按实例身份清运行时登记（LAN 句柄只在 LAN 实例退场时清） */
+function clearRemoteBridgeRuntime(runtime: { mode: 'loopback' | 'lan'; port: number }): void {
+  if (remoteBridgeRuntime !== runtime) return;
+  remoteBridgeRuntime = undefined;
+  if (runtime.mode === 'lan') remoteLanHandle = undefined;
+}
+
+/** 登记新桥实例，并把同一份身份守卫挂进扩展订阅表（deactivate 与运行时开关共用） */
+function registerActiveRemoteBridge(
+  bridge: RemoteBridge,
+  context: vscode.ExtensionContext,
+  runtime: { mode: 'loopback' | 'lan'; port: number },
+): void {
+  const registration: ActiveRemoteBridgeRegistration = {
+    bridge,
+    dispose: () => clearRemoteBridgeRuntime(runtime),
+  };
+  activeRemoteBridge = registration;
+  context.subscriptions.push({
+    dispose: () => {
+      if (activeRemoteBridge === registration) activeRemoteBridge = undefined;
+      registration.dispose();
+    },
+  });
+}
+
+/**
+ * 停止当前桥（幂等；关闭监听 + 清运行时登记/句柄）
+ *
+ * 先摘登记再 await：并发的第二次调用直接空转，不会同时对同一 server 调两次 close。
+ */
+export async function stopActiveRemoteBridge(): Promise<void> {
+  const registration = activeRemoteBridge;
+  activeRemoteBridge = undefined;
+  if (!registration) return;
+  try {
+    await registration.bridge.stop();
+  } finally {
+    registration.dispose();
+  }
+}
+
+/** 注册设置页开关的执行面（扩展激活期调用一次） */
+export function registerRemoteBridgeLifecycle(lifecycle: RemoteBridgeLifecycle): void {
+  remoteBridgeLifecycle = lifecycle;
+}
+
+/** 翻转远程桥：当前运行时为真 → 停，否则按 LAN 档启动（目标态由宿主裁决） */
+export async function toggleRemoteBridge(): Promise<{ ok: boolean; message?: string }> {
+  const lifecycle = remoteBridgeLifecycle;
+  if (!lifecycle) {
+    return { ok: false, message: vscode.l10n.t('Remote control is unavailable in this window.') };
+  }
+  return lifecycle.isRunning() ? lifecycle.stop() : lifecycle.start();
+}
+
+/**
  * 取 LAN 运行时句柄
  *
  * @returns 句柄；LAN 未启动 / 启动失败 / 回环档 = `undefined`
@@ -322,7 +413,9 @@ const AUDIT_FILE_NAME = 'remote-audit.log';
  * 缺省 = 不启动（D1：入站端口风险最高，不默认开）。未知取值同样不启动（fail-closed），
  * 避免「写错一个词就静默绑了 LAN」。
  */
-function resolveMode(): { mode?: RemoteBridgeMode; raw?: string } {
+function resolveMode(modeOverride?: RemoteBridgeMode): { mode?: RemoteBridgeMode; raw?: string } {
+  // 运行时开关显式传 LAN：用户在本页点开启就是「显式开启」，不再读启动期环境变量。
+  if (modeOverride) return { mode: modeOverride };
   const raw = process.env[REMOTE_BRIDGE_ENV]?.trim().toLowerCase();
   if (!raw) return {};
   if (raw === '1' || raw === 'loopback') return { mode: 'loopback', raw };
@@ -345,21 +438,33 @@ function resolvePort(): number {
  *
  * 监听失败必须显式报错并保持未监听态（§16.2），故异常转成用户可见的警告，不静默吞。
  *
- * @param deps    宿主能力
- * @param hostEnv 扩展上下文（密钥 / 设备表 / 审计目录）
- * @returns 桥实例（未监听时也返回实例，便于 `deactivate` 无条件 `stop()`）
+ * @param deps         宿主能力
+ * @param hostEnv      扩展上下文（密钥 / 设备表 / 审计目录）
+ * @param modeOverride 运行时开关显式指定的档位（缺省才读环境变量的启动预设）
+ * @returns 桥实例（未监听时返回 undefined）
  */
 export async function startRemoteBridge(
   deps: RemoteBridgeHostDeps,
   hostEnv: RemoteBridgeHostEnv,
+  modeOverride?: RemoteBridgeMode,
 ): Promise<RemoteBridge | undefined> {
-  const { mode, raw } = resolveMode();
+  // 已在监听 / 正在启动时不重复开端口：开关的 isRunning 与这里同源。
+  if (activeRemoteBridge) return activeRemoteBridge.bridge;
+  if (startInFlight) return startInFlight;
+  const { mode, raw } = resolveMode(modeOverride);
   if (!mode) {
     if (raw) deps.log(`[REMOTE-BRIDGE] 未知开关值 ${raw}，不启动（可用：loopback / lan）`);
     return undefined;
   }
-  if (mode === 'loopback') return startLoopbackBridge(deps, hostEnv.context);
-  return startLanBridge(deps, hostEnv.context);
+  const pending = (
+    mode === 'loopback'
+      ? startLoopbackBridge(deps, hostEnv.context)
+      : startLanBridge(deps, hostEnv.context)
+  ).finally(() => {
+    startInFlight = undefined;
+  });
+  startInFlight = pending;
+  return pending;
 }
 
 /**
@@ -382,12 +487,7 @@ async function startLoopbackBridge(
     // 运行时登记：回环档没有设备句柄，但「在监听」是设置页必须如实显示的事实
     const runtime = { mode: 'loopback' as const, port: started.port };
     remoteBridgeRuntime = runtime;
-    context.subscriptions.push({
-      dispose: () => {
-        // 身份守卫：只清自己写进去的那份，避免误清后启动的新实例
-        if (remoteBridgeRuntime === runtime) remoteBridgeRuntime = undefined;
-      },
-    });
+    registerActiveRemoteBridge(bridge, context, runtime);
     deps.log(`[REMOTE-BRIDGE] listening on 127.0.0.1:${started.port}（profile 2 · 仅开发验证）`);
     void vscode.window.showInformationMessage(
       `Memora 远程桥（开发验证）已监听 127.0.0.1:${started.port}`,
@@ -546,14 +646,8 @@ async function startLanBridge(
       },
       log,
     };
-    // deactivate 时清空句柄（stop 与 deactivate 是同一退出路径，见 extension.ts deactivate）
-    context.subscriptions.push({
-      dispose: () => {
-        remoteLanHandle = undefined;
-        // 身份守卫同回环档：只清本实例写进去的那份登记
-        if (remoteBridgeRuntime === runtime) remoteBridgeRuntime = undefined;
-      },
-    });
+    // 同一份登记供 deactivate 与运行时开关共用（stop 与 deactivate 是同一退出路径）
+    registerActiveRemoteBridge(bridge, context, runtime);
     log(
       `[REMOTE-BRIDGE] listening on ${where}:${started.port}（LAN · 配对口令 ${challenge.code}，PC 指纹 ${identity.shortFp}）`,
     );
@@ -662,7 +756,9 @@ function listLanAddresses(): string[] {
 export async function remoteDevicesCommand(): Promise<void> {
   const handle = getRemoteLanHandle();
   if (!handle) {
-    void vscode.window.showInformationMessage('远程桥当前未启动（需要 MEMORA_REMOTE_BRIDGE=lan）');
+    void vscode.window.showInformationMessage(
+      '远程桥当前未启动。可在「设置 → 远程控制」点开启，或设置 MEMORA_REMOTE_BRIDGE=lan 后重载窗口。',
+    );
     return;
   }
   const picked = await vscode.window.showQuickPick(buildDeviceList(handle.devices.list()), {

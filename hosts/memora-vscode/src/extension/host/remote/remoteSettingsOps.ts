@@ -28,6 +28,7 @@ import {
   getRemoteBridgeRuntime,
   getRemoteLanHandle,
   regenerateLanPairingCode,
+  toggleRemoteBridge,
 } from './remoteBridgeHost.js';
 import { isRemoteDeviceTier } from './remoteDevices.js';
 import { pairingLinkOfHandle, pairingMaterialOfHandle } from './remotePairingLink.js';
@@ -152,12 +153,14 @@ export async function applyRemoteSettingsAction(
   payload: RemoteActionPayload,
 ): Promise<{ ok: boolean; message?: string }> {
   if (payload.action === 'refresh') return { ok: true };
+  // 启停目标由宿主运行时裁决：webview 只给意图，不把过期 UI 状态当命令参数。
+  if (payload.action === 'toggle') return toggleRemoteBridge();
   const handle = getRemoteLanHandle();
   if (!handle) {
     return {
       ok: false,
       message: vscode.l10n.t(
-        'The remote bridge is not running. Set MEMORA_REMOTE_BRIDGE=lan and reload the window.',
+        'The remote bridge is not running. Use the Remote control switch to start it, or set MEMORA_REMOTE_BRIDGE=lan and reload the window.',
       ),
     };
   }

@@ -1555,10 +1555,14 @@
   "Remote control": "远程控制",
   "Remote control: phone pairing, paired devices and recent activity": "远程控制：手机配对、已配对设备与最近活动",
   "Refresh": "刷新",
+  "Enable remote control": "开启远程控制",
+  "Disable remote control": "关闭远程控制",
+  "Start the LAN bridge for this window": "为当前窗口启动局域网远程桥",
+  "Stop the remote bridge for this window": "关闭当前窗口的远程桥",
   "Checking bridge status…": "正在检查远程桥状态…",
   "Bridge": "远程桥",
   "New pairing code": "新配对口令",
-  "The bridge only starts when the MEMORA_REMOTE_BRIDGE environment variable is set to lan (or loopback for development) before the window starts. Changing it requires a window reload.": "远程桥只在窗口启动前把 MEMORA_REMOTE_BRIDGE 环境变量设为 lan（开发验证可用 loopback）时启动；修改后需重载窗口。",
+  "Use the switch above to start or stop the bridge for this window. MEMORA_REMOTE_BRIDGE only presets the state at window startup (lan, or loopback for development); changing it requires a window reload.": "用上方开关可随时开启或关闭当前窗口的远程桥。MEMORA_REMOTE_BRIDGE 只决定窗口启动时的预设状态（开发验证可用 loopback），修改后需重载窗口。",
   "Paired devices": "已配对设备",
   "Up to 3 devices can be paired. Each pairing code registers one phone, so generate a new code for every phone. Revoke a device before pairing a fourth.": "最多可配对 3 台设备。每个配对码只能登记一台手机，配新手机请重新生成配对码；要配第 4 台，请先撤销一台。",
   "No device is paired yet. Use \"New pairing code\" and confirm the phone on this PC.": "还没有配对任何设备。点「新配对口令」，然后在本机确认手机。",
@@ -1586,5 +1590,6 @@
   "No active pairing link yet.": "当前还没有可用的配对连接串。",
   "That device is no longer paired.": "该设备已不在配对列表中。",
   "Unknown permission level.": "未知的权限档位。",
-  "The remote bridge is not running. Set MEMORA_REMOTE_BRIDGE=lan and reload the window.": "远程桥未启动。请设置 MEMORA_REMOTE_BRIDGE=lan 后重载窗口。"
+  "The remote bridge is not running. Use the Remote control switch to start it, or set MEMORA_REMOTE_BRIDGE=lan and reload the window.": "远程桥未启动。请在「远程控制」页点开启，或设置 MEMORA_REMOTE_BRIDGE=lan 后重载窗口。",
+  "Remote control is unavailable in this window.": "当前窗口无法使用远程控制。"
 }
