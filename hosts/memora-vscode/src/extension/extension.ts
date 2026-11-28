@@ -788,6 +788,8 @@ export function activate(context: vscode.ExtensionContext): void {
     {
       panel: chatProvider,
       store: sessionStore,
+      // 轮存储：注入后手机会话列表才有 `lastOutcome`（已完成 / 已中断 / 未收场）
+      roundStore,
       log: (message) => memoraOutput.appendLine(message),
       // 手机「＋」建会话：后台建（不顶走 PC 当前页），出生来源缺省 user；
       // 远程桥只拿这个窄口，不把整个面板暴露进桥

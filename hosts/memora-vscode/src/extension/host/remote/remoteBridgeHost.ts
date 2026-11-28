@@ -29,7 +29,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { HostSessionStore } from '../sessionStore.js';
-import { buildSessionListMessage } from '../../../webview/helpers/sessionList.js';
+// 只引类型：轮存储实现由调用方注入，本文件不实例化（也不增加激活期加载）
+import type { IRoundStore } from '@zooique/memora';
+import {
+  buildSessionListMessage,
+  makeLastRoundStatusReader,
+} from '../../../webview/helpers/sessionList.js';
 import type { WebviewToExtensionMessage } from '../../../shared/protocol.js';
 import type { SessionViewProjection } from '../../../shared/sessionProjection.js';
 import type { PendingLiveRound } from '../../../shared/turnProjection.js';
@@ -114,6 +119,14 @@ export interface RemoteBridgeHostDeps {
    * 实现方负责：`background: true`（不把 PC 正在看的页面顶走）+ 出生来源缺省 `user`。
    */
   createSession: (sessionId: string, title?: string) => Promise<boolean>;
+  /**
+   * 轮存储（可选）：注入后会话列表才投影 `lastOutcome`（已完成 / 已中断 / 未收场），
+   * 手机主页据此显示状态标签。
+   *
+   * 不注入 = 该字段缺省、标签不显示（信息少一项，不是错误）；但**手机端已消费该字段**，
+   * 此处长期传 `undefined` 会让那部分 UI 成为死代码——要么接真，要么删 UI，不留中间态。
+   */
+  roundStore?: IRoundStore;
 }
 
 /** 适配所需的 VS Code 环境（密钥 / 设备表 / 审计目录都从这里取） */
@@ -214,7 +227,14 @@ export function createRemoteBridgePorts(deps: RemoteBridgeHostDeps): RemoteBridg
     // 助手会话仍排除（它不是工作会话，助手身份经 hello_ok.assistantSid 单独下发）
     listSessions: () => {
       const assistantSid = panel.getAssistantSessionId();
-      const message = buildSessionListMessage(store, '', vscode.l10n, undefined, assistantSid);
+      // 末位轮状态读取口与 webview 历史列表同源（makeLastRoundStatusReader 单点能力探测）
+      const message = buildSessionListMessage(
+        store,
+        '',
+        vscode.l10n,
+        makeLastRoundStatusReader(deps.roundStore),
+        assistantSid,
+      );
       // 待审批数：主页角标的唯一来源（真源在确认协调器，此处只做逐条转述）
       const sessions = message.sessions.map((session) => {
         const pending = panel.pendingConfirm(session.sessionId).count;

@@ -88,6 +88,23 @@ export interface SessionListPushDeps {
 }
 
 /**
+ * 构造「末位轮状态」读取口（能力探测 + 闭包绑定，两个调用面共用这一份）
+ *
+ * 为什么不各自写一份：webview 历史列表与手机远程列表必须用**同一个能力探测判据**，
+ * 否则一处能投影 `lastOutcome`、另一处静默缺省——而没有任何测试会红
+ * （消费者看到「有时有、有时没有」却查不出原因）。
+ *
+ * @param roundStore 轮存储（可选）；不支持状态索引时返回 undefined（= 不投影该字段）
+ */
+export function makeLastRoundStatusReader(
+  roundStore?: IRoundStore,
+): ((roundId: string) => RoundStatus | undefined) | undefined {
+  return roundStore && hasRoundStatusIndex(roundStore)
+    ? (roundId: string) => roundStore.getStatus(roundId)
+    : undefined;
+}
+
+/**
  * 构建并推送历史会话列表（对 `session_list` 的应答）
  *
  * 终态投影只需要「末位轮什么状态」⇒ 用 RoundStore 索引直读，不加载整轮正文；
@@ -96,11 +113,7 @@ export interface SessionListPushDeps {
  * @param deps 读口 + 投递口
  */
 export function postSessionList(deps: SessionListPushDeps): void {
-  const { roundStore } = deps;
-  const readLastRoundStatus =
-    roundStore && hasRoundStatusIndex(roundStore)
-      ? (roundId: string) => roundStore.getStatus(roundId)
-      : undefined;
+  const readLastRoundStatus = makeLastRoundStatusReader(deps.roundStore);
   deps.post(
     buildSessionListMessage(
       deps.store,
