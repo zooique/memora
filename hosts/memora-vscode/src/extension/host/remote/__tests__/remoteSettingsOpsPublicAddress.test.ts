@@ -22,10 +22,7 @@ vi.mock('../remoteBridgeHost.js', () => ({
   toggleRemoteBridge: vi.fn(async () => ({ ok: true })),
 }));
 
-import {
-  applyRemoteSettingsAction,
-  readRemoteSettingsStatus,
-} from '../remoteSettingsOps.js';
+import { applyRemoteSettingsAction, readRemoteSettingsStatus } from '../remoteSettingsOps.js';
 import {
   readPublicAddress,
   REMOTE_PUBLIC_ADDRESS_KEY,
@@ -83,10 +80,7 @@ describe('remoteSettingsOps 对外地址动作', () => {
       { action: 'set_public_address', address: 'home.example.com:5890' },
       memento,
     );
-    await applyRemoteSettingsAction(
-      { action: 'set_public_address', address: '0.0.0.0' },
-      memento,
-    );
+    await applyRemoteSettingsAction({ action: 'set_public_address', address: '0.0.0.0' }, memento);
     expect(memento.values.get(REMOTE_PUBLIC_ADDRESS_KEY)).toBe('home.example.com:5890');
   });
 

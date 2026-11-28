@@ -82,7 +82,11 @@ describe('normalizePublicAddress', () => {
   });
 
   it('过长 host 拒绝', () => {
-    expect(normalizePublicAddress(`${'a'.repeat(62)}.${'b'.repeat(62)}.${'c'.repeat(62)}.${'d'.repeat(62)}.com`)).toBeUndefined();
+    expect(
+      normalizePublicAddress(
+        `${'a'.repeat(62)}.${'b'.repeat(62)}.${'c'.repeat(62)}.${'d'.repeat(62)}.com`,
+      ),
+    ).toBeUndefined();
   });
 
   it('规范化后格式稳定：带端口直出，不带端口不带冒号', () => {

@@ -242,10 +242,7 @@ export function createRemoteView({
           l10n.t('Address: {0}', next.publicAddress ?? `${next.address}:${next.port ?? ''}`),
         );
       }
-      setLine(
-        fingerprintText,
-        next.pcShortFp ? l10n.t('PC fingerprint: {0}', next.pcShortFp) : '',
-      );
+      setLine(fingerprintText, next.pcShortFp ? l10n.t('PC fingerprint: {0}', next.pcShortFp) : '');
       if (next.pairingCode && next.pairingExpiresAt) {
         setLine(
           pairingText,
