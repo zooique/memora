@@ -114,6 +114,8 @@ import { join } from 'node:path';
  *  配对状态 + 审计尾」的语义面（硬塞 = second consumer 语义扭曲），故必须新增一条。
  *  实测 150，阈值同口径重算 151。
  *  2026-11-28 远程控制页启停开关：复用 `remote_settings` 的 action 分流，零新 type ⇒ 实测仍 150，阈值不动。
+ *  2026-11-28 配对串对外地址：DTO 加字段 + action 分流加一分支，仍走同一条通道，
+ *  零新 type ⇒ 实测仍 150，阈值不动。
  */
 const IPC_CHANNEL_GOVERNANCE_THRESHOLD = 151;
 

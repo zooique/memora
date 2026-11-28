@@ -214,4 +214,75 @@ describe('remoteView', () => {
     vi.advanceTimersByTime(60_000 + 100);
     expect(postMessage).toHaveBeenCalledWith({ type: 'remote_settings', action: 'refresh' });
   });
+
+  it('对外地址：回显宿主真值，地址行显示手机实际拨的地址', () => {
+    const { el } = mount();
+    const input = el('remotePublicAddressInput') as HTMLInputElement;
+    push(baseStatus({ mode: 'lan', address: '192.168.1.9', port: 4123 }));
+    expect(input.value).toBe('');
+    expect(el('remoteAddressText').textContent).toBe('Address: 192.168.1.9:4123');
+
+    push(
+      baseStatus({
+        mode: 'lan',
+        address: '192.168.1.9',
+        port: 4123,
+        publicAddress: 'home.example.com:5890',
+      }),
+    );
+    expect(input.value).toBe('home.example.com:5890');
+    expect(el('remoteAddressText').textContent).toBe('Address: home.example.com:5890');
+  });
+
+  it('对外地址：保存只上报原文，键入中回推不吞输入', () => {
+    const { el, postMessage } = mount();
+    const input = el('remotePublicAddressInput') as HTMLInputElement;
+    const status = baseStatus({
+      mode: 'lan',
+      address: '192.168.1.9',
+      port: 4123,
+      publicAddress: 'home.example.com:5890',
+    });
+    push(status);
+
+    input.focus();
+    input.value = 'other.example:6000';
+    push(status);
+    expect(input.value).toBe('other.example:6000');
+
+    (el('remotePublicAddressSaveBtn') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'remote_settings',
+      action: 'set_public_address',
+      address: 'other.example:6000',
+    });
+  });
+
+  it('从正常 LAN 切到无地址：指纹行不残留上一档的值', () => {
+    const { el } = mount();
+    push(baseStatus({ mode: 'lan', address: '192.168.1.9', port: 4123, pcShortFp: 'ABCD1234' }));
+    expect(el('remoteFingerprintText').textContent).toContain('ABCD1234');
+
+    push(baseStatus({ mode: 'lan', address: '0.0.0.0', port: 4123, pcShortFp: 'ABCD1234' }));
+    expect(el('remoteFingerprintText').textContent).toBe('');
+    expect(el('remoteFingerprintText').hidden).toBe(true);
+  });
+
+  it('本机地址未识别但有对外地址：如实说可经该地址连接，不谎报拨不到', () => {
+    const { el } = mount();
+    push(baseStatus({ mode: 'lan', address: '0.0.0.0', port: 4123 }));
+    expect(el('remoteModeText').textContent).toContain('no LAN address was detected');
+
+    push(
+      baseStatus({
+        mode: 'lan',
+        address: '0.0.0.0',
+        port: 4123,
+        publicAddress: 'home.example.com:5890',
+      }),
+    );
+    expect(el('remoteModeText').textContent).toContain('home.example.com:5890');
+    expect(el('remoteAddressText').hidden).toBe(false);
+    expect(el('remoteAddressText').textContent).toBe('Address: home.example.com:5890');
+  });
 });

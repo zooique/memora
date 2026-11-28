@@ -1591,5 +1591,13 @@
   "That device is no longer paired.": "该设备已不在配对列表中。",
   "Unknown permission level.": "未知的权限档位。",
   "The remote bridge is not running. Use the Remote control switch to start it, or set MEMORA_REMOTE_BRIDGE=lan and reload the window.": "远程桥未启动。请在「远程控制」页点开启，或设置 MEMORA_REMOTE_BRIDGE=lan 后重载窗口。",
-  "Remote control is unavailable in this window.": "当前窗口无法使用远程控制。"
+  "Remote control is unavailable in this window.": "当前窗口无法使用远程控制。",
+  "Public address": "对外地址",
+  "Save address": "保存地址",
+  "Optional. Use a DDNS domain or tunnel hostname when the phone is outside the LAN. Include the router port if it differs from the bridge port. Leave empty to use the detected LAN address. After saving, generate a new pairing code and pair the phone again.": "可选。手机不在局域网内时，填 DDNS 域名或隧道域名；若路由器映射的对外端口与桥端口不同，一并写上端口。留空则使用自动识别的局域网地址。保存后需重新生成配对码并重新配对手机。",
+  "Invalid public address. Use a domain name or IPv4 address, optionally with a port (for example home.example.com:5890).": "对外地址无效。请填域名或 IPv4 地址，可带端口（例如 home.example.com:5890）。",
+  "Public address saved. Generate a new pairing code and pair the phone again for the change to take effect.": "对外地址已保存。请重新生成配对码并重新配对手机，改动才会生效。",
+  "Public address cleared. Pairing links will use the detected LAN address again.": "对外地址已清除。配对连接串将重新使用自动识别的局域网地址。",
+  "Public address storage is unavailable.": "当前无法保存对外地址。",
+  "LAN bridge listening on port {0}, reachable via public address {1}.": "局域网远程桥监听端口 {0}，可经对外地址 {1} 连接。"
 }

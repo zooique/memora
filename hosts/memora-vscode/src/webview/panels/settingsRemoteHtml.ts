@@ -31,6 +31,12 @@ export function buildRemoteBodyHtml(l10n: {
           <button id="remoteRegenerateBtn" class="btn btn-secondary" type="button" data-remote-act="regenerate">${l10n.t('New pairing code')}</button>
         </div>
         <p id="remoteAddressText" class="remote-value"></p>
+        <div class="remote-address-row">
+          <label class="remote-label" for="remotePublicAddressInput">${l10n.t('Public address')}</label>
+          <input id="remotePublicAddressInput" class="remote-address-input" type="text" spellcheck="false" autocomplete="off" placeholder="home.example.com:5890" />
+          <button id="remotePublicAddressSaveBtn" class="btn btn-secondary" type="button" data-remote-act="set_public_address">${l10n.t('Save address')}</button>
+        </div>
+        <p class="hint">${l10n.t('Optional. Use a DDNS domain or tunnel hostname when the phone is outside the LAN. Include the router port if it differs from the bridge port. Leave empty to use the detected LAN address. After saving, generate a new pairing code and pair the phone again.')}</p>
         <p id="remoteFingerprintText" class="remote-value"></p>
         <p id="remotePairingText" class="remote-value"></p>
         <div id="remotePairingLinkBox" hidden>

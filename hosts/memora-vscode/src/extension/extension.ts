@@ -1275,7 +1275,8 @@ export function activate(context: vscode.ExtensionContext): void {
   // 面板不 import 桥句柄——注入窄口是唯一接线方式。
   settingsProvider.setRemoteOps({
     readStatus: () => readRemoteSettingsStatus(context),
-    applyAction: (payload) => applyRemoteSettingsAction(payload),
+    // 对外地址存用户级 globalState（与设备表同款持久化，随「恢复初始状态」一并清）
+    applyAction: (payload) => applyRemoteSettingsAction(payload, context.globalState),
   });
 
   // 命令：恢复初始状态（命令面板入口，与设置面板按钮同一处理函数）

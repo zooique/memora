@@ -43,6 +43,24 @@ export const remoteStyles = `
     font-weight: 600;
     color: var(--text-primary, #cccccc);
   }
+  /* 对外地址行：域名较长时允许折行，输入框吃掉剩余宽度，保存按钮不挤掉 */
+  #remote-root .remote-address-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-2, 6px);
+    margin: var(--sp-2, 6px) 0;
+  }
+  #remote-root .remote-address-input {
+    /* flex-basis 用 0（结构性常量，非刻度裸值）；描边让位于浅底卡片，与设备行同款 */
+    flex: 1 1 0;
+    min-width: 0;
+    padding: var(--sp-1, 4px) var(--sp-2, 6px);
+    border-radius: var(--radius-sm, 2px);
+    font-size: var(--font-sm, 11px);
+    color: var(--text-primary, #cccccc);
+    background: var(--surface-sidebar, #252526);
+  }
   /* 状态行：空串时脚本会 hidden，margin 只在有值时生效 */
   #remote-root .remote-value {
     margin: 0 0 var(--sp-1, 4px);

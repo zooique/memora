@@ -34,6 +34,7 @@
  */
 import type { RemoteLanHandle } from './remoteBridgeHost.js';
 import type { PairingChallenge } from './remotePairing.js';
+import type { PublicAddress } from './remotePublicAddress.js';
 
 /** 连接串前缀（版本写进路径，解析方按前缀 fail-closed；v1 已废弃） */
 export const PAIRING_LINK_PREFIX = 'memora-pair://v2';
@@ -120,25 +121,32 @@ export interface PairingMaterial {
  * 每台手机必须拿到独立证书，才能在设备表里各占一行、各自撤销。换代窗口内（异步铸证未完成）
  * 不产出连接串，宁可页面短暂隐藏，也不给「新口令 + 旧身份」的错配组合。
  *
- * @param handle LAN 运行时句柄
- * @param now    当前时刻（测试可注入；缺省取系统时间）
+ * 对外地址覆盖只来自第三参（已由 `normalizePublicAddress` 校验），缺省时逐字走旧路径——
+ * 现有两参调用面（含命令面板）行为不变，这是本切片的「不带伤」边界。
+ *
+ * @param handle        LAN 运行时句柄
+ * @param now           当前时刻（测试可注入；缺省取系统时间）
+ * @param publicAddress 用户配置的对外地址（可覆盖 h / p；端口缺省沿用桥监听端口）
  */
 export function pairingMaterialOfHandle(
   handle: RemoteLanHandle,
   now: number = Date.now(),
+  publicAddress?: PublicAddress,
 ): PairingMaterial | undefined {
   const challenge = handle.pairing.current();
   if (!challenge || challenge.expiresAt <= now) return undefined;
+  const address = publicAddress?.host ?? handle.address;
+  const port = publicAddress?.port ?? handle.port;
   // `0.0.0.0` 是「监听全部网卡」的绑定值，不是手机能拨的地址
-  if (!handle.address || handle.address === '0.0.0.0') return undefined;
+  if (!address || address === '0.0.0.0') return undefined;
   // 口令与身份必须同代：换代期间（challengeCode 已变、铸证未回）不产出
   const pairingIdentity = handle.pairingIdentity;
   if (pairingIdentity.challengeCode !== challenge.code) return undefined;
   return {
     challenge,
     link: buildPairingLink({
-      address: handle.address,
-      port: handle.port,
+      address,
+      port,
       certDerBase64: handle.identity.certDerBase64,
       code: challenge.code,
       shortFp: handle.identity.shortFp,
@@ -153,12 +161,14 @@ export function pairingMaterialOfHandle(
 /**
  * 从 LAN 句柄取当前可用的配对连接串（只需要串的调用方用这个薄委托）
  *
- * @param handle LAN 运行时句柄
- * @param now    当前时刻（测试可注入）
+ * @param handle        LAN 运行时句柄
+ * @param now           当前时刻（测试可注入）
+ * @param publicAddress 用户配置的对外地址（缺省走旧路径）
  */
 export function pairingLinkOfHandle(
   handle: RemoteLanHandle,
   now: number = Date.now(),
+  publicAddress?: PublicAddress,
 ): string | undefined {
-  return pairingMaterialOfHandle(handle, now)?.link;
+  return pairingMaterialOfHandle(handle, now, publicAddress)?.link;
 }

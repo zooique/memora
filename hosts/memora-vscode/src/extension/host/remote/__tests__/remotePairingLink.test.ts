@@ -144,3 +144,30 @@ describe('pairingLinkOfHandle', () => {
     expect(pairingLinkOfHandle(makeHandle({ address: '0.0.0.0' }), 1)).toBeUndefined();
   });
 });
+
+describe('对外地址覆盖（Mode D / Mode T）', () => {
+  it('覆盖 h 与 p：配对串指向 DDNS 域名和路由器对外端口', () => {
+    const link = pairingMaterialOfHandle(makeHandle({}), 1, {
+      host: 'home.example.com',
+      port: 5890,
+    })!.link;
+    const url = new URL(link);
+    expect(url.searchParams.get('h')).toBe('home.example.com');
+    expect(url.searchParams.get('p')).toBe('5890');
+  });
+
+  it('覆盖只给 host 时沿用桥监听端口', () => {
+    const link = pairingLinkOfHandle(makeHandle({}), 1, { host: 'home.example.com' })!;
+    expect(new URL(link).searchParams.get('p')).toBe('41234');
+  });
+
+  it('覆盖值即使绕过规范化也拦 0.0.0.0，不给必然失败的串', () => {
+    expect(pairingMaterialOfHandle(makeHandle({}), 1, { host: '0.0.0.0' })).toBeUndefined();
+  });
+
+  it('两参调用逐字走旧路径：不传覆盖时仍是本机 LAN 地址与桥端口', () => {
+    const link = pairingLinkOfHandle(makeHandle({}), 1)!;
+    expect(new URL(link).searchParams.get('h')).toBe('192.168.1.9');
+    expect(new URL(link).searchParams.get('p')).toBe('41234');
+  });
+});

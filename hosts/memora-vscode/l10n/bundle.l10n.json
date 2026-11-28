@@ -1591,5 +1591,13 @@
   "That device is no longer paired.": "",
   "Unknown permission level.": "",
   "The remote bridge is not running. Use the Remote control switch to start it, or set MEMORA_REMOTE_BRIDGE=lan and reload the window.": "",
-  "Remote control is unavailable in this window.": ""
+  "Remote control is unavailable in this window.": "",
+  "Public address": "",
+  "Save address": "",
+  "Optional. Use a DDNS domain or tunnel hostname when the phone is outside the LAN. Include the router port if it differs from the bridge port. Leave empty to use the detected LAN address. After saving, generate a new pairing code and pair the phone again.": "",
+  "Invalid public address. Use a domain name or IPv4 address, optionally with a port (for example home.example.com:5890).": "",
+  "Public address saved. Generate a new pairing code and pair the phone again for the change to take effect.": "",
+  "Public address cleared. Pairing links will use the detected LAN address again.": "",
+  "Public address storage is unavailable.": "",
+  "LAN bridge listening on port {0}, reachable via public address {1}.": ""
 }

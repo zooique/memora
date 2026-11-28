@@ -32,6 +32,13 @@ import {
 } from './remoteBridgeHost.js';
 import { isRemoteDeviceTier } from './remoteDevices.js';
 import { pairingLinkOfHandle, pairingMaterialOfHandle } from './remotePairingLink.js';
+import {
+  clearPublicAddress,
+  formatPublicAddress,
+  readPublicAddress,
+  writePublicAddress,
+  type PublicAddressMemento,
+} from './remotePublicAddress.js';
 
 /** 审计文件名（与 `remoteBridgeHost.ts` 的写入侧同名；此处只读） */
 const AUDIT_FILE_NAME = 'remote-audit.log';
@@ -109,6 +116,8 @@ export async function readRemoteSettingsStatus(
   const runtime = getRemoteBridgeRuntime();
   const handle = getRemoteLanHandle();
   const { audit, error } = await readAuditTail(context.globalStorageUri.fsPath);
+  // 对外地址判据单点：读时再校验一次，旧版本写进来的坏值按「未配置」回落
+  const publicAddress = readPublicAddress(context.globalState);
   // 设备表只在 LAN 句柄存在时可读：回环档没有配对概念，空数组 = 如实。
   // 「已配对」与「已连接」分属两个真源：表给配对事实，桥的已认证连接给在线事实。
   const online = new Set(handle?.listConnectedFingerprints() ?? []);
@@ -118,6 +127,9 @@ export async function readRemoteSettingsStatus(
   const base: RemoteSettingsStatus = {
     mode: runtime?.mode ?? 'off',
     ...(runtime ? { port: runtime.port } : {}),
+    // 对外地址是真值，且写入不要求桥启动 ⇒ 回显也不能以「桥在跑」为前提。
+    // 放在 base（早退之前）而不是 handle 分支，避免「先配域名再开桥」时保存成功却回显为空。
+    ...(publicAddress ? { publicAddress: formatPublicAddress(publicAddress) } : {}),
     devices,
     audit,
     ...(error ? { auditError: error } : {}),
@@ -125,7 +137,8 @@ export async function readRemoteSettingsStatus(
   if (!handle) return base;
   // 口令与连接串必须同源：一次读取取得两者，避免「页面上是旧码、串里是新码」的错配。
   // 不可用（过期 / 地址未识别）时缺省，页面据此隐藏，而不是显示一条必然失败的串。
-  const material = pairingMaterialOfHandle(handle);
+  // 配对串与状态行共用同一份覆盖地址：页面显示的地址就是串里写的地址
+  const material = pairingMaterialOfHandle(handle, undefined, publicAddress);
   return {
     ...base,
     address: handle.address,
@@ -146,15 +159,51 @@ export async function readRemoteSettingsStatus(
  * 动作执行面全部复用命令层同一函数（高风险动作的模态确认与审计在 `applyDeviceAction`
  * 内部完成），本函数只做「桥未启动 / 设备已消失」两类前置判定的如实回报。
  *
+ * 对外地址写入不要求桥已启动：用户可先配好 DDNS 域名再开桥。
+ * 写坏值不落盘、不回推假值——`message` 说明原因，finally 的回推复位输入框。
+ *
  * @param payload webview 上报的动作载荷
+ * @param memento 用户级存储（设置对外地址时必传；缺注入即如实失败）
  * @returns `ok=false` 时 `message` 是可直接上屏的本地化提示
  */
 export async function applyRemoteSettingsAction(
   payload: RemoteActionPayload,
+  memento?: PublicAddressMemento,
 ): Promise<{ ok: boolean; message?: string }> {
   if (payload.action === 'refresh') return { ok: true };
   // 启停目标由宿主运行时裁决：webview 只给意图，不把过期 UI 状态当命令参数。
   if (payload.action === 'toggle') return toggleRemoteBridge();
+  if (payload.action === 'set_public_address') {
+    if (!memento) {
+      return { ok: false, message: vscode.l10n.t('Public address storage is unavailable.') };
+    }
+    // 留空 = 清除（兑现 UI 文案「留空则使用自动识别的局域网地址」），
+    // 不是「无效值」：仅 null/非字符串/含非法字符才走下面的拒绝分支。
+    if (typeof payload.address === 'string' && payload.address.trim() === '') {
+      await clearPublicAddress(memento);
+      return {
+        ok: true,
+        message: vscode.l10n.t(
+          'Public address cleared. Pairing links will use the detected LAN address again.',
+        ),
+      };
+    }
+    const saved = await writePublicAddress(memento, payload.address);
+    if (!saved) {
+      return {
+        ok: false,
+        message: vscode.l10n.t(
+          'Invalid public address. Use a domain name or IPv4 address, optionally with a port (for example home.example.com:5890).',
+        ),
+      };
+    }
+    return {
+      ok: true,
+      message: vscode.l10n.t(
+        'Public address saved. Generate a new pairing code and pair the phone again for the change to take effect.',
+      ),
+    };
+  }
   const handle = getRemoteLanHandle();
   if (!handle) {
     return {
@@ -169,7 +218,9 @@ export async function applyRemoteSettingsAction(
     return { ok: true };
   }
   if (payload.action === 'copy_pairing') {
-    const link = pairingLinkOfHandle(handle);
+    // 复制口与状态推送口共用同一份覆盖地址，杜绝「页面显示域名、复制出去还是 LAN IP」
+    const publicAddress = memento ? readPublicAddress(memento) : undefined;
+    const link = pairingLinkOfHandle(handle, undefined, publicAddress);
     if (!link) return { ok: false, message: vscode.l10n.t('No active pairing link yet.') };
     // 只写剪贴板：不回显到通知 / 日志（连接串含一次性口令）
     await vscode.env.clipboard.writeText(link);

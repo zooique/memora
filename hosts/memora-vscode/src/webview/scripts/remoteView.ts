@@ -64,6 +64,7 @@ export function createRemoteView({
 }): void {
   const modeText = root.querySelector<HTMLElement>('#remoteModeText');
   const addressText = root.querySelector<HTMLElement>('#remoteAddressText');
+  const publicAddressInput = root.querySelector<HTMLInputElement>('#remotePublicAddressInput');
   const fingerprintText = root.querySelector<HTMLElement>('#remoteFingerprintText');
   const pairingText = root.querySelector<HTMLElement>('#remotePairingText');
   const pairingLinkBox = root.querySelector<HTMLElement>('#remotePairingLinkBox');
@@ -202,30 +203,49 @@ export function createRemoteView({
   /** 按模式渲染桥状态行（未启动 / 开发回环 / 局域网三态如实区分） */
   function renderMode(next: RemoteSettingsStatus): void {
     if (next.mode === 'lan') {
-      // 地址不可用（未识别 / 绑定值 0.0.0.0）时如实说「监听在，但拨不到」——
-      // 0.0.0.0 是绑定值，不是手机能连的地址，不能当可用地址展示
+      // 本机地址未识别（0.0.0.0 是绑定值不是可拨地址）时先看有没有显式对外地址，
+      // 两者都没有才如实说「监听在，但拨不到」
       if (!next.address || next.address === '0.0.0.0') {
+        // 没识别到 LAN 地址不该一律说「拨不到」：用户显式配了对外地址时，
+        // 配对串用的是那个地址，状态行必须如实显示它（否则页面与复制出去的串分叉）
+        if (!next.publicAddress) {
+          setLine(
+            modeText,
+            l10n.t(
+              'The LAN bridge is listening on port {0}, but no LAN address was detected.',
+              String(next.port ?? ''),
+            ),
+          );
+          setLine(addressText, '');
+          // 指纹随 mode 走：无可用地址时指纹也不展示，避免从正常 LAN 切过来残留上一档
+          setLine(fingerprintText, '');
+          setLine(pairingText, '');
+          return;
+        }
         setLine(
           modeText,
           l10n.t(
-            'The LAN bridge is listening on port {0}, but no LAN address was detected.',
+            'LAN bridge listening on port {0}, reachable via public address {1}.',
             String(next.port ?? ''),
+            next.publicAddress,
           ),
         );
-        setLine(addressText, '');
+        setLine(addressText, l10n.t('Address: {0}', next.publicAddress));
+      } else {
         setLine(
-          fingerprintText,
-          next.pcShortFp ? l10n.t('PC fingerprint: {0}', next.pcShortFp) : '',
+          modeText,
+          l10n.t('LAN bridge listening on {0}:{1}.', next.address, String(next.port ?? '')),
         );
-        setLine(pairingText, '');
-        return;
+        // 地址行显示手机实际要拨的地址：配了对外地址时不再是本机 LAN IP
+        setLine(
+          addressText,
+          l10n.t('Address: {0}', next.publicAddress ?? `${next.address}:${next.port ?? ''}`),
+        );
       }
       setLine(
-        modeText,
-        l10n.t('LAN bridge listening on {0}:{1}.', next.address, String(next.port ?? '')),
+        fingerprintText,
+        next.pcShortFp ? l10n.t('PC fingerprint: {0}', next.pcShortFp) : '',
       );
-      setLine(addressText, l10n.t('Address: {0}', `${next.address}:${next.port ?? ''}`));
-      setLine(fingerprintText, next.pcShortFp ? l10n.t('PC fingerprint: {0}', next.pcShortFp) : '');
       if (next.pairingCode && next.pairingExpiresAt) {
         setLine(
           pairingText,
@@ -264,6 +284,11 @@ export function createRemoteView({
    */
   function render(next: RemoteSettingsStatus): void {
     status = next;
+    // 输入框回显只认宿主回推：用户正在键入时不覆盖（否则动作回推会吞掉输入）。
+    // 校验与规范化都在宿主，这里不预判合法性、不留第二份配置真值。
+    if (publicAddressInput && document.activeElement !== publicAddressInput) {
+      publicAddressInput.value = next.publicAddress ?? '';
+    }
     renderMode(next);
     // 开关文案只从宿主回推的 mode 派生：页面不持有「用户点过什么」的第二份状态，
     // 也不做乐观翻转；启停结果由宿主回推的真值决定。
@@ -314,6 +339,15 @@ export function createRemoteView({
     if (action === 'regenerate') {
       if (status?.mode !== 'lan') return;
       vscode.postMessage({ type: 'remote_settings', action: 'regenerate' });
+      return;
+    }
+    if (action === 'set_public_address') {
+      // 只上报原文；合法性由宿主单点裁决，失败时 finally 回推旧值复位输入框
+      vscode.postMessage({
+        type: 'remote_settings',
+        action: 'set_public_address',
+        address: publicAddressInput?.value ?? '',
+      });
       return;
     }
     if (action === 'copy_pairing') {

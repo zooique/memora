@@ -359,6 +359,13 @@ export interface RemoteSettingsStatus {
   port?: number;
   /** 主局域网地址（仅 LAN；回环档固定 127.0.0.1 不入本字段） */
   address?: string;
+  /**
+   * 用户配置的对外地址（规范化后的 `host` 或 `host:port`；未配置时缺省）
+   *
+   * 配对串的 h / p 以此为准，回落本机 LAN 地址。输入框回显也读本字段——
+   * 页面不持有第二份配置真值。顶层消息类型不变（DTO 字段扩展）。
+   */
+  publicAddress?: string;
   /** PC 身份短指纹（仅 LAN；配对时与手机核对） */
   pcShortFp?: string;
   /** 当前有效配对口令（仅 LAN；没有有效口令时缺省） */
@@ -393,6 +400,13 @@ export type RemoteActionPayload =
   /** 启停开关：只上报意图，宿主读运行时真值决定开或关（webview 不持有第二份状态） */
   | { action: 'toggle' }
   | { action: 'regenerate' }
+  /**
+   * 设置配对串的对外地址（DDNS 域名 / 隧道域名，可带对外端口）
+   *
+   * 只上报原文，host 校验与规范化在宿主单点完成；写坏值会被拒绝并回推旧真值。
+   * 复用同一条远程设置消息的动作分流，不新增顶层通道。
+   */
+  | { action: 'set_public_address'; address: string }
   /** 复制配对连接串到系统剪贴板（口令敏感，只走用户主动复制，不回显到通知） */
   | { action: 'copy_pairing' }
   | { action: 'set_tier'; fingerprint: string; tier: RemoteDeviceTier }
